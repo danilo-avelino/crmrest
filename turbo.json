@@ -1,0 +1,44 @@
+{
+  "$schema": "https://turborepo.com/schema.json",
+  "globalPassThroughEnv": [
+    "CI",
+    "DATABASE_URL",
+    "DATABASE_ADMIN_URL",
+    "REDIS_URL",
+    "JWT_SECRET",
+    "ENCRYPTION_KEY",
+    "META_APP_SECRET",
+    "META_WEBHOOK_VERIFY_TOKEN",
+    "CHANNELS_DRY_RUN"
+  ],
+  "tasks": {
+    "db:generate": {
+      "outputs": ["src/generated/**"]
+    },
+    "build": {
+      "dependsOn": ["^build", "db:generate"],
+      "inputs": ["$TURBO_DEFAULT$", ".env*"],
+      "env": ["API_URL", "NEXT_OUTPUT"],
+      "outputs": ["dist/**", ".next/**", "!.next/cache/**"]
+    },
+    "dev": {
+      "dependsOn": ["^build"],
+      "cache": false,
+      "persistent": true
+    },
+    "lint": {
+      "dependsOn": ["^lint"]
+    },
+    "typecheck": {
+      "dependsOn": ["^build", "db:generate"]
+    },
+    "test": {
+      "dependsOn": ["^build", "db:generate"],
+      "cache": false
+    },
+    "e2e": {
+      "dependsOn": ["build", "@comanda/api#build"],
+      "cache": false
+    }
+  }
+}

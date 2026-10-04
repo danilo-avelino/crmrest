@@ -1,0 +1,13 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+
+# Dependências autorizadas a rodar scripts de instalação (o pnpm 10 bloqueia por padrão).
+onlyBuiltDependencies:
+  - "@prisma/engines"
+  - prisma
+
+# Scripts dispensáveis: os pacotes já trazem binários pré-compilados (recomendação do create-next-app).
+ignoredBuiltDependencies:
+  - sharp
+  - unrs-resolver

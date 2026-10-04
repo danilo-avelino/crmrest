@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+    "strictPropertyInitialization": false,
+    "types": ["node"],
+    "outDir": "dist",
+    "rootDir": ".",
+    "sourceMap": true,
+    "incremental": true
+  },
+  "include": ["src", "test", "vitest.config.ts"]
+}

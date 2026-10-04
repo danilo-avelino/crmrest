@@ -1,0 +1,26 @@
+{
+  "name": "comanda",
+  "private": true,
+  "packageManager": "pnpm@10.25.0",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "e2e": "turbo run e2e",
+    "db:migrate": "pnpm --filter @comanda/database db:migrate",
+    "db:seed": "pnpm --filter @comanda/database exec prisma db seed",
+    "simulate:whatsapp": "pnpm --filter @comanda/api simulate:whatsapp",
+    "channel:add": "pnpm --filter @comanda/api channel:add",
+    "tenant:add": "pnpm --filter @comanda/api tenant:add",
+    "user:add": "pnpm --filter @comanda/api user:add"
+  },
+  "devDependencies": {
+    "turbo": "^2.11.7",
+    "typescript": "~6.0.3"
+  }
+}

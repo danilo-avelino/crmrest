@@ -1,0 +1,38 @@
+# Infra local de desenvolvimento. Credenciais apenas para uso local.
+# Portas do host fora do padrão (5434, 6381) para não conflitar com outros projetos locais.
+name: comanda
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: comanda
+      POSTGRES_PASSWORD: comanda
+      POSTGRES_DB: comanda
+    ports:
+      - "127.0.0.1:5434:5432"
+    volumes:
+      # A partir do Postgres 18 a imagem guarda os dados em /var/lib/postgresql/<versão>/docker
+      - postgres-data:/var/lib/postgresql
+      - ./infra/docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U comanda -d comanda"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:8-alpine
+    ports:
+      - "127.0.0.1:6381:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres-data:
+  redis-data:

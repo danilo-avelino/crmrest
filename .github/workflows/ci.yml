@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: comanda
+          POSTGRES_PASSWORD: comanda
+          POSTGRES_DB: comanda
+        ports: ["5434:5432"]
+        options: >-
+          --health-cmd "pg_isready -U comanda -d comanda"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:8-alpine
+        ports: ["6381:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+
+    # Valores só de CI (nada de produção aqui).
+    env:
+      DATABASE_URL: postgresql://comanda_app:comanda_app@localhost:5434/comanda
+      DATABASE_ADMIN_URL: postgresql://comanda:comanda@localhost:5434/comanda
+      REDIS_URL: redis://localhost:6381
+      JWT_SECRET: ci-jwt-secret-com-pelo-menos-32-caracteres
+      ENCRYPTION_KEY: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
+      META_APP_SECRET: ci-meta-app-secret
+      META_WEBHOOK_VERIFY_TOKEN: ci-verify-token
+      CHANNELS_DRY_RUN: "true"
+
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Em produção a infra cria o login da aplicação; aqui, o mesmo script do Docker local.
+      - name: Roles do banco
+        run: psql "$DATABASE_ADMIN_URL" -f infra/docker/postgres/init/01-app-roles.sql
+      - name: Migrations
+        run: pnpm --filter @comanda/database exec prisma migrate deploy
+
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build
+
+      - name: Navegador dos E2E
+        run: pnpm --filter @comanda/web exec playwright install --with-deps chromium
+      - run: pnpm e2e
+
+      - name: Artefatos dos E2E
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright
+          path: apps/web/test-results

@@ -1,0 +1,118 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+/* O design não tem modo escuro: dark: só valeria sob uma classe .dark, que não é usada. */
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * Tokens do design "Comanda" (CRM Restaurantes.html → Sistema de Design).
+ * O "accent" do design (tomate) se chama tomate aqui, porque no shadcn accent é o fundo de hover.
+ */
+@theme {
+  --color-paper: #f7f4ef;
+  --color-surface: #ffffff;
+  --color-surface-2: #f0ede8;
+  --color-ink: #1a1814;
+  --color-ink-2: #4a4540;
+  --color-ink-3: #8c857d;
+  --color-rule: #ddd8d0;
+  --color-tomate: #c4341a;
+  --color-tomate-lt: #fdecea;
+  --color-success: #2d7d46;
+  --color-warning: #b45309;
+
+  /* Badges de status (Sistema de Design → "Badges de status e canal"). */
+  --color-tomate-line: #f5b5ac;
+  --color-tomate-ink: #9b2414;
+  --color-warning-lt: #fef9ec;
+  --color-warning-line: #f0d88a;
+  --color-warning-ink: #7a5008;
+  --color-success-lt: #eaf6ef;
+  --color-success-line: #a8d9bb;
+  --color-success-ink: #1d5c33;
+  --color-tag-line: #c4b8a0; /* borda tracejada das tags */
+  --color-rule-soft: #e8e4de; /* separador entre itens da lista */
+
+  /* Canais: só como indicador pontual (bolinha). */
+  --color-whatsapp: #25d366;
+  --color-instagram: #e1306c;
+  --color-ifood: #ea1d2c;
+
+  /* rounded-lg é o raio padrão dos componentes shadcn: 6px no design. */
+  --radius-sm: 4px; /* badges e tags */
+  --radius-md: 5px; /* botões compactos (30px) */
+  --radius-lg: 6px; /* botões, inputs, cards */
+  --radius-xl: 8px; /* cards maiores */
+  --radius-2xl: 12px; /* balões de mensagem */
+
+  --text-display: 28px;
+  --text-display--line-height: 1.1;
+  --text-display--letter-spacing: -0.5px;
+  --text-title: 16px;
+  --text-title--line-height: 1.2;
+  --text-body: 13px;
+  --text-body--line-height: 1.5;
+}
+
+@theme inline {
+  --font-sans: var(--font-inter);
+  --font-heading: var(--font-fraunces);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-foreground: var(--foreground);
+  --color-background: var(--background);
+}
+
+/* Papéis do shadcn apontando para a paleta do design. */
+:root {
+  --background: var(--color-paper);
+  --foreground: var(--color-ink);
+  --card: var(--color-surface);
+  --card-foreground: var(--color-ink);
+  --popover: var(--color-surface);
+  --popover-foreground: var(--color-ink);
+  --primary: var(--color-ink);
+  --primary-foreground: var(--color-paper);
+  --secondary: var(--color-surface-2);
+  --secondary-foreground: var(--color-ink-2);
+  --muted: var(--color-surface-2);
+  --muted-foreground: var(--color-ink-3);
+  --accent: var(--color-surface-2);
+  --accent-foreground: var(--color-ink);
+  --destructive: var(--color-tomate);
+  --border: var(--color-rule);
+  --input: var(--color-rule);
+  --ring: var(--color-ink);
+  --radius: 6px;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-body text-foreground;
+  }
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+  html {
+    @apply font-sans;
+  }
+}

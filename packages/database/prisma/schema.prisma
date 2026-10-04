@@ -1,0 +1,391 @@
+// Modelo de dados do Comanda (PROJETO_CRM_RESTAURANTES.md §7).
+// Toda tabela de negócio tem tenant_id e RLS; as políticas ficam na migration tenant_isolation.
+// Modelos de fases futuras (módulos, segmentos, templates, campanhas) entram junto com seus épicos.
+
+generator client {
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  moduleFormat        = "esm"
+  importFileExtension = "js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------- Plataforma ----------
+
+enum TenantStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+enum TenantRole {
+  ADMIN
+  AGENT
+}
+
+model Tenant {
+  id        String       @id @default(uuid(7)) @db.Uuid
+  name      String
+  slug      String       @unique
+  status    TenantStatus @default(ACTIVE)
+  settings  Json         @default("{}") // horário de funcionamento, textos automáticos...
+  createdAt DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  members           TenantMember[]
+  channels          Channel[]
+  contacts          Contact[]
+  contactIdentities ContactIdentity[]
+  contactAddresses  ContactAddress[]
+  consents          Consent[]
+  conversations     Conversation[]
+  messages          Message[]
+  orders            Order[]
+  orderItems        OrderItem[]
+  quickReplies      QuickReply[]
+  auditLogs         AuditLog[]
+
+  @@map("tenants")
+}
+
+model User {
+  id           String  @id @default(uuid(7)) @db.Uuid
+  name         String
+  email        String  @unique
+  passwordHash String  @map("password_hash")
+  isSuperAdmin Boolean @default(false) @map("is_super_admin") // equipe da plataforma
+  isActive     Boolean @default(true) @map("is_active")
+
+  memberships           TenantMember[]
+  sessions              Session[]
+  assignedConversations Conversation[]
+  sentMessages          Message[]
+  auditLogs             AuditLog[]
+
+  @@map("users")
+}
+
+// Sessão de login: guarda o hash do refresh token e o restaurante (ou painel master) escolhido.
+model Session {
+  id        String    @id @default(uuid(7)) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  tokenHash String    @map("token_hash") // sha256 do segredo do refresh token
+  context   Json? // { mode: 'tenant', tenantId } | { mode: 'master' }; null = ainda não escolheu
+  userAgent String?   @map("user_agent")
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz(3)
+  revokedAt DateTime? @map("revoked_at") @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+// Um usuário pode pertencer a vários tenants, com um papel em cada (painel master, §5.1.1).
+model TenantMember {
+  tenantId  String     @map("tenant_id") @db.Uuid
+  userId    String     @map("user_id") @db.Uuid
+  role      TenantRole
+  isActive  Boolean    @default(true) @map("is_active")
+  createdAt DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([tenantId, userId])
+  @@index([userId])
+  @@map("tenant_members")
+}
+
+// ---------- Canais ----------
+
+enum ChannelType {
+  WHATSAPP
+  INSTAGRAM
+  MESSENGER
+  IFOOD
+  WEBCHAT
+}
+
+enum ChannelStatus {
+  CONNECTED
+  ERROR
+  DISCONNECTED
+}
+
+model Channel {
+  id          String        @id @default(uuid(7)) @db.Uuid
+  tenantId    String        @map("tenant_id") @db.Uuid
+  type        ChannelType
+  name        String
+  externalId  String        @map("external_id") // phone_number_id, id da conta IG, merchant id
+  credentials Bytes // criptografado (AES-256-GCM)
+  status      ChannelStatus
+
+  tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  conversations Conversation[]
+  messages      Message[]
+  orders        Order[]
+
+  @@unique([type, externalId])
+  @@index([tenantId])
+  @@map("channels")
+}
+
+// ---------- Clientes ----------
+
+model Contact {
+  id           String    @id @default(uuid(7)) @db.Uuid
+  tenantId     String    @map("tenant_id") @db.Uuid
+  name         String?
+  phone        String? // E.164
+  phoneSource  String?   @map("phone_source") // 'channel' | 'informed_by_customer' | 'agent'
+  phoneStatus  String?   @map("phone_status") // 'ok' | 'pending' | 'refused'
+  email        String?
+  cpfEncrypted Bytes?    @map("cpf_encrypted")
+  cpfHash      String?   @map("cpf_hash") // HMAC-SHA256, para busca e deduplicação
+  birthDate    DateTime? @map("birth_date") @db.Date
+  notes        String?
+  tags         String[]  @default([])
+  firstSeenAt  DateTime  @default(now()) @map("first_seen_at") @db.Timestamptz(3)
+  lastSeenAt   DateTime? @map("last_seen_at") @db.Timestamptz(3)
+  deletedAt    DateTime? @map("deleted_at") @db.Timestamptz(3) // LGPD: anonimização
+
+  tenant        Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  identities    ContactIdentity[]
+  addresses     ContactAddress[]
+  consents      Consent[]
+  conversations Conversation[]
+  orders        Order[]
+
+  @@index([tenantId, phone])
+  @@index([tenantId, cpfHash])
+  @@index([tenantId, lastSeenAt])
+  @@map("contacts")
+}
+
+model ContactIdentity {
+  id          String      @id @default(uuid(7)) @db.Uuid
+  tenantId    String      @map("tenant_id") @db.Uuid
+  contactId   String      @map("contact_id") @db.Uuid
+  channelType ChannelType @map("channel_type")
+  externalId  String      @map("external_id") // wa_id, IGSID, id do cliente no iFood
+  profile     Json        @default("{}")
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, channelType, externalId])
+  @@index([tenantId, contactId])
+  @@map("contact_identities")
+}
+
+model ContactAddress {
+  id         String  @id @default(uuid(7)) @db.Uuid
+  tenantId   String  @map("tenant_id") @db.Uuid
+  contactId  String  @map("contact_id") @db.Uuid
+  label      String?
+  street     String
+  number     String?
+  district   String?
+  city       String
+  state      String
+  zipCode    String? @map("zip_code")
+  complement String?
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, contactId])
+  @@map("contact_addresses")
+}
+
+model Consent {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  contactId String   @map("contact_id") @db.Uuid
+  purpose   String // 'marketing_whatsapp', 'data_collection'...
+  granted   Boolean
+  source    String // canal/forma da coleta
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, contactId])
+  @@map("consents")
+}
+
+// ---------- Atendimento ----------
+
+enum ConversationStatus {
+  OPEN
+  PENDING
+  RESOLVED
+}
+
+enum Direction {
+  INBOUND
+  OUTBOUND
+  INTERNAL // notas e eventos do sistema: nunca vão para o cliente
+}
+
+enum MessageType {
+  TEXT
+  IMAGE
+  AUDIO
+  VIDEO
+  DOCUMENT
+  LOCATION
+  STICKER
+  SYSTEM
+  NOTE
+}
+
+enum MessageStatus {
+  PENDING
+  SENT
+  DELIVERED
+  READ
+  FAILED
+}
+
+model Conversation {
+  id              String             @id @default(uuid(7)) @db.Uuid
+  tenantId        String             @map("tenant_id") @db.Uuid
+  contactId       String             @map("contact_id") @db.Uuid
+  channelId       String             @map("channel_id") @db.Uuid
+  status          ConversationStatus
+  assignedUserId  String?            @map("assigned_user_id") @db.Uuid
+  automationState Json               @default("{}") @map("automation_state") // ex.: { phoneCollection: 'awaiting_phone' }
+  lastMessageAt   DateTime?          @map("last_message_at") @db.Timestamptz(3)
+  windowExpiresAt DateTime?          @map("window_expires_at") @db.Timestamptz(3) // janela de 24h
+  unreadCount     Int                @default(0) @map("unread_count")
+  createdAt       DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  tenant       Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contact      Contact   @relation(fields: [contactId], references: [id], onDelete: NoAction)
+  channel      Channel   @relation(fields: [channelId], references: [id], onDelete: NoAction)
+  assignedUser User?     @relation(fields: [assignedUserId], references: [id], onDelete: SetNull)
+  messages     Message[]
+  orders       Order[]
+
+  @@index([tenantId, status, lastMessageAt])
+  @@index([tenantId, contactId])
+  @@map("conversations")
+}
+
+model Message {
+  id                String        @id @default(uuid(7)) @db.Uuid
+  tenantId          String        @map("tenant_id") @db.Uuid
+  conversationId    String        @map("conversation_id") @db.Uuid
+  channelId         String        @map("channel_id") @db.Uuid
+  externalMessageId String?       @map("external_message_id")
+  direction         Direction
+  type              MessageType
+  content           Json // texto, mídia (chave S3), template...
+  status            MessageStatus? // só mensagens de canal têm status
+  statusError       String?        @map("status_error") // motivo da falha no envio
+  sentByUserId      String?       @map("sent_by_user_id") @db.Uuid
+  createdAt         DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  tenant       Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  channel      Channel      @relation(fields: [channelId], references: [id], onDelete: NoAction)
+  sentByUser   User?        @relation(fields: [sentByUserId], references: [id], onDelete: SetNull)
+
+  @@unique([channelId, externalMessageId]) // idempotência de webhooks duplicados
+  @@index([tenantId, conversationId, createdAt])
+  @@map("messages")
+}
+
+// Resposta rápida: o atendente digita "/" no composer e escolhe pelo atalho.
+model QuickReply {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  shortcut  String // sem a barra, ex.: "atraso"
+  content   String
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, shortcut])
+  @@map("quick_replies")
+}
+
+// ---------- Pedidos (iFood e futuras origens) ----------
+
+enum OrderStatus {
+  PLACED
+  CONFIRMED
+  PREPARING
+  DISPATCHED
+  DELIVERED
+  CANCELED
+}
+
+model Order {
+  id              String      @id @default(uuid(7)) @db.Uuid
+  tenantId        String      @map("tenant_id") @db.Uuid
+  contactId       String      @map("contact_id") @db.Uuid
+  channelId       String      @map("channel_id") @db.Uuid
+  conversationId  String?     @map("conversation_id") @db.Uuid
+  externalOrderId String      @map("external_order_id") // id do pedido no iFood
+  displayCode     String?     @map("display_code") // código curto exibido (#485329)
+  status          OrderStatus
+  subtotal        Decimal     @db.Decimal(10, 2)
+  deliveryFee     Decimal     @map("delivery_fee") @db.Decimal(10, 2)
+  total           Decimal     @db.Decimal(10, 2)
+  deliveryAddress Json?       @map("delivery_address")
+  placedAt        DateTime    @map("placed_at") @db.Timestamptz(3)
+  dispatchedAt    DateTime?   @map("dispatched_at") @db.Timestamptz(3)
+  deliveredAt     DateTime?   @map("delivered_at") @db.Timestamptz(3)
+  raw             Json // payload original
+
+  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contact      Contact       @relation(fields: [contactId], references: [id], onDelete: NoAction)
+  channel      Channel       @relation(fields: [channelId], references: [id], onDelete: NoAction)
+  conversation Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  items        OrderItem[]
+
+  @@unique([channelId, externalOrderId])
+  @@index([tenantId, contactId, placedAt])
+  @@map("orders")
+}
+
+model OrderItem {
+  id        String  @id @default(uuid(7)) @db.Uuid
+  tenantId  String  @map("tenant_id") @db.Uuid
+  orderId   String  @map("order_id") @db.Uuid
+  name      String
+  quantity  Int
+  unitPrice Decimal @map("unit_price") @db.Decimal(10, 2)
+  notes     String?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  order  Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, orderId])
+  @@map("order_items")
+}
+
+// ---------- Auditoria ----------
+
+model AuditLog {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  tenantId  String?  @map("tenant_id") @db.Uuid // null = ação da plataforma (invisível para os tenants)
+  userId    String?  @map("user_id") @db.Uuid
+  action    String
+  entity    String
+  entityId  String?  @map("entity_id")
+  data      Json?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, createdAt])
+  @@map("audit_logs")
+}
