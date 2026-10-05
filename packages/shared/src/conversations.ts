@@ -1,4 +1,5 @@
 import type {
+  ChannelStatus,
   ChannelType,
   ConversationStatus,
   Direction,
@@ -13,10 +14,31 @@ import { z } from "zod";
 /** Conteúdo de uma mensagem, conforme o tipo (texto, mídia, evento do sistema, nota...). */
 export type MessageContent = {
   text?: string;
-  /** Mensagem enviada por automação (ex.: coleta de telefone). */
-  automation?: "phone_collection" | "phone_reminder" | "phone_confirmation";
+  /** Mensagem enviada por automação (coleta de telefone, menu de atendimento, pesquisa de satisfação, encerramento). */
+  automation?:
+    | "phone_collection"
+    | "phone_reminder"
+    | "phone_confirmation"
+    | "menu"
+    | "order_number_request"
+    | "order_lookup"
+    | "order_links"
+    | "handoff"
+    | "survey"
+    | "survey_thanks"
+    | "after_hours"
+    | "inactivity_close";
   /** Evento do sistema mostrado na conversa. */
-  event?: "conversation_opened" | "phone_collected" | "phone_pending" | "order" | "opt_out";
+  event?:
+    | "conversation_opened"
+    | "phone_collected"
+    | "phone_pending"
+    | "order"
+    | "opt_out"
+    | "contacts_merged"
+    | "merge_conflict"
+    | "order_ambiguous"
+    | "rating";
   orderId?: string;
   /** Template aprovado do WhatsApp (o único envio permitido fora da janela de 24h). */
   template?: { name: string; language: string; variables: string[] };
@@ -38,6 +60,8 @@ export type MessageDto = {
 
 export type OrderDto = {
   id: string;
+  /** De onde veio o pedido (iFood, Cardápio Web). */
+  channelType: ChannelType;
   displayCode: string | null;
   status: OrderStatus;
   subtotal: string;
@@ -108,3 +132,6 @@ export type UpdateConversationRequest = z.infer<typeof UpdateConversationRequest
 export type MemberDto = { id: string; name: string; tenantId: string; role: TenantRole };
 
 export type QuickReplyDto = { id: string; tenantId: string; shortcut: string; content: string };
+
+/** Canal do restaurante como a equipe o vê (sem credenciais): para avisar quando ele precisa ser reconectado. */
+export type ChannelHealthDto = { id: string; tenantId: string; type: ChannelType; name: string; status: ChannelStatus };

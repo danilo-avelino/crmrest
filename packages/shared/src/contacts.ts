@@ -1,4 +1,5 @@
 import type { ChannelType, OrderStatus } from "@comanda/database/enums";
+import { ChannelType as ChannelTypeEnum } from "@comanda/database/enums";
 import { parsePhoneNumberFromString } from "libphonenumber-js/min";
 import { z } from "zod";
 
@@ -75,7 +76,83 @@ export type ContactDetail = {
   }[];
   metrics: { ordersCount: number; ordersTotal: string };
   recentOrders: ContactOrderSummary[];
+  lastSeenAt: string | null;
+  conversationsCount: number;
+  /** Conversa mais recente (botão "Abrir conversa"). */
+  latestConversationId: string | null;
+  /** Dados pessoais removidos (LGPD): quando e por quem. */
+  anonymized: { at: string; by: string | null } | null;
 };
+
+/** Filtro "Último contato" da lista de clientes: dentro dos últimos N dias, ou sem contato há mais de N dias. */
+export const LAST_CONTACT_FILTERS = ["7d", "30d", "over30d", "over60d", "over90d"] as const;
+export type LastContactFilter = (typeof LAST_CONTACT_FILTERS)[number];
+
+export const CONTACT_SORTS = ["lastSeen", "name", "phone", "orders"] as const;
+export type ContactSort = (typeof CONTACT_SORTS)[number];
+
+export const CONTACT_PAGE_SIZE = 50;
+
+/** Parâmetro repetido na query string (?tag=VIP&tag=recorrente); um só chega como string. */
+const queryList = <T extends z.ZodType>(item: T) =>
+  z.preprocess((value) => (value === undefined || Array.isArray(value) ? value : [value]), z.array(item).max(20).optional());
+
+export const ContactListQuery = z.object({
+  search: z.string().trim().max(100).optional(),
+  tag: queryList(z.string().trim().min(1).max(40)),
+  channel: queryList(z.enum(ChannelTypeEnum)),
+  district: z.string().trim().min(1).max(100).optional(),
+  phonePending: z.stringbool().optional(),
+  lastContact: z.enum(LAST_CONTACT_FILTERS).optional(),
+  sort: z.enum(CONTACT_SORTS).default("lastSeen"),
+  order: z.enum(["asc", "desc"]).default("desc"),
+  page: z.coerce.number().int().min(1).max(10_000).default(1),
+});
+export type ContactListQuery = z.infer<typeof ContactListQuery>;
+
+/** Linha da lista de clientes (no painel master, `tenant` diz de qual restaurante é). */
+export type ContactListItem = {
+  id: string;
+  tenant: { id: string; name: string };
+  name: string | null;
+  tags: string[];
+  phone: string | null;
+  phoneStatus: string | null;
+  channels: ChannelType[];
+  district: string | null;
+  ordersCount: number;
+  ordersTotal: string;
+  firstSeenAt: string;
+  lastSeenAt: string | null;
+  anonymizedAt: string | null;
+};
+
+export type ContactPage = { items: ContactListItem[]; total: number; page: number; pageSize: number };
+
+/** Opções dos filtros Tag e Bairro: o que existe nos cadastros. */
+export type ContactFilterOptions = { tags: string[]; districts: string[] };
+
+/** Por que dois cadastros parecem ser da mesma pessoa. */
+export type DuplicateReason = "phone" | "cpf" | "email" | "name" | "address";
+
+export type DuplicateSide = {
+  id: string;
+  name: string | null;
+  phone: string | null;
+  tags: string[];
+  channels: ChannelType[];
+  /** Endereços como "rua|número" normalizados: os repetidos não passam na união. */
+  addressKeys: string[];
+  ordersCount: number;
+  conversationsCount: number;
+  firstSeenAt: string;
+};
+
+/** Par da fila de possíveis duplicados (só admin). Na união fica `keep`, o cadastro mais antigo. */
+export type DuplicatePair = { tenantId: string; reasons: DuplicateReason[]; keep: DuplicateSide; other: DuplicateSide };
+
+export const ContactPairRequest = z.object({ contactIds: z.tuple([z.uuid(), z.uuid()]) });
+export type ContactPairRequest = z.infer<typeof ContactPairRequest>;
 
 export const UpdateContactRequest = z.object({
   name: z.string().trim().min(1).max(120).optional(),

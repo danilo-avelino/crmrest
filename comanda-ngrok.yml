@@ -1,0 +1,16 @@
+# Só ficam públicos o webhook da Meta e a volta do login do Instagram.
+# /webhook (callback atual do app) vai para a rota do Comanda; a volta do login passa direto para a API.
+on_http_request:
+  - expressions:
+      - "req.url.path != '/webhook' && req.url.path != '/api/integrations/instagram/callback'"
+    actions:
+      - type: deny
+        config:
+          status_code: 404
+  - expressions:
+      - "req.url.path == '/webhook'"
+    actions:
+      - type: url-rewrite
+        config:
+          from: "/webhook"
+          to: "/api/webhooks/meta"

@@ -74,9 +74,9 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 ## 8. Referências do projeto (consultar SEMPRE)
 
 - **Especificação:** [PROJETO_CRM_RESTAURANTES.md](PROJETO_CRM_RESTAURANTES.md) — visão, stack, arquitetura, modelo de dados, roadmap e convenções.
-- **Design:** [CRM Restaurantes.html](CRM Restaurantes.html) — fonte da verdade visual. **Antes de criar ou alterar qualquer tela/componente de UI, consultar este arquivo** e seguir suas cores, tipografia, espaçamentos e componentes. Não inventar estilos fora dele; se algo não existir no design, perguntar.
+- **Design:** [CRM Restaurantes 2.html](CRM Restaurantes 2.html) — fonte da verdade visual (substitui o antigo `CRM Restaurantes.html`). **Antes de criar ou alterar qualquer tela/componente de UI, consultar este arquivo** e seguir suas cores, tipografia, espaçamentos e componentes. Não inventar estilos fora dele; se algo não existir no design, perguntar.
 
-O HTML é um bundle (≈2,7 MB): o conteúdo fica em `<script type="__bundler/manifest">` (base64 + gzip), com bundles aninhados. Boards: **Sistema de Design**, **Login · Escolha de restaurante**, **Inbox · Conversa ativa · Painel do cliente**, **Módulo Campanhas (extra pago)**. Para ler: decodificar o manifest com Python (`base64` → `gzip.decompress`) e repetir no bundle interno.
+O HTML é um bundle (≈3,3 MB): o conteúdo fica em `<script type="__bundler/manifest">` (base64 + gzip), com bundles aninhados. Boards: **Sistema de Design**, **Login · Escolha de restaurante**, **Inbox · Conversa ativa · Painel do cliente**, **Módulo Campanhas (extra pago)**, **Clientes · Lista · Detalhe · Duplicados · LGPD**. Para ler: decodificar o manifest com Python (`base64` → `gzip.decompress`) e repetir no bundle interno; o HTML de cada board fica no `__bundler/template` interno (uma string JSON).
 
 Resumo do Sistema de Design (marca **"Comanda"**, Next.js + Tailwind + shadcn/ui):
 

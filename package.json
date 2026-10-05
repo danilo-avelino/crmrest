@@ -17,6 +17,7 @@
     "simulate:whatsapp": "pnpm --filter @comanda/api simulate:whatsapp",
     "channel:add": "pnpm --filter @comanda/api channel:add",
     "tenant:add": "pnpm --filter @comanda/api tenant:add",
+    "tenant:links": "pnpm --filter @comanda/api tenant:links",
     "user:add": "pnpm --filter @comanda/api user:add"
   },
   "devDependencies": {

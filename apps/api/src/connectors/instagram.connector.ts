@@ -1,10 +1,10 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { MessageType } from "@comanda/database/enums";
 import { NormalizedMessage, StatusUpdate } from "@comanda/shared";
 import { z } from "zod";
 import type { Env } from "../config/env.js";
 import { type ChannelConnector, type OutboundText, type SendTarget, sendFailure } from "./connector.js";
-import type { ParsedWebhook } from "./whatsapp.connector.js";
+import { graph, type ParsedWebhook } from "./whatsapp.connector.js";
 
 // Webhook do Instagram (API com login do Instagram): só os campos que o Comanda usa.
 const IgEvent = z.looseObject({
@@ -83,11 +83,18 @@ function messageBody(message: NonNullable<z.infer<typeof IgEvent>["message"]>) {
   return { type: "TEXT" as const, text: ATTACHMENT_TEXT[attachment.type] ?? "Mensagem de um tipo que o Comanda ainda não exibe." };
 }
 
+/** Acrescenta à recusa da Meta em qual passo ela aconteceu (a mensagem dela sozinha não diz). */
+const during = (step: string) => (error: Error) => {
+  throw new Error(`${error.message.replace(/\.$/, "")} (${step})`);
+};
+
 /** Envio e perfil pela API do Instagram (graph.instagram.com). */
 export class InstagramConnector implements ChannelConnector {
   readonly type = "INSTAGRAM" as const;
 
-  constructor(private readonly env: Pick<Env, "INSTAGRAM_GRAPH_URL" | "CHANNELS_DRY_RUN">) {}
+  constructor(
+    private readonly env: Pick<Env, "INSTAGRAM_GRAPH_URL" | "INSTAGRAM_OAUTH_URL" | "INSTAGRAM_APP_ID" | "INSTAGRAM_APP_SECRET" | "CHANNELS_DRY_RUN">,
+  ) {}
 
   async send(target: SendTarget, message: OutboundText): Promise<{ externalMessageId: string }> {
     if (this.env.CHANNELS_DRY_RUN) return { externalMessageId: `dry-run.${randomUUID()}` };
@@ -97,10 +104,56 @@ export class InstagramConnector implements ChannelConnector {
       body: JSON.stringify({ recipient: { id: target.recipientId }, message: { text: message.text } }),
       signal: AbortSignal.timeout(15_000),
     });
-    const body = (await response.json().catch(() => null)) as { message_id?: string; error?: { message?: string } } | null;
-    if (!response.ok) throw sendFailure(response.status, body?.error?.message ?? `HTTP ${response.status}`);
+    const body = (await response.json().catch(() => null)) as {
+      message_id?: string;
+      error?: { message?: string; code?: number };
+    } | null;
+    if (!response.ok) throw sendFailure(response.status, body?.error?.message ?? `HTTP ${response.status}`, body?.error?.code);
     if (!body?.message_id) throw new Error("Resposta do Instagram sem o id da mensagem");
     return { externalMessageId: body.message_id };
+  }
+
+  /** Confere o token, descobre a conta (id que chega nos webhooks e @) e a inscreve para receber as DMs. */
+  async connectAccount(accessToken: string): Promise<{ accountId: string; username?: string }> {
+    if (this.env.CHANNELS_DRY_RUN) {
+      return { accountId: `dry-run-${createHash("sha256").update(accessToken).digest("hex").slice(0, 12)}`, username: "conta_simulada" };
+    }
+    const headers = { Authorization: `Bearer ${accessToken}` };
+    const me = (await graph(
+      fetch(`${this.env.INSTAGRAM_GRAPH_URL}/me?fields=user_id,username`, { headers, signal: AbortSignal.timeout(15_000) }),
+    ).catch(during("dados da conta"))) as { user_id?: string | number; username?: string };
+    if (!me.user_id) throw new Error("Meta: a resposta não trouxe a conta do Instagram.");
+    await graph(
+      fetch(`${this.env.INSTAGRAM_GRAPH_URL}/me/subscribed_apps?subscribed_fields=messages`, {
+        method: "POST",
+        headers,
+        signal: AbortSignal.timeout(15_000),
+      }),
+    ).catch(during("inscrição para receber as DMs"));
+    return { accountId: String(me.user_id), username: me.username };
+  }
+
+  /** Volta do login do Instagram: troca o código por um token de curta duração e este por um de 60 dias. */
+  async exchangeLoginCode(code: string, redirectUri: string): Promise<string> {
+    const { INSTAGRAM_APP_ID: appId, INSTAGRAM_APP_SECRET: appSecret } = this.env;
+    if (!appId || !appSecret) throw new Error("o login do Instagram não está configurado neste servidor");
+    const short = (await graph(
+      fetch(`${this.env.INSTAGRAM_OAUTH_URL}/oauth/access_token`, {
+        method: "POST",
+        body: new URLSearchParams({ client_id: appId, client_secret: appSecret, grant_type: "authorization_code", redirect_uri: redirectUri, code }),
+        signal: AbortSignal.timeout(15_000),
+      }),
+    ).catch(during("troca do código do login"))) as { access_token?: string; data?: { access_token?: string }[] };
+    const shortToken = short.access_token ?? short.data?.[0]?.access_token;
+    if (!shortToken) throw new Error("Meta: a resposta não trouxe o token.");
+
+    const url = new URL("/access_token", this.env.INSTAGRAM_GRAPH_URL); // endpoint sem versão
+    url.search = new URLSearchParams({ grant_type: "ig_exchange_token", client_secret: appSecret, access_token: shortToken }).toString();
+    const long = (await graph(fetch(url, { signal: AbortSignal.timeout(15_000) })).catch(during("token de 60 dias"))) as {
+      access_token?: string;
+    };
+    if (!long.access_token) throw new Error("Meta: a resposta não trouxe o token de longa duração.");
+    return long.access_token;
   }
 
   /** Token de longa duração renovado por mais 60 dias (a Meta só renova tokens com mais de 24 h). */

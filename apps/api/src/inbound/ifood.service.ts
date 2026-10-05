@@ -10,6 +10,7 @@ import { JobProcessor } from "../queues/job-processor.js";
 import { QUEUES } from "../queues/queues.module.js";
 import { RealtimeEmitter } from "../realtime/realtime.emitter.js";
 import { InboundService, type ResolvedChannel } from "./inbound.service.js";
+import { rememberAddress } from "./orders.js";
 
 /** Pedidos do iFood (E7): o iFood não tem chat por integração, então a conversa mostra os pedidos. */
 @Injectable()
@@ -95,26 +96,15 @@ export class IfoodService implements OnModuleInit {
         timestamp: at,
       });
       if (address) {
-        const known = await tx.contactAddress.findFirst({
-          where: { contactId: contact.id, street: address.streetName, number: address.streetNumber ?? null },
-          select: { id: true },
+        await rememberAddress(tx, contact, "Entrega iFood", {
+          street: address.streetName,
+          number: address.streetNumber,
+          complement: address.complement,
+          district: address.neighborhood,
+          city: address.city,
+          state: address.state,
+          zipCode: address.postalCode,
         });
-        if (!known) {
-          await tx.contactAddress.create({
-            data: {
-              tenantId: channel.tenantId,
-              contactId: contact.id,
-              label: "Entrega iFood",
-              street: address.streetName,
-              number: address.streetNumber,
-              complement: address.complement,
-              district: address.neighborhood,
-              city: address.city,
-              state: address.state,
-              zipCode: address.postalCode,
-            },
-          });
-        }
       }
 
       const conversation = await this.inbound.openConversation(tx, channel, contact.id, at);

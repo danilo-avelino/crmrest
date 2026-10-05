@@ -8,6 +8,10 @@ const clockFormat = new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", minute: 
 const weekdayFormat = new Intl.DateTimeFormat("pt-BR", { weekday: "short" });
 const dateFormat = new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit" });
 const currencyFormat = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
+const integerFormat = new Intl.NumberFormat("pt-BR");
+const wholeCurrencyFormat = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
+const fullDateFormat = new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
+const monthYearFormat = new Intl.DateTimeFormat("pt-BR", { month: "short", year: "numeric" });
 
 export function clock(iso: string): string {
   return clockFormat.format(new Date(iso));
@@ -56,6 +60,64 @@ export function currency(value: string | number): string {
   return currencyFormat.format(Number(value));
 }
 
+/** Valor sem centavos, para métricas: "R$ 1.240". */
+export function currencyWhole(value: string | number): string {
+  return wholeCurrencyFormat.format(Number(value));
+}
+
+/** "1.284" */
+export function count(value: number): string {
+  return integerFormat.format(value);
+}
+
+/** Último contato (lista de clientes): "há 5 min", "há 2 h", "ontem" ou "12/09". */
+export function lastContact(iso: string, now: number): string {
+  const elapsed = Math.max(0, now - new Date(iso).getTime());
+  const days = daysBetween(iso, now);
+  if (days === 0) return elapsed < HOUR ? `há ${Math.max(1, Math.floor(elapsed / MINUTE))} min` : `há ${Math.floor(elapsed / HOUR)} h`;
+  return days === 1 ? "ontem" : dateFormat.format(new Date(iso));
+}
+
+/** Há quanto tempo, por extenso (cliente desde): "3 dias", "2 semanas", "1 mês", "9 meses", "2 anos". */
+export function duration(iso: string, now: number): string {
+  const days = Math.max(1, Math.floor((now - new Date(iso).getTime()) / DAY));
+  if (days < 7) return plural(days, "dia", "dias");
+  if (days < 30) return plural(Math.floor(days / 7), "semana", "semanas");
+  if (days < 365) return plural(Math.floor(days / 30), "mês", "meses");
+  return plural(Math.floor(days / 365), "ano", "anos");
+}
+
+/** "mar/2026" */
+export function monthYear(iso: string): string {
+  const parts = monthYearFormat.formatToParts(new Date(iso));
+  const month = parts.find((part) => part.type === "month")?.value.replace(".", "");
+  return `${month}/${parts.find((part) => part.type === "year")?.value}`;
+}
+
+/** "04/10/2026" */
+export function fullDate(iso: string): string {
+  return fullDateFormat.format(new Date(iso));
+}
+
+/** Data e hora curtas: "hoje, 17:48", "ontem, 20:14" ou "01/10, 20:14". */
+export function dayTime(iso: string, now: number): string {
+  const days = daysBetween(iso, now);
+  return `${days === 0 ? "hoje" : days === 1 ? "ontem" : dateFormat.format(new Date(iso))}, ${clock(iso)}`;
+}
+
+/** Data de uma conversa: com hora se for de hoje ou ontem ("hoje, 18:32"), senão só o dia ("28/09"). */
+export function shortDay(iso: string, now: number): string {
+  return daysBetween(iso, now) <= 1 ? dayTime(iso, now) : dateFormat.format(new Date(iso));
+}
+
+function daysBetween(iso: string, now: number): number {
+  return Math.round((startOfDay(now) - startOfDay(new Date(iso).getTime())) / DAY);
+}
+
+function plural(count: number, one: string, many: string): string {
+  return `${count} ${count === 1 ? one : many}`;
+}
+
 function startOfDay(time: number): number {
   const date = new Date(time);
   date.setHours(0, 0, 0, 0);
@@ -64,6 +126,13 @@ function startOfDay(time: number): number {
 
 /** Iniciais para avatares: "Maria Oliveira" → "MO". */
 export function initials(name: string | null | undefined): string {
-  const words = (name ?? "?").trim().split(/\s+/).filter(Boolean);
-  return (words.length > 1 ? `${words[0]![0]}${words.at(-1)![0]}` : (words[0]?.slice(0, 2) ?? "?")).toUpperCase();
+  // Só letras e números contam: "Aglio Nero | Pizzeria 🍕" vira "AP", nunca meio emoji ("A�").
+  const words = (name ?? "")
+    .trim()
+    .split(/\s+/)
+    .map((word) => Array.from(word).filter((char) => /[\p{L}\p{N}]/u.test(char)))
+    .filter((letters) => letters.length > 0);
+  if (words.length === 0) return "?";
+  const letters = words.length > 1 ? [words[0]![0], words.at(-1)![0]] : words[0]!.slice(0, 2);
+  return letters.join("").toUpperCase();
 }

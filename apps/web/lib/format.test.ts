@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ago, currency, dayLabel, initials, remaining, tenure } from "./format";
+import { ago, currency, dayLabel, dayTime, duration, initials, lastContact, monthYear, remaining, shortDay, tenure } from "./format";
 
 const now = new Date("2026-10-03T19:30:00-03:00").getTime();
 const minutesBefore = (minutes: number) => new Date(now - minutes * 60_000).toISOString();
@@ -25,5 +25,24 @@ describe("formatos do design", () => {
     expect(initials("Maria Oliveira")).toBe("MO");
     expect(initials("Carlos Eduardo Mendes")).toBe("CM");
     expect(initials(null)).toBe("?");
+    expect(initials("Aglio Nero | Pizzeria 🍕")).toBe("AP");
+    expect(initials("🍕")).toBe("?");
+  });
+
+  it("formatos da tela de clientes", () => {
+    const daysBefore = (days: number) => minutesBefore(days * 24 * 60);
+    expect(lastContact(minutesBefore(5), now)).toBe("há 5 min");
+    expect(lastContact(minutesBefore(130), now)).toBe("há 2 h");
+    expect(lastContact(daysBefore(1), now)).toBe("ontem");
+    expect(lastContact("2026-09-12T15:00:00-03:00", now)).toBe("12/09");
+    expect(duration(daysBefore(3), now)).toBe("3 dias");
+    expect(duration(daysBefore(15), now)).toBe("2 semanas");
+    expect(duration(daysBefore(31), now)).toBe("1 mês");
+    expect(duration(daysBefore(270), now)).toBe("9 meses");
+    expect(duration(daysBefore(800), now)).toBe("2 anos");
+    expect(monthYear("2026-03-15T12:00:00-03:00")).toBe("mar/2026");
+    expect(dayTime(minutesBefore(30), now)).toMatch(/^hoje, \d{2}:\d{2}$/);
+    expect(dayTime("2026-10-01T20:14:00-03:00", now)).toMatch(/^01\/10, \d{2}:\d{2}$/);
+    expect(shortDay("2026-09-28T12:00:00-03:00", now)).toBe("28/09");
   });
 });

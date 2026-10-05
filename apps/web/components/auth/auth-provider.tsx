@@ -18,7 +18,7 @@ type AuthValue = {
   request<T>(path: string, init?: { method?: string; body?: unknown }): Promise<T>;
 };
 
-const SESSION_KEY = ["auth", "session"] as const;
+export const SESSION_KEY = ["auth", "session"] as const;
 
 /** A sessão sobrevive ao reload pelo cookie httpOnly; o access token fica só em memória (cache da query). */
 async function fetchSession(): Promise<AuthSession | null> {
@@ -41,7 +41,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     staleTime: Infinity,
     refetchOnWindowFocus: false,
     // O access token vale 15 min: renova antes, para a API e o realtime não ficarem sem token.
+    // Também com a aba em segundo plano: senão o token expira e o realtime não consegue reconectar.
     refetchInterval: 12 * 60_000,
+    refetchIntervalInBackground: true,
   });
 
   const value = useMemo<AuthValue>(() => {
@@ -73,8 +75,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return await apiRequest<T>(path, { ...init, token: token() });
         } catch (error) {
           if (!(error instanceof ApiError) || error.status !== 401) throw error;
-          const renewed = await fetchSession();
-          queryClient.setQueryData(SESSION_KEY, renewed);
+          // Várias chamadas com 401 ao mesmo tempo dividem uma única renovação.
+          const renewed = await queryClient.fetchQuery({ queryKey: SESSION_KEY, queryFn: fetchSession, staleTime: 0 });
           if (!renewed?.accessToken) throw error;
           return apiRequest<T>(path, { ...init, token: renewed.accessToken });
         }

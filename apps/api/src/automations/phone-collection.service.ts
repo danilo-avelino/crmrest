@@ -1,37 +1,25 @@
 import type { TenantTx } from "@comanda/database";
-import type { ChannelType } from "@comanda/database/enums";
-import { CHANNEL_CAPABILITIES, type MessageContent, toE164 } from "@comanda/shared";
+import { automationTextsOf, CHANNEL_CAPABILITIES, toE164 } from "@comanda/shared";
 import { InjectQueue } from "@nestjs/bullmq";
 import { Injectable } from "@nestjs/common";
 import type { Queue } from "bullmq";
 import { DatabaseService } from "../core/database.service.js";
 import { type AutomationJob, type OutboundJob, QUEUES } from "../queues/queues.module.js";
 import { RealtimeEmitter } from "../realtime/realtime.emitter.js";
-
-/** Estado da coleta guardado em `conversation.automationState` (§5.3). */
-type PhoneState = {
-  phoneCollection?: "awaiting_phone" | "phone_collected" | "phone_skipped";
-  phoneReminderSentAt?: string;
-};
-
-// Textos padrão; a edição por restaurante chega com as Configurações (E15).
-const TEXTS = {
-  request: (firstName: string | undefined) =>
-    `Olá${firstName ? `, ${firstName}` : ""}! 👋 Para garantirmos seu atendimento caso a conversa caia, pode nos informar seu telefone com DDD?`,
-  reminder: "Só lembrando: pode nos passar seu telefone com DDD? 😊",
-  confirmation: "Obrigado! Já anotamos seu telefone.",
-};
+import {
+  type AutomationState,
+  automationMessage,
+  dispatch,
+  type InboundEvent,
+  setAutomationState,
+  systemEvent,
+  tenantSettings,
+} from "./automation.js";
 
 /** Espera até o lembrete e, depois dele, até desistir. */
 export const PHONE_REMINDER_DELAY_MS = 10 * 60_000;
 
-export type InboundEvent = {
-  channel: { id: string; tenantId: string; type: ChannelType };
-  conversationId: string;
-  text?: string;
-};
-
-/** Pede o telefone a quem chega sem ele (Instagram e afins) e cadastra o número informado. */
+/** Pede o telefone a quem chega sem ele (Instagram e afins) e cadastra o número informado: é o que qualifica o contato. */
 @Injectable()
 export class PhoneCollectionService {
   constructor(
@@ -41,7 +29,7 @@ export class PhoneCollectionService {
     @InjectQueue(QUEUES.automations) private readonly automations: Queue<AutomationJob>,
   ) {}
 
-  /** Roda depois de cada mensagem recebida. */
+  /** Roda depois de cada mensagem recebida, quando o menu de atendimento já terminou. */
   async afterInbound(event: InboundEvent): Promise<void> {
     const capabilities = CHANNEL_CAPABILITIES[event.channel.type];
     if (!capabilities.send || capabilities.providesPhone) return;
@@ -49,11 +37,13 @@ export class PhoneCollectionService {
     const { tenantId } = event.channel;
     const result = await this.db.withTenants({ tenantIds: [tenantId] }, async (tx) => {
       const conversation = await this.load(tx, event.conversationId);
-      const state = conversation.automationState as PhoneState;
+      const state = conversation.automationState as AutomationState;
 
+      // Textos de Configurações → Mensagens automáticas (ou os padrões).
+      const texts = automationTextsOf(await tenantSettings(tx, tenantId));
       if (!state.phoneCollection && !conversation.contact.phone) {
-        const messageId = await this.automationMessage(tx, conversation, "phone_collection", TEXTS.request(firstName(conversation.contact.name)));
-        await this.setState(tx, conversation.id, { phoneCollection: "awaiting_phone" });
+        const messageId = await automationMessage(tx, conversation, "phone_collection", texts.phoneRequest);
+        await setAutomationState(tx, conversation.id, { ...state, phoneCollection: "awaiting_phone" });
         return { send: [messageId], remind: true };
       }
 
@@ -64,16 +54,16 @@ export class PhoneCollectionService {
           where: { id: conversation.contact.id },
           data: { phone, phoneSource: "informed_by_customer", phoneStatus: "ok" },
         });
-        await this.systemEvent(tx, conversation, "phone_collected", "Telefone informado e cadastrado");
-        const messageId = await this.automationMessage(tx, conversation, "phone_confirmation", TEXTS.confirmation);
-        await this.setState(tx, conversation.id, { ...state, phoneCollection: "phone_collected" });
+        await systemEvent(tx, conversation, { event: "phone_collected", text: "Telefone informado e cadastrado" });
+        const messageId = await automationMessage(tx, conversation, "phone_confirmation", texts.phoneConfirmation);
+        await setAutomationState(tx, conversation.id, { ...state, phoneCollection: "phone_collected" });
         return { send: [messageId], remind: false };
       }
       return null;
     });
 
     if (!result) return;
-    await this.dispatch(tenantId, event.conversationId, result.send);
+    await dispatch(this.outbound, this.realtime, tenantId, event.conversationId, result.send);
     if (result.remind) {
       await this.automations.add("phone-reminder", { tenantId, conversationId: event.conversationId }, { delay: PHONE_REMINDER_DELAY_MS });
     }
@@ -83,14 +73,15 @@ export class PhoneCollectionService {
   async remind(tenantId: string, conversationId: string): Promise<void> {
     const messageId = await this.db.withTenants({ tenantIds: [tenantId] }, async (tx) => {
       const conversation = await this.load(tx, conversationId);
-      const state = conversation.automationState as PhoneState;
+      const state = conversation.automationState as AutomationState;
       if (state.phoneCollection !== "awaiting_phone" || state.phoneReminderSentAt) return null;
-      const id = await this.automationMessage(tx, conversation, "phone_reminder", TEXTS.reminder);
-      await this.setState(tx, conversationId, { ...state, phoneReminderSentAt: new Date().toISOString() });
+      const texts = automationTextsOf(await tenantSettings(tx, tenantId));
+      const id = await automationMessage(tx, conversation, "phone_reminder", texts.phoneReminder);
+      await setAutomationState(tx, conversationId, { ...state, phoneReminderSentAt: new Date().toISOString() });
       return id;
     });
     if (!messageId) return;
-    await this.dispatch(tenantId, conversationId, [messageId]);
+    await dispatch(this.outbound, this.realtime, tenantId, conversationId, [messageId]);
     await this.automations.add("phone-give-up", { tenantId, conversationId }, { delay: PHONE_REMINDER_DELAY_MS });
   }
 
@@ -98,13 +89,13 @@ export class PhoneCollectionService {
   async giveUp(tenantId: string, conversationId: string): Promise<void> {
     const changed = await this.db.withTenants({ tenantIds: [tenantId] }, async (tx) => {
       const conversation = await this.load(tx, conversationId);
-      const state = conversation.automationState as PhoneState;
+      const state = conversation.automationState as AutomationState;
       if (state.phoneCollection !== "awaiting_phone") return false;
       if (!conversation.contact.phone) {
         await tx.contact.update({ where: { id: conversation.contact.id }, data: { phoneStatus: "pending" } });
       }
-      await this.systemEvent(tx, conversation, "phone_pending", "Telefone não informado");
-      await this.setState(tx, conversationId, { ...state, phoneCollection: "phone_skipped" });
+      await systemEvent(tx, conversation, { event: "phone_pending", text: "Telefone não informado" });
+      await setAutomationState(tx, conversationId, { ...state, phoneCollection: "phone_skipped" });
       return true;
     });
     if (changed) this.realtime.inboxChanged(tenantId, conversationId);
@@ -118,57 +109,9 @@ export class PhoneCollectionService {
         tenantId: true,
         channelId: true,
         automationState: true,
-        contact: { select: { id: true, name: true, phone: true } },
+        contact: { select: { id: true, phone: true } },
       },
     });
-  }
-
-  private async setState(tx: TenantTx, conversationId: string, state: PhoneState) {
-    await tx.conversation.update({ where: { id: conversationId }, data: { automationState: state } });
-  }
-
-  private async automationMessage(
-    tx: TenantTx,
-    conversation: { id: string; tenantId: string; channelId: string },
-    automation: NonNullable<MessageContent["automation"]>,
-    text: string,
-  ): Promise<string> {
-    const message = await tx.message.create({
-      data: {
-        tenantId: conversation.tenantId,
-        conversationId: conversation.id,
-        channelId: conversation.channelId,
-        direction: "OUTBOUND",
-        type: "TEXT",
-        content: { text, automation } satisfies MessageContent,
-        status: "PENDING",
-      },
-      select: { id: true },
-    });
-    return message.id;
-  }
-
-  private async systemEvent(
-    tx: TenantTx,
-    conversation: { id: string; tenantId: string; channelId: string },
-    event: NonNullable<MessageContent["event"]>,
-    text: string,
-  ) {
-    await tx.message.create({
-      data: {
-        tenantId: conversation.tenantId,
-        conversationId: conversation.id,
-        channelId: conversation.channelId,
-        direction: "INTERNAL",
-        type: "SYSTEM",
-        content: { event, text } satisfies MessageContent,
-      },
-    });
-  }
-
-  private async dispatch(tenantId: string, conversationId: string, messageIds: string[]) {
-    for (const messageId of messageIds) await this.outbound.add("send", { tenantId, messageId });
-    this.realtime.inboxChanged(tenantId, conversationId);
   }
 }
 
@@ -179,8 +122,4 @@ export function extractPhone(text: string): string | null {
     if (phone) return phone;
   }
   return null;
-}
-
-function firstName(name: string | null): string | undefined {
-  return name?.trim().split(/\s+/)[0] || undefined;
 }

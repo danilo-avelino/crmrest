@@ -143,6 +143,7 @@ describe("API da Inbox", () => {
     const { body } = await get(`/conversations/${mariaChat.id}/messages`).expect(200);
     expect(body.messages.map((m: { type: string }) => m.type)).toEqual(["TEXT", "SYSTEM", "NOTE"]);
     expect(body.orders[order.id]).toMatchObject({
+      channelType: "IFOOD",
       displayCode: "485329",
       total: "67.40",
       items: [{ name: "Lasanha Bolonhesa G", quantity: 1, unitPrice: "54.90" }],
@@ -153,6 +154,32 @@ describe("API da Inbox", () => {
   it("nota interna fica na conversa e nunca vira envio", async () => {
     const { body } = await send("post", `/conversations/${mariaChat.id}/notes`, { text: "Ligar para o motoboy" }).expect(201);
     expect(body).toMatchObject({ type: "NOTE", direction: "INTERNAL", status: null, sentBy: { id: fx.user.id } });
+  });
+
+  it("reenvia uma mensagem que falhou, respeitando a janela de 24h", async () => {
+    const chat = await admin.conversation.findUniqueOrThrow({ where: { id: mariaChat.id } });
+    const failed = await admin.message.create({
+      data: {
+        tenantId: chat.tenantId,
+        conversationId: chat.id,
+        channelId: chat.channelId,
+        direction: "OUTBOUND",
+        type: "TEXT",
+        status: "FAILED",
+        statusError: "Falha temporária do canal",
+        content: { text: "Seu pedido saiu para entrega" },
+      },
+    });
+    const retry = () => send("post", `/conversations/${chat.id}/messages/${failed.id}/retry`);
+
+    await admin.conversation.update({ where: { id: chat.id }, data: { windowExpiresAt: minutesAgo(1) } });
+    expect((await retry().expect(422)).body.message).toBe("A janela de 24h para resposta livre terminou.");
+
+    await admin.conversation.update({ where: { id: chat.id }, data: { windowExpiresAt: new Date(Date.now() + 3_600_000) } });
+    const { body } = await retry().expect(200);
+    expect(body).toMatchObject({ id: failed.id, status: "PENDING", statusError: null });
+    await retry().expect(422); // já não está mais como falha
+    await send("post", `/conversations/${bChat.id}/messages/${failed.id}/retry`).expect(404); // outro restaurante
   });
 
   it("marcar como lida zera as não lidas", async () => {

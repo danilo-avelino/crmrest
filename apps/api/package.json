@@ -13,6 +13,7 @@
     "simulate:whatsapp": "node scripts/simulate-whatsapp.mjs",
     "channel:add": "node scripts/channel-add.mjs",
     "tenant:add": "node scripts/tenant-add.mjs",
+    "tenant:links": "node scripts/tenant-links.mjs",
     "user:add": "node scripts/user-add.mjs"
   },
   "dependencies": {

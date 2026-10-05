@@ -1,4 +1,4 @@
-import { blindIndex, parseEncryptionKey, type Prisma, type TenantTx } from "@comanda/database";
+import { parseEncryptionKey, type Prisma, type TenantTx } from "@comanda/database";
 import {
   CHANNEL_CAPABILITIES,
   type ConversationCounts,
@@ -23,10 +23,12 @@ import {
 } from "@nestjs/common";
 import type { Queue } from "bullmq";
 import type { RequestAuth } from "../auth/auth.decorators.js";
+import type { AutomationState } from "../automations/automation.js";
 import { ENV, type Env } from "../config/env.js";
 import { ConnectorsService } from "../connectors/connectors.service.js";
+import { contactSearch } from "../contacts/contact-search.js";
 import { DatabaseService } from "../core/database.service.js";
-import { type OutboundJob, QUEUES } from "../queues/queues.module.js";
+import { type AutomationJob, type OutboundJob, QUEUES } from "../queues/queues.module.js";
 import { RealtimeEmitter } from "../realtime/realtime.emitter.js";
 import { conversationListInclude, toListItem, toMessageDto, toOrderDto } from "./conversation.mapper.js";
 
@@ -41,6 +43,7 @@ export class ConversationsService {
     private readonly db: DatabaseService,
     private readonly realtime: RealtimeEmitter,
     @InjectQueue(QUEUES.outbound) private readonly outbound: Queue<OutboundJob>,
+    @InjectQueue(QUEUES.automations) private readonly automations: Queue<AutomationJob>,
     private readonly connectors: ConnectorsService,
     @Inject(ENV) env: Env,
   ) {
@@ -50,7 +53,7 @@ export class ConversationsService {
   async list(auth: RequestAuth, query: ConversationListQuery): Promise<ConversationPage> {
     const where: Prisma.ConversationWhereInput = {
       ...(query.status && { status: query.status }),
-      ...(query.search && { contact: this.contactSearch(query.search) }),
+      ...(query.search && { contact: contactSearch(query.search, this.key) }),
     };
     const rows = await this.db.withTenants(scopeFor(auth, query.tenantId), (tx) =>
       tx.conversation.findMany({
@@ -94,7 +97,7 @@ export class ConversationsService {
       const messages = latest.reverse().map(toMessageDto);
       const orderIds = messages.flatMap((m) => (m.content.event === "order" && m.content.orderId ? [m.content.orderId] : []));
       const orders = orderIds.length
-        ? await tx.order.findMany({ where: { id: { in: orderIds } }, include: { items: true } })
+        ? await tx.order.findMany({ where: { id: { in: orderIds } }, include: { items: true, channel: { select: { type: true } } } })
         : [];
       return { messages, orders: Object.fromEntries(orders.map((order) => [order.id, toOrderDto(order)])) };
     });
@@ -122,11 +125,43 @@ export class ConversationsService {
         },
         include: { sentByUser: { select: { id: true, name: true } } },
       });
-      // Responder implica ter lido a conversa.
-      await tx.conversation.update({ where: { id: conversationId }, data: { lastMessageAt: created.createdAt, unreadCount: 0 } });
+      // Responder implica ter lido a conversa; e o atendente assume, encerrando o menu automático se ainda estiver aberto.
+      const state = conversation.automationState as AutomationState;
+      const menuOpen = state.triage === "awaiting_option" || state.triage === "awaiting_order_number";
+      await tx.conversation.update({
+        where: { id: conversationId },
+        data: { lastMessageAt: created.createdAt, unreadCount: 0, ...(menuOpen && { automationState: { ...state, triage: "done" } }) },
+      });
       return created;
     });
 
+    await this.outbound.add("send", { tenantId: message.tenantId, messageId: message.id });
+    this.realtime.inboxChanged(message.tenantId, conversationId);
+    return toMessageDto(message);
+  }
+
+  /** Reenvio de uma mensagem que falhou: volta a pendente e entra de novo na fila, com as mesmas regras do envio. */
+  async retryMessage(auth: RequestAuth, conversationId: string, messageId: string): Promise<MessageDto> {
+    const message = await this.db.withTenants(auth.scope, async (tx) => {
+      const conversation = await this.requireConversation(tx, conversationId);
+      const current = await tx.message.findFirst({ where: { id: messageId, conversationId } });
+      if (!current) throw new NotFoundException("Mensagem não encontrada.");
+      if (current.direction !== "OUTBOUND" || current.status !== "FAILED") {
+        throw new UnprocessableEntityException("Só mensagens que falharam podem ser reenviadas.");
+      }
+      const capabilities = CHANNEL_CAPABILITIES[conversation.channel.type];
+      if (!capabilities.send) throw new UnprocessableEntityException("Este canal não permite responder pelo Comanda.");
+      // Template pode sair com a janela fechada; texto livre, não (§5.5).
+      const windowClosed = !conversation.windowExpiresAt || conversation.windowExpiresAt < new Date();
+      if (capabilities.window24h && windowClosed && !(current.content as MessageContent).template) {
+        throw new UnprocessableEntityException("A janela de 24h para resposta livre terminou.");
+      }
+      return tx.message.update({
+        where: { id: messageId },
+        data: { status: "PENDING", statusError: null },
+        include: { sentByUser: { select: { id: true, name: true } } },
+      });
+    });
     await this.outbound.add("send", { tenantId: message.tenantId, messageId: message.id });
     this.realtime.inboxChanged(message.tenantId, conversationId);
     return toMessageDto(message);
@@ -215,7 +250,7 @@ export class ConversationsService {
   }
 
   async update(auth: RequestAuth, conversationId: string, body: UpdateConversationRequest) {
-    const conversation = await this.db.withTenants(auth.scope, async (tx) => {
+    const { conversation, resolved } = await this.db.withTenants(auth.scope, async (tx) => {
       const current = await this.requireConversation(tx, conversationId);
       if (body.assignedUserId) {
         // Só pode receber a conversa quem é membro ativo do restaurante dela.
@@ -225,7 +260,7 @@ export class ConversationsService {
         });
         if (!member?.isActive) throw new BadRequestException("Esta pessoa não atende neste restaurante.");
       }
-      return tx.conversation.update({
+      const updated = await tx.conversation.update({
         where: { id: conversationId },
         data: {
           ...(body.status && { status: body.status }),
@@ -233,7 +268,10 @@ export class ConversationsService {
         },
         include: conversationListInclude,
       });
+      return { conversation: updated, resolved: body.status === "RESOLVED" && current.status !== "RESOLVED" };
     });
+    // Fim do atendimento: a pesquisa de satisfação decide no worker se pergunta a nota.
+    if (resolved) await this.automations.add("survey", { tenantId: conversation.tenantId, conversationId });
     this.realtime.inboxChanged(conversation.tenantId, conversationId);
     return toListItem(conversation);
   }
@@ -244,17 +282,6 @@ export class ConversationsService {
     return conversation;
   }
 
-  /** Busca por nome, telefone ou CPF (pelo hash; o CPF nunca é comparado em claro). */
-  private contactSearch(search: string): Prisma.ContactWhereInput {
-    const digits = search.replace(/\D/g, "");
-    return {
-      OR: [
-        { name: { contains: search, mode: "insensitive" } },
-        ...(digits.length >= 4 ? [{ phone: { contains: digits } }] : []),
-        ...(digits.length === 11 ? [{ cpfHash: blindIndex(digits, this.key) }] : []),
-      ],
-    };
-  }
 }
 
 /** No painel master, a lista pode ser filtrada por um dos restaurantes do usuário. */

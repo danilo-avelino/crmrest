@@ -3,14 +3,15 @@ import { type DynamicModule, Global, Module } from "@nestjs/common";
 import type { Env } from "../config/env.js";
 
 /**
- * Filas (§3.1): inbound = webhooks; outbound = envios aos canais; automations = etapas agendadas; ifood = polling;
- * channels = manutenção dos canais (renovação de tokens).
+ * Filas (§3.1): inbound = webhooks; outbound = envios aos canais; automations = etapas das automações;
+ * ifood e cardapioWeb = polling de pedidos; channels = manutenção dos canais (renovação de tokens).
  */
 export const QUEUES = {
   inbound: "inbound",
   outbound: "outbound",
   automations: "automations",
   ifood: "ifood",
+  cardapioWeb: "cardapio-web",
   channels: "channels",
 } as const;
 
@@ -40,6 +41,7 @@ export class QueuesModule {
           { name: QUEUES.outbound },
           { name: QUEUES.automations },
           { name: QUEUES.ifood },
+          { name: QUEUES.cardapioWeb },
           { name: QUEUES.channels },
         ),
       ],

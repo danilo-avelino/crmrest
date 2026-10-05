@@ -16,6 +16,8 @@ export const CHANNEL_CAPABILITIES: Record<ChannelType, ChannelCapabilities> = {
   // O iFood não oferece chat por integração: a conversa mostra só os pedidos.
   IFOOD: { send: false, window24h: false, providesPhone: false },
   WEBCHAT: { send: false, window24h: false, providesPhone: false },
+  // Cardápio Web: só pedidos (o cliente conversa pelo WhatsApp), que trazem o telefone.
+  CARDAPIO_WEB: { send: false, window24h: false, providesPhone: true },
 };
 
 export const CHANNEL_LABEL: Record<ChannelType, string> = {
@@ -24,4 +26,5 @@ export const CHANNEL_LABEL: Record<ChannelType, string> = {
   MESSENGER: "Messenger",
   IFOOD: "iFood",
   WEBCHAT: "chat do site",
+  CARDAPIO_WEB: "Cardápio Web",
 };

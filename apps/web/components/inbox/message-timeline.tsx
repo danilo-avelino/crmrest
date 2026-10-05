@@ -1,6 +1,6 @@
 "use client";
 
-import type { ConversationMessages, MessageDto } from "@comanda/shared";
+import type { ConversationMessages, MessageContent, MessageDto } from "@comanda/shared";
 import {
   AlertCircleIcon,
   CheckCircle2Icon,
@@ -10,17 +10,33 @@ import {
   SparklesIcon,
   StickyNoteIcon,
 } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useEffect, useRef, useState } from "react";
+import { useAuth } from "@/components/auth/auth-provider";
 import { Avatar } from "@/components/inbox/bits";
 import { OrderCard } from "@/components/inbox/order-card";
+import { usePendingAction } from "@/hooks/use-pending-action";
+import { ApiError } from "@/lib/api";
 import { clock, weekdayClock } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
-const AUTOMATION_LABEL = {
+const AUTOMATION_LABEL: Record<NonNullable<MessageContent["automation"]>, string> = {
   phone_collection: "Automação · coleta de telefone",
   phone_reminder: "Automação · lembrete do telefone",
   phone_confirmation: "Automação · telefone confirmado",
-} as const;
+  menu: "Automação · menu de atendimento",
+  order_number_request: "Automação · número do pedido",
+  order_lookup: "Automação · busca do pedido",
+  order_links: "Automação · links para pedir",
+  handoff: "Automação · encaminhado à equipe",
+  survey: "Automação · pesquisa de satisfação",
+  survey_thanks: "Automação · avaliação recebida",
+  after_hours: "Automação · fora do horário",
+  inactivity_close: "Automação · encerrada por inatividade",
+};
+
+const SUCCESS_EVENTS = new Set<MessageContent["event"]>(["phone_collected", "contacts_merged", "rating"]);
+const WARNING_EVENTS = new Set<MessageContent["event"]>(["phone_pending", "opt_out", "merge_conflict", "order_ambiguous"]);
 
 const MEDIA_LABEL: Partial<Record<MessageDto["type"], string>> = {
   IMAGE: "Imagem",
@@ -66,16 +82,15 @@ export function MessageTimeline({
 
 function SystemEvent({ message }: { message: MessageDto }) {
   const { event, text } = message.content;
-  const tone =
-    event === "phone_collected"
-      ? "border border-success-line bg-success-lt text-success-ink"
-      : event === "phone_pending" || event === "opt_out"
-        ? "border border-warning-line bg-warning-lt text-warning-ink"
-        : "bg-surface-2 text-ink-3";
+  const tone = SUCCESS_EVENTS.has(event)
+    ? "border border-success-line bg-success-lt text-success-ink"
+    : WARNING_EVENTS.has(event)
+      ? "border border-warning-line bg-warning-lt text-warning-ink"
+      : "bg-surface-2 text-ink-3";
   return (
     <div className="flex justify-center">
       <span className={cn("flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px]", tone)}>
-        {event === "phone_collected" && <CheckCircle2Icon className="size-3" aria-hidden />}
+        {SUCCESS_EVENTS.has(event) && <CheckCircle2Icon className="size-3" aria-hidden />}
         {text}
         {event === "conversation_opened" && ` · ${weekdayClock(message.createdAt)}`}
       </span>
@@ -90,7 +105,7 @@ function Automation({ message }: { message: MessageDto }) {
         <SparklesIcon className="size-3" aria-hidden />
         {AUTOMATION_LABEL[message.content.automation!]}
       </div>
-      <div className="leading-[1.45]">{message.content.text}</div>
+      <div className="leading-[1.45] whitespace-pre-wrap">{message.content.text}</div>
       <div className="mt-1 text-right text-[10px] text-ink-3 tabular-nums">
         {clock(message.createdAt)} · enviado automaticamente
         <DeliveryStatus message={message} />
@@ -186,10 +201,38 @@ function DeliveryStatus({ message }: { message: MessageDto }) {
     case "FAILED":
       return (
         <span className="ml-1 inline-flex items-center gap-0.5 text-[#F5B5AC]" title={message.statusError ?? undefined}>
-          · <AlertCircleIcon className="size-2.5" aria-hidden /> não enviada
+          · <AlertCircleIcon className="size-2.5" aria-hidden /> não enviada · <RetryButton message={message} />
         </span>
       );
     default:
       return null;
   }
+}
+
+/** Reenvia uma mensagem que falhou; se não der (ex.: janela de 24h fechada), mostra o motivo no lugar do botão. */
+function RetryButton({ message }: { message: MessageDto }) {
+  const { request } = useAuth();
+  const queryClient = useQueryClient();
+  const [error, setError] = useState<string | null>(null);
+  const [retry, retrying] = usePendingAction(async () => {
+    setError(null);
+    try {
+      await request(`/conversations/${message.conversationId}/messages/${message.id}/retry`, { method: "POST" });
+      void queryClient.invalidateQueries({ queryKey: ["messages", message.conversationId] });
+    } catch (failure) {
+      setError(failure instanceof ApiError ? failure.message : "Não foi possível reenviar.");
+    }
+  });
+
+  if (error) return <span>{error}</span>;
+  return (
+    <button
+      type="button"
+      onClick={() => retry()}
+      disabled={retrying}
+      className="underline underline-offset-2 hover:text-paper disabled:cursor-not-allowed disabled:no-underline"
+    >
+      {retrying ? "Carregando…" : "Tentar novamente"}
+    </button>
+  );
 }

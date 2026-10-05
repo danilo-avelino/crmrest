@@ -19,6 +19,7 @@ export const CHANNEL_DOT: Record<ChannelType, string> = {
   IFOOD: "bg-ifood",
   MESSENGER: "bg-ink-3",
   WEBCHAT: "bg-ink-3",
+  CARDAPIO_WEB: "bg-ink-3",
 };
 
 function colorFor(seed: string): string {

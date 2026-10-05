@@ -14,12 +14,24 @@ const EnvSchema = z.object({
   // Meta (WhatsApp/Instagram). Sem os segredos, o webhook responde 503.
   META_APP_SECRET: z.string().min(1).optional(),
   META_WEBHOOK_VERIFY_TOKEN: z.string().min(1).optional(),
+  // Os webhooks da API do Instagram com login do Instagram vêm assinados com o segredo do app do Instagram.
+  INSTAGRAM_APP_SECRET: z.string().min(1).optional(),
+  // Login do Instagram (Configurações → Integrações): id do app do Instagram e o endereço de retorno cadastrado nele.
+  // Sem o retorno, vale WEB_ORIGIN + /api/integrations/instagram/callback (a API atrás do proxy do painel).
+  INSTAGRAM_APP_ID: z.string().min(1).optional(),
+  INSTAGRAM_REDIRECT_URI: z.url().optional(),
+  INSTAGRAM_OAUTH_URL: z.url().default("https://api.instagram.com"),
+  // Cadastro incorporado do WhatsApp: id do app da Meta e o id da configuração do "Login do Facebook para Empresas".
+  META_APP_ID: z.string().min(1).optional(),
+  META_EMBEDDED_SIGNUP_CONFIG_ID: z.string().min(1).optional(),
   META_GRAPH_URL: z.url().default("https://graph.facebook.com/v24.0"),
   INSTAGRAM_GRAPH_URL: z.url().default("https://graph.instagram.com/v24.0"),
   // iFood (modelo centralizado: uma credencial da plataforma para todas as lojas). Sem ela, o polling fica desligado.
   IFOOD_CLIENT_ID: z.string().min(1).optional(),
   IFOOD_CLIENT_SECRET: z.string().min(1).optional(),
   IFOOD_API_URL: z.url().default("https://merchant-api.ifood.com.br"),
+  // Cardápio Web: a chave de API é de cada loja (fica no canal); aqui só o endereço da API. Sem ele, o polling fica desligado.
+  CARDAPIO_WEB_API_URL: z.url().optional(),
   // Desenvolvimento sem credenciais reais: envios aos canais são simulados (nunca em produção).
   CHANNELS_DRY_RUN: z.stringbool().default(false),
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),

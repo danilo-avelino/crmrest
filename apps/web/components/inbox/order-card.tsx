@@ -1,4 +1,5 @@
-import type { OrderDto } from "@comanda/shared";
+import { CHANNEL_LABEL, type OrderDto } from "@comanda/shared";
+import { CHANNEL_DOT } from "@/components/inbox/bits";
 import { clock, currency } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -11,7 +12,7 @@ export const ORDER_STATUS: Record<OrderDto["status"], { label: string; className
   CANCELED: { label: "Cancelado", className: "text-tomate" },
 };
 
-/** Card do pedido iFood dentro da conversa (board Inbox → "Card do pedido iFood"). */
+/** Card do pedido dentro da conversa (board Inbox → "Card do pedido iFood"; o Cardápio Web usa o mesmo card). */
 export function OrderCard({ order }: { order: OrderDto }) {
   const status = ORDER_STATUS[order.status];
   const footer = [
@@ -24,8 +25,10 @@ export function OrderCard({ order }: { order: OrderDto }) {
     <div className="ml-[29px] max-w-[360px] overflow-hidden rounded-[10px] border border-rule bg-surface">
       <div className="flex items-center justify-between border-b border-rule bg-paper px-3.5 py-2.5">
         <div className="flex items-center gap-1.5">
-          <span className="size-[7px] shrink-0 rounded-full bg-ifood" />
-          <span className="text-[11.5px] font-semibold">Pedido iFood #{order.displayCode ?? order.id.slice(0, 6)}</span>
+          <span className={cn("size-[7px] shrink-0 rounded-full", CHANNEL_DOT[order.channelType])} />
+          <span className="text-[11.5px] font-semibold">
+            Pedido {CHANNEL_LABEL[order.channelType]} #{order.displayCode ?? order.id.slice(0, 6)}
+          </span>
         </div>
         <span
           className={cn(

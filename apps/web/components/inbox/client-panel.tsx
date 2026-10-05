@@ -4,7 +4,6 @@ import {
   CHANNEL_LABEL,
   type ContactDetail,
   formatPhone,
-  isValidCpf,
   phoneFromWhatsAppId,
   toE164,
   type UpdateContactRequest,
@@ -98,15 +97,30 @@ export function ClientPanel({ contactId }: { contactId: string }) {
                   )}
                 </div>
               ) : (
-                <span className={cn("italic", data.phoneStatus === "pending" ? "text-warning" : "text-ink-3")}>
-                  {data.phoneStatus === "pending" ? "⚠ telefone pendente" : "não informado"}
-                </span>
+                // O telefone é o que qualifica o contato; o resto vem dos canais e pedidos.
+                <div>
+                  <span className={cn("italic", data.phoneStatus === "pending" ? "text-warning" : "text-ink-3")}>
+                    {data.phoneStatus === "pending" ? "⚠ telefone pendente" : "telefone não informado"}
+                  </span>
+                  <div className="mt-px text-[10.5px] text-ink-3">
+                    Informe o telefone para qualificar o contato.{" "}
+                    <button
+                      type="button"
+                      onClick={() => setEditing(true)}
+                      className="text-ink-2 underline-offset-2 hover:text-ink hover:underline"
+                    >
+                      Informar
+                    </button>
+                  </div>
+                </div>
               )}
             </Row>
-            <Row icon={MailIcon}>{data.email ?? <span className="text-ink-3 italic">não informado</span>}</Row>
-            <Row icon={IdCardIcon}>
-              <Cpf contactId={data.id} masked={data.cpfMasked} />
-            </Row>
+            {data.email && <Row icon={MailIcon}>{data.email}</Row>}
+            {data.cpfMasked && (
+              <Row icon={IdCardIcon}>
+                <Cpf contactId={data.id} masked={data.cpfMasked} />
+              </Row>
+            )}
           </Section>
 
           {data.identities.length > 0 && (
@@ -169,7 +183,7 @@ function Row({ icon: Icon, children }: { icon: typeof PhoneIcon; children: React
   );
 }
 
-function Tags({ tags, onChange }: { tags: string[]; onChange: (tags: string[]) => Promise<void> }) {
+export function Tags({ tags, onChange }: { tags: string[]; onChange: (tags: string[]) => Promise<void> }) {
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState("");
   const [change] = usePendingAction(onChange);
@@ -221,7 +235,7 @@ function Tags({ tags, onChange }: { tags: string[]; onChange: (tags: string[]) =
 }
 
 /** CPF mascarado; o completo só sob demanda e com registro em auditoria (§8). */
-function Cpf({ contactId, masked }: { contactId: string; masked: string | null }) {
+export function Cpf({ contactId, masked }: { contactId: string; masked: string }) {
   const { request } = useAuth();
   const [full, setFull] = useState<string | null>(null);
   const [reveal, revealing] = usePendingAction(async () => {
@@ -229,7 +243,6 @@ function Cpf({ contactId, masked }: { contactId: string; masked: string | null }
     setFull(cpf);
   });
 
-  if (!masked) return <span className="text-ink-3 italic">CPF não informado</span>;
   if (full) {
     return (
       <span className="tabular-nums" title="Esta visualização foi registrada">
@@ -252,29 +265,21 @@ function Cpf({ contactId, masked }: { contactId: string; masked: string | null }
   );
 }
 
+/** Cadastro simples: a equipe só ajusta o nome e informa o telefone; o resto vem dos canais e pedidos. */
 function EditForm({ contact, onSave }: { contact: ContactDetail; onSave: (body: UpdateContactRequest) => Promise<void> }) {
   const [name, setName] = useState(contact.name ?? "");
   const [phone, setPhone] = useState(contact.phone ? formatPhone(contact.phone) : "");
-  const [email, setEmail] = useState(contact.email ?? "");
-  const [cpf, setCpf] = useState("");
-  const [notes, setNotes] = useState(contact.notes ?? "");
   const [error, setError] = useState<string | null>(null);
 
   const [submit, saving] = usePendingAction(async () => {
     setError(null);
     const e164 = phone.trim() ? toE164(phone) : null;
     if (phone.trim() && !e164) return setError("Telefone inválido. Use DDD + número.");
-    const cpfDigits = cpf.replace(/\D/g, "");
-    if (cpfDigits && !isValidCpf(cpfDigits)) return setError("CPF inválido.");
     try {
       await onSave({
         ...(name.trim() && { name: name.trim() }),
         // Só envia o que mudou: reenviar o mesmo telefone apagaria a origem ("informado pelo cliente").
         ...(e164 !== contact.phone && { phone: e164 }),
-        ...((email.trim() || null) !== contact.email && { email: email.trim() || null }),
-        notes: notes.trim() || null,
-        // CPF em branco mantém o atual (o painel só mostra a versão mascarada).
-        ...(cpfDigits && { cpf: cpfDigits }),
       });
     } catch (failure) {
       setError(failure instanceof ApiError ? failure.message : "Não foi possível salvar.");
@@ -297,23 +302,10 @@ function EditForm({ contact, onSave }: { contact: ContactDetail; onSave: (body: 
       }}
     >
       {field("contact-name", "Nome", <Input id="contact-name" value={name} onChange={(e) => setName(e.target.value)} />)}
-      {field("contact-phone", "Telefone", <Input id="contact-phone" value={phone} placeholder="(11) 98765-4321" onChange={(e) => setPhone(e.target.value)} />)}
-      {field("contact-email", "E-mail", <Input id="contact-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />)}
       {field(
-        "contact-cpf",
-        "CPF",
-        <Input id="contact-cpf" value={cpf} placeholder={contact.cpfMasked ?? "000.000.000-00"} onChange={(e) => setCpf(e.target.value)} />,
-      )}
-      {field(
-        "contact-notes",
-        "Observações",
-        <textarea
-          id="contact-notes"
-          value={notes}
-          rows={3}
-          onChange={(e) => setNotes(e.target.value)}
-          className="resize-none rounded-lg border border-input bg-surface px-3 py-2 text-[13px] outline-none focus:border-ring focus:ring-3 focus:ring-ring/8"
-        />,
+        "contact-phone",
+        "Telefone",
+        <Input id="contact-phone" autoFocus={!contact.phone} value={phone} placeholder="(11) 98765-4321" onChange={(e) => setPhone(e.target.value)} />,
       )}
       {error && (
         <p role="alert" className="text-[11px] text-tomate">
@@ -348,7 +340,7 @@ function History({ contact }: { contact: ContactDetail }) {
       </div>
       {contact.recentOrders.length > 0 && (
         <div className="flex flex-col gap-2 px-4 py-3">
-          <div className="text-[10px] font-semibold tracking-[0.08em] text-ink-3 uppercase">Últimos pedidos iFood</div>
+          <div className="text-[10px] font-semibold tracking-[0.08em] text-ink-3 uppercase">Últimos pedidos</div>
           <div className="overflow-hidden rounded-lg border border-rule">
             {contact.recentOrders.map((order) => {
               const status = ORDER_STATUS[order.status];

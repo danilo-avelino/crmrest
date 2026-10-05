@@ -3,7 +3,9 @@
 //   pnpm channel:add --restaurante cantina-da-nonna --tipo WHATSAPP --id-externo <phone_number_id> --token <token> --waba <WABA id> [--nome WhatsApp]
 //   pnpm channel:add --restaurante cantina-da-nonna --tipo INSTAGRAM --id-externo <id da conta IG> --token <token>
 //   pnpm channel:add --restaurante cantina-da-nonna --tipo IFOOD --id-externo <merchant id>
+//   pnpm channel:add --restaurante cantina-da-nonna --tipo CARDAPIO_WEB --id-externo <id da loja> --token <chave de API>
 // Enquanto a tela de Canais (E14) não existe, este é o jeito de conectar um número ou conta.
+// Cardápio Web: a chave é gerada pelo restaurante no Portal (Configurações → Integrações → API).
 import { existsSync } from "node:fs";
 import { parseArgs } from "node:util";
 import { createPrismaClient, encrypt, parseEncryptionKey } from "@comanda/database";
@@ -22,11 +24,11 @@ const { values } = parseArgs({
   },
 });
 
-const TYPES = ["WHATSAPP", "INSTAGRAM", "IFOOD"];
+const TYPES = ["WHATSAPP", "INSTAGRAM", "IFOOD", "CARDAPIO_WEB"];
 const type = values.tipo?.toUpperCase();
 // iFood usa a credencial da plataforma (IFOOD_CLIENT_ID/SECRET): a loja só precisa do merchant id.
 if (!values.restaurante || !type || !TYPES.includes(type) || !values["id-externo"] || (type !== "IFOOD" && !values.token)) {
-  console.error("Informe --restaurante, --tipo (WHATSAPP|INSTAGRAM|IFOOD), --id-externo e --token (exceto iFood).");
+  console.error("Informe --restaurante, --tipo (WHATSAPP|INSTAGRAM|IFOOD|CARDAPIO_WEB), --id-externo e --token (exceto iFood).");
   process.exit(1);
 }
 
@@ -45,7 +47,7 @@ try {
     ? { accessToken: values.token, tokenUpdatedAt: new Date().toISOString(), ...(values.waba && { wabaId: values.waba }) }
     : {};
   const credentials = encrypt(JSON.stringify(secrets), parseEncryptionKey(process.env.ENCRYPTION_KEY ?? ""));
-  const name = values.nome ?? { WHATSAPP: "WhatsApp", INSTAGRAM: "Instagram", IFOOD: "iFood" }[type];
+  const name = values.nome ?? { WHATSAPP: "WhatsApp", INSTAGRAM: "Instagram", IFOOD: "iFood", CARDAPIO_WEB: "Cardápio Web" }[type];
   const channel = await prisma.channel.upsert({
     where: { type_externalId: { type, externalId } },
     create: { tenantId: tenant.id, type, name, externalId, credentials, status: "CONNECTED" },

@@ -1,4 +1,5 @@
 import type { Message, Order, OrderItem, Prisma } from "@comanda/database";
+import type { ChannelType } from "@comanda/database/enums";
 import type { ConversationListItem, MessageContent, MessageDto, OrderDto } from "@comanda/shared";
 
 export function toMessageDto(message: Message & { sentByUser?: { id: string; name: string } | null }): MessageDto {
@@ -15,9 +16,10 @@ export function toMessageDto(message: Message & { sentByUser?: { id: string; nam
   };
 }
 
-export function toOrderDto(order: Order & { items: OrderItem[] }): OrderDto {
+export function toOrderDto(order: Order & { items: OrderItem[]; channel: { type: ChannelType } }): OrderDto {
   return {
     id: order.id,
+    channelType: order.channel.type,
     displayCode: order.displayCode,
     status: order.status,
     subtotal: order.subtotal.toFixed(2),

@@ -25,11 +25,13 @@ const tenantTables: Record<string, (db: TenantTx) => Promise<Row[]>> = {
   contacts: (db) => db.contact.findMany({ select: { id: true, tenantId: true } }),
   contact_identities: (db) => db.contactIdentity.findMany({ select: { id: true, tenantId: true } }),
   contact_addresses: (db) => db.contactAddress.findMany({ select: { id: true, tenantId: true } }),
+  contact_duplicate_dismissals: (db) => db.contactDuplicateDismissal.findMany({ select: { id: true, tenantId: true } }),
   consents: (db) => db.consent.findMany({ select: { id: true, tenantId: true } }),
   conversations: (db) => db.conversation.findMany({ select: { id: true, tenantId: true } }),
   messages: (db) => db.message.findMany({ select: { id: true, tenantId: true } }),
   orders: (db) => db.order.findMany({ select: { id: true, tenantId: true } }),
   order_items: (db) => db.orderItem.findMany({ select: { id: true, tenantId: true } }),
+  ratings: (db) => db.rating.findMany({ select: { id: true, tenantId: true } }),
   quick_replies: (db) => db.quickReply.findMany({ select: { id: true, tenantId: true } }),
   audit_logs: (db) => db.auditLog.findMany({ select: { id: true, tenantId: true } }),
 };
@@ -72,6 +74,9 @@ async function seedTenant(label: string): Promise<Seeded> {
       consents: { create: { tenantId, purpose: "marketing_whatsapp", granted: true, source: "whatsapp" } },
     },
   });
+  const homonym = await admin.contact.create({ data: { tenantId, name: `Cliente ${label}` } });
+  const [first, second] = [contact.id, homonym.id].sort();
+  await admin.contactDuplicateDismissal.create({ data: { tenantId, contactAId: first!, contactBId: second! } });
   const conversation = await admin.conversation.create({
     data: { tenantId, contactId: contact.id, channelId: channel.id, status: "OPEN", assignedUserId: user.id },
   });
@@ -86,7 +91,7 @@ async function seedTenant(label: string): Promise<Seeded> {
       status: "DELIVERED",
     },
   });
-  await admin.order.create({
+  const order = await admin.order.create({
     data: {
       tenantId,
       contactId: contact.id,
@@ -102,6 +107,7 @@ async function seedTenant(label: string): Promise<Seeded> {
       items: { create: { tenantId, name: "Lasanha Bolonhesa G", quantity: 1, unitPrice: "54.90" } },
     },
   });
+  await admin.rating.create({ data: { tenantId, conversationId: conversation.id, orderId: order.id, score: 5 } });
   await admin.quickReply.create({ data: { tenantId, shortcut: "atraso", content: "Já estamos verificando." } });
   await admin.auditLog.create({
     data: { tenantId, userId: user.id, action: "contact.cpf_viewed", entity: "contact", entityId: contact.id },

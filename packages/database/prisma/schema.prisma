@@ -30,21 +30,23 @@ model Tenant {
   name      String
   slug      String       @unique
   status    TenantStatus @default(ACTIVE)
-  settings  Json         @default("{}") // horário de funcionamento, textos automáticos...
+  settings  Json         @default("{}") // horário de funcionamento, textos automáticos, links para pedir (orderLinks)...
   createdAt DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
 
-  members           TenantMember[]
-  channels          Channel[]
-  contacts          Contact[]
-  contactIdentities ContactIdentity[]
-  contactAddresses  ContactAddress[]
-  consents          Consent[]
-  conversations     Conversation[]
-  messages          Message[]
-  orders            Order[]
-  orderItems        OrderItem[]
-  quickReplies      QuickReply[]
-  auditLogs         AuditLog[]
+  members             TenantMember[]
+  channels            Channel[]
+  contacts            Contact[]
+  contactIdentities   ContactIdentity[]
+  contactAddresses    ContactAddress[]
+  duplicateDismissals ContactDuplicateDismissal[]
+  consents            Consent[]
+  conversations       Conversation[]
+  messages            Message[]
+  orders              Order[]
+  orderItems          OrderItem[]
+  ratings             Rating[]
+  quickReplies        QuickReply[]
+  auditLogs           AuditLog[]
 
   @@map("tenants")
 }
@@ -107,6 +109,7 @@ enum ChannelType {
   MESSENGER
   IFOOD
   WEBCHAT
+  CARDAPIO_WEB
 }
 
 enum ChannelStatus {
@@ -153,12 +156,14 @@ model Contact {
   lastSeenAt   DateTime? @map("last_seen_at") @db.Timestamptz(3)
   deletedAt    DateTime? @map("deleted_at") @db.Timestamptz(3) // LGPD: anonimização
 
-  tenant        Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant        Tenant                      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   identities    ContactIdentity[]
   addresses     ContactAddress[]
   consents      Consent[]
   conversations Conversation[]
   orders        Order[]
+  dismissedAsA  ContactDuplicateDismissal[] @relation("DismissedA")
+  dismissedAsB  ContactDuplicateDismissal[] @relation("DismissedB")
 
   @@index([tenantId, phone])
   @@index([tenantId, cpfHash])
@@ -200,6 +205,23 @@ model ContactAddress {
 
   @@index([tenantId, contactId])
   @@map("contact_addresses")
+}
+
+// Par que o admin marcou como "não são a mesma pessoa": sai da fila de possíveis duplicados.
+model ContactDuplicateDismissal {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  contactAId String   @map("contact_a_id") @db.Uuid // sempre o menor id do par
+  contactBId String   @map("contact_b_id") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  tenant   Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contactA Contact @relation("DismissedA", fields: [contactAId], references: [id], onDelete: Cascade)
+  contactB Contact @relation("DismissedB", fields: [contactBId], references: [id], onDelete: Cascade)
+
+  @@unique([contactAId, contactBId])
+  @@index([tenantId])
+  @@map("contact_duplicate_dismissals")
 }
 
 model Consent {
@@ -271,6 +293,7 @@ model Conversation {
   assignedUser User?     @relation(fields: [assignedUserId], references: [id], onDelete: SetNull)
   messages     Message[]
   orders       Order[]
+  ratings      Rating[]
 
   @@index([tenantId, status, lastMessageAt])
   @@index([tenantId, contactId])
@@ -278,18 +301,18 @@ model Conversation {
 }
 
 model Message {
-  id                String        @id @default(uuid(7)) @db.Uuid
-  tenantId          String        @map("tenant_id") @db.Uuid
-  conversationId    String        @map("conversation_id") @db.Uuid
-  channelId         String        @map("channel_id") @db.Uuid
-  externalMessageId String?       @map("external_message_id")
+  id                String         @id @default(uuid(7)) @db.Uuid
+  tenantId          String         @map("tenant_id") @db.Uuid
+  conversationId    String         @map("conversation_id") @db.Uuid
+  channelId         String         @map("channel_id") @db.Uuid
+  externalMessageId String?        @map("external_message_id")
   direction         Direction
   type              MessageType
   content           Json // texto, mídia (chave S3), template...
   status            MessageStatus? // só mensagens de canal têm status
   statusError       String?        @map("status_error") // motivo da falha no envio
-  sentByUserId      String?       @map("sent_by_user_id") @db.Uuid
-  createdAt         DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  sentByUserId      String?        @map("sent_by_user_id") @db.Uuid
+  createdAt         DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
 
   tenant       Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
@@ -349,6 +372,7 @@ model Order {
   channel      Channel       @relation(fields: [channelId], references: [id], onDelete: NoAction)
   conversation Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
   items        OrderItem[]
+  ratings      Rating[]
 
   @@unique([channelId, externalOrderId])
   @@index([tenantId, contactId, placedAt])
@@ -369,6 +393,23 @@ model OrderItem {
 
   @@index([tenantId, orderId])
   @@map("order_items")
+}
+
+// Pesquisa de satisfação no fim de um atendimento sobre um pedido: "Qual nota você dá...? 1 a 5".
+model Rating {
+  id             String   @id @default(uuid(7)) @db.Uuid
+  tenantId       String   @map("tenant_id") @db.Uuid
+  conversationId String   @map("conversation_id") @db.Uuid
+  orderId        String?  @map("order_id") @db.Uuid
+  score          Int // 1 a 5
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  tenant       Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  order        Order?       @relation(fields: [orderId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, createdAt])
+  @@map("ratings")
 }
 
 // ---------- Auditoria ----------

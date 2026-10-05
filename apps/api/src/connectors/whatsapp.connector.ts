@@ -119,6 +119,15 @@ function messageBody(message: z.infer<typeof WaMessage>): { type: MessageType; t
   return { type: "TEXT", text: "Mensagem de um tipo que o Comanda ainda não exibe.", metadata: { unsupportedType: message.type } };
 }
 
+/** Resposta da Graph API; um erro vira uma mensagem que o admin entende (ex.: token expirado). */
+export async function graph(request: Promise<Response>): Promise<unknown> {
+  const response = await request;
+  // O login do Instagram (api.instagram.com) responde erros como { error_message }.
+  const body = (await response.json().catch(() => null)) as { error?: { message?: string }; error_message?: string } | null;
+  if (!response.ok) throw new Error(`Meta: ${body?.error?.message ?? body?.error_message ?? `HTTP ${response.status}`}`);
+  return body;
+}
+
 // Modo de simulação: templates de exemplo para usar a Inbox sem uma conta da Meta.
 const SAMPLE_TEMPLATES: WhatsAppTemplate[] = [
   {
@@ -152,7 +161,7 @@ const TemplatesResponse = z.object({
 export class WhatsAppConnector implements ChannelConnector {
   readonly type = "WHATSAPP" as const;
 
-  constructor(private readonly env: Pick<Env, "META_GRAPH_URL" | "CHANNELS_DRY_RUN">) {}
+  constructor(private readonly env: Pick<Env, "META_GRAPH_URL" | "CHANNELS_DRY_RUN" | "META_APP_ID" | "META_APP_SECRET">) {}
 
   send(target: SendTarget, message: OutboundText): Promise<{ externalMessageId: string }> {
     return this.post(target, { type: "text", text: { body: message.text, preview_url: false } });
@@ -169,6 +178,73 @@ export class WhatsAppConnector implements ChannelConnector {
           : [],
       },
     });
+  }
+
+  /**
+   * Confere o número e o token e inscreve a conta (WABA) nos webhooks do app: é o que faz as mensagens chegarem.
+   * Devolve o nome verificado e o número para exibição.
+   */
+  async connectNumber(phoneNumberId: string, wabaId: string, accessToken: string): Promise<{ name: string }> {
+    if (this.env.CHANNELS_DRY_RUN) return { name: `WhatsApp ${phoneNumberId}` };
+    const headers = { Authorization: `Bearer ${accessToken}` };
+    const number = await graph(
+      fetch(`${this.env.META_GRAPH_URL}/${phoneNumberId}?fields=display_phone_number,verified_name`, { headers, signal: AbortSignal.timeout(15_000) }),
+    );
+    const { display_phone_number: phone, verified_name: verifiedName } = number as { display_phone_number?: string; verified_name?: string };
+    await graph(fetch(`${this.env.META_GRAPH_URL}/${wabaId}/subscribed_apps`, { method: "POST", headers, signal: AbortSignal.timeout(15_000) }));
+    return { name: [verifiedName, phone && `(${phone})`].filter(Boolean).join(" ") || `WhatsApp ${phoneNumberId}` };
+  }
+
+  /** Cadastro incorporado: troca o código da janela da Meta pelo token da empresa, que não expira. */
+  async exchangeSignupCode(code: string): Promise<string> {
+    if (this.env.CHANNELS_DRY_RUN) return `dry-run-token-${code.slice(0, 8)}`;
+    const { META_APP_ID: appId, META_APP_SECRET: appSecret } = this.env;
+    if (!appId || !appSecret) throw new Error("o cadastro do WhatsApp não está configurado neste servidor");
+    const url = new URL(`${this.env.META_GRAPH_URL}/oauth/access_token`);
+    url.search = new URLSearchParams({ client_id: appId, client_secret: appSecret, code }).toString();
+    const body = (await graph(fetch(url, { signal: AbortSignal.timeout(15_000) }))) as { access_token?: string };
+    if (!body.access_token) throw new Error("Meta: a resposta não trouxe o token.");
+    return body.access_token;
+  }
+
+  /** A conta (WABA) que a empresa liberou na janela da Meta, lida nas permissões do token. */
+  async findSignupWaba(accessToken: string): Promise<string> {
+    if (this.env.CHANNELS_DRY_RUN) return "0000000000";
+    const url = new URL(`${this.env.META_GRAPH_URL}/debug_token`);
+    url.search = new URLSearchParams({ input_token: accessToken, access_token: `${this.env.META_APP_ID}|${this.env.META_APP_SECRET}` }).toString();
+    const body = (await graph(fetch(url, { signal: AbortSignal.timeout(15_000) }))) as {
+      data?: { granular_scopes?: { scope?: string; target_ids?: string[] }[] };
+    };
+    const waba = body.data?.granular_scopes?.find((s) => s.scope === "whatsapp_business_management")?.target_ids?.[0];
+    if (!waba) throw new Error("a Meta não informou a conta do WhatsApp escolhida");
+    return waba;
+  }
+
+  /** O número da conta (WABA): na Coexistência a janela da Meta pode não dizer qual foi conectado. */
+  async findPhoneNumber(wabaId: string, accessToken: string): Promise<string> {
+    if (this.env.CHANNELS_DRY_RUN) return wabaId;
+    const body = (await graph(
+      fetch(`${this.env.META_GRAPH_URL}/${wabaId}/phone_numbers?fields=id`, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        signal: AbortSignal.timeout(15_000),
+      }),
+    )) as { data?: { id?: string }[] };
+    const id = body.data?.[0]?.id;
+    if (!id) throw new Error("a conta escolhida não tem número de WhatsApp");
+    return id;
+  }
+
+  /** Registra um número novo na Cloud API; o PIN vira a confirmação em duas etapas do número. */
+  async registerNumber(phoneNumberId: string, pin: string, accessToken: string): Promise<void> {
+    if (this.env.CHANNELS_DRY_RUN) return;
+    await graph(
+      fetch(`${this.env.META_GRAPH_URL}/${phoneNumberId}/register`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ messaging_product: "whatsapp", pin }),
+        signal: AbortSignal.timeout(15_000),
+      }),
+    );
   }
 
   /** Templates aprovados da conta (WABA), com o corpo e quantas variáveis ele tem. */
@@ -209,9 +285,9 @@ export class WhatsAppConnector implements ChannelConnector {
     });
     const body = (await response.json().catch(() => null)) as {
       messages?: { id?: string }[];
-      error?: { message?: string };
+      error?: { message?: string; code?: number };
     } | null;
-    if (!response.ok) throw sendFailure(response.status, body?.error?.message ?? `HTTP ${response.status}`);
+    if (!response.ok) throw sendFailure(response.status, body?.error?.message ?? `HTTP ${response.status}`, body?.error?.code);
     const externalMessageId = body?.messages?.[0]?.id;
     if (!externalMessageId) throw new Error("Resposta da Meta sem o id da mensagem");
     return { externalMessageId };

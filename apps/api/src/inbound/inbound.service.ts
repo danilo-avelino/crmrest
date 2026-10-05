@@ -1,8 +1,8 @@
 import { blindIndex, type Contact, encrypt, parseEncryptionKey, type Prisma, type TenantTx } from "@comanda/database";
-import type { ChannelType, MessageStatus } from "@comanda/database/enums";
+import type { ChannelType, ConversationStatus, MessageStatus } from "@comanda/database/enums";
 import { CHANNEL_CAPABILITIES, CHANNEL_LABEL, type MessageContent, type NormalizedMessage, type StatusUpdate } from "@comanda/shared";
 import { Inject, Injectable, Logger } from "@nestjs/common";
-import { PhoneCollectionService } from "../automations/phone-collection.service.js";
+import { TriageService } from "../automations/triage.service.js";
 import { ENV, type Env } from "../config/env.js";
 import { ConnectorsService } from "../connectors/connectors.service.js";
 import { parseInstagram } from "../connectors/instagram.connector.js";
@@ -15,6 +15,9 @@ export type ResolvedChannel = { id: string; tenantId: string; type: ChannelType 
 
 /** O que a resolução de identidade precisa saber de quem chegou (mensagem ou pedido). */
 export type ContactSource = Pick<NormalizedMessage, "channelType" | "externalContactId" | "contactProfile" | "metadata" | "timestamp">;
+
+/** Conversa que recebeu a mensagem e o status que ela tinha antes (null = conversa nova). */
+export type OpenedConversation = { id: string; previousStatus: ConversationStatus | null };
 
 const WINDOW_MS = 24 * 60 * 60 * 1000;
 
@@ -36,7 +39,7 @@ export class InboundService {
     private readonly db: DatabaseService,
     private readonly realtime: RealtimeEmitter,
     private readonly connectors: ConnectorsService,
-    private readonly phoneCollection: PhoneCollectionService,
+    private readonly triage: TriageService,
     @Inject(ENV) env: Env,
   ) {
     this.key = parseEncryptionKey(env.ENCRYPTION_KEY);
@@ -53,8 +56,16 @@ export class InboundService {
         batch.channelType === "WHATSAPP" ? parseWhatsApp(channel.id, batch.value) : parseInstagram(channel.id, batch.events);
       if (parsed.rejected) this.logger.warn(`${parsed.rejected} evento(s) fora do formato esperado ignorado(s)`);
       for (const message of parsed.messages) {
-        const conversationId = await this.handleMessage(channel, await this.withProfile(channel, message));
-        if (conversationId) await this.phoneCollection.afterInbound({ channel, conversationId, text: message.text });
+        const conversation = await this.handleMessage(channel, await this.withProfile(channel, message));
+        // "SAIR" pede para parar de receber mensagens: não é hora de responder com o menu.
+        if (conversation && !(channel.type === "WHATSAPP" && isOptOut(message.text))) {
+          await this.triage.afterInbound({
+            channel,
+            conversationId: conversation.id,
+            previousStatus: conversation.previousStatus,
+            text: message.text,
+          });
+        }
       }
       for (const status of parsed.statuses) await this.handleStatus(channel, status);
     }
@@ -96,9 +107,9 @@ export class InboundService {
   }
 
   /** Grava a mensagem recebida; devolve a conversa, ou null se o webhook era repetido. */
-  async handleMessage(channel: ResolvedChannel, message: NormalizedMessage): Promise<string | null> {
+  async handleMessage(channel: ResolvedChannel, message: NormalizedMessage): Promise<OpenedConversation | null> {
     const at = arrivalTime(message.timestamp);
-    const conversationId = await this.db.withTenants({ tenantIds: [channel.tenantId] }, async (tx) => {
+    const opened = await this.db.withTenants({ tenantIds: [channel.tenantId] }, async (tx) => {
       const duplicate = await tx.message.findUnique({
         where: { channelId_externalMessageId: { channelId: channel.id, externalMessageId: message.externalMessageId } },
         select: { id: true },
@@ -148,10 +159,10 @@ export class InboundService {
           }),
         },
       });
-      return conversation.id;
+      return conversation;
     });
-    if (conversationId) this.realtime.inboxChanged(channel.tenantId, conversationId);
-    return conversationId;
+    if (opened) this.realtime.inboxChanged(channel.tenantId, opened.id);
+    return opened;
   }
 
   async handleStatus(channel: ResolvedChannel, update: StatusUpdate): Promise<void> {
@@ -229,13 +240,13 @@ export class InboundService {
   }
 
   /** Reabre a última conversa do contato no canal ou abre uma nova, com o evento na linha do tempo. */
-  async openConversation(tx: TenantTx, channel: ResolvedChannel, contactId: string, at: Date) {
+  async openConversation(tx: TenantTx, channel: ResolvedChannel, contactId: string, at: Date): Promise<OpenedConversation> {
     const latest = await tx.conversation.findFirst({
       where: { contactId, channelId: channel.id },
       orderBy: { createdAt: "desc" },
-      select: { id: true },
+      select: { id: true, status: true },
     });
-    if (latest) return latest;
+    if (latest) return { id: latest.id, previousStatus: latest.status };
 
     const conversation = await tx.conversation.create({
       data: { tenantId: channel.tenantId, contactId, channelId: channel.id, status: "OPEN", createdAt: at },
@@ -252,7 +263,7 @@ export class InboundService {
         createdAt: at,
       },
     });
-    return conversation;
+    return { id: conversation.id, previousStatus: null };
   }
 }
 

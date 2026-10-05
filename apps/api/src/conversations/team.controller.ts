@@ -1,11 +1,11 @@
-import { ConversationListQuery, type MemberDto, type QuickReplyDto } from "@comanda/shared";
+import { type ChannelHealthDto, ConversationListQuery, type MemberDto, type QuickReplyDto } from "@comanda/shared";
 import { Controller, Get, Query } from "@nestjs/common";
 import { CurrentAuth, type RequestAuth } from "../auth/auth.decorators.js";
 import { ZodPipe } from "../common/zod.pipe.js";
 import { DatabaseService } from "../core/database.service.js";
 import { scopeFor } from "./conversations.service.js";
 
-/** Dados de apoio da Inbox: quem pode receber conversas e as respostas rápidas. */
+/** Dados de apoio da Inbox: quem pode receber conversas, as respostas rápidas e a saúde dos canais. */
 @Controller()
 export class TeamController {
   constructor(private readonly db: DatabaseService) {}
@@ -33,6 +33,17 @@ export class TeamController {
       tx.quickReply.findMany({
         select: { id: true, tenantId: true, shortcut: true, content: true },
         orderBy: { shortcut: "asc" },
+      }),
+    );
+  }
+
+  /** Status dos canais (sem credenciais), para o aviso de canal que precisa ser reconectado. */
+  @Get("channels")
+  channels(@CurrentAuth() auth: RequestAuth): Promise<ChannelHealthDto[]> {
+    return this.db.withTenants(auth.scope, (tx) =>
+      tx.channel.findMany({
+        select: { id: true, tenantId: true, type: true, name: true, status: true },
+        orderBy: { name: "asc" },
       }),
     );
   }

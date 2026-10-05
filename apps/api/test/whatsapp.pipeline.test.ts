@@ -79,6 +79,7 @@ describe("pipeline do WhatsApp", () => {
     expect(conversation.messages.map((m) => [m.type, (m.content as { text?: string }).text])).toEqual([
       ["SYSTEM", "Conversa aberta via WhatsApp"],
       ["TEXT", "Vocês têm opção sem glúten?"],
+      ["TEXT", expect.stringMatching(/^Olá, João! 👋 Em que podemos ajudar\?/)], // menu de atendimento
     ]);
   });
 
@@ -192,6 +193,42 @@ describe("pipeline do WhatsApp", () => {
     } finally {
       graph.resetReply();
     }
+  });
+
+  it("token recusado pela Meta marca o canal para reconectar; o reenvio que passa o devolve a conectado", async () => {
+    const conversation = await admin.conversation.findFirstOrThrow({
+      where: { tenantId: fx.tenant.id, contact: { phone: "+5511911110001" } },
+    });
+    const channels = async () =>
+      (await request(app.getHttpServer()).get("/api/channels").set("Authorization", `Bearer ${token}`).expect(200)).body as {
+        id: string;
+        status: string;
+      }[];
+    graph.reply(() => ({ status: 401, body: { error: { message: "Error validating access token", code: 190 } } }));
+    let failedId = "";
+    try {
+      const { body: sent } = await request(app.getHttpServer())
+        .post(`/api/conversations/${conversation.id}/messages`)
+        .set("Authorization", `Bearer ${token}`)
+        .send({ text: "Token vencido" })
+        .expect(201);
+      failedId = sent.id;
+      await drainQueues(app);
+      expect(await admin.message.findUniqueOrThrow({ where: { id: sent.id } })).toMatchObject({ status: "FAILED" });
+      expect((await channels()).find((c) => c.id === fx.whatsapp.id)).toMatchObject({ status: "ERROR" });
+      expect(JSON.stringify(await channels())).not.toContain("credentials");
+    } finally {
+      graph.resetReply();
+    }
+
+    // Admin reconectou (aqui, a Meta volta a aceitar): o "Tentar novamente" envia e o canal volta a conectado.
+    await request(app.getHttpServer())
+      .post(`/api/conversations/${conversation.id}/messages/${failedId}/retry`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    await drainQueues(app);
+    expect(await admin.message.findUniqueOrThrow({ where: { id: failedId } })).toMatchObject({ status: "SENT" });
+    expect((await channels()).find((c) => c.id === fx.whatsapp.id)).toMatchObject({ status: "CONNECTED" });
   });
 
   it("não envia fora da janela de 24h nem em canal sem envio (iFood)", async () => {

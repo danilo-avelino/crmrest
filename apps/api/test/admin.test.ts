@@ -32,6 +32,6 @@ describe("painel das filas (Bull Board)", () => {
     await request(app.getHttpServer()).get("/api/admin/filas").auth("admin", PASSWORD).expect(200);
     const { body } = await request(app.getHttpServer()).get("/api/admin/filas/api/queues").auth("admin", PASSWORD).expect(200);
     const names = (body as { queues: { name: string }[] }).queues.map((queue) => queue.name);
-    expect(names.sort()).toEqual(["automations", "channels", "ifood", "inbound", "outbound"]);
+    expect(names.sort()).toEqual(["automations", "cardapio-web", "channels", "ifood", "inbound", "outbound"]);
   });
 });

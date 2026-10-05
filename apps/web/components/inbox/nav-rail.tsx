@@ -1,7 +1,8 @@
 "use client";
 
 import { MegaphoneIcon, MessageSquareIcon, SettingsIcon, UsersIcon } from "lucide-react";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/components/auth/auth-provider";
 import {
   DropdownMenu,
@@ -13,21 +14,26 @@ import {
 import { usePendingAction } from "@/hooks/use-pending-action";
 import { cn } from "@/lib/utils";
 
-// Só a Inbox existe no MVP; Clientes, Campanhas e Configurações chegam nas próximas fases.
+// Campanhas chega nas próximas fases.
 const ITEMS = [
-  { label: "Inbox", icon: MessageSquareIcon, ready: true },
-  { label: "Clientes", icon: UsersIcon, ready: false },
-  { label: "Campanhas", icon: MegaphoneIcon, ready: false },
-  { label: "Configurações", icon: SettingsIcon, ready: false },
+  { label: "Inbox", icon: MessageSquareIcon, href: "/inbox" },
+  { label: "Clientes", icon: UsersIcon, href: "/clientes" },
+  { label: "Campanhas", icon: MegaphoneIcon, href: null },
+  { label: "Configurações", icon: SettingsIcon, href: "/configuracoes" },
 ];
 
-/** Navegação lateral escura de 56px (board Inbox). */
+const ITEM_CLASS = "mt-1 flex size-9 items-center justify-center rounded-lg first-of-type:mt-0";
+
+/** Navegação lateral escura de 56px (boards Inbox e Clientes). */
 export function NavRail() {
   const { session, logout, switchContext } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
   const [signOut] = usePendingAction(() => logout());
   if (!session?.context) return null;
   const context = session.context;
+  const canUseFullApp = context.tenants.some((tenant) => tenant.role === "ADMIN");
+  if (!canUseFullApp) return null;
 
   return (
     <nav className="flex w-14 shrink-0 flex-col items-center gap-0.5 border-r border-[#2D2A24] bg-ink py-4">
@@ -39,22 +45,35 @@ export function NavRail() {
         </svg>
       </div>
 
-      {ITEMS.map(({ label, icon: Icon, ready }) => (
-        <button
-          key={label}
-          type="button"
-          aria-label={label}
-          title={ready ? label : `${label} (em breve)`}
-          aria-current={ready ? "page" : undefined}
-          disabled={!ready}
-          className={cn(
-            "mt-1 flex size-9 items-center justify-center rounded-lg first-of-type:mt-0",
-            ready ? "bg-[#2D2A24] text-paper" : "text-[#5C5750] disabled:cursor-not-allowed",
-          )}
-        >
-          <Icon className="size-[18px]" aria-hidden />
-        </button>
-      ))}
+      {ITEMS.map(({ label, icon: Icon, href }) => {
+        if (!href) {
+          return (
+            <button
+              key={label}
+              type="button"
+              aria-label={label}
+              title={`${label} (em breve)`}
+              disabled
+              className={cn(ITEM_CLASS, "text-[#5C5750] disabled:cursor-not-allowed")}
+            >
+              <Icon className="size-[18px]" aria-hidden />
+            </button>
+          );
+        }
+        const active = pathname.startsWith(href);
+        return (
+          <Link
+            key={label}
+            href={href}
+            aria-label={label}
+            title={label}
+            aria-current={active ? "page" : undefined}
+            className={cn(ITEM_CLASS, active ? "bg-[#2D2A24] text-paper" : "text-[#5C5750] hover:bg-[#2D2A24] hover:text-paper")}
+          >
+            <Icon className="size-[18px]" aria-hidden />
+          </Link>
+        );
+      })}
 
       <div className="flex-1" />
 

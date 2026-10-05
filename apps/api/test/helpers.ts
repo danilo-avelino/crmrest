@@ -134,16 +134,16 @@ export function instagramText(senderId: string, igAccountId: string, mid: string
   return { sender: { id: senderId }, recipient: { id: igAccountId }, timestamp: Date.now(), message: { mid, text } };
 }
 
-export function signMeta(raw: string): string {
-  return `sha256=${createHmac("sha256", process.env.META_APP_SECRET ?? "").update(raw).digest("hex")}`;
+export function signMeta(raw: string, secret = process.env.META_APP_SECRET ?? ""): string {
+  return `sha256=${createHmac("sha256", secret).update(raw).digest("hex")}`;
 }
 
-export function postMetaWebhook(app: INestApplication, payload: unknown) {
+export function postMetaWebhook(app: INestApplication, payload: unknown, secret?: string) {
   const raw = JSON.stringify(payload);
   return request(app.getHttpServer())
     .post("/api/webhooks/meta")
     .set("Content-Type", "application/json")
-    .set("X-Hub-Signature-256", signMeta(raw))
+    .set("X-Hub-Signature-256", signMeta(raw, secret))
     .send(raw);
 }
 
@@ -177,7 +177,9 @@ export async function startMockGraph() {
   const server = createServer(async (req, res) => {
     let raw = "";
     for await (const chunk of req) raw += String(chunk);
-    const request = { method: req.method ?? "GET", path: req.url ?? "", authorization: req.headers.authorization, body: raw ? JSON.parse(raw) : null };
+    // Corpo em JSON ou, na troca de código do login do Instagram, um formulário (fica como texto).
+    const parsed = !raw ? null : req.headers["content-type"]?.includes("json") ? JSON.parse(raw) : raw;
+    const request = { method: req.method ?? "GET", path: req.url ?? "", authorization: req.headers.authorization, body: parsed };
     requests.push(request);
     const { status, body } = reply(request);
     res.writeHead(status, { "Content-Type": "application/json" }).end(JSON.stringify(body));

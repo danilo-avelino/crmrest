@@ -73,7 +73,9 @@ Health checks: `GET /api/health/live` (processo de pé) e `GET /api/health/ready
 | `ENCRYPTION_KEY` | 32 bytes em base64. Cifra credenciais de canais e CPFs: **não troque depois de ter dados**. |
 | `WEB_ORIGIN` | Origem do painel, para o CORS do Socket.IO. |
 | `META_APP_SECRET`, `META_WEBHOOK_VERIFY_TOKEN` | Do app da Meta. Sem eles, o webhook responde 503. |
+| `INSTAGRAM_APP_SECRET` | Chave secreta do app do Instagram. Sem ela, os webhooks do Instagram são recusados (401). |
 | `IFOOD_CLIENT_ID`, `IFOOD_CLIENT_SECRET` | Credencial centralizada. Sem ela, o polling de pedidos fica desligado. |
+| `CARDAPIO_WEB_API_URL` | API de parceiros do Cardápio Web (`https://integracao.cardapioweb.com`). Sem ela, o polling de pedidos fica desligado. A chave é de cada loja, no canal. |
 | `SENTRY_DSN` | Opcional. Erros da API e jobs que falharam de vez. |
 | `BULL_BOARD_PASSWORD` | Opcional. Liga o painel das filas em `/api/admin/filas` (Basic auth, usuário `BULL_BOARD_USER`, padrão `admin`). |
 | `LOG_LEVEL` | Padrão `info`. Logs em JSON (Pino), com `tenantId` nas requisições autenticadas. |
@@ -90,10 +92,14 @@ pnpm user:add --email ana@cantinadanonna.com.br --nome "Ana Silva" --restaurante
 pnpm channel:add --restaurante cantina-da-nonna --tipo WHATSAPP --id-externo <phone_number_id> --token <token> --waba <WABA id>
 pnpm channel:add --restaurante cantina-da-nonna --tipo INSTAGRAM --id-externo <id da conta IG> --token <token>
 pnpm channel:add --restaurante cantina-da-nonna --tipo IFOOD --id-externo <merchant id>
+pnpm channel:add --restaurante cantina-da-nonna --tipo CARDAPIO_WEB --id-externo <id da loja> --token <chave de API>
+pnpm tenant:links --restaurante cantina-da-nonna --link "Cardápio digital=https://..." --link "iFood=https://..."
 ```
+
+O admin do restaurante também conecta WhatsApp, Instagram, iFood e Cardápio Web pelo painel, em **Configurações → Integrações** (várias contas ou lojas de cada sistema); a credencial é conferida no sistema antes de salvar. A chave do Cardápio Web é gerada pelo restaurante no Portal (Configurações → Integrações → API). Os links para fazer pedido são enviados quando o cliente escolhe "2 - Fazer um pedido" no menu de atendimento; sem links, a opção chama um atendente. O admin do restaurante os edita no painel, em **Configurações**; o `tenant:links` faz o mesmo pelo terminal.
 
 Sem `--senha`, o `user:add` gera uma senha e a mostra uma única vez. Para dar acesso a mais um restaurante, rode de novo com outro `--restaurante`.
 
 Tokens do Instagram expiram em 60 dias: o worker os renova sozinho (job diário às 4h, a cada 7 dias por canal).
 
-No app da Meta, configure o webhook com a URL `https://<api>/api/webhooks/meta`, o token `META_WEBHOOK_VERIFY_TOKEN` e o campo `messages`, tanto no WhatsApp quanto no Instagram.
+No app da Meta, configure o webhook com a URL `https://<api>/api/webhooks/meta`, o token `META_WEBHOOK_VERIFY_TOKEN` e o campo `messages`, tanto no WhatsApp quanto no Instagram. O do Instagram fica dentro do produto (Casos de uso > API do Instagram > Configurar webhooks), e o app precisa estar publicado para receber mensagens reais.

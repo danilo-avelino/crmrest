@@ -49,7 +49,9 @@ export class MetaWebhookController {
     @Headers("x-hub-signature-256") signature: string | undefined,
   ): Promise<string> {
     if (!this.env.META_APP_SECRET) throw new ServiceUnavailableException("Webhook da Meta não configurado.");
-    if (!request.rawBody || !verifyMetaSignature(request.rawBody, signature, this.env.META_APP_SECRET)) {
+    const { rawBody } = request;
+    const secrets = [this.env.META_APP_SECRET, this.env.INSTAGRAM_APP_SECRET];
+    if (!rawBody || !secrets.some((secret) => secret && verifyMetaSignature(rawBody, signature, secret))) {
       throw new UnauthorizedException();
     }
     await this.inbound.add("meta", { source: "meta", payload: request.body as unknown });

@@ -62,6 +62,16 @@ export class ConversationsController {
     return this.conversations.sendText(auth, id, body.text);
   }
 
+  @Post(":id/messages/:messageId/retry")
+  @HttpCode(200)
+  retryMessage(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Param("messageId", ParseUUIDPipe) messageId: string,
+    @CurrentAuth() auth: RequestAuth,
+  ): Promise<MessageDto> {
+    return this.conversations.retryMessage(auth, id, messageId);
+  }
+
   @Get(":id/templates")
   templates(@Param("id", ParseUUIDPipe) id: string, @CurrentAuth() auth: RequestAuth): Promise<WhatsAppTemplate[]> {
     return this.conversations.templates(auth, id);
