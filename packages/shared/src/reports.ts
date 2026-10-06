@@ -16,6 +16,11 @@ export type AgentMetrics = {
 export type RatingsReportDto = {
   /** Toda a equipe; `handoffs` conta também os atendimentos ainda sem resposta. */
   summary: AgentMetrics & { handoffs: number };
+  /**
+   * Conversas chamadas (automação passou à equipe ou chegaram fora do horário) que terminaram o dia sem resposta de
+   * uma pessoa; uma por conversa e dia (Brasília). No dia de hoje, vale "até agora".
+   */
+  unanswered: { conversationId: string; contactName: string | null; calledAt: string; afterHours: boolean }[];
   /** A nota vai para quem respondeu por último; o tempo, para quem deu a primeira resposta. */
   agents: (AgentMetrics & { userId: string | null; name: string })[];
   recent: {

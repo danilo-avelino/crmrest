@@ -275,17 +275,18 @@ enum MessageStatus {
 }
 
 model Conversation {
-  id              String             @id @default(uuid(7)) @db.Uuid
-  tenantId        String             @map("tenant_id") @db.Uuid
-  contactId       String             @map("contact_id") @db.Uuid
-  channelId       String             @map("channel_id") @db.Uuid
-  status          ConversationStatus
-  assignedUserId  String?            @map("assigned_user_id") @db.Uuid
-  automationState Json               @default("{}") @map("automation_state") // ex.: { phoneCollection: 'awaiting_phone' }
-  lastMessageAt   DateTime?          @map("last_message_at") @db.Timestamptz(3)
-  windowExpiresAt DateTime?          @map("window_expires_at") @db.Timestamptz(3) // janela de 24h
-  unreadCount     Int                @default(0) @map("unread_count")
-  createdAt       DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+  id                 String             @id @default(uuid(7)) @db.Uuid
+  tenantId           String             @map("tenant_id") @db.Uuid
+  contactId          String             @map("contact_id") @db.Uuid
+  channelId          String             @map("channel_id") @db.Uuid
+  status             ConversationStatus
+  assignedUserId     String?            @map("assigned_user_id") @db.Uuid
+  automationState    Json               @default("{}") @map("automation_state") // ex.: { phoneCollection: 'awaiting_phone' }
+  lastMessageAt      DateTime?          @map("last_message_at") @db.Timestamptz(3)
+  windowExpiresAt    DateTime?          @map("window_expires_at") @db.Timestamptz(3) // janela de 24h
+  awaitingAgentSince DateTime?          @map("awaiting_agent_since") @db.Timestamptz(3) // automação chamou a equipe e ninguém respondeu ainda
+  unreadCount        Int                @default(0) @map("unread_count")
+  createdAt          DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
 
   tenant       Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   contact      Contact   @relation(fields: [contactId], references: [id], onDelete: NoAction)

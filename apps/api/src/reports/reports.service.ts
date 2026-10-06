@@ -8,6 +8,7 @@ import { requireTenantAdmin } from "../settings/tenant-admin.js";
 const DAY = 24 * 60 * 60 * 1000;
 
 type HandoffRow = { handed_at: Date; replied_at: Date | null; user_id: string | null };
+type UnansweredRow = { conversation_id: string; called_at: Date; after_hours: boolean; contact_name: string | null };
 type RatingRow = {
   id: string;
   score: number;
@@ -73,6 +74,28 @@ export class ReportsService {
         WHERE r.tenant_id = ${tenantId}::uuid AND r.created_at >= ${from}
         ORDER BY r.created_at DESC`;
 
+      // Chamadas sem resposta humana até o fim do dia (Brasília): uma por conversa e dia, a primeira chamada do dia.
+      const unanswered = await tx.$queryRaw<UnansweredRow[]>`
+        WITH calls AS (
+          SELECT e.conversation_id, e.created_at, e.direction = 'OUTBOUND' AS after_hours,
+                 (date_trunc('day', e.created_at AT TIME ZONE 'America/Sao_Paulo') + interval '1 day') AT TIME ZONE 'America/Sao_Paulo' AS day_end
+          FROM messages e
+          WHERE e.tenant_id = ${tenantId}::uuid AND e.created_at >= ${from}
+            AND ((e.type = 'SYSTEM' AND e.content->>'event' = 'handoff')
+              OR (e.direction = 'OUTBOUND' AND e.content->>'automation' = 'after_hours'))
+        )
+        SELECT DISTINCT ON (c.conversation_id, c.day_end)
+               c.conversation_id, c.created_at AS called_at, c.after_hours, ct.name AS contact_name
+        FROM calls c
+        JOIN conversations cv ON cv.id = c.conversation_id
+        JOIN contacts ct ON ct.id = cv.contact_id
+        WHERE NOT EXISTS (
+          SELECT 1 FROM messages m
+          WHERE m.conversation_id = c.conversation_id AND m.direction = 'OUTBOUND' AND m.sent_by_user_id IS NOT NULL
+            AND m.created_at > c.created_at AND m.created_at < c.day_end
+        )
+        ORDER BY c.conversation_id, c.day_end, c.created_at`;
+
       const userIds = [...new Set([...handoffs, ...ratings].flatMap((row) => (row.user_id ? [row.user_id] : [])))];
       const members = await tx.tenantMember.findMany({
         where: { tenantId, userId: { in: userIds } },
@@ -96,6 +119,14 @@ export class ReportsService {
       return {
         summary: { ...metrics(ratings, answered), handoffs: handoffs.length },
         agents,
+        unanswered: unanswered
+          .sort((a, b) => b.called_at.getTime() - a.called_at.getTime())
+          .map((row) => ({
+            conversationId: row.conversation_id,
+            contactName: row.contact_name,
+            calledAt: row.called_at.toISOString(),
+            afterHours: row.after_hours,
+          })),
         recent: ratings.slice(0, 50).map((row) => ({
           id: row.id,
           score: row.score,

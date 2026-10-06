@@ -128,7 +128,7 @@ describe("API da Inbox", () => {
   it("filtra por status e conta por status", async () => {
     const pending = await get("/conversations?status=PENDING").expect(200);
     expect(pending.body.items.map((c: { id: string }) => c.id)).toEqual([joaoChat.id]);
-    expect((await get("/conversations/counts").expect(200)).body).toEqual({ OPEN: 1, PENDING: 1, RESOLVED: 0 });
+    expect((await get("/conversations/counts").expect(200)).body).toEqual({ OPEN: 1, PENDING: 1, RESOLVED: 0, awaitingAgent: 0 });
   });
 
   it("busca por nome, telefone e CPF", async () => {
@@ -194,6 +194,11 @@ describe("API da Inbox", () => {
     expect(refused.body.message).toBe("Esta pessoa não atende neste restaurante.");
     const resolved = await send("patch", `/conversations/${mariaChat.id}`, { status: "RESOLVED" }).expect(200);
     expect(resolved.body.status).toBe("RESOLVED");
+    // A primeira aba da Inbox (ativas) traz abertas e pendentes; a resolvida fica só na aba dela.
+    const active = await get("/conversations?status=ACTIVE").expect(200);
+    expect(active.body.items.map((c: { id: string }) => c.id)).toEqual([joaoChat.id]);
+    const done = await get("/conversations?status=RESOLVED").expect(200);
+    expect(done.body.items.map((c: { id: string }) => c.id)).toEqual([mariaChat.id]);
   });
 
   it("lista membros do restaurante e respostas rápidas", async () => {

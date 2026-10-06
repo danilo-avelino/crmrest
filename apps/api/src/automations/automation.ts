@@ -9,7 +9,12 @@ import type { RealtimeEmitter } from "../realtime/realtime.emitter.js";
 export type AutomationState = {
   /** Menu "Em que podemos ajudar?". */
   triage?: "awaiting_option" | "awaiting_order_number" | "awaiting_order_confirmation" | "done";
-  /** Pedido achado pelo número, esperando o cliente confirmar que é dele. */
+  /** O menu já foi repetido por uma resposta fora das opções: a próxima chama a equipe. */
+  menuRepeated?: boolean;
+  /** O cliente recebeu os links e pediu sozinho; se continuar escrevendo, o menu volta uma vez. */
+  selfServed?: boolean;
+  /** O atendimento começou com o restaurante fechado (aviso de fora do horário no lugar do menu). */
+  afterHours?: boolean;  /** Pedido achado pelo número, esperando o cliente confirmar que é dele. */
   foundOrderId?: string;
   /** O pedido foi achado pelo cadastro do cliente (sem ele informar o número): "não" pede o número. */
   autoFound?: boolean;

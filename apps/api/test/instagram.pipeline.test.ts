@@ -121,8 +121,9 @@ describe("Instagram e coleta de telefone (§5.3)", () => {
 
   it("sem resposta: um lembrete e depois o telefone fica pendente", async () => {
     await send("IGSID-SILENCIOSO", "mid.in4", "Oi");
-    // Uma pergunta em vez de uma opção do menu: segue com a equipe, e a coleta de telefone começa.
+    // Duas respostas fora das opções (o menu repete uma vez): segue com a equipe, e a coleta de telefone começa.
     await send("IGSID-SILENCIOSO", "mid.in4b", "Vocês abrem amanhã?");
+    await send("IGSID-SILENCIOSO", "mid.in4c", "Abrem?");
     const { id } = await conversationOf("IGSID-SILENCIOSO");
     const phoneCollection = app.get(PhoneCollectionService);
 
@@ -130,7 +131,7 @@ describe("Instagram e coleta de telefone (§5.3)", () => {
     await phoneCollection.remind(fx.tenant.id, id); // só um lembrete
     await drainQueues(app);
     let conversation = await conversationOf("IGSID-SILENCIOSO");
-    expect(automationsOf(conversation)).toEqual(["menu", "phone_collection", "phone_reminder"]);
+    expect(automationsOf(conversation)).toEqual(["menu", "menu", "handoff", "phone_collection", "phone_reminder"]);
 
     await phoneCollection.giveUp(fx.tenant.id, id);
     conversation = await conversationOf("IGSID-SILENCIOSO");

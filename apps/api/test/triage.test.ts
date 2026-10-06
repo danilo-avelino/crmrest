@@ -258,11 +258,30 @@ describe("menu de atendimento, busca do pedido e pesquisa de satisfação", () =
     await say("5511970000004", "wamid.L2", "2");
 
     const conversation = await conversationOf("5511970000004");
-    expect(conversation.automationState).toEqual({ triage: "done" });
+    expect(conversation.automationState).toEqual({ triage: "done", selfServed: true });
     expect(conversation.messages.at(-1)!.content).toMatchObject({
       automation: "order_links",
       text: "Você pode fazer seu pedido por aqui:\n• Cardápio digital: https://pedido.exemplo.com",
     });
+
+    // Continuou escrevendo depois dos links: o menu volta uma vez; fora das opções de novo, a equipe é chamada.
+    await say("5511970000004", "wamid.L3", "Quero falar com atendente");
+    expect((await conversationOf("5511970000004")).automationState).toEqual({ triage: "awaiting_option", menuRepeated: true });
+    await say("5511970000004", "wamid.L4", "Atendente por favor");
+    const called = await conversationOf("5511970000004");
+    expect(called.awaitingAgentSince).not.toBeNull();
+    expect(await automations("5511970000004")).toEqual(["menu", "order_links", "menu", "handoff"]);
+  });
+
+  it("resposta fora das opções: repete o menu uma vez e, na segunda, chama a equipe", async () => {
+    await say("5511970000017", "wamid.O1", "Oi");
+    await say("5511970000017", "wamid.O2", "Vocês entregam no Centro?");
+    expect((await conversationOf("5511970000017")).automationState).toEqual({ triage: "awaiting_option", menuRepeated: true });
+    await say("5511970000017", "wamid.O3", "Entregam?");
+    const conversation = await conversationOf("5511970000017");
+    expect(conversation.automationState).toEqual({ triage: "done", menuRepeated: true });
+    expect(conversation.awaitingAgentSince).not.toBeNull();
+    expect(await automations("5511970000017")).toEqual(["menu", "menu", "handoff"]);
   });
 
   it("quando o atendente responde, o menu deixa de interpretar as mensagens", async () => {
@@ -298,11 +317,24 @@ describe("menu de atendimento, busca do pedido e pesquisa de satisfação", () =
         data: { settings: { businessHours: { enabled: true, days, closedMessage: "Estamos fechados. Abrimos às 18h!" } } },
       });
       await say("5511970000007", "wamid.H1", "Oi, vocês estão abertos?");
-      expect((await conversationOf("5511970000007")).automationState).toEqual({ triage: "done" });
+      // Fica pendente para a equipe responder quando abrir (sem encerramento por inatividade nem avaliação).
+      expect(await conversationOf("5511970000007")).toMatchObject({ status: "PENDING", automationState: { triage: "done", afterHours: true } });
       expect((await contents("5511970000007")).at(-1)).toMatchObject({ automation: "after_hours", text: "Estamos fechados. Abrimos às 18h!" });
-      // Mensagens seguintes do mesmo atendimento não repetem o aviso nem abrem o menu.
+      // Mensagens seguintes do mesmo atendimento não repetem o aviso nem abrem o menu, e a conversa continua pendente.
       await say("5511970000007", "wamid.H2", "1");
       expect(await automations("5511970000007")).toEqual(["after_hours"]);
+      const pending = await conversationOf("5511970000007");
+      expect(pending.status).toBe("PENDING");
+      await app.get(InactivityService).close(fx.tenant.id, pending.id, new Date(Date.now() + 60 * 60_000));
+      expect((await conversationOf("5511970000007")).status).toBe("PENDING");
+
+      // A equipe responde: volta a ser um atendimento aberto.
+      await request(app.getHttpServer())
+        .post(`/api/conversations/${pending.id}/messages`)
+        .set("Authorization", `Bearer ${token}`)
+        .send({ text: "Bom dia! Já abrimos, em que posso ajudar?" })
+        .expect(201);
+      expect(await conversationOf("5511970000007")).toMatchObject({ status: "OPEN", automationState: { triage: "done" } });
     } finally {
       await admin.tenant.update({ where: { id: fx.tenant.id }, data: { settings: {} } });
     }
@@ -326,7 +358,20 @@ describe("menu de atendimento, busca do pedido e pesquisa de satisfação", () =
     const delayed = await app.get<Queue>(getQueueToken(QUEUES.automations)).getJobs(["delayed"]);
     expect(delayed.some((job) => job.name === "inactivity" && job.data.conversationId === id)).toBe(true);
 
-    // Antes dos 20 minutos, nada acontece.
+    // Chamando o atendente: mesmo parada, a conversa não é encerrada (o cliente espera a equipe).
+    expect((await conversationOf("5511970000008")).awaitingAgentSince).not.toBeNull();
+    await idle(id);
+    await app.get(InactivityService).close(fx.tenant.id, id);
+    expect((await conversationOf("5511970000008")).status).toBe("OPEN");
+
+    // A equipe responde e o alarme para; antes dos 20 minutos, nada acontece.
+    await request(app.getHttpServer())
+      .post(`/api/conversations/${id}/messages`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ text: "Oi! Vou verificar seu pedido." })
+      .expect(201);
+    await drainQueues(app);
+    expect((await conversationOf("5511970000008")).awaitingAgentSince).toBeNull();
     await app.get(InactivityService).close(fx.tenant.id, id);
     expect((await conversationOf("5511970000008")).status).toBe("OPEN");
 
@@ -343,6 +388,27 @@ describe("menu de atendimento, busca do pedido e pesquisa de satisfação", () =
       { automation: "survey", text: "Qual nota você dá para nosso atendimento? Digite de 1 a 5" },
     ]);
     expect(graph.requests.at(-1)!.body).toMatchObject({ text: { body: expect.stringContaining("Digite de 1 a 5") } });
+  });
+
+  it("chamando o atendente: fica no topo da Inbox, entra na contagem do alarme e para ao resolver", async () => {
+    await say("5511970000016", "wamid.Q1", "Oi");
+    await say("5511970000016", "wamid.Q2", "3");
+    const { id } = await conversationOf("5511970000016");
+    const api = (path: string) => request(app.getHttpServer()).get(`/api${path}`).set("Authorization", `Bearer ${token}`).expect(200);
+
+    const { body } = await api("/conversations?status=ACTIVE");
+    const flags = body.items.map((c: { awaitingAgentSince: string | null }) => c.awaitingAgentSince !== null);
+    expect(flags.indexOf(false)).toBeGreaterThan(0); // todas as que chamam vêm antes das demais
+    expect(flags.slice(flags.indexOf(false))).not.toContain(true);
+    expect(body.items.find((c: { id: string }) => c.id === id).awaitingAgentSince).toEqual(expect.any(String));
+    expect((await api("/conversations/counts")).body.awaitingAgent).toBe(flags.filter(Boolean).length);
+
+    await request(app.getHttpServer())
+      .patch(`/api/conversations/${id}`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ status: "RESOLVED" })
+      .expect(200);
+    expect((await conversationOf("5511970000016")).awaitingAgentSince).toBeNull();
   });
 
   it("não encerra quando o cliente falou por último ou a conversa está pendente; sem pedido, não pede avaliação", async () => {

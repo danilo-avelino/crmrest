@@ -59,6 +59,7 @@ export function toListItem(conversation: ConversationWithList): ConversationList
     createdAt: conversation.createdAt.toISOString(),
     lastMessageAt: conversation.lastMessageAt?.toISOString() ?? null,
     windowExpiresAt: conversation.windowExpiresAt?.toISOString() ?? null,
+    awaitingAgentSince: conversation.awaitingAgentSince?.toISOString() ?? null,
     channel: conversation.channel,
     contact: conversation.contact,
     assignedUser: conversation.assignedUser,

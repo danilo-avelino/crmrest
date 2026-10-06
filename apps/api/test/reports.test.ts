@@ -54,7 +54,22 @@ describe("aba Avaliações: notas e tempo de resposta por atendente", () => {
     const old = await conversation();
     await handoff(old.id, now - 10 * DAY);
     await reply(old.id, bruna.id, now - 10 * DAY + MINUTE);
+
+    // Há 2 dias, chegou fora do horário e ninguém respondeu: sem resposta no fim do dia (não conta como passagem à equipe).
+    afterHours = await conversation();
+    await admin.message.create({
+      data: { ...base, conversationId: afterHours.id, direction: "OUTBOUND", type: "TEXT", content: { automation: "after_hours", text: "Fechados" }, status: "READ", createdAt: new Date(now - 2 * DAY) },
+    });
+
+    // Há 20 dias, passado à equipe às 23h e respondido só às 9h do dia seguinte: também ficou sem resposta no dia.
+    late = await conversation();
+    const day = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date(now - 20 * DAY));
+    const lateAt = Date.parse(`${day}T23:00:00-03:00`);
+    await handoff(late.id, lateAt);
+    await reply(late.id, bruna.id, lateAt + 10 * 60 * MINUTE);
   });
+  let afterHours: { id: string };
+  let late: { id: string };
 
   afterAll(async () => {
     await fx?.cleanup();
@@ -87,6 +102,21 @@ describe("aba Avaliações: notas e tempo de resposta por atendente", () => {
     ]);
 
     const month = (await report(token, "30d").expect(200)).body;
-    expect(month.summary).toMatchObject({ handoffs: 3, answered: 2, averageResponseSeconds: 90 });
+    expect(month.summary).toMatchObject({ handoffs: 4, answered: 3, averageResponseSeconds: (120 + 60 + 36_000) / 3 });
+  });
+
+  it("sem resposta no fim do dia: chamadas que ninguém da equipe respondeu até 23:59", async () => {
+    const token = await accessTokenFor(app, fx.user.email, fx.tenant.id);
+    const week = (await report(token, "7d").expect(200)).body;
+    // O atendimento 2 (sem resposta) e o que chegou fora do horário; o atendimento 1 foi respondido no mesmo dia.
+    expect(week.unanswered.map((u: { afterHours: boolean; contactName: string }) => [u.afterHours, u.contactName])).toEqual([
+      [false, "Carlos Mendes"],
+      [true, "Carlos Mendes"],
+    ]);
+    expect(week.unanswered[1].conversationId).toBe(afterHours.id);
+
+    const month = (await report(token, "30d").expect(200)).body;
+    expect(month.unanswered).toHaveLength(3);
+    expect(month.unanswered[2]).toMatchObject({ conversationId: late.id, afterHours: false });
   });
 });

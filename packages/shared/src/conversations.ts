@@ -84,6 +84,8 @@ export type ConversationListItem = {
   createdAt: string;
   lastMessageAt: string | null;
   windowExpiresAt: string | null;
+  /** Desde quando o cliente espera um atendente (a automação chamou a equipe e ninguém respondeu); null = não espera. */
+  awaitingAgentSince: string | null;
   channel: { id: string; type: ChannelType; name: string };
   contact: { id: string; name: string | null; phoneStatus: string | null };
   assignedUser: { id: string; name: string } | null;
@@ -93,11 +95,13 @@ export type ConversationListItem = {
 };
 
 export type ConversationPage = { items: ConversationListItem[]; nextCursor: string | null };
-export type ConversationCounts = Record<ConversationStatus, number>;
+/** Conversas por status e quantas estão chamando um atendente (alarme da Inbox). */
+export type ConversationCounts = Record<ConversationStatus, number> & { awaitingAgent: number };
 export type ConversationMessages = { messages: MessageDto[]; orders: Record<string, OrderDto> };
 
 export const ConversationListQuery = z.object({
-  status: z.enum(ConversationStatusEnum).optional(),
+  /** ACTIVE: abertas e pendentes (o que a equipe ainda precisa tratar). */
+  status: z.enum([...Object.values(ConversationStatusEnum), "ACTIVE"]).optional(),
   search: z.string().trim().max(100).optional(),
   tenantId: z.uuid().optional(),
   cursor: z.uuid().optional(),

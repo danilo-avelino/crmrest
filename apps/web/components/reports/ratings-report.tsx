@@ -100,7 +100,7 @@ export function RatingsReport() {
           </div>
         ) : (
           <div className="flex max-w-[1100px] flex-col gap-6">
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-4 gap-3">
               <Metric
                 label="Nota média"
                 value={data!.summary.averageScore === null ? "—" : score(data!.summary.averageScore)}
@@ -116,6 +116,11 @@ export function RatingsReport() {
                 label="Atendimentos passados à equipe"
                 value={count(data!.summary.handoffs)}
                 detail={`${count(data!.summary.handoffs - data!.summary.answered)} sem resposta da equipe`}
+              />
+              <Metric
+                label="Sem resposta no fim do dia"
+                value={count(data!.unanswered.length)}
+                detail={period === "today" ? "chamadas de hoje ainda sem resposta (até agora)" : "chamadas que terminaram o dia sem resposta"}
               />
             </div>
 
@@ -141,6 +146,40 @@ export function RatingsReport() {
                         <Td align="right">{agent.averageScore === null ? "—" : <Stars value={agent.averageScore} />}</Td>
                         <Td align="right">{count(agent.answered)}</Td>
                         <Td align="right">{agent.averageResponseSeconds === null ? "—" : responseTime(agent.averageResponseSeconds)}</Td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </Section>
+
+            <Section
+              title="Sem resposta no fim do dia"
+              note="Atendimentos passados à equipe (ou recebidos fora do horário) em que ninguém da equipe respondeu até 23:59."
+            >
+              {data!.unanswered.length === 0 ? (
+                <p className="px-5 py-6 text-[13px] text-ink-3">Nenhuma conversa ficou sem resposta no período.</p>
+              ) : (
+                <table className="w-full border-collapse">
+                  <thead>
+                    <tr className="bg-paper">
+                      <Th>Cliente</Th>
+                      <Th>Chamado em</Th>
+                      <Th>Motivo</Th>
+                      <Th />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data!.unanswered.slice(0, 50).map((item) => (
+                      <tr key={`${item.conversationId}-${item.calledAt}`} className="border-b border-rule-soft last:border-0">
+                        <Td className="font-medium">{item.contactName ?? "Cliente sem nome"}</Td>
+                        <Td className="text-ink-3">{dayTime(item.calledAt, now)}</Td>
+                        <Td>{item.afterHours ? "Chegou fora do horário" : "Passado à equipe pela automação"}</Td>
+                        <Td align="right">
+                          <Link href={`/inbox?conversa=${item.conversationId}`} className="text-xs text-tomate underline underline-offset-2">
+                            Ver conversa
+                          </Link>
+                        </Td>
                       </tr>
                     ))}
                   </tbody>

@@ -28,10 +28,20 @@ export class InactivityService {
     const messageId = await this.db.withTenants({ tenantIds: [tenantId] }, async (tx) => {
       const conversation = await tx.conversation.findUnique({
         where: { id: conversationId },
-        select: { id: true, tenantId: true, channelId: true, status: true, windowExpiresAt: true, channel: { select: { type: true } } },
+        select: {
+          id: true,
+          tenantId: true,
+          channelId: true,
+          status: true,
+          windowExpiresAt: true,
+          awaitingAgentSince: true,
+          channel: { select: { type: true } },
+        },
       });
       // Pendente é a equipe segurando o atendimento (ex.: "vou ver com a cozinha"): não encerra.
       if (conversation?.status !== "OPEN") return null;
+      // Cliente esperando um atendente (o "já vai falar com você" foi a última mensagem): não encerra.
+      if (conversation.awaitingAgentSince) return null;
       const capabilities = CHANNEL_CAPABILITIES[conversation.channel.type];
       if (!capabilities.send || (capabilities.window24h && !(conversation.windowExpiresAt && conversation.windowExpiresAt > now))) {
         return null;

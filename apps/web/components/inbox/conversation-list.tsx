@@ -2,7 +2,7 @@
 
 import type { ConversationCounts, ConversationListItem, ConversationPage } from "@comanda/shared";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
-import { CheckIcon, ListFilterIcon, SearchIcon } from "lucide-react";
+import { BellRingIcon, CheckIcon, ListFilterIcon, SearchIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
 import { Avatar, StatusBadge } from "@/components/inbox/bits";
@@ -13,13 +13,15 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useAgentAlarm } from "@/hooks/use-agent-alarm";
 import { useNow } from "@/hooks/use-now";
 import { ago } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
-type StatusFilter = "ALL" | "OPEN" | "PENDING" | "RESOLVED";
+// A primeira aba mostra só o que a equipe ainda precisa tratar; as resolvidas ficam na aba delas.
+type StatusFilter = "ACTIVE" | "OPEN" | "PENDING" | "RESOLVED";
 const FILTERS: { value: StatusFilter; label: string }[] = [
-  { value: "ALL", label: "Todos" },
+  { value: "ACTIVE", label: "Ativos" },
   { value: "OPEN", label: "Abertos" },
   { value: "PENDING", label: "Pendentes" },
   { value: "RESOLVED", label: "Resolvidos" },
@@ -35,7 +37,7 @@ export function ConversationList({
 }) {
   const { request, session } = useAuth();
   const master = session?.context?.mode === "master";
-  const [status, setStatus] = useState<StatusFilter>("ALL");
+  const [status, setStatus] = useState<StatusFilter>("ACTIVE");
   const [search, setSearch] = useState("");
   const [tenantId, setTenantId] = useState<string | null>(null);
   const term = useDebounced(search.trim(), 300);
@@ -51,7 +53,7 @@ export function ConversationList({
     queryKey: ["conversations", { status, term, tenantId }],
     queryFn: ({ pageParam }) =>
       request<ConversationPage>(
-        `/conversations?${query({ status: status === "ALL" ? null : status, search: term || null, cursor: pageParam })}`,
+        `/conversations?${query({ status, search: term || null, cursor: pageParam })}`,
       ),
     initialPageParam: null as string | null,
     getNextPageParam: (page) => page.nextCursor,
@@ -61,8 +63,16 @@ export function ConversationList({
     queryFn: () => request<ConversationCounts>(`/conversations/counts?${query({})}`),
   });
 
+  // O alarme vale para todos os restaurantes do usuário, mesmo com a lista filtrada por um deles.
+  const allCounts = useQuery({
+    queryKey: ["counts", null],
+    queryFn: () => request<ConversationCounts>("/conversations/counts"),
+  });
+  const calling = allCounts.data?.awaitingAgent ?? 0;
+  const alarm = useAgentAlarm(calling > 0);
+
   const items = conversations.data?.pages.flatMap((page) => page.items) ?? [];
-  useUnreadSignals(items);
+  useUnreadSignals(items, calling);
 
   return (
     <section className="flex w-80 shrink-0 flex-col border-r border-rule bg-surface">
@@ -90,6 +100,16 @@ export function ConversationList({
           </DropdownMenu>
         )}
       </header>
+
+      {calling > 0 && (
+        <div role="alert" className="flex shrink-0 items-center gap-2 bg-tomate px-4 py-2 text-[12px] font-semibold text-white">
+          <BellRingIcon className="size-4 shrink-0 animate-bounce" aria-hidden />
+          <span className="flex-1">
+            {calling === 1 ? "1 cliente chamando um atendente" : `${calling} clientes chamando um atendente`}
+            {alarm.blocked && <span className="block text-[10.5px] font-normal opacity-90">Clique na página para ativar o som.</span>}
+          </span>
+        </div>
+      )}
 
       <div className="shrink-0 border-b border-rule px-3 py-2.5">
         <label className="flex h-8 items-center gap-2 rounded-md border border-rule bg-paper px-2.5 focus-within:border-ink">
@@ -181,6 +201,7 @@ function ConversationRow({
 }) {
   const unread = conversation.unreadCount > 0;
   const resolved = conversation.status === "RESOLVED";
+  const calling = conversation.awaitingAgentSince !== null;
   const time = conversation.lastMessageAt ?? conversation.createdAt;
 
   return (
@@ -193,6 +214,8 @@ function ConversationRow({
         active
           ? "border-b-[#F5C4BC] border-l-tomate bg-tomate-lt"
           : "border-b-rule-soft border-l-transparent bg-surface hover:bg-paper",
+        // Chamando o atendente: borda grossa e fundo tomate, para saltar aos olhos.
+        calling && "border-l-4 border-l-tomate bg-tomate-lt hover:bg-tomate-lt",
         resolved && !active && "opacity-60",
       )}
     >
@@ -204,6 +227,12 @@ function ConversationRow({
         ringClassName={active ? "border-tomate-lt" : undefined}
       />
       <div className="min-w-0 flex-1">
+        {calling && (
+          <div className="mb-1 inline-flex animate-pulse items-center gap-1 rounded-sm bg-tomate px-1.5 py-0.5 text-[10px] font-semibold text-white">
+            <BellRingIcon className="size-3" aria-hidden />
+            Chamando atendente · {ago(conversation.awaitingAgentSince!, now)}
+          </div>
+        )}
         <div className="mb-0.5 flex items-baseline justify-between gap-2">
           <div className="flex min-w-0 items-center gap-1.5">
             <span className={cn("truncate text-[13px]", unread || active ? "font-semibold" : resolved ? "text-ink-2" : "")}>
@@ -262,15 +291,16 @@ function useDebounced<T>(value: T, delayMs: number): T {
   return debounced;
 }
 
-/** Nova mensagem: número de não lidas no título da aba e um aviso sonoro curto. */
-function useUnreadSignals(items: ConversationListItem[]) {
+/** Nova mensagem: número de não lidas no título da aba e um aviso sonoro curto (o alarme de chamado tem o próprio som). */
+function useUnreadSignals(items: ConversationListItem[], calling: number) {
   const total = items.reduce((sum, conversation) => sum + conversation.unreadCount, 0);
   const previous = useRef<number | null>(null);
   useEffect(() => {
-    document.title = total > 0 ? `(${total}) Comanda` : "Comanda";
-    if (previous.current !== null && total > previous.current) beep();
+    const title = total > 0 ? `(${total}) Comanda` : "Comanda";
+    document.title = calling > 0 ? `🔔 Chamando atendente · ${title}` : title;
+    if (previous.current !== null && total > previous.current && calling === 0) beep();
     previous.current = total;
-  }, [total]);
+  }, [total, calling]);
 }
 
 function beep() {

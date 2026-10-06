@@ -97,6 +97,8 @@ export class TriageService {
           select: { id: true, tenantId: true, channelId: true },
         });
         await systemEvent(tx, conversation, { event: "handoff", text: "Atendimento passado para a equipe" });
+        // Chamando o atendente (alarme e topo da Inbox) até alguém responder; se já chamava, vale a primeira chamada.
+        await tx.conversation.updateMany({ where: { id: conversation.id, awaitingAgentSince: null }, data: { awaitingAgentSince: new Date() } });
       }
       return result;
     });
@@ -119,18 +121,41 @@ export class TriageService {
       const hours = businessHoursOf(settings);
       if (hours.enabled && !isOpenAt(hours, new Date())) {
         const id = await automationMessage(tx, conversation, "after_hours", hours.closedMessage);
-        await setAutomationState(tx, conversation.id, { triage: "done" });
+        await setAutomationState(tx, conversation.id, { triage: "done", afterHours: true });
+        await this.keepPending(tx, conversation.id);
         return { send: [id], done: true };
       }
-      const greeting = automationTextsOf(settings).greeting;
-      const id = await automationMessage(tx, conversation, "menu", menuMessage(greeting, firstName(conversation.contact.name)));
-      await setAutomationState(tx, conversation.id, { triage: "awaiting_option" });
-      return { send: [id], done: false };
+      return this.sendMenu(tx, conversation, { triage: "awaiting_option" }, settings);
     }
     if (state.triage === "awaiting_option") return this.chooseOption(tx, conversation, state, event.text);
     if (state.triage === "awaiting_order_number") return this.findOrder(tx, conversation, state, event.text);
     if (state.triage === "awaiting_order_confirmation") return this.confirmOrder(tx, conversation, state, event.text);
+    // Mais mensagens enquanto o restaurante está fechado: a conversa continua pendente até a equipe responder.
+    if (state.afterHours) {
+      const hours = businessHoursOf(await tenantSettings(tx, conversation.tenantId));
+      if (hours.enabled && !isOpenAt(hours, new Date())) await this.keepPending(tx, conversation.id);
+    }
+    // Recebeu os links e continuou escrevendo: o menu volta uma vez; outra resposta fora das opções chama a equipe.
+    if (state.selfServed) {
+      return this.sendMenu(tx, conversation, { ...state, triage: "awaiting_option", selfServed: undefined, menuRepeated: true });
+    }
     return { send: [], done: true };
+  }
+
+  /** Menu de atendimento ("Em que podemos ajudar?"), com a saudação de Configurações. */
+  private async sendMenu(tx: TenantTx, conversation: Conversation, next: AutomationState, settings?: unknown): Promise<Step> {
+    const greeting = automationTextsOf(settings ?? (await tenantSettings(tx, conversation.tenantId))).greeting;
+    const id = await automationMessage(tx, conversation, "menu", menuMessage(greeting, firstName(conversation.contact.name)));
+    await setAutomationState(tx, conversation.id, next);
+    return { send: [id], done: false };
+  }
+
+  /**
+   * Recebida fora do horário: pendente, para a equipe responder quando abrir. Conversa pendente não é encerrada por
+   * inatividade nem pede avaliação (as duas só valem para conversas abertas ou resolvidas).
+   */
+  private async keepPending(tx: TenantTx, conversationId: string): Promise<void> {
+    await tx.conversation.update({ where: { id: conversationId }, data: { status: "PENDING" } });
   }
 
   private async chooseOption(tx: TenantTx, conversation: Conversation, state: AutomationState, text?: string): Promise<Step> {
@@ -141,19 +166,20 @@ export class TriageService {
       if (order) return this.offerOrder(tx, conversation, { ...state, autoFound: true }, order, order.displayCode ?? order.externalOrderId);
       return this.askOrderNumber(tx, conversation, state);
     }
+    // Resposta fora das opções (uma pergunta, um áudio...): repete o menu uma vez; na segunda, chama a equipe.
+    if (!option && !state.menuRepeated) return this.sendMenu(tx, conversation, { ...state, menuRepeated: true });
 
-    await setAutomationState(tx, conversation.id, { ...state, triage: "done" });
     if (option === "2") {
       const links = await this.orderLinks(tx, conversation.tenantId);
       // Com os links, o cliente pede sozinho; sem eles, a equipe atende.
-      if (links.length) return { send: [await automationMessage(tx, conversation, "order_links", orderLinksMessage(links))], done: true };
-      return { send: [await automationMessage(tx, conversation, "handoff", TEXTS.handoff)], done: true, handoff: true };
+      if (links.length) {
+        await setAutomationState(tx, conversation.id, { ...state, triage: "done", selfServed: true });
+        return { send: [await automationMessage(tx, conversation, "order_links", orderLinksMessage(links))], done: true };
+      }
     }
-    if (option === "3") {
-      return { send: [await automationMessage(tx, conversation, "handoff", TEXTS.handoff)], done: true, handoff: true };
-    }
-    // Outra resposta (uma pergunta, um áudio...): segue com a equipe, sem insistir no menu.
-    return { send: [], done: true, handoff: true };
+    // Opção 3, opção 2 sem links ou a segunda resposta fora das opções: a equipe atende.
+    await setAutomationState(tx, conversation.id, { ...state, triage: "done" });
+    return { send: [await automationMessage(tx, conversation, "handoff", TEXTS.handoff)], done: true, handoff: true };
   }
 
   private async findOrder(tx: TenantTx, conversation: Conversation, state: AutomationState, text?: string): Promise<Step> {

@@ -52,14 +52,15 @@ export class ConversationsService {
 
   async list(auth: RequestAuth, query: ConversationListQuery): Promise<ConversationPage> {
     const where: Prisma.ConversationWhereInput = {
-      ...(query.status && { status: query.status }),
+      ...(query.status && { status: query.status === "ACTIVE" ? { not: "RESOLVED" } : query.status }),
       ...(query.search && { contact: contactSearch(query.search, this.key) }),
     };
     const rows = await this.db.withTenants(scopeFor(auth, query.tenantId), (tx) =>
       tx.conversation.findMany({
         where,
         include: conversationListInclude,
-        orderBy: [{ lastMessageAt: { sort: "desc", nulls: "last" } }, { id: "desc" }],
+        // Quem está chamando o atendente fica no topo, da espera mais longa para a mais curta.
+        orderBy: [{ awaitingAgentSince: { sort: "asc", nulls: "last" } }, { lastMessageAt: { sort: "desc", nulls: "last" } }, { id: "desc" }],
         take: PAGE_SIZE + 1,
         ...(query.cursor && { cursor: { id: query.cursor }, skip: 1 }),
       }),
@@ -69,10 +70,13 @@ export class ConversationsService {
   }
 
   async counts(auth: RequestAuth, tenantId?: string): Promise<ConversationCounts> {
-    const groups = await this.db.withTenants(scopeFor(auth, tenantId), (tx) =>
-      tx.conversation.groupBy({ by: ["status"], _count: { _all: true } }),
+    const [groups, awaitingAgent] = await this.db.withTenants(scopeFor(auth, tenantId), (tx) =>
+      Promise.all([
+        tx.conversation.groupBy({ by: ["status"], _count: { _all: true } }),
+        tx.conversation.count({ where: { awaitingAgentSince: { not: null }, status: { not: "RESOLVED" } } }),
+      ]),
     );
-    const counts: ConversationCounts = { OPEN: 0, PENDING: 0, RESOLVED: 0 };
+    const counts: ConversationCounts = { OPEN: 0, PENDING: 0, RESOLVED: 0, awaitingAgent };
     for (const group of groups) counts[group.status] = group._count._all;
     return counts;
   }
@@ -128,9 +132,17 @@ export class ConversationsService {
       // Responder implica ter lido a conversa; e o atendente assume, encerrando o menu automático se ainda estiver aberto.
       const state = conversation.automationState as AutomationState;
       const menuOpen = !!state.triage && state.triage !== "done";
+      // Pendente só por ter chegado fora do horário: com a resposta da equipe, volta a ser um atendimento aberto.
+      const afterHoursPending = conversation.status === "PENDING" && state.afterHours;
       await tx.conversation.update({
         where: { id: conversationId },
-        data: { lastMessageAt: created.createdAt, unreadCount: 0, ...(menuOpen && { automationState: { ...state, triage: "done" } }) },
+        data: {
+          lastMessageAt: created.createdAt,
+          unreadCount: 0,
+          awaitingAgentSince: null, // a equipe respondeu: o alarme para
+          ...((menuOpen || afterHoursPending) && { automationState: { ...state, triage: "done", afterHours: undefined } }),
+          ...(afterHoursPending && { status: "OPEN" }),
+        },
       });
       return created;
     });
@@ -210,7 +222,10 @@ export class ConversationsService {
         },
         include: { sentByUser: { select: { id: true, name: true } } },
       });
-      await tx.conversation.update({ where: { id: conversationId }, data: { lastMessageAt: created.createdAt, unreadCount: 0 } });
+      await tx.conversation.update({
+        where: { id: conversationId },
+        data: { lastMessageAt: created.createdAt, unreadCount: 0, awaitingAgentSince: null },
+      });
       return created;
     });
     await this.outbound.add("send", { tenantId: message.tenantId, messageId: message.id });
@@ -264,6 +279,7 @@ export class ConversationsService {
         where: { id: conversationId },
         data: {
           ...(body.status && { status: body.status }),
+          ...(body.status === "RESOLVED" && { awaitingAgentSince: null }), // resolvida sem resposta: o alarme para
           ...(body.assignedUserId !== undefined && { assignedUserId: body.assignedUserId }),
         },
         include: conversationListInclude,
