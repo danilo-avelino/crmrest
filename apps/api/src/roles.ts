@@ -17,6 +17,8 @@ import { InboundProcessor } from "./inbound/inbound.processor.js";
 import { InboundService } from "./inbound/inbound.service.js";
 import { OutboundProcessor } from "./outbound/outbound.processor.js";
 import { RealtimeGateway } from "./realtime/realtime.gateway.js";
+import { ReportsController } from "./reports/reports.controller.js";
+import { ReportsService } from "./reports/reports.service.js";
 import { IntegrationsController } from "./settings/integrations.controller.js";
 import { IntegrationsService } from "./settings/integrations.service.js";
 import { MembersController } from "./settings/members.controller.js";
@@ -37,8 +39,9 @@ import { MetaWebhookController } from "./webhooks/meta-webhook.controller.js";
     IntegrationsController,
     QuickRepliesController,
     MembersController,
+    ReportsController,
   ],
-  providers: [ConversationsService, ContactsService, SettingsService, IntegrationsService],
+  providers: [ConversationsService, ContactsService, SettingsService, IntegrationsService, ReportsService],
 })
 export class ApiRoleModule {}
 

@@ -4,7 +4,8 @@ import { JobProcessor } from "../queues/job-processor.js";
 import { type InboundJob, QUEUES } from "../queues/queues.module.js";
 import { InboundService } from "./inbound.service.js";
 
-@Processor(QUEUES.inbound, { concurrency: 5 })
+// Uma mensagem por vez: em paralelo, a resposta rápida do cliente ("1") era tratada antes da anterior ("Oi") e perdia o menu.
+@Processor(QUEUES.inbound, { concurrency: 1 })
 export class InboundProcessor extends JobProcessor {
   constructor(private readonly inbound: InboundService) {
     super();

@@ -148,6 +148,34 @@ describe("Instagram e coleta de telefone (§5.3)", () => {
     expect(messages.find((m) => m.externalMessageId === "mid.in5")).toMatchObject({ direction: "INBOUND" });
   });
 
+  it("falar sobre um pedido: acha o pedido do iFood ligado ao mesmo cadastro, sem pedir o número", async () => {
+    await send("IGSID-PAULO", "mid.p1", "Oi");
+    const { contactId } = await conversationOf("IGSID-PAULO");
+    // Cadastro com o Instagram e o iFood vinculados (ex.: unidos antes): o pedido do iFood é dele.
+    const order = await admin.order.create({
+      data: {
+        tenantId: fx.tenant.id,
+        contactId,
+        channelId: fx.ifood.id,
+        externalOrderId: `pedido-ig-${Date.now()}`,
+        displayCode: "3131",
+        status: "CONFIRMED",
+        subtotal: "30.00",
+        deliveryFee: "0.00",
+        total: "30.00",
+        placedAt: new Date(),
+        raw: {},
+        items: { create: { tenantId: fx.tenant.id, name: "Açaí 500ml", quantity: 1, unitPrice: "30.00" } },
+      },
+    });
+
+    await send("IGSID-PAULO", "mid.p2", "1");
+    const conversation = await conversationOf("IGSID-PAULO");
+    expect(conversation.automationState).toEqual({ triage: "awaiting_order_confirmation", foundOrderId: order.id, autoFound: true });
+    expect(automationsOf(conversation)).toEqual(["menu", "order_lookup"]);
+    expect((conversation.messages.at(-1)!.content as { text: string }).text).toMatch(/^Encontramos o pedido #3131 \(confirmado\):\n• 1x Açaí 500ml/);
+  });
+
   it("canal que já informa o telefone (WhatsApp) não dispara a coleta", async () => {
     const whatsapp = (id: string, body: string) =>
       postMetaWebhook(app, {

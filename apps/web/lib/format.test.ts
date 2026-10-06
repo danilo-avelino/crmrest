@@ -1,5 +1,19 @@
 import { describe, expect, it } from "vitest";
-import { ago, currency, dayLabel, dayTime, duration, initials, lastContact, monthYear, remaining, shortDay, tenure } from "./format";
+import {
+  ago,
+  currency,
+  dayLabel,
+  dayTime,
+  duration,
+  initials,
+  lastContact,
+  monthYear,
+  remaining,
+  responseTime,
+  score,
+  shortDay,
+  tenure,
+} from "./format";
 
 const now = new Date("2026-10-03T19:30:00-03:00").getTime();
 const minutesBefore = (minutes: number) => new Date(now - minutes * 60_000).toISOString();
@@ -44,5 +58,13 @@ describe("formatos do design", () => {
     expect(dayTime(minutesBefore(30), now)).toMatch(/^hoje, \d{2}:\d{2}$/);
     expect(dayTime("2026-10-01T20:14:00-03:00", now)).toMatch(/^01\/10, \d{2}:\d{2}$/);
     expect(shortDay("2026-09-28T12:00:00-03:00", now)).toBe("28/09");
+  });
+
+  it("nota média e tempo de resposta (aba Avaliações)", () => {
+    expect(score(4.333)).toBe("4,3");
+    expect(score(5)).toBe("5,0");
+    expect(responseTime(45.4)).toBe("45 s");
+    expect(responseTime(12 * 60 + 10)).toBe("12 min");
+    expect(responseTime(65 * 60)).toBe("1h 05 min");
   });
 });

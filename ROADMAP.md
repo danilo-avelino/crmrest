@@ -187,10 +187,24 @@ O WhatsApp vem primeiro porque é o único canal que não depende de aprovação
 #### E18 — Inbox versão tablet (1024px) · **M** · depende de: E8, E9
 - Como atendente em tablet, quero a Inbox com a lista recolhível e o painel do cliente como gaveta (drawer).
 
+#### E26 — Previsão de saída do pedido · **M** · depende de: E7 concluído (iFood homologado), busca do pedido pelo número
+- Como cliente, quero receber uma **previsão de saída do restaurante** junto com a confirmação do meu pedido, enquanto ele ainda não saiu (recebido, confirmado ou em preparo).
+- Como atendente, quero ver a mesma previsão no card do pedido, para responder "quando chega?" sem perguntar à cozinha.
+- Como cliente, quero saber **quantos pedidos estão na minha frente em produção**: os feitos antes do meu que ainda não saíram, sem contar os cancelados. É **opcional para o restaurante**: o admin liga ou desliga em Configurações → Mensagens automáticas.
+- Como plataforma, quero calcular o tempo de preparo a partir dos **últimos pedidos que já saíram** (`dispatchedAt − placedAt`), usando uma medida robusta a extremos (ex.: mediana). Assim a previsão acompanha o ritmo real da cozinha naquele momento.
+- **Regra obrigatória:** a previsão nunca pode ser menor que o tempo já decorrido desde o pedido. Se o pedido já passou do tempo típico, a previsão é recalculada só com os pedidos que demoraram mais que o tempo já decorrido. Sem base para isso, a previsão é "agora + margem". Nunca informar um horário que já passou.
+- A definir na implementação:
+  - a janela de pedidos usada (ex.: os últimos N do dia ou as últimas 2 h);
+  - o que fica de fora (pedidos agendados, retirada no balcão, cancelados);
+  - o valor padrão quando ainda há poucos pedidos no dia (tempo informado pelo iFood ou configurado pelo restaurante);
+  - se pedidos de outros canais (Cardápio Web) entram na base e na contagem da fila, já que a cozinha é a mesma;
+  - se a contagem da fila vem ligada ou desligada para restaurantes novos.
+- Fora do escopo: o tempo de entrega (trajeto). A previsão é só de **saída** do restaurante.
+
 ### Ordem sugerida (Fase 2)
 `E14 Canais → E17 Estados de erro → E15 Configurações → E13 Clientes/merge → E18 Tablet → E16 Super Admin`
 
-Canais vem primeiro porque elimina o onboarding manual por script, que é o gargalo para o 2º restaurante. O Super Admin vem por último porque, com poucos tenants, o seed e o banco resolvem.
+Canais vem primeiro porque elimina o onboarding manual por script, que é o gargalo para o 2º restaurante. O Super Admin vem por último porque, com poucos tenants, o seed e o banco resolvem. O **E26 (previsão de saída)** entra logo depois que a integração com o iFood (E7) estiver concluída e homologada, independentemente da ordem acima.
 
 ---
 

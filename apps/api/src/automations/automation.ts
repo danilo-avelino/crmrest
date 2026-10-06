@@ -8,8 +8,12 @@ import type { RealtimeEmitter } from "../realtime/realtime.emitter.js";
 /** Estado das automações guardado em `conversation.automationState`; zera a cada novo atendimento. */
 export type AutomationState = {
   /** Menu "Em que podemos ajudar?". */
-  triage?: "awaiting_option" | "awaiting_order_number" | "done";
-  /** Pedido achado pelo número neste atendimento (decide a pesquisa de satisfação). */
+  triage?: "awaiting_option" | "awaiting_order_number" | "awaiting_order_confirmation" | "done";
+  /** Pedido achado pelo número, esperando o cliente confirmar que é dele. */
+  foundOrderId?: string;
+  /** O pedido foi achado pelo cadastro do cliente (sem ele informar o número): "não" pede o número. */
+  autoFound?: boolean;
+  /** Pedido confirmado pelo cliente neste atendimento (decide a pesquisa de satisfação). */
   linkedOrder?: { id: string; at: string };
   /** Coleta de telefone (§5.3). */
   phoneCollection?: "awaiting_phone" | "phone_collected" | "phone_skipped";
@@ -24,6 +28,8 @@ export type InboundEvent = {
   conversationId: string;
   /** Status da conversa antes desta mensagem; null = conversa nova. */
   previousStatus: ConversationStatus | null;
+  /** Começa um atendimento: conversa nova, resolvida ou sem interação há 20 minutos. */
+  newAttendance: boolean;
   text?: string;
 };
 

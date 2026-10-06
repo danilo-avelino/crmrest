@@ -2,6 +2,7 @@ import { blindIndex, type Contact, encrypt, parseEncryptionKey, type Prisma, typ
 import type { ChannelType, ConversationStatus, MessageStatus } from "@comanda/database/enums";
 import { CHANNEL_CAPABILITIES, CHANNEL_LABEL, type MessageContent, type NormalizedMessage, type StatusUpdate } from "@comanda/shared";
 import { Inject, Injectable, Logger } from "@nestjs/common";
+import { INACTIVITY_CLOSE_MS } from "../automations/inactivity.service.js";
 import { TriageService } from "../automations/triage.service.js";
 import { ENV, type Env } from "../config/env.js";
 import { ConnectorsService } from "../connectors/connectors.service.js";
@@ -16,8 +17,11 @@ export type ResolvedChannel = { id: string; tenantId: string; type: ChannelType 
 /** O que a resolução de identidade precisa saber de quem chegou (mensagem ou pedido). */
 export type ContactSource = Pick<NormalizedMessage, "channelType" | "externalContactId" | "contactProfile" | "metadata" | "timestamp">;
 
-/** Conversa que recebeu a mensagem e o status que ela tinha antes (null = conversa nova). */
-export type OpenedConversation = { id: string; previousStatus: ConversationStatus | null };
+/**
+ * Conversa que recebeu a mensagem e o status que ela tinha antes (null = conversa nova).
+ * `newAttendance`: a mensagem começa um atendimento (conversa nova, resolvida ou parada há INACTIVITY_CLOSE_MS).
+ */
+export type OpenedConversation = { id: string; previousStatus: ConversationStatus | null; newAttendance: boolean };
 
 const WINDOW_MS = 24 * 60 * 60 * 1000;
 
@@ -63,6 +67,7 @@ export class InboundService {
             channel,
             conversationId: conversation.id,
             previousStatus: conversation.previousStatus,
+            newAttendance: conversation.newAttendance,
             text: message.text,
           });
         }
@@ -246,7 +251,19 @@ export class InboundService {
       orderBy: { createdAt: "desc" },
       select: { id: true, status: true },
     });
-    if (latest) return { id: latest.id, previousStatus: latest.status };
+    if (latest) {
+      // Conversa aberta, mas sem interação há INACTIVITY_CLOSE_MS: o atendimento anterior acabou, mesmo sem ter sido resolvido.
+      const last =
+        latest.status === "RESOLVED"
+          ? null
+          : await tx.message.findFirst({
+              where: { conversationId: latest.id, direction: { in: ["INBOUND", "OUTBOUND"] } },
+              orderBy: { createdAt: "desc" },
+              select: { createdAt: true },
+            });
+      const newAttendance = !last || at.getTime() - last.createdAt.getTime() >= INACTIVITY_CLOSE_MS;
+      return { id: latest.id, previousStatus: latest.status, newAttendance };
+    }
 
     const conversation = await tx.conversation.create({
       data: { tenantId: channel.tenantId, contactId, channelId: channel.id, status: "OPEN", createdAt: at },
@@ -263,7 +280,7 @@ export class InboundService {
         createdAt: at,
       },
     });
-    return { id: conversation.id, previousStatus: null };
+    return { id: conversation.id, previousStatus: null, newAttendance: true };
   }
 }
 

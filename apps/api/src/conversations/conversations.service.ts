@@ -127,7 +127,7 @@ export class ConversationsService {
       });
       // Responder implica ter lido a conversa; e o atendente assume, encerrando o menu automático se ainda estiver aberto.
       const state = conversation.automationState as AutomationState;
-      const menuOpen = state.triage === "awaiting_option" || state.triage === "awaiting_order_number";
+      const menuOpen = !!state.triage && state.triage !== "done";
       await tx.conversation.update({
         where: { id: conversationId },
         data: { lastMessageAt: created.createdAt, unreadCount: 0, ...(menuOpen && { automationState: { ...state, triage: "done" } }) },

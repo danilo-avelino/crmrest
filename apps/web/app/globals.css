@@ -38,6 +38,7 @@
   --color-whatsapp: #25d366;
   --color-instagram: #e1306c;
   --color-ifood: #ea1d2c;
+  --color-cardapio-web: #7c3aed;
 
   /* rounded-lg é o raio padrão dos componentes shadcn: 6px no design. */
   --radius-sm: 4px; /* badges e tags */

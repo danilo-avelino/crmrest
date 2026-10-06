@@ -27,6 +27,7 @@ const AUTOMATION_LABEL: Record<NonNullable<MessageContent["automation"]>, string
   menu: "Automação · menu de atendimento",
   order_number_request: "Automação · número do pedido",
   order_lookup: "Automação · busca do pedido",
+  order_confirmed: "Automação · pedido confirmado",
   order_links: "Automação · links para pedir",
   handoff: "Automação · encaminhado à equipe",
   survey: "Automação · pesquisa de satisfação",

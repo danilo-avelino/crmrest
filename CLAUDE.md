@@ -95,7 +95,7 @@ Resumo do Sistema de Design (marca **"Comanda"**, Next.js + Tailwind + shadcn/ui
 - **Tipografia:** Display Fraunces 700/28px (−0.5px); título UI Fraunces 600/16px; label Inter 500/13px; body Inter 400/13px lh 1.5; números sempre `tabular-nums`.
 - **Botões (36px, radius 6px, Inter 500/13px):** primário ink (`#1A1814` / texto paper), secundário branco com borda rule, destrutivo/ação tomate (`#C4341A`), ghost transparente; desabilitado com opacity 0.55.
 - **Badges de status:** Aberta (tomate), Pendente (âmbar `#FEF9EC`/`#7A5008`), Resolvida (verde `#EAF6EF`/`#1D5C33`); tags com borda tracejada `#C4B8A0`.
-- **Cores de canal só como indicador pontual (bolinha):** WhatsApp `#25D366`, Instagram `#E1306C`, iFood `#EA1D2C`.
+- **Cores de canal só como indicador pontual (bolinha):** WhatsApp `#25D366`, Instagram `#E1306C`, iFood `#EA1D2C`, Cardápio Web roxo `#7C3AED` (pedido do usuário); Anota AI será azul-claro quando a integração existir.
 - **Balões:** entrada branco com borda rule (radius `12 12 12 2`); saída ink com texto paper (radius `12 12 2 12`); automação/nota interna centralizadas em âmbar (nota com borda tracejada).
 - **Inputs:** 36px, borda rule; foco borda ink + `box-shadow 0 0 0 3px rgba(26,24,20,.08)`; erro borda e mensagem em tomate.
 

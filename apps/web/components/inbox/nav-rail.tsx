@@ -1,6 +1,6 @@
 "use client";
 
-import { MegaphoneIcon, MessageSquareIcon, SettingsIcon, UsersIcon } from "lucide-react";
+import { MegaphoneIcon, MessageSquareIcon, SettingsIcon, StarIcon, UsersIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/components/auth/auth-provider";
@@ -14,12 +14,13 @@ import {
 import { usePendingAction } from "@/hooks/use-pending-action";
 import { cn } from "@/lib/utils";
 
-// Campanhas chega nas próximas fases.
+// Campanhas chega nas próximas fases. Atendentes só usam a Inbox (as outras páginas são de administrador).
 const ITEMS = [
-  { label: "Inbox", icon: MessageSquareIcon, href: "/inbox" },
-  { label: "Clientes", icon: UsersIcon, href: "/clientes" },
-  { label: "Campanhas", icon: MegaphoneIcon, href: null },
-  { label: "Configurações", icon: SettingsIcon, href: "/configuracoes" },
+  { label: "Inbox", icon: MessageSquareIcon, href: "/inbox", adminOnly: false },
+  { label: "Clientes", icon: UsersIcon, href: "/clientes", adminOnly: true },
+  { label: "Avaliações", icon: StarIcon, href: "/avaliacoes", adminOnly: true },
+  { label: "Campanhas", icon: MegaphoneIcon, href: null, adminOnly: true },
+  { label: "Configurações", icon: SettingsIcon, href: "/configuracoes", adminOnly: true },
 ];
 
 const ITEM_CLASS = "mt-1 flex size-9 items-center justify-center rounded-lg first-of-type:mt-0";
@@ -32,8 +33,7 @@ export function NavRail() {
   const [signOut] = usePendingAction(() => logout());
   if (!session?.context) return null;
   const context = session.context;
-  const canUseFullApp = context.tenants.some((tenant) => tenant.role === "ADMIN");
-  if (!canUseFullApp) return null;
+  const isAdmin = context.tenants.some((tenant) => tenant.role === "ADMIN");
 
   return (
     <nav className="flex w-14 shrink-0 flex-col items-center gap-0.5 border-r border-[#2D2A24] bg-ink py-4">
@@ -45,7 +45,7 @@ export function NavRail() {
         </svg>
       </div>
 
-      {ITEMS.map(({ label, icon: Icon, href }) => {
+      {ITEMS.filter((item) => isAdmin || !item.adminOnly).map(({ label, icon: Icon, href }) => {
         if (!href) {
           return (
             <button

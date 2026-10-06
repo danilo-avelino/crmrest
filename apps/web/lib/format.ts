@@ -136,3 +136,18 @@ export function initials(name: string | null | undefined): string {
   const letters = words.length > 1 ? [words[0]![0], words.at(-1)![0]] : words[0]!.slice(0, 2);
   return letters.join("").toUpperCase();
 }
+
+const scoreFormat = new Intl.NumberFormat("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+
+/** Nota média (1 a 5): "4,3". */
+export function score(value: number): string {
+  return scoreFormat.format(value);
+}
+
+/** Tempo de resposta: "45 s", "12 min", "1h 05 min". */
+export function responseTime(seconds: number): string {
+  if (seconds < 60) return `${Math.round(seconds)} s`;
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes} min`;
+  return `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, "0")} min`;
+}

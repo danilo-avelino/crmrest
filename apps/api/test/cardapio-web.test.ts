@@ -179,7 +179,7 @@ describe("Cardápio Web (pedidos por polling)", () => {
     expect(later - Date.parse(cardapioWeb.state.since.at(-1)!)).toBeLessThan(24 * 3_600_000);
   });
 
-  it("no WhatsApp, o cliente acha o pedido do Cardápio Web pelo número", async () => {
+  it("no WhatsApp, o pedido do Cardápio Web é achado pelo telefone do cadastro, sem pedir o número", async () => {
     const say = async (id: string, body: string) => {
       await postMetaWebhook(
         app,
@@ -192,16 +192,18 @@ describe("Cardápio Web (pedidos por polling)", () => {
     };
     await say("wamid.CW1", "Oi");
     await say("wamid.CW2", "1");
-    await say("wamid.CW3", "48");
+    await say("wamid.CW3", "1");
 
     const conversation = await admin.conversation.findFirstOrThrow({
       where: { tenantId: fx.tenant.id, contactId: whatsappContactId, channelId: fx.whatsapp.id },
       include: { messages: { orderBy: { createdAt: "asc" } } },
     });
     const order = await admin.order.findFirstOrThrow({ where: { channelId, externalOrderId: "9001" } });
-    const content = conversation.messages.map((m) => m.content as { event?: string; text?: string });
+    const content = conversation.messages.map((m) => m.content as { event?: string; text?: string; automation?: string });
     expect(content).toContainEqual({ event: "order", orderId: order.id });
     expect(content.some((c) => c.event === "contacts_merged")).toBe(false); // mesmo cadastro desde o pedido
-    expect(content.at(-1)!.text).toBe("Encontramos o pedido #48 (saiu para entrega). Um atendente já vai continuar seu atendimento.");
+    expect(content.flatMap((c) => (c.automation ? [c.automation] : []))).toEqual(["menu", "order_lookup", "order_confirmed"]);
+    expect(content.find((c) => c.automation === "order_lookup")!.text).toMatch(/^Encontramos o pedido #48 \(saiu para entrega\):\n/);
+    expect(content.at(-2)!.text).toBe("Pedido confirmado 👍 Enquanto um atendente chega, já nos conte o problema ou a sua dúvida, assim agilizamos o atendimento.");
   });
 });

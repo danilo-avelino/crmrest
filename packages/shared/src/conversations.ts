@@ -22,6 +22,7 @@ export type MessageContent = {
     | "menu"
     | "order_number_request"
     | "order_lookup"
+    | "order_confirmed"
     | "order_links"
     | "handoff"
     | "survey"
@@ -38,7 +39,8 @@ export type MessageContent = {
     | "contacts_merged"
     | "merge_conflict"
     | "order_ambiguous"
-    | "rating";
+    | "rating"
+    | "handoff";
   orderId?: string;
   /** Template aprovado do WhatsApp (o único envio permitido fora da janela de 24h). */
   template?: { name: string; language: string; variables: string[] };
