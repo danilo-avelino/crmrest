@@ -1,0 +1,54 @@
+name: Deploy Web (Next.js)
+
+  on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/web/**'
+              - 'packages/**'
+          workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+          steps:
+      - uses: actions/checkout@v4
+
+              - name: Setup SSH key
+                        run: |
+                                    mkdir -p ~/.ssh
+                                    echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+                                    chmod 600 ~/.ssh/id_rsa
+                                    ssh-keyscan -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
+
+                                - name: Build Docker image
+                                          run: |
+                                                      docker build \
+                                                        -f apps/web/Dockerfile \
+                                                        --build-arg API_URL=${{ secrets.API_URL }} \
+                                                        --build-arg NEXT_PUBLIC_REALTIME_URL=${{ secrets.NEXT_PUBLIC_REALTIME_URL }} \
+                                                        --build-arg NEXT_PUBLIC_SENTRY_DSN=${{ secrets.NEXT_PUBLIC_SENTRY_DSN }} \
+                                                        -t comanda-web:latest .
+
+                                                                - name: Transfer image to server
+                                                                          run: |
+                                                                                      docker save comanda-web:latest | gzip > comanda-web.tar.gz
+                                                                                                  scp comanda-web.tar.gz ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:/tmp/
+
+                                                                                              - name: Deploy on server
+                                                                                                        uses: appleboy/ssh-action@v1
+                                                                                                                  with:
+                                                                                                                    host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+                        docker load < /tmp/comanda-web.tar.gz
+                        docker stop comanda-web || true
+                        docker rm comanda-web || true
+                        docker run -d \
+                          --name comanda-web \
+                          --restart unless-stopped \
+                          -p 3000:3000 \
+                                          comanda-web:latest
+                                                        rm /tmp/comanda-web.tar.gz
+                                                        echo "Deploy concluido: $(date)"
