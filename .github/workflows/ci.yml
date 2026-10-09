@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:18-alpine
+        image: public.ecr.aws/docker/library/postgres:18-alpine
         env:
           POSTGRES_USER: comanda
           POSTGRES_PASSWORD: comanda
@@ -20,7 +20,7 @@ jobs:
           --health-cmd "pg_isready -U comanda -d comanda"
           --health-interval 5s --health-timeout 5s --health-retries 10
       redis:
-        image: redis:8-alpine
+        image: public.ecr.aws/docker/library/redis:8-alpine
         ports: ["6381:6379"]
         options: >-
           --health-cmd "redis-cli ping"
