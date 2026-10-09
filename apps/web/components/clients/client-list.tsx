@@ -6,9 +6,11 @@ import {
   type ContactListItem,
   type ContactPage,
   type ContactSort,
+  type ContactSummary,
   formatPhone,
+  INACTIVE_AFTER_DAYS,
   type LastContactFilter,
-} from "@comanda/shared";
+} from "@dishdesk/shared";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { AlertCircleIcon, CheckIcon, ChevronDownIcon, SearchIcon, TriangleAlertIcon, UserIcon } from "lucide-react";
 import Link from "next/link";
@@ -41,7 +43,46 @@ const LAST_CONTACT_LABEL: Record<LastContactFilter, string> = {
   over60d: "Sem contato há mais de 60 dias",
   over90d: "Sem contato há mais de 90 dias",
 };
-const FILTER_KEYS = ["search", "tag", "channel", "district", "phonePending", "lastContact"];
+const FILTER_KEYS = ["search", "tag", "channel", "district", "phonePending", "upset", "lastContact"];
+
+// Mês dos aniversariantes, no fuso dos restaurantes (o mesmo da API).
+const MONTH_NAME = new Intl.DateTimeFormat("pt-BR", { month: "long", timeZone: "America/Sao_Paulo" });
+
+/** Números da base acima da lista, no estilo dos cartões de métrica do board Campanhas. */
+function SummaryCards() {
+  const { request } = useAuth();
+  // Na chave "contacts": anonimizar ou unir cadastros, que invalidam a lista, atualizam os números também.
+  const summary = useQuery({ queryKey: ["contacts", "summary"], queryFn: () => request<ContactSummary>("/contacts/summary") });
+  if (summary.isError) return null;
+  const data = summary.data;
+  const share = (part: number) => (data?.total ? `${Math.round((part / data.total) * 100)}% da base` : " ");
+  const cards: { label: string; value: string; note: string; good?: boolean }[] = [
+    { label: "Clientes", value: data ? count(data.total) : "—", note: data ? `+${count(data.newLast30d)} nos últimos 30 dias` : " ", good: Boolean(data?.newLast30d) },
+    { label: "VIPs", value: data ? count(data.vip) : "—", note: data ? share(data.vip) : " " },
+    { label: "Recorrentes", value: data ? count(data.recurring) : "—", note: "2 pedidos ou mais" },
+    { label: "Inativos", value: data ? count(data.inactive) : "—", note: `sem contato há +${INACTIVE_AFTER_DAYS} dias` },
+    { label: "Chateados", value: data ? count(data.upset) : "—", note: "último pedido cancelado" },
+    {
+      label: "Ticket médio",
+      value: data?.averageTicket ? currency(data.averageTicket) : "—",
+      note: data ? `${count(data.orders)} ${data.orders === 1 ? "pedido" : "pedidos"}` : " ",
+    },
+    { label: "Telefone pendente", value: data ? count(data.phonePending) : "—", note: data ? share(data.phonePending) : " " },
+    { label: "Aniversariantes", value: data ? count(data.birthdaysThisMonth) : "—", note: `em ${MONTH_NAME.format(new Date())}` },
+  ];
+
+  return (
+    <ul aria-label="Resumo dos clientes" aria-busy={!data} className="mb-4 grid grid-cols-[repeat(auto-fit,minmax(150px,1fr))] gap-2.5">
+      {cards.map((card) => (
+        <li key={card.label} className="rounded-xl border border-rule-soft bg-surface px-[18px] py-4">
+          <div className="mb-2 text-[10.5px] font-medium tracking-[0.06em] text-ink-3 uppercase">{card.label}</div>
+          <div className="mb-[3px] font-heading text-[26px] leading-none font-bold tracking-[-0.5px] tabular-nums">{card.value}</div>
+          <div className={cn("text-[11px] tabular-nums", card.good ? "font-medium text-success" : "text-ink-3")}>{card.note}</div>
+        </li>
+      ))}
+    </ul>
+  );
+}
 
 /** Lista de clientes (board Clientes). Busca, filtros, ordem e página ficam na URL. */
 export function ClientList() {
@@ -98,6 +139,7 @@ export function ClientList() {
   const channels = params.getAll("channel") as ChannelType[];
   const district = params.get("district");
   const phonePending = params.get("phonePending") === "true";
+  const upset = params.get("upset") === "true";
   const lastContactFilter = params.get("lastContact") as LastContactFilter | null;
   const filtered = FILTER_KEYS.some((key) => params.has(key));
   const sort = (params.get("sort") ?? "lastSeen") as ContactSort;
@@ -133,6 +175,8 @@ export function ClientList() {
             </div>
           )}
         </div>
+
+        <SummaryCards />
 
         <label className="relative mb-3 block w-[400px] max-w-full">
           <SearchIcon className="absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-ink-3" aria-hidden />
@@ -192,6 +236,16 @@ export function ClientList() {
             className={chipClass(phonePending)}
           >
             Telefone pendente
+          </button>
+
+          <button
+            type="button"
+            aria-pressed={upset}
+            title="Clientes cujo último pedido foi cancelado"
+            onClick={() => update({ upset: upset ? null : "true" })}
+            className={chipClass(upset)}
+          >
+            Chateados
           </button>
 
           <DropdownMenu>

@@ -1,6 +1,6 @@
-import type { TenantTx } from "@comanda/database";
-import type { ChannelType, ConversationStatus } from "@comanda/database/enums";
-import type { MessageContent } from "@comanda/shared";
+import type { TenantTx } from "@dishdesk/database";
+import type { ChannelType, ConversationStatus } from "@dishdesk/database/enums";
+import type { MessageContent } from "@dishdesk/shared";
 import type { Queue } from "bullmq";
 import type { OutboundJob } from "../queues/queues.module.js";
 import type { RealtimeEmitter } from "../realtime/realtime.emitter.js";
@@ -20,6 +20,8 @@ export type AutomationState = {
   autoFound?: boolean;
   /** Pedido confirmado pelo cliente neste atendimento (decide a pesquisa de satisfação). */
   linkedOrder?: { id: string; at: string };
+  /** Pedido confirmado e andamento enviado: a próxima mensagem do cliente chama a equipe. */
+  orderFollowUp?: boolean;
   /** Coleta de telefone (§5.3). */
   phoneCollection?: "awaiting_phone" | "phone_collected" | "phone_skipped";
   phoneReminderSentAt?: string;

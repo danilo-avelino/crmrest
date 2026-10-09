@@ -1,6 +1,6 @@
 "use client";
 
-import type { ContactDetail } from "@comanda/shared";
+import type { ContactDetail } from "@dishdesk/shared";
 import { useQueryClient } from "@tanstack/react-query";
 import { AlertCircleIcon, TriangleAlertIcon } from "lucide-react";
 import { useState } from "react";

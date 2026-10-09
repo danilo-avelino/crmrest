@@ -1,5 +1,5 @@
-import type { TenantTx } from "@comanda/database";
-import { CHANNEL_CAPABILITIES } from "@comanda/shared";
+import type { TenantTx } from "@dishdesk/database";
+import { automationMessagesOf, CHANNEL_CAPABILITIES } from "@dishdesk/shared";
 import { InjectQueue } from "@nestjs/bullmq";
 import { Injectable } from "@nestjs/common";
 import type { Queue } from "bullmq";
@@ -14,12 +14,8 @@ import {
   localDate,
   setAutomationState,
   systemEvent,
+  tenantSettings,
 } from "./automation.js";
-
-const TEXTS = {
-  question: "Qual nota você dá para nosso atendimento? Digite de 1 a 5",
-  thanks: "Obrigado pela avaliação! 😊",
-};
 
 /** Pesquisa de satisfação: no fim de um atendimento sobre um pedido do dia, pede uma nota de 1 a 5. */
 @Injectable()
@@ -41,7 +37,8 @@ export class SurveyService {
       if (!capabilities.send || (capabilities.window24h && !(conversation.windowExpiresAt && conversation.windowExpiresAt > now))) {
         return null;
       }
-      const id = await automationMessage(tx, conversation, "survey", TEXTS.question);
+      const { surveyQuestion } = automationMessagesOf(await tenantSettings(tx, tenantId));
+      const id = await automationMessage(tx, conversation, "survey", surveyQuestion);
       await setAutomationState(tx, conversationId, { ...state, survey: "awaiting_rating" });
       return id;
     });
@@ -64,7 +61,8 @@ export class SurveyService {
         data: { tenantId, conversationId: conversation.id, orderId: state.linkedOrder?.id ?? null, score: Number(score) },
       });
       await systemEvent(tx, conversation, { event: "rating", text: `Avaliação do atendimento: ${score}/5` });
-      const id = await automationMessage(tx, conversation, "survey_thanks", TEXTS.thanks);
+      const { surveyThanks } = automationMessagesOf(await tenantSettings(tx, tenantId));
+      const id = await automationMessage(tx, conversation, "survey_thanks", surveyThanks);
       await setAutomationState(tx, conversation.id, { ...state, survey: "answered" });
       // A nota não abre um atendimento novo: a conversa continua resolvida.
       if (event.previousStatus === "RESOLVED") {

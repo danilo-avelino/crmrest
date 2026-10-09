@@ -1,6 +1,6 @@
 "use client";
 
-import type { ConversationMessages, MessageContent, MessageDto } from "@comanda/shared";
+import type { ConversationMessages, MessageContent, MessageDto } from "@dishdesk/shared";
 import {
   AlertCircleIcon,
   CheckCircle2Icon,
@@ -28,6 +28,9 @@ const AUTOMATION_LABEL: Record<NonNullable<MessageContent["automation"]>, string
   order_number_request: "Automação · número do pedido",
   order_lookup: "Automação · busca do pedido",
   order_confirmed: "Automação · pedido confirmado",
+  order_forecast: "Automação · previsão de saída",
+  order_dispatched: "Automação · pedido saiu para entrega",
+  order_delivered: "Automação · pedido entregue",
   order_links: "Automação · links para pedir",
   handoff: "Automação · encaminhado à equipe",
   survey: "Automação · pesquisa de satisfação",
@@ -66,7 +69,11 @@ export function MessageTimeline({
       {data.messages.map((message) => {
         const order = message.content.orderId ? data.orders[message.content.orderId] : undefined;
         if (message.type === "SYSTEM") {
-          return order ? <OrderCard key={message.id} order={order} /> : <SystemEvent key={message.id} message={message} />;
+          return order ? (
+            <OrderCard key={message.id} order={order} conversationId={message.conversationId} />
+          ) : (
+            <SystemEvent key={message.id} message={message} />
+          );
         }
         if (message.type === "NOTE") return <Note key={message.id} message={message} />;
         if (message.content.automation) return <Automation key={message.id} message={message} />;

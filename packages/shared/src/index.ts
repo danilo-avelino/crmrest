@@ -4,5 +4,8 @@ export * from "./contacts.js";
 export * from "./conversations.js";
 export * from "./integrations.js";
 export * from "./messaging.js";
+export * from "./orders.js";
+export * from "./personalities.js";
+export * from "./platform.js";
 export * from "./reports.js";
 export * from "./settings.js";

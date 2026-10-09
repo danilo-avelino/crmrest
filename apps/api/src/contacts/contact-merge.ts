@@ -1,4 +1,4 @@
-import type { Contact, TenantTx } from "@comanda/database";
+import type { Contact, TenantTx } from "@dishdesk/database";
 
 export type MergeResult = { merged: true; contactId: string } | { merged: false; conflict: "telefone" | "CPF" };
 

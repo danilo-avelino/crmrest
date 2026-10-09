@@ -27,7 +27,7 @@ export function useInboxRealtime(): boolean {
     const socket = io(REALTIME_URL, { auth: { token }, transports: ["websocket"] });
     socket.on("inbox.changed", ({ conversationId }: { conversationId: string }) => {
       // "channels": um envio pode ter mudado a saúde do canal (token recusado ou de volta).
-      for (const queryKey of [["conversations"], ["counts"], ["conversation", conversationId], ["messages", conversationId], ["contact"], ["channels"]]) {
+      for (const queryKey of [["conversations"], ["counts"], ["conversation", conversationId], ["messages", conversationId], ["contact"], ["channels"], ["current-order", conversationId]]) {
         void queryClient.invalidateQueries({ queryKey });
       }
     });

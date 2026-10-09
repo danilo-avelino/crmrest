@@ -1,6 +1,6 @@
 "use client";
 
-import type { RatingsReportDto, ReportPeriod } from "@comanda/shared";
+import type { RatingsReportDto, ReportPeriod } from "@dishdesk/shared";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { AlertCircleIcon, CheckIcon, ChevronDownIcon, StarIcon } from "lucide-react";
 import Link from "next/link";

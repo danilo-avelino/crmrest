@@ -1,4 +1,4 @@
-import { type RatingsReportDto, REPORT_PERIODS } from "@comanda/shared";
+import { type RatingsReportDto, REPORT_PERIODS } from "@dishdesk/shared";
 import { Controller, Get, Query } from "@nestjs/common";
 import { z } from "zod";
 import { CurrentAuth, type RequestAuth } from "../auth/auth.decorators.js";

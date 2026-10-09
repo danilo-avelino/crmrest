@@ -13,7 +13,7 @@ export default defineConfig({
   use: { baseURL: "http://localhost:3100", channel: process.env.CI ? undefined : "msedge", viewport: { width: 1440, height: 900 } },
   webServer: [
     {
-      command: "pnpm --filter @comanda/api start",
+      command: "pnpm --filter @dishdesk/api start",
       url: "http://localhost:4000/api/health/ready",
       reuseExistingServer: !process.env.CI,
       timeout: 60_000,

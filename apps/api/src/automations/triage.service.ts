@@ -1,20 +1,23 @@
-import type { Contact, TenantTx } from "@comanda/database";
-import type { ChannelType, OrderStatus } from "@comanda/database/enums";
+import type { Contact, TenantTx } from "@dishdesk/database";
+import type { ChannelType, OrderStatus } from "@dishdesk/database/enums";
 import {
-  automationTextsOf,
+  type AutomationMessages,
+  automationMessagesOf,
   businessHoursOf,
   CHANNEL_CAPABILITIES,
   CHANNEL_LABEL,
+  fillMessage,
   isOpenAt,
   menuMessage,
-  type OrderLink,
   orderLinksMessage,
   orderLinksOf,
-} from "@comanda/shared";
+} from "@dishdesk/shared";
 import { InjectQueue } from "@nestjs/bullmq";
 import { Injectable } from "@nestjs/common";
 import type { Queue } from "bullmq";
 import { mergeContacts } from "../contacts/contact-merge.js";
+import { orderUpdateMessage } from "../orders/forecast.js";
+import { latestOrderOf } from "../orders/latest-order.js";
 import { DatabaseService } from "../core/database.service.js";
 import { type OutboundJob, QUEUES } from "../queues/queues.module.js";
 import { RealtimeEmitter } from "../realtime/realtime.emitter.js";
@@ -36,29 +39,29 @@ const ORDER_STATUS_TEXT: Record<OrderStatus, string> = {
   PLACED: "recebido",
   CONFIRMED: "confirmado",
   PREPARING: "em preparo",
+  READY: "pronto",
   DISPATCHED: "saiu para entrega",
   DELIVERED: "entregue",
   CANCELED: "cancelado",
 };
 
-// A saudação do menu e a mensagem de fora do horário vêm de Configurações (E15); estes ficam fixos.
 const BRL = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 
+// Os textos vêm da personalidade do restaurante e de Configurações (E15); aqui só a montagem com os dados do pedido.
 const TEXTS = {
-  orderNumber: "Qual é o número do pedido? Ele aparece no aplicativo ou no comprovante.",
-  orderFound: (code: string, order: FoundOrder) =>
+  orderFound: (messages: AutomationMessages, code: string, order: FoundOrder) =>
     [
-      `Encontramos o pedido #${code} (${ORDER_STATUS_TEXT[order.status]}):`,
+      fillMessage(messages.orderFound, { pedido: code, status: ORDER_STATUS_TEXT[order.status] }),
       ...order.items.map((item) => `• ${item.quantity}x ${item.name}`),
       `Total: ${BRL.format(Number(order.total))}`,
       "",
-      "É este o seu pedido?",
+      messages.orderFoundQuestion,
       "1 - Sim",
       "2 - Não",
     ].join("\n"),
-  orderConfirmed: "Pedido confirmado 👍 Enquanto um atendente chega, já nos conte o problema ou a sua dúvida, assim agilizamos o atendimento.",
-  orderNotFound: (code: string) => `Não encontramos o pedido #${code} entre os pedidos de hoje e de ontem. Um atendente já vai te ajudar.`,
-  handoff: "Certo! Um atendente já vai falar com você.",
+  /** Com o andamento do pedido (previsão de saída ou quando saiu), se houver. */
+  orderConfirmed: (messages: AutomationMessages, update?: string) =>
+    [messages.orderConfirmed, ...(update ? [update] : []), "", messages.orderFollowUp].join("\n"),
 };
 
 type Conversation = { id: string; tenantId: string; channelId: string; contact: Contact };
@@ -113,10 +116,11 @@ export class TriageService {
       select: { id: true, tenantId: true, channelId: true, automationState: true, contact: true },
     });
     const state = conversation.automationState as AutomationState;
+    const settings = await tenantSettings(tx, conversation.tenantId);
+    const messages = automationMessagesOf(settings);
 
     // Conversa nova, resolvida ou parada: começa um atendimento, com o estado das automações zerado.
     if (event.newAttendance) {
-      const settings = await tenantSettings(tx, conversation.tenantId);
       // Fora do horário: avisa no lugar do menu (ninguém atenderia a opção escolhida); a coleta de telefone segue.
       const hours = businessHoursOf(settings);
       if (hours.enabled && !isOpenAt(hours, new Date())) {
@@ -125,27 +129,31 @@ export class TriageService {
         await this.keepPending(tx, conversation.id);
         return { send: [id], done: true };
       }
-      return this.sendMenu(tx, conversation, { triage: "awaiting_option" }, settings);
+      return this.sendMenu(tx, conversation, { triage: "awaiting_option" }, messages);
     }
-    if (state.triage === "awaiting_option") return this.chooseOption(tx, conversation, state, event.text);
-    if (state.triage === "awaiting_order_number") return this.findOrder(tx, conversation, state, event.text);
-    if (state.triage === "awaiting_order_confirmation") return this.confirmOrder(tx, conversation, state, event.text);
+    if (state.triage === "awaiting_option") return this.chooseOption(tx, conversation, state, settings, event.text);
+    if (state.triage === "awaiting_order_number") return this.findOrder(tx, conversation, state, messages, event.text);
+    if (state.triage === "awaiting_order_confirmation") return this.confirmOrder(tx, conversation, state, messages, event.text);
+    // Escreveu depois de confirmar o pedido (o problema, a dúvida): chama a equipe.
+    if (state.orderFollowUp) {
+      await setAutomationState(tx, conversation.id, { ...state, orderFollowUp: undefined });
+      return { send: [], done: true, handoff: true };
+    }
     // Mais mensagens enquanto o restaurante está fechado: a conversa continua pendente até a equipe responder.
     if (state.afterHours) {
-      const hours = businessHoursOf(await tenantSettings(tx, conversation.tenantId));
+      const hours = businessHoursOf(settings);
       if (hours.enabled && !isOpenAt(hours, new Date())) await this.keepPending(tx, conversation.id);
     }
     // Recebeu os links e continuou escrevendo: o menu volta uma vez; outra resposta fora das opções chama a equipe.
     if (state.selfServed) {
-      return this.sendMenu(tx, conversation, { ...state, triage: "awaiting_option", selfServed: undefined, menuRepeated: true });
+      return this.sendMenu(tx, conversation, { ...state, triage: "awaiting_option", selfServed: undefined, menuRepeated: true }, messages);
     }
     return { send: [], done: true };
   }
 
   /** Menu de atendimento ("Em que podemos ajudar?"), com a saudação de Configurações. */
-  private async sendMenu(tx: TenantTx, conversation: Conversation, next: AutomationState, settings?: unknown): Promise<Step> {
-    const greeting = automationTextsOf(settings ?? (await tenantSettings(tx, conversation.tenantId))).greeting;
-    const id = await automationMessage(tx, conversation, "menu", menuMessage(greeting, firstName(conversation.contact.name)));
+  private async sendMenu(tx: TenantTx, conversation: Conversation, next: AutomationState, messages: AutomationMessages): Promise<Step> {
+    const id = await automationMessage(tx, conversation, "menu", menuMessage(messages.greeting, firstName(conversation.contact.name)));
     await setAutomationState(tx, conversation.id, next);
     return { send: [id], done: false };
   }
@@ -158,37 +166,47 @@ export class TriageService {
     await tx.conversation.update({ where: { id: conversationId }, data: { status: "PENDING" } });
   }
 
-  private async chooseOption(tx: TenantTx, conversation: Conversation, state: AutomationState, text?: string): Promise<Step> {
+  private async chooseOption(tx: TenantTx, conversation: Conversation, state: AutomationState, settings: unknown, text?: string): Promise<Step> {
+    const messages = automationMessagesOf(settings);
     const option = /^\s*([123])(?!\d)/.exec(text ?? "")?.[1];
     if (option === "1") {
       // Antes de pedir o número, procura o pedido mais recente (de hoje ou de ontem) ligado ao cadastro do cliente.
-      const order = await this.latestOrderOf(tx, conversation.contact);
-      if (order) return this.offerOrder(tx, conversation, { ...state, autoFound: true }, order, order.displayCode ?? order.externalOrderId);
-      return this.askOrderNumber(tx, conversation, state);
+      const order = await latestOrderOf(tx, conversation.contact);
+      if (order) {
+        return this.offerOrder(tx, conversation, { ...state, autoFound: true }, messages, order, order.displayCode ?? order.externalOrderId);
+      }
+      return this.askOrderNumber(tx, conversation, state, messages);
     }
     // Resposta fora das opções (uma pergunta, um áudio...): repete o menu uma vez; na segunda, chama a equipe.
-    if (!option && !state.menuRepeated) return this.sendMenu(tx, conversation, { ...state, menuRepeated: true });
+    if (!option && !state.menuRepeated) return this.sendMenu(tx, conversation, { ...state, menuRepeated: true }, messages);
 
     if (option === "2") {
-      const links = await this.orderLinks(tx, conversation.tenantId);
+      const links = orderLinksOf(settings);
       // Com os links, o cliente pede sozinho; sem eles, a equipe atende.
       if (links.length) {
         await setAutomationState(tx, conversation.id, { ...state, triage: "done", selfServed: true });
-        return { send: [await automationMessage(tx, conversation, "order_links", orderLinksMessage(links))], done: true };
+        const text = orderLinksMessage(links, messages.orderLinks);
+        return { send: [await automationMessage(tx, conversation, "order_links", text)], done: true };
       }
     }
     // Opção 3, opção 2 sem links ou a segunda resposta fora das opções: a equipe atende.
     await setAutomationState(tx, conversation.id, { ...state, triage: "done" });
-    return { send: [await automationMessage(tx, conversation, "handoff", TEXTS.handoff)], done: true, handoff: true };
+    return { send: [await automationMessage(tx, conversation, "handoff", messages.handoff)], done: true, handoff: true };
   }
 
-  private async findOrder(tx: TenantTx, conversation: Conversation, state: AutomationState, text?: string): Promise<Step> {
+  private async findOrder(
+    tx: TenantTx,
+    conversation: Conversation,
+    state: AutomationState,
+    messages: AutomationMessages,
+    text?: string,
+  ): Promise<Step> {
     const finish = async (messageId: string): Promise<Step> => {
       await setAutomationState(tx, conversation.id, { ...state, triage: "done" });
       return { send: [messageId], done: true, handoff: true };
     };
     const digits = text?.match(/\d+/)?.[0];
-    if (!digits) return finish(await automationMessage(tx, conversation, "handoff", TEXTS.handoff));
+    if (!digits) return finish(await automationMessage(tx, conversation, "handoff", messages.handoff));
 
     const code = digits.replace(/^0+(?=\d)/, "");
     const orders = await tx.order.findMany({
@@ -197,38 +215,19 @@ export class TriageService {
       orderBy: { placedAt: "desc" },
       take: 2,
     });
-    if (orders.length === 0) return finish(await automationMessage(tx, conversation, "order_lookup", TEXTS.orderNotFound(code)));
+    if (orders.length === 0) {
+      return finish(await automationMessage(tx, conversation, "order_lookup", fillMessage(messages.orderNotFound, { pedido: code })));
+    }
     if (orders.length > 1) {
       await systemEvent(tx, conversation, { event: "order_ambiguous", text: `Há mais de um pedido #${code} de hoje ou de ontem: confira com o cliente` });
-      return finish(await automationMessage(tx, conversation, "handoff", TEXTS.handoff));
+      return finish(await automationMessage(tx, conversation, "handoff", messages.handoff));
     }
 
-    return this.offerOrder(tx, conversation, state, orders[0]!, orders[0]!.displayCode ?? code);
+    return this.offerOrder(tx, conversation, state, messages, orders[0]!, orders[0]!.displayCode ?? code);
   }
 
-  /**
-   * Pedido mais recente de hoje ou de ontem ligado ao cadastro: do próprio cadastro (qualquer canal vinculado a ele:
-   * WhatsApp, Instagram, iFood, Cardápio Web) ou de outro cadastro com o mesmo telefone, CPF ou e-mail.
-   */
-  private latestOrderOf(tx: TenantTx, contact: Contact) {
-    const { id, phone, cpfHash, email } = contact;
-    return tx.order.findFirst({
-      where: {
-        placedAt: { gte: startOfYesterday(new Date()) },
-        OR: [
-          { contactId: id },
-          ...(phone ? [{ contact: { phone } }] : []),
-          ...(cpfHash ? [{ contact: { cpfHash } }] : []),
-          ...(email ? [{ contact: { email: { equals: email, mode: "insensitive" as const } } }] : []),
-        ],
-      },
-      include: { items: true },
-      orderBy: { placedAt: "desc" },
-    });
-  }
-
-  private async askOrderNumber(tx: TenantTx, conversation: Conversation, state: AutomationState): Promise<Step> {
-    const id = await automationMessage(tx, conversation, "order_number_request", TEXTS.orderNumber);
+  private async askOrderNumber(tx: TenantTx, conversation: Conversation, state: AutomationState, messages: AutomationMessages): Promise<Step> {
+    const id = await automationMessage(tx, conversation, "order_number_request", messages.orderNumberRequest);
     await setAutomationState(tx, conversation.id, { ...state, triage: "awaiting_order_number", foundOrderId: undefined, autoFound: undefined });
     return { send: [id], done: false };
   }
@@ -238,11 +237,12 @@ export class TriageService {
     tx: TenantTx,
     conversation: Conversation,
     state: AutomationState,
+    messages: AutomationMessages,
     order: FoundOrder & { id: string },
     code: string,
   ): Promise<Step> {
     await systemEvent(tx, conversation, { event: "order", orderId: order.id });
-    const messageId = await automationMessage(tx, conversation, "order_lookup", TEXTS.orderFound(code, order));
+    const messageId = await automationMessage(tx, conversation, "order_lookup", TEXTS.orderFound(messages, code, order));
     await setAutomationState(tx, conversation.id, { ...state, triage: "awaiting_order_confirmation", foundOrderId: order.id });
     return { send: [messageId], done: false };
   }
@@ -251,27 +251,37 @@ export class TriageService {
    * "1 - Sim": o pedido é do cliente; une o cadastro da conversa ao do pedido. "2 - Não" no pedido achado pelo cadastro
    * pede o número; nos demais casos, segue com a equipe.
    */
-  private async confirmOrder(tx: TenantTx, conversation: Conversation, state: AutomationState, text?: string): Promise<Step> {
+  private async confirmOrder(
+    tx: TenantTx,
+    conversation: Conversation,
+    state: AutomationState,
+    messages: AutomationMessages,
+    text?: string,
+  ): Promise<Step> {
     const reply = (text ?? "").trim().toLowerCase().normalize("NFD").replace(/\p{M}/gu, "");
-    if (state.autoFound && /^(2(?!\d)|n(ao)?\b)/.test(reply)) return this.askOrderNumber(tx, conversation, state);
+    if (state.autoFound && /^(2(?!\d)|n(ao)?\b)/.test(reply)) return this.askOrderNumber(tx, conversation, state, messages);
     const order =
       /^(1(?!\d)|s(im)?\b)/.test(reply) && state.foundOrderId
         ? await tx.order.findUnique({ where: { id: state.foundOrderId }, include: { contact: true, channel: { select: { type: true } } } })
         : null;
     if (!order) {
       await setAutomationState(tx, conversation.id, { ...state, triage: "done", foundOrderId: undefined, autoFound: undefined });
-      return { send: [await automationMessage(tx, conversation, "handoff", TEXTS.handoff)], done: true, handoff: true };
+      return { send: [await automationMessage(tx, conversation, "handoff", messages.handoff)], done: true, handoff: true };
     }
     const notify = await this.linkContact(tx, conversation, order);
-    const messageId = await automationMessage(tx, conversation, "order_confirmed", TEXTS.orderConfirmed);
+    // Andamento: já saiu (quando) ou previsão de saída (com desculpas, se estiver atrasado).
+    const update = await orderUpdateMessage(tx, order.id);
+    const send = [await automationMessage(tx, conversation, "order_confirmed", TEXTS.orderConfirmed(messages, update?.text))];
     await setAutomationState(tx, conversation.id, {
       ...state,
       triage: "done",
       foundOrderId: undefined,
       autoFound: undefined,
       linkedOrder: { id: order.id, at: new Date().toISOString() },
+      orderFollowUp: true,
     });
-    return { send: [messageId], done: true, notify, handoff: true };
+    // A equipe só é chamada se o cliente escrever de novo: o andamento do pedido pode já ter resolvido.
+    return { send, done: true, notify };
   }
 
   /** O pedido identifica o cliente: une o cadastro da conversa ao do pedido. Devolve as outras conversas afetadas. */
@@ -296,10 +306,5 @@ export class TriageService {
       select: { id: true },
     });
     return others.map((other) => other.id);
-  }
-
-  private async orderLinks(tx: TenantTx, tenantId: string): Promise<OrderLink[]> {
-    const tenant = await tx.tenant.findUniqueOrThrow({ where: { id: tenantId }, select: { settings: true } });
-    return orderLinksOf(tenant.settings);
   }
 }

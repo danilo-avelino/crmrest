@@ -1,6 +1,6 @@
 "use client";
 
-import { CHANNEL_CAPABILITIES, CHANNEL_LABEL, type ConversationListItem, type QuickReplyDto } from "@comanda/shared";
+import { CHANNEL_CAPABILITIES, CHANNEL_LABEL, type ConversationListItem, type QuickReplyDto } from "@dishdesk/shared";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ClockIcon, ImageIcon, MicIcon, PaperclipIcon, SendIcon, StickyNoteIcon } from "lucide-react";
 import { type KeyboardEvent, useState } from "react";
@@ -32,7 +32,7 @@ export function Composer({ conversation }: { conversation: ConversationListItem 
     mode === "reply" &&
     (!capabilities.send
       ? // O nome do sistema, não o da integração (que pode ser "Loja Centro").
-        `O ${CHANNEL_LABEL[conversation.channel.type]} não permite responder pelo Comanda. Use uma nota interna para registrar o atendimento.`
+        `O ${CHANNEL_LABEL[conversation.channel.type]} não permite responder pelo Dish Desk. Use uma nota interna para registrar o atendimento.`
       : !windowOpen
         ? "A janela de 24h terminou. Para retomar a conversa, envie um template aprovado (botão Template)."
         : null);

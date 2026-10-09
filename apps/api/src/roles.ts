@@ -15,7 +15,11 @@ import { CardapioWebProcessor, CardapioWebService } from "./inbound/cardapio-web
 import { IfoodProcessor, IfoodService } from "./inbound/ifood.service.js";
 import { InboundProcessor } from "./inbound/inbound.processor.js";
 import { InboundService } from "./inbound/inbound.service.js";
+import { OrdersController } from "./orders/orders.controller.js";
+import { OrderNoticeService } from "./orders/order-notice.service.js";
+import { OrdersService } from "./orders/orders.service.js";
 import { OutboundProcessor } from "./outbound/outbound.processor.js";
+import { PlatformController } from "./platform/platform.controller.js";
 import { RealtimeGateway } from "./realtime/realtime.gateway.js";
 import { ReportsController } from "./reports/reports.controller.js";
 import { ReportsService } from "./reports/reports.service.js";
@@ -40,8 +44,10 @@ import { MetaWebhookController } from "./webhooks/meta-webhook.controller.js";
     QuickRepliesController,
     MembersController,
     ReportsController,
+    OrdersController,
+    PlatformController,
   ],
-  providers: [ConversationsService, ContactsService, SettingsService, IntegrationsService, ReportsService],
+  providers: [ConversationsService, ContactsService, SettingsService, IntegrationsService, ReportsService, OrdersService],
 })
 export class ApiRoleModule {}
 
@@ -68,6 +74,7 @@ export class RealtimeRoleModule {}
     IfoodProcessor,
     CardapioWebService,
     CardapioWebProcessor,
+    OrderNoticeService,
     InstagramTokensService,
     InstagramTokensProcessor,
   ],

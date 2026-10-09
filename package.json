@@ -1,5 +1,5 @@
 {
-  "name": "comanda",
+  "name": "dishdesk",
   "private": true,
   "packageManager": "pnpm@10.25.0",
   "engines": {
@@ -12,13 +12,13 @@
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
     "e2e": "turbo run e2e",
-    "db:migrate": "pnpm --filter @comanda/database db:migrate",
-    "db:seed": "pnpm --filter @comanda/database exec prisma db seed",
-    "simulate:whatsapp": "pnpm --filter @comanda/api simulate:whatsapp",
-    "channel:add": "pnpm --filter @comanda/api channel:add",
-    "tenant:add": "pnpm --filter @comanda/api tenant:add",
-    "tenant:links": "pnpm --filter @comanda/api tenant:links",
-    "user:add": "pnpm --filter @comanda/api user:add"
+    "db:migrate": "pnpm --filter @dishdesk/database db:migrate",
+    "db:seed": "pnpm --filter @dishdesk/database exec prisma db seed",
+    "simulate:whatsapp": "pnpm --filter @dishdesk/api simulate:whatsapp",
+    "channel:add": "pnpm --filter @dishdesk/api channel:add",
+    "tenant:add": "pnpm --filter @dishdesk/api tenant:add",
+    "tenant:links": "pnpm --filter @dishdesk/api tenant:links",
+    "user:add": "pnpm --filter @dishdesk/api user:add"
   },
   "devDependencies": {
     "turbo": "^2.11.7",

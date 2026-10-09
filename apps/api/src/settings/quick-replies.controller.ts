@@ -1,5 +1,5 @@
-import type { TenantTx } from "@comanda/database";
-import { type QuickReplyDto, QuickReplyRequest } from "@comanda/shared";
+import type { TenantTx } from "@dishdesk/database";
+import { type QuickReplyDto, QuickReplyRequest } from "@dishdesk/shared";
 import {
   Body,
   ConflictException,

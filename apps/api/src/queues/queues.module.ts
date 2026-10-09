@@ -4,7 +4,7 @@ import type { Env } from "../config/env.js";
 
 /**
  * Filas (§3.1): inbound = webhooks; outbound = envios aos canais; automations = etapas das automações;
- * ifood e cardapioWeb = polling de pedidos; channels = manutenção dos canais (renovação de tokens).
+ * ifood e cardapioWeb = polling de pedidos (e, no Cardápio Web, a importação da base de clientes); channels = manutenção dos canais (renovação de tokens).
  */
 export const QUEUES = {
   inbound: "inbound",
@@ -19,6 +19,8 @@ export const QUEUES = {
 export type InboundJob = { source: "meta"; payload: unknown };
 export type OutboundJob = { tenantId: string; messageId: string };
 export type AutomationJob = { tenantId: string; conversationId: string };
+/** Uma página da base de clientes do Cardápio Web; `imported` soma o que as páginas anteriores trouxeram. */
+export type CardapioWebImportJob = { tenantId: string; channelId: string; page: number; imported: number };
 
 @Global()
 @Module({})

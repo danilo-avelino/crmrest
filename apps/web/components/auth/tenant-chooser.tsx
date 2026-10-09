@@ -1,6 +1,6 @@
 "use client";
 
-import type { SelectContextRequest } from "@comanda/shared";
+import type { SelectContextRequest } from "@dishdesk/shared";
 import { ChevronRightIcon, LayersIcon, LoaderCircleIcon } from "lucide-react";
 import { type ReactNode, useEffect, useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
@@ -106,7 +106,7 @@ export function TenantChooser() {
         ) : (
           <>
             <h2 className="mb-1.5 text-center font-heading text-[21px] font-semibold tracking-[-0.3px] text-paper">
-              Seu atendimento numa só comanda
+              Todo o atendimento na sua mesa
             </h2>
             <p className="text-center text-[13px] text-[#5C5750]">WhatsApp, Instagram e iFood no mesmo lugar.</p>
           </>

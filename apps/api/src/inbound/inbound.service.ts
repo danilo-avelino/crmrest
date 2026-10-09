@@ -1,6 +1,6 @@
-import { blindIndex, type Contact, encrypt, parseEncryptionKey, type Prisma, type TenantTx } from "@comanda/database";
-import type { ChannelType, ConversationStatus, MessageStatus } from "@comanda/database/enums";
-import { CHANNEL_CAPABILITIES, CHANNEL_LABEL, type MessageContent, type NormalizedMessage, type StatusUpdate } from "@comanda/shared";
+import { blindIndex, type Contact, encrypt, parseEncryptionKey, type Prisma, type TenantTx } from "@dishdesk/database";
+import type { ChannelType, ConversationStatus, MessageStatus } from "@dishdesk/database/enums";
+import { CHANNEL_CAPABILITIES, CHANNEL_LABEL, type MessageContent, type NormalizedMessage, type StatusUpdate } from "@dishdesk/shared";
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import { INACTIVITY_CLOSE_MS } from "../automations/inactivity.service.js";
 import { TriageService } from "../automations/triage.service.js";

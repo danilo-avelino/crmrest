@@ -1,17 +1,15 @@
-import { CHANNEL_CAPABILITIES } from "@comanda/shared";
+import { automationMessagesOf, CHANNEL_CAPABILITIES } from "@dishdesk/shared";
 import { InjectQueue } from "@nestjs/bullmq";
 import { Injectable } from "@nestjs/common";
 import type { Queue } from "bullmq";
 import { DatabaseService } from "../core/database.service.js";
 import { type OutboundJob, QUEUES } from "../queues/queues.module.js";
 import { RealtimeEmitter } from "../realtime/realtime.emitter.js";
-import { automationMessage, dispatch } from "./automation.js";
+import { automationMessage, dispatch, tenantSettings } from "./automation.js";
 import { SurveyService } from "./survey.service.js";
 
 /** Tempo sem resposta do cliente, depois da última mensagem do restaurante, até encerrar o atendimento. */
 export const INACTIVITY_CLOSE_MS = 20 * 60_000;
-
-const TEXT = "Encerramos esta conversa por falta de interação. Se precisar de algo, é só mandar uma mensagem que retomamos de onde paramos.";
 
 /** Encerra o atendimento aberto em que o cliente parou de responder e, se houver pedido do dia, pede a avaliação. */
 @Injectable()
@@ -54,7 +52,8 @@ export class InactivityService {
       });
       if (last?.direction !== "OUTBOUND" || now.getTime() - last.createdAt.getTime() < INACTIVITY_CLOSE_MS) return null;
 
-      const id = await automationMessage(tx, conversation, "inactivity_close", TEXT);
+      const { inactivityClose } = automationMessagesOf(await tenantSettings(tx, tenantId));
+      const id = await automationMessage(tx, conversation, "inactivity_close", inactivityClose);
       await tx.conversation.update({ where: { id: conversationId }, data: { status: "RESOLVED" } });
       return id;
     });

@@ -1,6 +1,6 @@
 "use client";
 
-import type { AuthSession, SelectContextRequest } from "@comanda/shared";
+import type { AuthSession, SelectContextRequest } from "@dishdesk/shared";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createContext, type ReactNode, useContext, useMemo } from "react";
 import { ApiError, apiRequest } from "@/lib/api";

@@ -25,6 +25,6 @@ function basicAuth({ user, password }: { user: string; password: string }) {
   return (req: Request, res: Response, next: NextFunction) => {
     const given = Buffer.from(req.headers.authorization ?? "");
     if (given.length === expected.length && timingSafeEqual(given, expected)) return next();
-    res.set("WWW-Authenticate", 'Basic realm="Comanda - filas"').status(401).end();
+    res.set("WWW-Authenticate", 'Basic realm="Dish Desk - filas"').status(401).end();
   };
 }

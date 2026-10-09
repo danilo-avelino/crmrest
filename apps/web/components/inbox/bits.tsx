@@ -1,4 +1,4 @@
-import type { ConversationListItem } from "@comanda/shared";
+import type { ConversationListItem } from "@dishdesk/shared";
 import { initials } from "@/lib/format";
 import { cn } from "@/lib/utils";
 

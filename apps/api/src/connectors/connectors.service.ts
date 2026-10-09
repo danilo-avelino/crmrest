@@ -1,5 +1,5 @@
-import { decrypt, encrypt, parseEncryptionKey } from "@comanda/database";
-import type { ChannelType } from "@comanda/database/enums";
+import { decrypt, encrypt, parseEncryptionKey } from "@dishdesk/database";
+import type { ChannelType } from "@dishdesk/database/enums";
 import { Inject, Injectable } from "@nestjs/common";
 import { z } from "zod";
 import { ENV, type Env } from "../config/env.js";

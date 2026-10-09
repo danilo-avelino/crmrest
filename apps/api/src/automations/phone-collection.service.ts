@@ -1,5 +1,5 @@
-import type { TenantTx } from "@comanda/database";
-import { automationTextsOf, CHANNEL_CAPABILITIES, toE164 } from "@comanda/shared";
+import type { TenantTx } from "@dishdesk/database";
+import { automationTextsOf, CHANNEL_CAPABILITIES, toE164 } from "@dishdesk/shared";
 import { InjectQueue } from "@nestjs/bullmq";
 import { Injectable } from "@nestjs/common";
 import type { Queue } from "bullmq";

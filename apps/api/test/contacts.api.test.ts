@@ -1,4 +1,4 @@
-import { blindIndex, encrypt, parseEncryptionKey } from "@comanda/database";
+import { blindIndex, encrypt, parseEncryptionKey } from "@dishdesk/database";
 import type { INestApplication } from "@nestjs/common";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -236,6 +236,48 @@ describe("API de Clientes", () => {
     expect(body.districts).toEqual(["Itaim Bibi", "Vila Madalena"]);
   });
 
+  it("resumo da base: total, novos, VIPs, recorrentes, inativos, telefone pendente, aniversariantes e ticket médio", async () => {
+    // João faz aniversário neste mês, e o pedido mais recente dele foi cancelado (cancelados não entram no ticket).
+    await admin.contact.update({ where: { id: joao.id }, data: { birthDate: new Date(Date.UTC(1990, new Date().getMonth(), 15)) } });
+    const ifoodA = await admin.channel.findFirstOrThrow({ where: { tenantId: fx.a.id, type: "IFOOD" } });
+    await admin.order.create({
+      data: {
+        tenantId: fx.a.id,
+        contactId: joao.id,
+        channelId: ifoodA.id,
+        externalOrderId: `o-cancelado-${fx.a.id}`,
+        displayCode: "441200",
+        status: "CANCELED",
+        subtotal: "80.00",
+        deliveryFee: "0",
+        total: "80.00",
+        placedAt: daysAgo(2),
+        raw: {},
+      },
+    });
+    const a = await get("/contacts/summary").expect(200);
+    expect(a.body).toEqual({
+      total: 3,
+      newLast30d: 1, // João
+      vip: 1, // Mariana
+      recurring: 1, // Mariana, com 2 pedidos
+      inactive: 1, // Ana, há 40 dias sem contato
+      upset: 1, // João
+      phonePending: 1, // Ana
+      birthdaysThisMonth: 1,
+      orders: 3,
+      averageTicket: "69.13", // (67,40 + 94,20 + 45,80) / 3
+    });
+
+    // No painel master soma os dois restaurantes; o C (com outra VIP) fica de fora.
+    const master = await get("/contacts/summary", masterToken).expect(200);
+    expect(master.body).toMatchObject({ total: 8, vip: 1, inactive: 5, upset: 1, phonePending: 4, orders: 4, averageTicket: "64.35" });
+
+    // A categoria também é um filtro da lista.
+    expect(await ids("upset=true")).toEqual([joao.id]);
+    expect(await ids("upset=true&search=mariana")).toEqual([]);
+  });
+
   it("detalhe com as abas de conversas e pedidos", async () => {
     const detail = await get(`/contacts/${maria.id}`).expect(200);
     expect(detail.body).toMatchObject({ conversationsCount: 1, latestConversationId: mariaChat.id, anonymized: null });
@@ -343,4 +385,5 @@ describe("API de Clientes", () => {
     expect(list.body.items.find((item: Item) => item.id === carlos.id)).toMatchObject({ name: null, anonymizedAt: expect.any(String) });
     expect(await ids("tag=sem%20gl%C3%BAten", adminToken)).toEqual([]);
   });
+
 });

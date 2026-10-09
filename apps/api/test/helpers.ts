@@ -1,7 +1,7 @@
 import { createHmac, randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
-import { createPrismaClient, encrypt, parseEncryptionKey } from "@comanda/database";
+import { createPrismaClient, encrypt, parseEncryptionKey } from "@dishdesk/database";
 import { getQueueToken } from "@nestjs/bullmq";
 import type { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
@@ -79,7 +79,8 @@ export async function createChannelFixture() {
         tenantId: tenant.id,
         type,
         name: type,
-        externalId: `${type.toLowerCase()}-${suffix}`,
+        // Lojas do iFood têm UUID como id (o polling recusa outro formato).
+        externalId: type === "IFOOD" ? randomUUID() : `${type.toLowerCase()}-${suffix}`,
         credentials: encrypt(JSON.stringify({ accessToken: "token-de-teste", wabaId: "waba-teste" }), key),
         status: "CONNECTED",
       },

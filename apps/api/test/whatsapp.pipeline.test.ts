@@ -251,7 +251,7 @@ describe("pipeline do WhatsApp", () => {
         .set("Authorization", `Bearer ${token}`)
         .send({ text: "Oi" });
     expect((await send(closed.id).expect(422)).body.message).toBe("A janela de 24h para resposta livre terminou.");
-    expect((await send(ifood.id).expect(422)).body.message).toBe("Este canal não permite responder pelo Comanda.");
+    expect((await send(ifood.id).expect(422)).body.message).toBe("Este canal não permite responder pelo Dish Desk.");
   });
 
   it("com a janela fechada, só sai template aprovado, com as variáveis", async () => {

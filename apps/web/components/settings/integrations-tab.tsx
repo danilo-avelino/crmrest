@@ -6,11 +6,13 @@ import {
   type IntegrationDto,
   type IntegrationsDto,
   type IntegrationType,
-} from "@comanda/shared";
+} from "@dishdesk/shared";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { PlusIcon } from "lucide-react";
+import { useSearchParams } from "next/navigation";
 import { type ReactNode, useEffect, useId, useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
+import { IFOOD_WIDGET_KEY } from "@/components/ifood-widget";
 import { TabLoading, useSettingsTenant } from "@/components/settings/settings-shell";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
@@ -57,7 +59,7 @@ const SYSTEMS: { type: IntegrationType; description: string; detail: (externalId
   },
   {
     type: "CARDAPIO_WEB",
-    description: "Lojas do Cardápio Web. Os pedidos entram no cadastro do cliente, achado pelo telefone.",
+    description: "Lojas do Cardápio Web. Ao conectar, a base de clientes da loja é importada; os pedidos entram no cadastro do cliente, achado pelo telefone.",
     detail: (id) => `Código da loja ${id}`,
     help: "A chave fica no Portal do Cardápio Web, em Configurações → Integrações → API. Ela é testada antes de salvar.",
     fields: [
@@ -211,16 +213,17 @@ function Failure({ children }: { children: ReactNode }) {
 function InstagramLogin({ tenantId, enabled }: { tenantId: string; enabled: boolean }) {
   const { request } = useAuth();
   const toast = useToast();
-  const [failure, setFailure] = useState<string | null>(null);
-
   // Volta do login: ?instagram=conectado ou ?instagram=erro&motivo=…; o endereço é limpo para o aviso não se repetir.
+  const params = useSearchParams();
+  const result = params.get("instagram");
+  const [failure, setFailure] = useState<string | null>(
+    result && result !== "conectado" ? (params.get("motivo") ?? "Não foi possível conectar o Instagram.") : null,
+  );
+
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const result = params.get("instagram");
     if (!result) return;
     window.history.replaceState(null, "", window.location.pathname);
     if (result === "conectado") toast("Instagram conectado");
-    else setFailure(params.get("motivo") ?? "Não foi possível conectar o Instagram.");
   }, []);
 
   async function login() {
@@ -293,6 +296,7 @@ function DisconnectDialog({ tenantId, label, item, onClose }: { tenantId: string
     try {
       await request(`/integrations/${tenantId}/${item.id}/disconnect`, { method: "POST" });
       await queryClient.invalidateQueries({ queryKey: ["integrations", tenantId] });
+      if (item.type === "IFOOD") void queryClient.invalidateQueries({ queryKey: IFOOD_WIDGET_KEY });
       toast(`${item.name} desconectado`);
       onClose();
     } catch (error) {
@@ -317,7 +321,7 @@ function DisconnectDialog({ tenantId, label, item, onClose }: { tenantId: string
         <div className="px-6 py-[18px]">
           <p className="mb-4 text-[13px] leading-relaxed text-ink-2">
             As mensagens e os pedidos desta conta deixam de chegar, e as respostas pela Inbox não são mais enviadas por ela. As
-            conversas e os pedidos já recebidos continuam no Comanda. Para voltar, adicione a integração de novo.
+            conversas e os pedidos já recebidos continuam no Dish Desk. Para voltar, adicione a integração de novo.
           </p>
           {failure && <p role="alert" className="mb-3 text-[11.5px] text-tomate">{failure}</p>}
           <div className="flex gap-2">
@@ -359,6 +363,8 @@ function IntegrationForm({ system, tenantId, onClose }: { system: System; tenant
     try {
       await request(`/integrations/${tenantId}`, { method: "POST", body: parsed.data });
       await queryClient.invalidateQueries({ queryKey: ["integrations", tenantId] });
+      // Loja iFood nova: o widget do iFood já liga, sem recarregar a página.
+      if (system.type === "IFOOD") void queryClient.invalidateQueries({ queryKey: IFOOD_WIDGET_KEY });
       toast(`Integração com o ${label} adicionada`);
       onClose();
     } catch (error) {

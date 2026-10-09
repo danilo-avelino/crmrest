@@ -1,14 +1,18 @@
-import { type ChannelHealthDto, ConversationListQuery, type MemberDto, type QuickReplyDto } from "@comanda/shared";
-import { Controller, Get, Query } from "@nestjs/common";
+import { type ChannelHealthDto, ConversationListQuery, type IfoodWidgetDto, type MemberDto, type QuickReplyDto } from "@dishdesk/shared";
+import { Controller, Get, Inject, Query } from "@nestjs/common";
 import { CurrentAuth, type RequestAuth } from "../auth/auth.decorators.js";
 import { ZodPipe } from "../common/zod.pipe.js";
+import { ENV, type Env } from "../config/env.js";
 import { DatabaseService } from "../core/database.service.js";
 import { scopeFor } from "./conversations.service.js";
 
 /** Dados de apoio da Inbox: quem pode receber conversas, as respostas rápidas e a saúde dos canais. */
 @Controller()
 export class TeamController {
-  constructor(private readonly db: DatabaseService) {}
+  constructor(
+    private readonly db: DatabaseService,
+    @Inject(ENV) private readonly env: Env,
+  ) {}
 
   @Get("members")
   async members(
@@ -46,5 +50,16 @@ export class TeamController {
         orderBy: { name: "asc" },
       }),
     );
+  }
+
+  /** Widget do iFood (chat com o cliente do iFood): o id do widget e as lojas iFood conectadas do usuário. */
+  @Get("ifood-widget")
+  async ifoodWidget(@CurrentAuth() auth: RequestAuth): Promise<IfoodWidgetDto> {
+    const widgetId = this.env.IFOOD_WIDGET_ID ?? null;
+    if (!widgetId) return { widgetId, merchantIds: [] };
+    const channels = await this.db.withTenants(auth.scope, (tx) =>
+      tx.channel.findMany({ where: { type: "IFOOD", status: { not: "DISCONNECTED" } }, select: { externalId: true }, take: 10 }),
+    );
+    return { widgetId, merchantIds: channels.map((channel) => channel.externalId) };
   }
 }

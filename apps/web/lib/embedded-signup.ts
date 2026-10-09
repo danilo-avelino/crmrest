@@ -1,4 +1,4 @@
-import type { WhatsAppSignupRequest } from "@comanda/shared";
+import type { WhatsAppSignupRequest } from "@dishdesk/shared";
 
 /** O pedaço do SDK do Facebook (JS) que o cadastro incorporado usa. */
 export type FacebookSdk = {

@@ -1,4 +1,4 @@
-import { blindIndex, decrypt, encrypt, parseEncryptionKey, Prisma, type TenantTx } from "@comanda/database";
+import { blindIndex, decrypt, encrypt, parseEncryptionKey, Prisma, type TenantTx } from "@dishdesk/database";
 import {
   CHANNEL_LABEL,
   CONTACT_PAGE_SIZE,
@@ -6,14 +6,16 @@ import {
   type ContactFilterOptions,
   type ContactListQuery,
   type ContactPage,
+  type ContactSummary,
   type ConversationListItem,
   type DuplicatePair,
   type DuplicateSide,
+  INACTIVE_AFTER_DAYS,
   maskCpf,
   type MessageContent,
   type OrderDto,
   type UpdateContactRequest,
-} from "@comanda/shared";
+} from "@dishdesk/shared";
 import {
   BadRequestException,
   ConflictException,
@@ -26,12 +28,15 @@ import type { RequestAuth } from "../auth/auth.decorators.js";
 import { ENV, type Env } from "../config/env.js";
 import { conversationListInclude, toListItem, toOrderDto } from "../conversations/conversation.mapper.js";
 import { DatabaseService } from "../core/database.service.js";
+import { customerHistory, linkedOrdersWhere } from "../orders/customer-history.js";
 import { RealtimeEmitter } from "../realtime/realtime.emitter.js";
 import { findDuplicatePairs } from "./contact-duplicates.js";
 import { mergeContacts } from "./contact-merge.js";
 import { contactSearch } from "./contact-search.js";
 
 const DAY = 24 * 60 * 60_000;
+// Mês do aniversário no fuso dos restaurantes.
+const MONTH = new Intl.DateTimeFormat("en", { month: "numeric", timeZone: "America/Sao_Paulo" });
 const ORDERS_LIMIT = 100;
 // O que identifica o cliente nas mensagens some na anonimização; o registro da conversa fica.
 const REMOVED: MessageContent = { text: "Conteúdo removido (LGPD)" };
@@ -50,7 +55,9 @@ export class ContactsService {
 
   /** Lista de clientes com busca, filtros e ordenação (board Clientes). */
   async list(auth: RequestAuth, query: ContactListQuery): Promise<ContactPage> {
-    const filtered = Boolean(query.tag?.length || query.channel?.length || query.district || query.phonePending || query.lastContact);
+    const filtered = Boolean(
+      query.tag?.length || query.channel?.length || query.district || query.phonePending || query.lastContact || query.upset,
+    );
     const where: Prisma.ContactWhereInput = {
       ...(query.search && contactSearch(query.search, this.key)),
       // Anonimizados não têm dados para casar com os filtros.
@@ -74,6 +81,7 @@ export class ContactsService {
     ];
 
     return this.db.withTenants(auth.scope, async (tx) => {
+      if (query.upset) where.id = { in: await upsetContactIds(tx) };
       const total = await tx.contact.count({ where });
       const rows = await tx.contact.findMany({
         where,
@@ -126,6 +134,42 @@ export class ContactsService {
     });
   }
 
+  /** Resumo da base de clientes (cartões acima da lista). */
+  summary(auth: RequestAuth): Promise<ContactSummary> {
+    const now = Date.now();
+    const newSince = new Date(now - 30 * DAY);
+    const inactiveSince = new Date(now - INACTIVE_AFTER_DAYS * DAY);
+    const month = Number(MONTH.format(now));
+    return this.db.withTenants(auth.scope, async (tx) => {
+      const [counts] = await tx.$queryRaw<Record<string, bigint>[]>`
+        SELECT
+          count(*) AS total,
+          count(*) FILTER (WHERE first_seen_at >= ${newSince}) AS new_last_30d,
+          count(*) FILTER (WHERE EXISTS (SELECT 1 FROM unnest(tags) AS tag WHERE lower(tag) = 'vip')) AS vip,
+          count(*) FILTER (WHERE last_seen_at IS NULL OR last_seen_at < ${inactiveSince}) AS inactive,
+          count(*) FILTER (WHERE phone IS NULL) AS phone_pending,
+          count(*) FILTER (WHERE EXTRACT(MONTH FROM birth_date) = ${month}) AS birthdays
+        FROM contacts WHERE deleted_at IS NULL`;
+      const valid = { status: { not: "CANCELED" as const }, contact: { deletedAt: null } };
+      const orders = await tx.order.aggregate({ where: valid, _count: { _all: true }, _sum: { total: true } });
+      const recurring = await tx.order.groupBy({ by: ["contactId"], where: valid, having: { contactId: { _count: { gte: 2 } } } });
+      const ordersCount = orders._count._all;
+      const upset = await upsetContactIds(tx);
+      return {
+        total: Number(counts?.total ?? 0),
+        newLast30d: Number(counts?.new_last_30d ?? 0),
+        vip: Number(counts?.vip ?? 0),
+        recurring: recurring.length,
+        inactive: Number(counts?.inactive ?? 0),
+        upset: upset.length,
+        phonePending: Number(counts?.phone_pending ?? 0),
+        birthdaysThisMonth: Number(counts?.birthdays ?? 0),
+        orders: ordersCount,
+        averageTicket: ordersCount ? (orders._sum.total ?? new Prisma.Decimal(0)).div(ordersCount).toFixed(2) : null,
+      };
+    });
+  }
+
   /** Opções dos filtros Tag e Bairro. */
   filterOptions(auth: RequestAuth): Promise<ContactFilterOptions> {
     return this.db.withTenants(auth.scope, async (tx) => {
@@ -162,8 +206,10 @@ export class ContactsService {
   orders(auth: RequestAuth, id: string): Promise<OrderDto[]> {
     return this.db.withTenants(auth.scope, async (tx) => {
       await this.requireContact(tx, id);
+      const contact = await tx.contact.findUniqueOrThrow({ where: { id }, select: { id: true, phone: true, cpfHash: true, email: true } });
+      // Todas as fontes: também os pedidos de outros cadastros com o mesmo telefone, CPF ou e-mail.
       const rows = await tx.order.findMany({
-        where: { contactId: id },
+        where: linkedOrdersWhere(contact),
         include: { items: true, channel: { select: { type: true } } },
         orderBy: { placedAt: "desc" },
         take: ORDERS_LIMIT,
@@ -414,8 +460,9 @@ export class ContactsService {
   private async load(tx: TenantTx, id: string): Promise<ContactDetail> {
     const contact = await tx.contact.findUnique({ where: { id }, include: { identities: true, addresses: true } });
     if (!contact) throw new NotFoundException("Cliente não encontrado.");
-    const orders = await tx.order.aggregate({ where: { contactId: id }, _count: { _all: true }, _sum: { total: true } });
-    const recent = await tx.order.findMany({ where: { contactId: id }, orderBy: { placedAt: "desc" }, take: 3 });
+    // Histórico em todas as fontes ligadas ao cliente (outros cadastros com o mesmo telefone, CPF ou e-mail).
+    const history = await customerHistory(tx, contact);
+    const recent = await tx.order.findMany({ where: linkedOrdersWhere(contact), orderBy: { placedAt: "desc" }, take: 3 });
     const conversationsCount = await tx.conversation.count({ where: { contactId: id } });
     const latest = await tx.conversation.findFirst({
       where: { contactId: id },
@@ -448,7 +495,7 @@ export class ContactsService {
         username: (identity.profile as { username?: string } | null)?.username ?? null,
       })),
       addresses: contact.addresses.map(({ tenantId: _t, contactId: _c, ...address }) => address),
-      metrics: { ordersCount: orders._count._all, ordersTotal: (orders._sum.total ?? 0).toString() },
+      metrics: { ordersCount: history.orders, ordersTotal: history.total, ordersBySource: history.bySource },
       recentOrders: recent.map((order) => ({
         id: order.id,
         displayCode: order.displayCode,
@@ -471,6 +518,19 @@ function requireAdmin(auth: RequestAuth, tenantId: string): void {
   if (auth.tenants.find((tenant) => tenant.id === tenantId)?.role !== "ADMIN") {
     throw new ForbiddenException("Só administradores do restaurante podem fazer isso.");
   }
+}
+
+/** Chateados: clientes (não anonimizados) cujo pedido mais recente foi cancelado. */
+async function upsetContactIds(tx: TenantTx): Promise<string[]> {
+  const rows = await tx.$queryRaw<{ contact_id: string }[]>`
+    SELECT contact_id FROM (
+      SELECT DISTINCT ON (o.contact_id) o.contact_id, o.status
+      FROM orders o JOIN contacts c ON c.id = o.contact_id
+      WHERE c.deleted_at IS NULL
+      ORDER BY o.contact_id, o.placed_at DESC, o.id DESC
+    ) latest
+    WHERE status = 'CANCELED'`;
+  return rows.map((row) => row.contact_id);
 }
 
 function lastContactWhere(filter: NonNullable<ContactListQuery["lastContact"]>): Prisma.ContactWhereInput {

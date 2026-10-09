@@ -1,6 +1,6 @@
 "use client";
 
-import { CHANNEL_LABEL, type DuplicatePair, type DuplicateReason, type DuplicateSide, formatPhone } from "@comanda/shared";
+import { CHANNEL_LABEL, type DuplicatePair, type DuplicateReason, type DuplicateSide, formatPhone } from "@dishdesk/shared";
 import { useQueryClient } from "@tanstack/react-query";
 import { ChevronLeftIcon, LoaderCircleIcon, LockIcon } from "lucide-react";
 import Link from "next/link";

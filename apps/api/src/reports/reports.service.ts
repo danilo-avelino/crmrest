@@ -1,4 +1,4 @@
-import type { AgentMetrics, RatingsReportDto, ReportPeriod } from "@comanda/shared";
+import type { AgentMetrics, RatingsReportDto, ReportPeriod } from "@dishdesk/shared";
 import { Injectable } from "@nestjs/common";
 import type { RequestAuth } from "../auth/auth.decorators.js";
 import { localDate } from "../automations/automation.js";

@@ -11,6 +11,12 @@ if (process.env.REDIS_URL) {
   process.env.REDIS_URL = redis.toString();
 }
 
+// Credenciais reais do iFood no .env não valem nos testes (eles usam uma API falsa e passam as próprias).
+for (const key of ["IFOOD_CLIENT_ID", "IFOOD_CLIENT_SECRET", "IFOOD_WIDGET_ID"]) delete process.env[key];
+// O mesmo vale para o Cardápio Web de produção e o envio real: o banco é o mesmo do dev, com lojas e clientes reais.
+delete process.env.CARDAPIO_WEB_API_URL;
+process.env.CHANNELS_DRY_RUN = "true";
+
 export default defineConfig({
   test: {
     // Os testes de integração compartilham o banco e o Redis locais.

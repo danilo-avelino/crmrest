@@ -8,7 +8,7 @@ import {
   SendTemplateRequest,
   UpdateConversationRequest,
   type WhatsAppTemplate,
-} from "@comanda/shared";
+} from "@dishdesk/shared";
 import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Query } from "@nestjs/common";
 import { CurrentAuth, type RequestAuth } from "../auth/auth.decorators.js";
 import { ZodPipe } from "../common/zod.pipe.js";

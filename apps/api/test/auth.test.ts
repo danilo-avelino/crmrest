@@ -35,7 +35,7 @@ describe("autenticação", () => {
   it("login cria a sessão em cookie httpOnly e lista os restaurantes, ainda sem access token", async () => {
     const response = await login(request.agent(app.getHttpServer()));
     const cookie = String(response.headers["set-cookie"]);
-    expect(cookie).toMatch(/comanda_session=.+; Max-Age=\d+; Path=\/api\/auth; .*HttpOnly/);
+    expect(cookie).toMatch(/dishdesk_session=.+; Max-Age=\d+; Path=\/api\/auth; .*HttpOnly/);
     expect(response.body.accessToken).toBeNull();
     expect(response.body.context).toBeNull();
     const roles = Object.fromEntries(response.body.tenants.map((t: { id: string; role: string }) => [t.id, t.role]));

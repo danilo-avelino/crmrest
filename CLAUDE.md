@@ -78,7 +78,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 O HTML é um bundle (≈3,3 MB): o conteúdo fica em `<script type="__bundler/manifest">` (base64 + gzip), com bundles aninhados. Boards: **Sistema de Design**, **Login · Escolha de restaurante**, **Inbox · Conversa ativa · Painel do cliente**, **Módulo Campanhas (extra pago)**, **Clientes · Lista · Detalhe · Duplicados · LGPD**. Para ler: decodificar o manifest com Python (`base64` → `gzip.decompress`) e repetir no bundle interno; o HTML de cada board fica no `__bundler/template` interno (uma string JSON).
 
-Resumo do Sistema de Design (marca **"Comanda"**, Next.js + Tailwind + shadcn/ui):
+Resumo do Sistema de Design (marca **"Dish Desk"**, Next.js + Tailwind + shadcn/ui):
 
 ```css
 :root {
@@ -104,5 +104,17 @@ Resumo do Sistema de Design (marca **"Comanda"**, Next.js + Tailwind + shadcn/ui
 - Fontes: `font-sans` = Inter (padrão), `font-heading` = Fraunces. Tamanhos: `text-display` (28px), `text-title` (16px), `text-body` (13px, padrão do body).
 - Raios: `rounded-sm` 4px, `rounded-md` 5px, `rounded-lg` 6px (padrão dos componentes), `rounded-xl` 8px, `rounded-2xl` 12px.
 - Botões: sempre [components/ui/button.tsx](apps/web/components/ui/button.tsx) — variantes `default` (ink), `accent` (tomate), `outline` (secundário), `ghost`, `destructive`; tamanhos `xs` 26px, `sm` 30px, `default` 36px, `lg` 42px. Um `onClick` que retorna Promise já aplica o guard de duplo clique e o "Carregando…" (regra 6); em formulários, passar `loading`.
+
+## 9. Novas integrações
+
+Toda nova integração que for desenvolvida, deve ser verificada a possibilidade de importar os contatos de clientes para aumentar nossa base.
+
+## 10. Mensagens automáticas seguem a personalidade
+
+Todo texto que uma automação manda ao cliente segue a **personalidade do atendimento** escolhida pelo restaurante (Configurações → Mensagens automáticas: Cordial, Formal, Jovial, Descontraído, Acolhedor, Direto).
+
+- Nunca escrever o texto fixo no código da automação. Toda mensagem automática nova entra em `AutomationMessages` ([packages/shared/src/personalities.ts](packages/shared/src/personalities.ts)), **com um texto para cada personalidade**, no tom dela. O TypeScript recusa uma personalidade sem a chave nova.
+- Na automação, ler os textos com `automationMessagesOf(await tenantSettings(tx, tenantId))` e trocar os dados com `fillMessage` (`{nome}`, `{pedido}`, `{hora}`...). Um marcador novo também entra no `REQUIRED` do teste em [packages/shared/test/settings.test.ts](packages/shared/test/settings.test.ts).
+- Uma personalidade nova entra em `PERSONALITIES`, `PERSONALITY_INFO` e `PERSONALITY_MESSAGES`, com todas as mensagens.
 
 **These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.

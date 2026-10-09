@@ -1,0 +1,41 @@
+name: Banco (Supabase)
+
+# Aplica as migrations no Supabase depois que o CI passa na main (ou manualmente, pela aba Actions).
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-db
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile --filter @dishdesk/database
+
+      # SUPABASE_DATABASE_URL: conexão do "Session pooler" (porta 5432) com o usuário postgres; a conexão direta
+      # do Supabase é só IPv6, que os runners do GitHub não têm, e o pooler de transação (6543) não serve para migrations.
+      - name: Migrations
+        env:
+          DATABASE_ADMIN_URL: ${{ secrets.SUPABASE_DATABASE_URL }}
+        run: |
+          if [ -z "$DATABASE_ADMIN_URL" ]; then
+            echo "::error::Cadastre o segredo SUPABASE_DATABASE_URL em Settings → Secrets and variables → Actions."
+            exit 1
+          fi
+          pnpm --filter @dishdesk/database exec prisma migrate deploy

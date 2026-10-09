@@ -1,4 +1,4 @@
-import { ChannelType, Direction, MessageStatus, MessageType } from "@comanda/database/enums";
+import { ChannelType, Direction, MessageStatus, MessageType } from "@dishdesk/database/enums";
 import { z } from "zod";
 
 // Contratos que atravessam as filas como JSON (PROJETO_CRM_RESTAURANTES.md §3.5 e §6).

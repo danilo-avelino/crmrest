@@ -1,6 +1,6 @@
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
-import { decrypt, parseEncryptionKey } from "@comanda/database";
+import { decrypt, parseEncryptionKey } from "@dishdesk/database";
 import { getQueueToken } from "@nestjs/bullmq";
 import type { INestApplication } from "@nestjs/common";
 import { hash } from "@node-rs/argon2";
@@ -10,11 +10,16 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { QUEUES } from "../src/queues/queues.module.js";
 import { accessTokenFor, admin, createChannelFixture, createTestApp, PASSWORD, startMockGraph } from "./helpers.js";
 
-/** API do Cardápio Web só para conferir a chave: aceita uma, recusa as outras. */
+/** API do Cardápio Web para conferir a chave (aceita uma, recusa as outras); a base de clientes vem vazia. */
 async function startMockCardapioWeb() {
   const server = createServer((req, res) => {
     const ok = req.headers["x-api-key"] === "chave-boa-da-loja";
-    res.writeHead(ok ? 200 : 401, { "Content-Type": "application/json" }).end(JSON.stringify(ok ? [] : { message: "Unauthorized" }));
+    const body = !ok
+      ? { message: "Unauthorized" }
+      : req.url?.startsWith("/api/partner/v1/merchant/customers")
+        ? { customers: [], pagination: { current_page: 1, total_pages: 1, total_customers: 0 } }
+        : [];
+    res.writeHead(ok ? 200 : 401, { "Content-Type": "application/json" }).end(JSON.stringify(body));
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   return {
@@ -281,11 +286,16 @@ describe("Integrações (Configurações)", () => {
     expect(body.canEdit).toBe(true);
   });
 
-  it("Cardápio Web: testa a chave antes de salvar", async () => {
+  it("Cardápio Web: testa a chave antes de salvar e, conectada, importa a base de clientes", async () => {
+    const queue = app.get<Queue>(getQueueToken(QUEUES.cardapioWeb));
+    const imports = async () =>
+      (await queue.getJobs(["waiting", "active", "delayed", "completed", "failed"])).filter((job) => job.name === "import-customers" && job.data.tenantId === fx.tenant.id);
     const refused = await add({ type: "CARDAPIO_WEB", storeId: "777", apiKey: "chave-errada-da-loja" }).expect(422);
     expect(refused.body.message).toBe("Não foi possível conectar o Cardápio Web: a credencial não foi aceita.");
+    expect(await imports()).toHaveLength(0);
     const { body } = await add({ type: "CARDAPIO_WEB", storeId: "777", apiKey: "chave-boa-da-loja" }).expect(201);
     expect(body).toMatchObject({ type: "CARDAPIO_WEB", name: "Loja 777", externalId: "777", status: "CONNECTED" });
+    expect((await imports()).map((job) => job.data)).toEqual([{ tenantId: fx.tenant.id, channelId: body.id, page: 1, imported: 0 }]);
   });
 
   it("conta já conectada a outro restaurante é recusada", async () => {

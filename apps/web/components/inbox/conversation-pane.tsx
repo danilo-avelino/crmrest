@@ -6,7 +6,7 @@ import {
   type ConversationMessages,
   type MemberDto,
   type UpdateConversationRequest,
-} from "@comanda/shared";
+} from "@dishdesk/shared";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckIcon, EllipsisIcon, LoaderCircleIcon } from "lucide-react";
 import { useEffect } from "react";
@@ -75,7 +75,7 @@ export function ConversationPane({ conversationId }: { conversationId: string })
         <MessageTimeline data={messages.data} contact={conversation.data.contact} />
         <Composer conversation={conversation.data} />
       </section>
-      <ClientPanel contactId={conversation.data.contact.id} />
+      <ClientPanel contactId={conversation.data.contact.id} conversationId={conversationId} />
     </>
   );
 }

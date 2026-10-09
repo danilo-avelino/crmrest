@@ -7,8 +7,8 @@ import type {
   MessageType,
   OrderStatus,
   TenantRole,
-} from "@comanda/database/enums";
-import { ConversationStatus as ConversationStatusEnum } from "@comanda/database/enums";
+} from "@dishdesk/database/enums";
+import { ConversationStatus as ConversationStatusEnum } from "@dishdesk/database/enums";
 import { z } from "zod";
 
 /** Conteúdo de uma mensagem, conforme o tipo (texto, mídia, evento do sistema, nota...). */
@@ -23,6 +23,9 @@ export type MessageContent = {
     | "order_number_request"
     | "order_lookup"
     | "order_confirmed"
+    | "order_forecast"
+    | "order_dispatched"
+    | "order_delivered"
     | "order_links"
     | "handoff"
     | "survey"
@@ -72,7 +75,7 @@ export type OrderDto = {
   placedAt: string;
   dispatchedAt: string | null;
   deliveredAt: string | null;
-  items: { name: string; quantity: number; unitPrice: string }[];
+  items: { name: string; quantity: number; unitPrice: string; notes: string | null }[];
 };
 
 /** Item da lista de conversas da Inbox (no painel master, `tenant` diz de qual restaurante é). */
@@ -141,3 +144,5 @@ export type QuickReplyDto = { id: string; tenantId: string; shortcut: string; co
 
 /** Canal do restaurante como a equipe o vê (sem credenciais): para avisar quando ele precisa ser reconectado. */
 export type ChannelHealthDto = { id: string; tenantId: string; type: ChannelType; name: string; status: ChannelStatus };
+/** Widget do iFood na Inbox: id do widget da plataforma e as lojas iFood do usuário (o iFood aceita até 10). */
+export type IfoodWidgetDto = { widgetId: string | null; merchantIds: string[] };

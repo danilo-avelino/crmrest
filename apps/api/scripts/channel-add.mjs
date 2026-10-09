@@ -8,7 +8,7 @@
 // Cardápio Web: a chave é gerada pelo restaurante no Portal (Configurações → Integrações → API).
 import { existsSync } from "node:fs";
 import { parseArgs } from "node:util";
-import { createPrismaClient, encrypt, parseEncryptionKey } from "@comanda/database";
+import { createPrismaClient, encrypt, parseEncryptionKey } from "@dishdesk/database";
 
 const rootEnv = new URL("../../../.env", import.meta.url);
 if (existsSync(rootEnv)) process.loadEnvFile(rootEnv);

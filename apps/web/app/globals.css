@@ -6,7 +6,7 @@
 @custom-variant dark (&:is(.dark *));
 
 /*
- * Tokens do design "Comanda" (CRM Restaurantes.html → Sistema de Design).
+ * Tokens do design "Dish Desk" (CRM Restaurantes.html → Sistema de Design).
  * O "accent" do design (tomate) se chama tomate aqui, porque no shadcn accent é o fundo de hover.
  */
 @theme {

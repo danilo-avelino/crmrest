@@ -1,4 +1,4 @@
-import { blindIndex, type Prisma } from "@comanda/database";
+import { blindIndex, type Prisma } from "@dishdesk/database";
 
 /** Busca por nome, telefone ou CPF (pelo hash; o CPF nunca é comparado em claro). */
 export function contactSearch(search: string, key: Buffer): Prisma.ContactWhereInput {

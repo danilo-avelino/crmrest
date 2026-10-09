@@ -1,6 +1,6 @@
 "use client";
 
-import { CHANNEL_LABEL, type ChannelHealthDto } from "@comanda/shared";
+import { CHANNEL_LABEL, type ChannelHealthDto } from "@dishdesk/shared";
 import { useQuery } from "@tanstack/react-query";
 import { TriangleAlertIcon } from "lucide-react";
 import Link from "next/link";

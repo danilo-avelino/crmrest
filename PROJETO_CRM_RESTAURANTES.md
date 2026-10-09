@@ -1,7 +1,7 @@
-# CRM Omnichannel para Restaurantes — Especificação do Projeto
+# Dish Desk — CRM Omnichannel para Restaurantes — Especificação do Projeto
 
 > Documento de referência para desenvolvedores (humanos e IA). Descreve visão, arquitetura, stack, modelo de dados, módulos, convenções e roadmap.
-> Nome provisório do produto: **CRM Restaurantes**.
+> Nome do produto: **Dish Desk**.
 
 ---
 
@@ -288,7 +288,7 @@ Habilitado por tenant conforme o plano (`tenant_modules`). Sem o módulo, a UI e
 
 Todo canal implementa a mesma interface — adicionar um canal novo = criar um novo conector, sem tocar no núcleo.
 
-> **Implementado:** `NormalizedMessage` e `StatusUpdate` estão em [packages/shared/src/messaging.ts](packages/shared/src/messaging.ts) como schemas Zod. Os valores de enum são os do banco, em maiúsculas (`WHATSAPP`, `INBOUND`, `TEXT`...), importados de `@comanda/database/enums`. O `ChannelConnector` continua previsto para `apps/api` e nasce com o esqueleto da API.
+> **Implementado:** `NormalizedMessage` e `StatusUpdate` estão em [packages/shared/src/messaging.ts](packages/shared/src/messaging.ts) como schemas Zod. Os valores de enum são os do banco, em maiúsculas (`WHATSAPP`, `INBOUND`, `TEXT`...), importados de `@dishdesk/database/enums`. O `ChannelConnector` continua previsto para `apps/api` e nasce com o esqueleto da API.
 
 ```ts
 // packages/shared/src/messaging.ts

@@ -51,3 +51,21 @@ export function RequireAdminContext({ children }: { children: ReactNode }) {
   }
   return children;
 }
+
+/** Painel da plataforma: só a equipe da plataforma (super admin). Os outros voltam para a Inbox. */
+export function RequireSuperAdmin({ children }: { children: ReactNode }) {
+  const { session, loading } = useAuth();
+  const router = useRouter();
+  const ready = !loading && Boolean(session?.context) && Boolean(session?.user.isSuperAdmin);
+
+  useEffect(() => {
+    if (loading) return;
+    if (!session?.context) router.replace("/login");
+    else if (!session.user.isSuperAdmin) router.replace("/inbox");
+  }, [loading, session, router]);
+
+  if (!ready) {
+    return <ContextLoading />;
+  }
+  return children;
+}

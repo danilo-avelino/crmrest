@@ -1,4 +1,4 @@
-import type { MessageContent } from "@comanda/shared";
+import type { MessageContent } from "@dishdesk/shared";
 import { InjectQueue, Processor } from "@nestjs/bullmq";
 import { Logger } from "@nestjs/common";
 import { DelayedError, type Job, type Queue } from "bullmq";

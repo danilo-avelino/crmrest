@@ -7,13 +7,15 @@ import {
   phoneFromWhatsAppId,
   toE164,
   type UpdateContactRequest,
-} from "@comanda/shared";
+} from "@dishdesk/shared";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2Icon, IdCardIcon, LoaderCircleIcon, MailIcon, MapPinIcon, PencilIcon, PhoneIcon, XIcon } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
 import { Avatar, CHANNEL_DOT } from "@/components/inbox/bits";
+import { CurrentOrder } from "@/components/inbox/current-order";
 import { ORDER_STATUS } from "@/components/inbox/order-card";
+import { sourcesText } from "@/components/orders/customer-history";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -30,7 +32,7 @@ const PHONE_SOURCE: Record<string, string> = {
 };
 
 /** Painel do cliente (coluna de 344px do board Inbox). */
-export function ClientPanel({ contactId }: { contactId: string }) {
+export function ClientPanel({ contactId, conversationId }: { contactId: string; conversationId: string }) {
   const { request } = useAuth();
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState(false);
@@ -84,6 +86,7 @@ export function ClientPanel({ contactId }: { contactId: string }) {
         />
       ) : (
         <>
+          <CurrentOrder conversationId={conversationId} />
           <Section title="Contato">
             <Row icon={PhoneIcon}>
               {data.phone ? (
@@ -337,6 +340,10 @@ function History({ contact }: { contact: ContactDetail }) {
             </div>
           ))}
         </div>
+        {/* Os pedidos somam todas as fontes ligadas ao cliente (iFood, Cardápio Web...). */}
+        {contact.metrics.ordersBySource.length > 1 && (
+          <div className="mt-2 text-[11px] text-ink-3">{sourcesText({ bySource: contact.metrics.ordersBySource })}</div>
+        )}
       </div>
       {contact.recentOrders.length > 0 && (
         <div className="flex flex-col gap-2 px-4 py-3">

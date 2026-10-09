@@ -1,4 +1,4 @@
-import type { ChannelStatus } from "@comanda/database/enums";
+import type { ChannelStatus } from "@dishdesk/database/enums";
 import { z } from "zod";
 
 /** Sistemas que o restaurante conecta pela página Configurações → Integrações (cada um pode ter várias contas/lojas). */

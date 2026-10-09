@@ -1,4 +1,4 @@
-// Modelo de dados do Comanda (PROJETO_CRM_RESTAURANTES.md §7).
+// Modelo de dados do Dish Desk (PROJETO_CRM_RESTAURANTES.md §7).
 // Toda tabela de negócio tem tenant_id e RLS; as políticas ficam na migration tenant_isolation.
 // Modelos de fases futuras (módulos, segmentos, templates, campanhas) entram junto com seus épicos.
 
@@ -44,6 +44,7 @@ model Tenant {
   messages            Message[]
   orders              Order[]
   orderItems          OrderItem[]
+  orderEvents         OrderEvent[]
   ratings             Rating[]
   quickReplies        QuickReply[]
   auditLogs           AuditLog[]
@@ -345,6 +346,7 @@ enum OrderStatus {
   PLACED
   CONFIRMED
   PREPARING
+  READY // pronto para retirada ou entrega
   DISPATCHED
   DELIVERED
   CANCELED
@@ -374,6 +376,7 @@ model Order {
   conversation Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
   items        OrderItem[]
   ratings      Rating[]
+  events       OrderEvent[]
 
   @@unique([channelId, externalOrderId])
   @@index([tenantId, contactId, placedAt])
@@ -394,6 +397,25 @@ model OrderItem {
 
   @@index([tenantId, orderId])
   @@map("order_items")
+}
+
+// Linha do tempo do pedido como a plataforma informou (iFood: PLACED, CONFIRMED, READY_TO_PICKUP, COLLECTED...).
+// Base dos tempos de preparo e da previsão de saída (E26).
+model OrderEvent {
+  id              String   @id @default(uuid(7)) @db.Uuid
+  tenantId        String   @map("tenant_id") @db.Uuid
+  orderId         String   @map("order_id") @db.Uuid
+  externalEventId String   @map("external_event_id") // id do evento na plataforma (idempotência)
+  code            String // ex.: READY_TO_PICKUP
+  occurredAt      DateTime @map("occurred_at") @db.Timestamptz(3)
+  metadata        Json?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  order  Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@unique([orderId, externalEventId])
+  @@index([tenantId, code, occurredAt])
+  @@map("order_events")
 }
 
 // Pesquisa de satisfação no fim de um atendimento sobre um pedido: "Qual nota você dá...? 1 a 5".

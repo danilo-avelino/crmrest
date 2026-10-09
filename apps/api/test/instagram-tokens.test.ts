@@ -1,4 +1,4 @@
-import { decrypt, encrypt, parseEncryptionKey } from "@comanda/database";
+import { decrypt, encrypt, parseEncryptionKey } from "@dishdesk/database";
 import type { INestApplication } from "@nestjs/common";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { InstagramTokensService } from "../src/channels/instagram-tokens.service.js";

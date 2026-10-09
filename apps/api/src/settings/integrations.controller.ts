@@ -1,4 +1,4 @@
-import { AddIntegrationRequest, type IntegrationDto, type IntegrationsDto, WhatsAppSignupRequest } from "@comanda/shared";
+import { AddIntegrationRequest, type IntegrationDto, type IntegrationsDto, WhatsAppSignupRequest } from "@dishdesk/shared";
 import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Query, Redirect } from "@nestjs/common";
 import { z } from "zod";
 import { CurrentAuth, Public, type RequestAuth } from "../auth/auth.decorators.js";

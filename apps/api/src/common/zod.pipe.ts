@@ -1,7 +1,7 @@
 import { BadRequestException, type PipeTransform } from "@nestjs/common";
 import { z } from "zod";
 
-/** Valida o corpo da requisição com um schema de @comanda/shared. */
+/** Valida o corpo da requisição com um schema de @dishdesk/shared. */
 export class ZodPipe<T extends z.ZodType> implements PipeTransform<unknown, z.output<T>> {
   constructor(private readonly schema: T) {}
 

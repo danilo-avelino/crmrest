@@ -1,4 +1,4 @@
-import { blindIndex, encrypt, parseEncryptionKey } from "@comanda/database";
+import { blindIndex, encrypt, parseEncryptionKey } from "@dishdesk/database";
 import type { INestApplication } from "@nestjs/common";
 import { hash } from "@node-rs/argon2";
 import request from "supertest";
@@ -212,7 +212,7 @@ describe("API da Inbox", () => {
     const detail = await get(`/contacts/${maria.id}`).expect(200);
     expect(detail.body).toMatchObject({
       cpfMasked: "***.456.789-**",
-      metrics: { ordersCount: 1, ordersTotal: "67.4" },
+      metrics: { ordersCount: 1, ordersTotal: "67.40" },
       recentOrders: [{ displayCode: "485329", status: "DISPATCHED" }],
     });
 

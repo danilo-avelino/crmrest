@@ -31,7 +31,7 @@ export function LoginForm() {
     <section className="flex w-[520px] shrink-0 flex-col bg-paper px-16 py-14">
       <div className="mb-[72px] flex items-center gap-2.5">
         <LogoMark className="size-[30px]" />
-        <span className="font-heading text-[19px] font-bold tracking-[-0.3px]">Comanda</span>
+        <span className="font-heading text-[19px] font-bold tracking-[-0.3px]">Dish Desk</span>
       </div>
 
       <div className="mb-10">

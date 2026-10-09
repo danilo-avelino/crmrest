@@ -136,7 +136,7 @@ export async function sendWhatsAppWebhook(channelExternalId: string, from: strin
   if (!response.ok) throw new Error(`Webhook recusado: ${response.status}`);
 }
 
-/** Mesmo formato de @comanda/database (AES-256-GCM: iv + tag + conteúdo). */
+/** Mesmo formato de @dishdesk/database (AES-256-GCM: iv + tag + conteúdo). */
 function encrypt(plaintext: string): Buffer {
   const key = Buffer.from(process.env.ENCRYPTION_KEY ?? "", "base64");
   const iv = randomBytes(12);

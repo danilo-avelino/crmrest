@@ -31,6 +31,7 @@ const tenantTables: Record<string, (db: TenantTx) => Promise<Row[]>> = {
   messages: (db) => db.message.findMany({ select: { id: true, tenantId: true } }),
   orders: (db) => db.order.findMany({ select: { id: true, tenantId: true } }),
   order_items: (db) => db.orderItem.findMany({ select: { id: true, tenantId: true } }),
+  order_events: (db) => db.orderEvent.findMany({ select: { id: true, tenantId: true } }),
   ratings: (db) => db.rating.findMany({ select: { id: true, tenantId: true } }),
   quick_replies: (db) => db.quickReply.findMany({ select: { id: true, tenantId: true } }),
   audit_logs: (db) => db.auditLog.findMany({ select: { id: true, tenantId: true } }),
@@ -108,6 +109,9 @@ async function seedTenant(label: string): Promise<Seeded> {
     },
   });
   await admin.rating.create({ data: { tenantId, conversationId: conversation.id, orderId: order.id, score: 5 } });
+  await admin.orderEvent.create({
+    data: { tenantId, orderId: order.id, externalEventId: `evento-${suffix}`, code: "CONFIRMED", occurredAt: new Date() },
+  });
   await admin.quickReply.create({ data: { tenantId, shortcut: "atraso", content: "Já estamos verificando." } });
   await admin.auditLog.create({
     data: { tenantId, userId: user.id, action: "contact.cpf_viewed", entity: "contact", entityId: contact.id },

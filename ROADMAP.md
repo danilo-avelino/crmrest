@@ -1,4 +1,4 @@
-# Roadmap de desenvolvimento — Comanda (CRM Omnichannel para Restaurantes)
+# Roadmap de desenvolvimento — Dish Desk (CRM Omnichannel para Restaurantes)
 
 > Fontes: [PROJETO_CRM_RESTAURANTES.md](PROJETO_CRM_RESTAURANTES.md) (especificação) e o design finalizado ([CRM Restaurantes.html](CRM%20Restaurantes.html) / artifact `FmY8WRPQc1iMuHxzxUQf5F`: Sistema de Design, Login, Inbox, Campanhas).
 > Este roadmap **substitui a seção 11 da especificação**. Instagram e iFood saíram da antiga Fase 2 e entraram no MVP.

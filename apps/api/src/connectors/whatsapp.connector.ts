@@ -1,11 +1,11 @@
 import { randomUUID } from "node:crypto";
-import type { MessageType } from "@comanda/database/enums";
-import { NormalizedMessage, phoneFromWhatsAppId, StatusUpdate, type WhatsAppTemplate } from "@comanda/shared";
+import type { MessageType } from "@dishdesk/database/enums";
+import { NormalizedMessage, phoneFromWhatsAppId, StatusUpdate, type WhatsAppTemplate } from "@dishdesk/shared";
 import { z } from "zod";
 import type { Env } from "../config/env.js";
 import { type ChannelConnector, type OutboundTemplate, type OutboundText, type SendTarget, sendFailure } from "./connector.js";
 
-// Webhook da WhatsApp Cloud API: só os campos que o Comanda usa.
+// Webhook da WhatsApp Cloud API: só os campos que o Dish Desk usa.
 const WaMedia = z.looseObject({
   id: z.string(),
   mime_type: z.string(),
@@ -116,7 +116,7 @@ function messageBody(message: z.infer<typeof WaMessage>): { type: MessageType; t
   if (message.type === "button" && message.button) return { type: "TEXT", text: message.button.text };
   const reply = message.interactive?.button_reply?.title ?? message.interactive?.list_reply?.title;
   if (message.type === "interactive" && reply) return { type: "TEXT", text: reply };
-  return { type: "TEXT", text: "Mensagem de um tipo que o Comanda ainda não exibe.", metadata: { unsupportedType: message.type } };
+  return { type: "TEXT", text: "Mensagem de um tipo que o Dish Desk ainda não exibe.", metadata: { unsupportedType: message.type } };
 }
 
 /** Resposta da Graph API; um erro vira uma mensagem que o admin entende (ex.: token expirado). */

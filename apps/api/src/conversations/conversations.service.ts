@@ -1,4 +1,4 @@
-import { parseEncryptionKey, type Prisma, type TenantTx } from "@comanda/database";
+import { parseEncryptionKey, type Prisma, type TenantTx } from "@dishdesk/database";
 import {
   CHANNEL_CAPABILITIES,
   type ConversationCounts,
@@ -11,7 +11,7 @@ import {
   type SendTemplateRequest,
   type UpdateConversationRequest,
   type WhatsAppTemplate,
-} from "@comanda/shared";
+} from "@dishdesk/shared";
 import { InjectQueue } from "@nestjs/bullmq";
 import {
   BadRequestException,
@@ -112,7 +112,7 @@ export class ConversationsService {
     const message = await this.db.withTenants(auth.scope, async (tx) => {
       const conversation = await this.requireConversation(tx, conversationId);
       const capabilities = CHANNEL_CAPABILITIES[conversation.channel.type];
-      if (!capabilities.send) throw new UnprocessableEntityException("Este canal não permite responder pelo Comanda.");
+      if (!capabilities.send) throw new UnprocessableEntityException("Este canal não permite responder pelo Dish Desk.");
       if (capabilities.window24h && (!conversation.windowExpiresAt || conversation.windowExpiresAt < new Date())) {
         throw new UnprocessableEntityException("A janela de 24h para resposta livre terminou.");
       }
@@ -140,7 +140,10 @@ export class ConversationsService {
           lastMessageAt: created.createdAt,
           unreadCount: 0,
           awaitingAgentSince: null, // a equipe respondeu: o alarme para
-          ...((menuOpen || afterHoursPending) && { automationState: { ...state, triage: "done", afterHours: undefined } }),
+          // Com o atendente na conversa, a próxima mensagem do cliente depois do pedido confirmado não chama a equipe.
+          ...((menuOpen || afterHoursPending || state.orderFollowUp) && {
+            automationState: { ...state, triage: "done", afterHours: undefined, orderFollowUp: undefined },
+          }),
           ...(afterHoursPending && { status: "OPEN" }),
         },
       });
@@ -162,7 +165,7 @@ export class ConversationsService {
         throw new UnprocessableEntityException("Só mensagens que falharam podem ser reenviadas.");
       }
       const capabilities = CHANNEL_CAPABILITIES[conversation.channel.type];
-      if (!capabilities.send) throw new UnprocessableEntityException("Este canal não permite responder pelo Comanda.");
+      if (!capabilities.send) throw new UnprocessableEntityException("Este canal não permite responder pelo Dish Desk.");
       // Template pode sair com a janela fechada; texto livre, não (§5.5).
       const windowClosed = !conversation.windowExpiresAt || conversation.windowExpiresAt < new Date();
       if (capabilities.window24h && windowClosed && !(current.content as MessageContent).template) {

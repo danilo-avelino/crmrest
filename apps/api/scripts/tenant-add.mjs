@@ -2,7 +2,7 @@
 // Uso: pnpm tenant:add --nome "Cantina da Nonna" --slug cantina-da-nonna
 import { existsSync } from "node:fs";
 import { parseArgs } from "node:util";
-import { createPrismaClient } from "@comanda/database";
+import { createPrismaClient } from "@dishdesk/database";
 
 const rootEnv = new URL("../../../.env", import.meta.url);
 if (existsSync(rootEnv)) process.loadEnvFile(rootEnv);

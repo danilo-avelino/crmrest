@@ -1,4 +1,4 @@
-import { blindIndex, encrypt, parseEncryptionKey } from "@comanda/database";
+import { blindIndex, encrypt, parseEncryptionKey } from "@dishdesk/database";
 import type { INestApplication } from "@nestjs/common";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -114,18 +114,30 @@ describe("menu de atendimento, busca do pedido e pesquisa de satisfação", () =
     expect(conversation.contact).toMatchObject({ name: "Carlos Mendes", phone: "+5511970000001", phoneSource: "channel" });
     expect(conversation.contact.identities.map((i) => i.channelType).sort()).toEqual(["IFOOD", "WHATSAPP"]);
     expect(conversation.contact.addresses).toHaveLength(1);
-    expect(conversation.automationState).toEqual({ triage: "done", linkedOrder: { id: order.id, at: expect.any(String) } });
+    expect(conversation.automationState).toEqual({ triage: "done", linkedOrder: { id: order.id, at: expect.any(String) }, orderFollowUp: true });
 
     const content = conversation.messages.map((m) => m.content as Content);
     expect(content).toContainEqual({ event: "order", orderId: order.id });
     expect(content).toContainEqual({ event: "contacts_merged", text: "Cadastro unificado com o do pedido #4853 (iFood)" });
-    expect(content.at(-2)).toMatchObject({
+    // Sem pedidos que já saíram, não há base para a previsão: só a confirmação.
+    expect(content.at(-1)).toMatchObject({
       automation: "order_confirmed",
-      text: "Pedido confirmado 👍 Enquanto um atendente chega, já nos conte o problema ou a sua dúvida, assim agilizamos o atendimento.",
+      text: "Pedido confirmado 👍\n\nEnquanto um atendente chega, já nos conte o problema ou a sua dúvida, assim agilizamos o atendimento.",
     });
-    // Marca o início do tempo de resposta da equipe.
-    expect(content.at(-1)).toEqual({ event: "handoff", text: "Atendimento passado para a equipe" });
+    // A equipe ainda não é chamada: o cliente pode já ter o que precisava.
+    expect(content).not.toContainEqual(expect.objectContaining({ event: "handoff" }));
+    expect(conversation.awaitingAgentSince).toBeNull();
     expect(await admin.auditLog.count({ where: { tenantId: fx.tenant.id, action: "contact.merged", entityId: order.contactId } })).toBe(1);
+  });
+
+  it("escreveu depois de confirmar o pedido: chama a equipe, sem mensagem automática", async () => {
+    await say("5511970000001", "wamid.T3c", "A pizza veio fria");
+    const conversation = await conversationOf("5511970000001");
+    // Marca o início do tempo de resposta da equipe.
+    expect(conversation.messages.at(-1)!.content).toEqual({ event: "handoff", text: "Atendimento passado para a equipe" });
+    expect(conversation.awaitingAgentSince).not.toBeNull();
+    expect(conversation.automationState).toEqual({ triage: "done", linkedOrder: { id: expect.any(String), at: expect.any(String) } });
+    expect((await automations("5511970000001")).at(-1)).toBe("order_confirmed");
   });
 
   it("ao resolver, pede a nota; a nota fica registrada e a conversa continua resolvida", async () => {
@@ -220,7 +232,7 @@ describe("menu de atendimento, busca do pedido e pesquisa de satisfação", () =
     await say("5511970000014", "wamid.P4", "9292");
     await say("5511970000014", "wamid.P5", "sim");
     const conversation = await conversationOf("5511970000014");
-    expect(conversation.automationState).toEqual({ triage: "done", linkedOrder: { id: order.id, at: expect.any(String) } });
+    expect(conversation.automationState).toEqual({ triage: "done", linkedOrder: { id: order.id, at: expect.any(String) }, orderFollowUp: true });
     expect(await automations("5511970000014")).toEqual(["menu", "order_lookup", "order_number_request", "order_lookup", "order_confirmed"]);
   });
 
@@ -340,6 +352,23 @@ describe("menu de atendimento, busca do pedido e pesquisa de satisfação", () =
     }
   });
 
+  it("personalidade escolhida: menu, pedido não encontrado e passagem à equipe no tom dela", async () => {
+    await admin.tenant.update({ where: { id: fx.tenant.id }, data: { settings: { personality: "descontraido" } } });
+    try {
+      await say("5511970000020", "wamid.TOM1", "Oi");
+      await say("5511970000020", "wamid.TOM2", "1");
+      await say("5511970000020", "wamid.TOM3", "9999");
+      const texts = (await contents("5511970000020")).filter((c) => c.automation).map((c) => c.text);
+      expect(texts).toEqual([
+        "E aí, Carlos! Tudo certo? 😎 No que a gente pode te ajudar?\n1 - Falar sobre um pedido\n2 - Fazer um pedido\n3 - Outro assunto",
+        "Qual o número do pedido? Dá pra ver no app ou no comprovante.",
+        "Xi, não achamos o pedido #9999 entre os de hoje e de ontem. Mas sossega: alguém da equipe já vem te ajudar.",
+      ]);
+    } finally {
+      await admin.tenant.update({ where: { id: fx.tenant.id }, data: { settings: {} } });
+    }
+  });
+
   /** Simula o tempo parado: as mensagens da conversa passam a ter mais de 20 minutos. */
   const idle = async (conversationId: string) => {
     for (const { id, createdAt } of await admin.message.findMany({ where: { conversationId } })) {
@@ -353,6 +382,7 @@ describe("menu de atendimento, busca do pedido e pesquisa de satisfação", () =
     await say("5511970000008", "wamid.I2", "1");
     await say("5511970000008", "wamid.I3", "6060");
     await say("5511970000008", "wamid.I4", "1");
+    await say("5511970000008", "wamid.I5", "Ainda não chegou"); // depois de confirmar o pedido: chama a equipe
     const { id } = await conversationOf("5511970000008");
     // Cada envio agenda a checagem de inatividade.
     const delayed = await app.get<Queue>(getQueueToken(QUEUES.automations)).getJobs(["delayed"]);
@@ -448,5 +478,49 @@ describe("menu de atendimento, busca do pedido e pesquisa de satisfação", () =
     const conversation = await conversationOf("5511970000011");
     expect(conversation.automationState).toEqual({ triage: "awaiting_option" });
     expect(await automations("5511970000011")).toEqual(["menu", "handoff", "menu"]);
+  });
+
+  it("confirmou o pedido ainda na cozinha: recebe a previsão de saída", async () => {
+    // Um pedido que já saiu do restaurante em 15 minutos serve de base.
+    const done = await ifoodOrder("6161", new Date(Date.now() - 60 * 60_000));
+    await admin.order.update({ where: { id: done.id }, data: { status: "DISPATCHED", dispatchedAt: new Date(Date.now() - 45 * 60_000) } });
+    await ifoodOrder("6262", new Date());
+
+    await say("5511970000018", "wamid.E1", "Oi");
+    await say("5511970000018", "wamid.E2", "1");
+    await say("5511970000018", "wamid.E3", "6262");
+    await say("5511970000018", "wamid.E4", "sim");
+    // Uma mensagem só: confirmação, previsão e o pedido para contar o problema.
+    expect((await contents("5511970000018")).at(-1)).toMatchObject({ automation: "order_confirmed" });
+    const { text } = (await contents("5511970000018")).at(-1)!;
+    // Outros pedidos de hoje do restaurante ainda na cozinha entram na fila.
+    expect(text).toMatch(
+      /^Pedido confirmado 👍\n⏱️ Previsão de saída do restaurante: por volta das \d{2}:\d{2}\.\nHá \d+ pedidos? na sua frente na cozinha\.\n\nEnquanto um atendente chega, /,
+    );
+  });
+
+  it("o atendente respondeu antes do cliente escrever: a mensagem seguinte não chama a equipe", async () => {
+    const { id } = await conversationOf("5511970000018");
+    await request(app.getHttpServer())
+      .post(`/api/conversations/${id}/messages`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ text: "Oi! Seu pedido já está no forno." })
+      .expect(201);
+    await drainQueues(app);
+    await say("5511970000018", "wamid.E5", "Obrigado!");
+    const conversation = await conversationOf("5511970000018");
+    expect(conversation.awaitingAgentSince).toBeNull();
+    expect(conversation.messages.map((m) => m.content as Content)).not.toContainEqual(expect.objectContaining({ event: "handoff" }));
+  });
+
+  it("confirmou um pedido que já saiu: avisa quando saiu, no lugar da previsão", async () => {
+    // O #6161 do teste anterior saiu há 45 minutos.
+    await say("5511970000019", "wamid.S1", "Oi");
+    await say("5511970000019", "wamid.S2", "1");
+    await say("5511970000019", "wamid.S3", "6161");
+    await say("5511970000019", "wamid.S4", "sim");
+    const confirmed = (await contents("5511970000019")).at(-1)!;
+    expect(confirmed.automation).toBe("order_confirmed");
+    expect(confirmed.text).toMatch(/^Pedido confirmado 👍\n🛵 Seu pedido já saiu para entrega às \d{2}:\d{2} \(45 minutos atrás\)\.\n\n/);
   });
 });

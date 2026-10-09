@@ -1,8 +1,8 @@
-import type { OrderStatus } from "@comanda/database/enums";
+import type { OrderStatus } from "@dishdesk/database/enums";
 import { z } from "zod";
 import type { Env } from "../config/env.js";
 
-// API de parceiros do Cardápio Web (docs.cardapioweb.com): polling dos pedidos alterados e detalhes do pedido.
+// API de parceiros do Cardápio Web (docs.cardapioweb.com): polling dos pedidos alterados, detalhes do pedido e base de clientes.
 // Autenticação pela chave da loja (X-API-KEY, gerada no Portal em Configurações → Integrações → API).
 
 const Id = z.coerce.string();
@@ -45,15 +45,34 @@ export const CardapioWebOrder = z.looseObject({
 });
 export type CardapioWebOrder = z.infer<typeof CardapioWebOrder>;
 
-/** Status do Cardápio Web → status do pedido no Comanda. Os demais (ex.: "canceling") não mudam o pedido. */
+/** Cliente da base do restaurante. Data de nascimento inválida vira null em vez de recusar a página inteira. */
+export const CardapioWebCustomer = z.looseObject({
+  id: Id,
+  name: z.string().nullish(),
+  email: z.string().nullish(),
+  phone_number: z.string().nullish(),
+  ddi: z.string().nullish(),
+  birth_date: z.iso.date().nullish().catch(null),
+  created_at: z.string(),
+  notifications_enabled: z.boolean().nullish(),
+});
+export type CardapioWebCustomer = z.infer<typeof CardapioWebCustomer>;
+
+const CardapioWebCustomersPage = z.looseObject({
+  customers: z.array(CardapioWebCustomer),
+  pagination: z.looseObject({ current_page: z.number(), total_pages: z.number(), total_customers: z.number() }),
+});
+export type CardapioWebCustomersPage = z.infer<typeof CardapioWebCustomersPage>;
+
+/** Status do Cardápio Web → status do pedido no Dish Desk. Os demais (ex.: "canceling") não mudam o pedido. */
 export const CARDAPIO_WEB_STATUS: Record<string, OrderStatus> = {
   waiting_confirmation: "PLACED",
   pending_payment: "PLACED",
   pending_online_payment: "PLACED",
   scheduled_confirmed: "CONFIRMED",
   confirmed: "CONFIRMED",
-  ready: "PREPARING",
-  waiting_to_catch: "PREPARING",
+  ready: "READY",
+  waiting_to_catch: "READY",
   released: "DISPATCHED",
   delivered: "DELIVERED",
   closed: "DELIVERED",
@@ -76,6 +95,12 @@ export class CardapioWebClient {
   async order(apiKey: string, orderId: string): Promise<CardapioWebOrder> {
     const response = await this.call(apiKey, `/api/partner/v1/orders/${encodeURIComponent(orderId)}`);
     return CardapioWebOrder.parse(await response.json());
+  }
+
+  /** Uma página (50 clientes, o máximo da API) da base de clientes da loja. */
+  async customers(apiKey: string, page: number): Promise<CardapioWebCustomersPage> {
+    const response = await this.call(apiKey, `/api/partner/v1/merchant/customers?page=${page}&per_page=50`);
+    return CardapioWebCustomersPage.parse(await response.json());
   }
 
   private async call(apiKey: string, path: string): Promise<Response> {

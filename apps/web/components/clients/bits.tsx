@@ -1,6 +1,6 @@
 "use client";
 
-import { CHANNEL_LABEL, type DuplicatePair } from "@comanda/shared";
+import { CHANNEL_LABEL, type DuplicatePair } from "@dishdesk/shared";
 import { useQuery } from "@tanstack/react-query";
 import { UserIcon } from "lucide-react";
 import type { ReactNode } from "react";

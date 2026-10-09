@@ -3,7 +3,7 @@
 #     --build-arg API_URL=http://api:4000 \
 #     --build-arg NEXT_PUBLIC_REALTIME_URL=https://realtime.seudominio.com.br \
 #     --build-arg NEXT_PUBLIC_SENTRY_DSN=... \
-#     -t comanda-web .
+#     -t dishdesk-web .
 
 FROM node:24-alpine AS base
 ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
@@ -13,7 +13,7 @@ WORKDIR /app
 # Só os pacotes de que o painel depende (web, shared), com o lockfile reduzido a eles.
 FROM base AS prune
 COPY . .
-RUN pnpm dlx turbo@2.11.7 prune @comanda/web --docker
+RUN pnpm dlx turbo@2.11.7 prune @dishdesk/web --docker
 
 FROM base AS build
 COPY --from=prune /app/out/json/ .
@@ -29,7 +29,7 @@ ENV API_URL=$API_URL \
     NEXT_PUBLIC_SENTRY_DSN=$NEXT_PUBLIC_SENTRY_DSN \
     NEXT_OUTPUT=standalone \
     NEXT_TELEMETRY_DISABLED=1
-RUN pnpm turbo build --filter=@comanda/web
+RUN pnpm turbo build --filter=@dishdesk/web
 
 FROM node:24-alpine AS runtime
 ENV NODE_ENV=production HOSTNAME=0.0.0.0 PORT=3000 NEXT_TELEMETRY_DISABLED=1

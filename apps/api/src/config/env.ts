@@ -30,6 +30,8 @@ const EnvSchema = z.object({
   IFOOD_CLIENT_ID: z.string().min(1).optional(),
   IFOOD_CLIENT_SECRET: z.string().min(1).optional(),
   IFOOD_API_URL: z.url().default("https://merchant-api.ifood.com.br"),
+  // Widget do iFood (chat com o cliente na Inbox): id do widget cadastrado no Portal do Desenvolvedor. Sem ele, não aparece.
+  IFOOD_WIDGET_ID: z.string().min(1).optional(),
   // Cardápio Web: a chave de API é de cada loja (fica no canal); aqui só o endereço da API. Sem ele, o polling fica desligado.
   CARDAPIO_WEB_API_URL: z.url().optional(),
   // Desenvolvimento sem credenciais reais: envios aos canais são simulados (nunca em produção).

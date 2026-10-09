@@ -1,6 +1,6 @@
 "use client";
 
-import { CreateMemberRequest, type TeamMemberDto, type UpdateMemberRequest } from "@comanda/shared";
+import { CreateMemberRequest, type TeamMemberDto, type UpdateMemberRequest } from "@dishdesk/shared";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { PlusIcon } from "lucide-react";
 import { useId, useState } from "react";

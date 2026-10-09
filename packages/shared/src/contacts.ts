@@ -1,5 +1,6 @@
-import type { ChannelType, OrderStatus } from "@comanda/database/enums";
-import { ChannelType as ChannelTypeEnum } from "@comanda/database/enums";
+import type { ChannelType, OrderStatus } from "@dishdesk/database/enums";
+import type { CustomerHistory } from "./orders.js";
+import { ChannelType as ChannelTypeEnum } from "@dishdesk/database/enums";
 import { parsePhoneNumberFromString } from "libphonenumber-js/min";
 import { z } from "zod";
 
@@ -74,7 +75,8 @@ export type ContactDetail = {
     state: string;
     zipCode: string | null;
   }[];
-  metrics: { ordersCount: number; ordersTotal: string };
+  /** Pedidos em todas as fontes ligadas ao cliente (mesmo telefone, CPF ou e-mail), sem os cancelados. */
+  metrics: { ordersCount: number; ordersTotal: string; ordersBySource: CustomerHistory["bySource"] };
   recentOrders: ContactOrderSummary[];
   lastSeenAt: string | null;
   conversationsCount: number;
@@ -103,6 +105,8 @@ export const ContactListQuery = z.object({
   channel: queryList(z.enum(ChannelTypeEnum)),
   district: z.string().trim().min(1).max(100).optional(),
   phonePending: z.stringbool().optional(),
+  /** Chateados: o último pedido foi cancelado. */
+  upset: z.stringbool().optional(),
   lastContact: z.enum(LAST_CONTACT_FILTERS).optional(),
   sort: z.enum(CONTACT_SORTS).default("lastSeen"),
   order: z.enum(["asc", "desc"]).default("desc"),
@@ -131,6 +135,29 @@ export type ContactPage = { items: ContactListItem[]; total: number; page: numbe
 
 /** Opções dos filtros Tag e Bairro: o que existe nos cadastros. */
 export type ContactFilterOptions = { tags: string[]; districts: string[] };
+
+/** Inativo: sem contato há mais de tantos dias (o mesmo corte do filtro "Último contato"). */
+export const INACTIVE_AFTER_DAYS = 30;
+
+/** Números da base de clientes, acima da lista (sem anonimizados; pedidos cancelados não contam). */
+export type ContactSummary = {
+  total: number;
+  /** Primeiro contato nos últimos 30 dias. */
+  newLast30d: number;
+  /** Com a tag VIP. */
+  vip: number;
+  /** Dois pedidos ou mais. */
+  recurring: number;
+  inactive: number;
+  /** Chateados: o último pedido foi cancelado. */
+  upset: number;
+  phonePending: number;
+  /** Fazem aniversário no mês atual. */
+  birthdaysThisMonth: number;
+  orders: number;
+  /** Ticket médio dos pedidos, em reais (string decimal); null sem pedidos. */
+  averageTicket: string | null;
+};
 
 /** Por que dois cadastros parecem ser da mesma pessoa. */
 export type DuplicateReason = "phone" | "cpf" | "email" | "name" | "address";

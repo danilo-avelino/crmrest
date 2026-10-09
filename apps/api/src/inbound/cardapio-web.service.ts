@@ -1,16 +1,17 @@
-import type { Prisma } from "@comanda/database";
-import type { OrderStatus } from "@comanda/database/enums";
-import { isValidCpf, toE164 } from "@comanda/shared";
+import type { Prisma, TenantTx } from "@dishdesk/database";
+import type { OrderStatus } from "@dishdesk/database/enums";
+import { isValidCpf, toE164 } from "@dishdesk/shared";
 import { InjectQueue, Processor } from "@nestjs/bullmq";
 import { Inject, Injectable, Logger, type OnModuleInit } from "@nestjs/common";
 import * as Sentry from "@sentry/nestjs";
-import type { Queue } from "bullmq";
+import type { Job, Queue } from "bullmq";
 import { ENV, type Env } from "../config/env.js";
-import { CARDAPIO_WEB_STATUS, CardapioWebClient, type CardapioWebOrder } from "../connectors/cardapio-web.client.js";
+import { CARDAPIO_WEB_STATUS, CardapioWebClient, type CardapioWebCustomer, type CardapioWebOrder } from "../connectors/cardapio-web.client.js";
 import { ConnectorsService } from "../connectors/connectors.service.js";
 import { DatabaseService } from "../core/database.service.js";
+import { OrderNoticeService } from "../orders/order-notice.service.js";
 import { JobProcessor } from "../queues/job-processor.js";
-import { QUEUES } from "../queues/queues.module.js";
+import { type CardapioWebImportJob, QUEUES } from "../queues/queues.module.js";
 import { InboundService, type ResolvedChannel } from "./inbound.service.js";
 import { rememberAddress } from "./orders.js";
 
@@ -18,6 +19,8 @@ import { rememberAddress } from "./orders.js";
 const MAX_LOOKBACK_MS = 23 * 60 * 60 * 1000 + 50 * 60 * 1000;
 /** Cada polling relê um pouco antes de onde parou: a leitura é idempotente e tolera relógios desencontrados. */
 const OVERLAP_MS = 60_000;
+/** A API de clientes aceita 300 requisições a cada 3 minutos: uma página a cada 0,6 s fica dentro do limite. */
+const CUSTOMERS_PAGE_INTERVAL_MS = 600;
 
 /**
  * Pedidos do Cardápio Web (cardápio digital do restaurante). Eles trazem o telefone, então entram no cadastro
@@ -34,6 +37,7 @@ export class CardapioWebService implements OnModuleInit {
     private readonly db: DatabaseService,
     private readonly connectors: ConnectorsService,
     private readonly inbound: InboundService,
+    private readonly notices: OrderNoticeService,
     @InjectQueue(QUEUES.cardapioWeb) private readonly queue: Queue,
     @Inject(ENV) env: Env,
   ) {
@@ -77,22 +81,103 @@ export class CardapioWebService implements OnModuleInit {
       if (hasIfood && summary.sales_channel === "ifood") continue;
       const status = CARDAPIO_WEB_STATUS[summary.status];
       if (!status) continue;
-      const known = await this.updateStatus(channel, summary.id, status, new Date(summary.updated_at));
-      if (!known) await this.createOrder(channel, await this.client.order(apiKey, summary.id));
+      const updated = await this.updateStatus(channel, summary.id, status, new Date(summary.updated_at));
+      if (!updated) await this.createOrder(channel, await this.client.order(apiKey, summary.id));
+      else if (updated.changed && (status === "DISPATCHED" || status === "DELIVERED")) {
+        await this.notices.statusChanged(channel.tenantId, updated.id, status);
+      }
     }
     // Só avança depois de processar tudo: com erro, a próxima rodada relê o mesmo período.
     this.readUntil.set(channel.id, new Date(startedAt.getTime() - OVERLAP_MS));
   }
 
-  /** Atualiza o status de um pedido já gravado; devolve false se o pedido ainda não existe. */
-  private updateStatus(channel: ResolvedChannel, externalOrderId: string, status: OrderStatus, at: Date): Promise<boolean> {
+  /**
+   * Importa uma página da base de clientes da loja (feito ao conectar) e agenda a próxima. Cada página é um job: o
+   * polling de pedidos continua rodando entre elas e um erro repete só a página. Cliente já importado fica como está.
+   */
+  async importCustomers(data: CardapioWebImportJob): Promise<void> {
+    if (!this.client.configured) return;
+    const channel = await this.db.withTenants({ tenantIds: [data.tenantId] }, (tx) =>
+      tx.channel.findFirst({ where: { id: data.channelId, status: "CONNECTED" }, select: { credentials: true } }),
+    );
+    if (!channel) return; // desconectada no meio da importação
+    const { accessToken: apiKey } = this.connectors.secrets(channel.credentials);
+    const { customers, pagination } = await this.client.customers(apiKey, data.page);
+
+    let imported = data.imported;
+    await this.db.withTenants({ tenantIds: [data.tenantId] }, async (tx) => {
+      for (const customer of customers) if (await this.importCustomer(tx, data.tenantId, customer)) imported++;
+    });
+    if (data.page < pagination.total_pages) {
+      const next: CardapioWebImportJob = { ...data, page: data.page + 1, imported };
+      await this.queue.add("import-customers", next, { delay: CUSTOMERS_PAGE_INTERVAL_MS });
+    } else {
+      const context = { tenantId: data.tenantId, channelId: data.channelId, imported, total: pagination.total_customers };
+      this.logger.log(context, "Base de clientes do Cardápio Web importada");
+    }
+  }
+
+  /**
+   * Cliente da base: junta ao cadastro com o mesmo telefone (só completa o que falta) ou cria um novo, que fica sem
+   * "último contato" até falar com o restaurante. Quem desligou as mensagens no Cardápio Web entra sem consentimento
+   * de marketing. Cliente sem telefone válido nem e-mail (só nome) fica de fora: se fizer um pedido, entra por ele.
+   * Devolve false se o cliente não entrou ou já estava ligado ao cadastro (importação anterior ou pedido).
+   */
+  private async importCustomer(tx: TenantTx, tenantId: string, customer: CardapioWebCustomer): Promise<boolean> {
+    const identityKey = { tenantId, channelType: "CARDAPIO_WEB" as const, externalId: customer.id };
+    const known = await tx.contactIdentity.findUnique({ where: { tenantId_channelType_externalId: identityKey }, select: { id: true } });
+    if (known) return false;
+
+    const phone = customer.phone_number ? customerPhone(customer.phone_number, customer.ddi) : null;
+    const name = customer.name?.trim() || null;
+    const email = customer.email?.trim() || null;
+    if (!phone && !email) return false;
+    const birthDate = customer.birth_date ? new Date(customer.birth_date) : null;
+    const existing = phone ? await tx.contact.findFirst({ where: { phone, deletedAt: null } }) : null;
+    const contact = existing
+      ? await tx.contact.update({
+          where: { id: existing.id },
+          data: {
+            ...(!existing.name && name && { name }),
+            ...(!existing.email && email && { email }),
+            ...(!existing.birthDate && birthDate && { birthDate }),
+          },
+        })
+      : await tx.contact.create({
+          data: {
+            tenantId,
+            name,
+            email,
+            birthDate,
+            firstSeenAt: new Date(customer.created_at),
+            ...(phone && { phone, phoneSource: "channel", phoneStatus: "ok" }),
+          },
+        });
+    const profile = { ...(name && { name }), ...(phone && { phone }), ...(email && { email }) };
+    await tx.contactIdentity.create({ data: { ...identityKey, contactId: contact.id, profile } });
+    if (customer.notifications_enabled === false) {
+      await tx.consent.create({
+        data: { tenantId, contactId: contact.id, purpose: "marketing_whatsapp", granted: false, source: "cardapio_web" },
+      });
+    }
+    return true;
+  }
+
+  /** Atualiza o status de um pedido já gravado; devolve null se o pedido ainda não existe e, se existe, se o status mudou. */
+  private updateStatus(
+    channel: ResolvedChannel,
+    externalOrderId: string,
+    status: OrderStatus,
+    at: Date,
+  ): Promise<{ id: string; changed: boolean } | null> {
     return this.db.withTenants({ tenantIds: [channel.tenantId] }, async (tx) => {
       const order = await tx.order.findUnique({
         where: { channelId_externalOrderId: { channelId: channel.id, externalOrderId } },
         select: { id: true, status: true, dispatchedAt: true, deliveredAt: true },
       });
-      if (!order) return false;
-      if (order.status !== status) {
+      if (!order) return null;
+      const changed = order.status !== status;
+      if (changed) {
         await tx.order.update({
           where: { id: order.id },
           data: {
@@ -102,7 +187,7 @@ export class CardapioWebService implements OnModuleInit {
           },
         });
       }
-      return true;
+      return { id: order.id, changed };
     });
   }
 
@@ -184,7 +269,8 @@ export class CardapioWebProcessor extends JobProcessor {
     super();
   }
 
-  async process(): Promise<void> {
-    await this.cardapioWeb.poll();
+  async process(job: Job): Promise<void> {
+    if (job.name === "import-customers") await this.cardapioWeb.importCustomers(job.data as CardapioWebImportJob);
+    else await this.cardapioWeb.poll();
   }
 }

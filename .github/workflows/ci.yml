@@ -51,7 +51,7 @@ jobs:
       - name: Roles do banco
         run: psql "$DATABASE_ADMIN_URL" -f infra/docker/postgres/init/01-app-roles.sql
       - name: Migrations
-        run: pnpm --filter @comanda/database exec prisma migrate deploy
+        run: pnpm --filter @dishdesk/database exec prisma migrate deploy
 
       - run: pnpm lint
       - run: pnpm typecheck
@@ -59,7 +59,7 @@ jobs:
       - run: pnpm build
 
       - name: Navegador dos E2E
-        run: pnpm --filter @comanda/web exec playwright install --with-deps chromium
+        run: pnpm --filter @dishdesk/web exec playwright install --with-deps chromium
       - run: pnpm e2e
 
       - name: Artefatos dos E2E

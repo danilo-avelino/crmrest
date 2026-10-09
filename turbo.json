@@ -10,7 +10,8 @@
     "META_APP_SECRET",
     "META_WEBHOOK_VERIFY_TOKEN",
     "INSTAGRAM_APP_SECRET",
-    "CHANNELS_DRY_RUN"
+    "CHANNELS_DRY_RUN",
+    "CARDAPIO_WEB_API_URL"
   ],
   "tasks": {
     "db:generate": {
@@ -38,7 +39,7 @@
       "cache": false
     },
     "e2e": {
-      "dependsOn": ["build", "@comanda/api#build"],
+      "dependsOn": ["build", "@dishdesk/api#build"],
       "cache": false
     }
   }

@@ -1,12 +1,12 @@
 import { createHash, randomUUID } from "node:crypto";
-import type { MessageType } from "@comanda/database/enums";
-import { NormalizedMessage, StatusUpdate } from "@comanda/shared";
+import type { MessageType } from "@dishdesk/database/enums";
+import { NormalizedMessage, StatusUpdate } from "@dishdesk/shared";
 import { z } from "zod";
 import type { Env } from "../config/env.js";
 import { type ChannelConnector, type OutboundText, type SendTarget, sendFailure } from "./connector.js";
 import { graph, type ParsedWebhook } from "./whatsapp.connector.js";
 
-// Webhook do Instagram (API com login do Instagram): só os campos que o Comanda usa.
+// Webhook do Instagram (API com login do Instagram): só os campos que o Dish Desk usa.
 const IgEvent = z.looseObject({
   sender: z.looseObject({ id: z.string() }),
   timestamp: z.number(),
@@ -51,7 +51,7 @@ export function parseInstagram(channelId: string, events: unknown[]): ParsedWebh
       if (update.success) result.statuses.push(update.data);
       continue;
     }
-    // Eco: mensagem enviada pela própria conta (pelo Comanda ou pelo app). Não é do cliente.
+    // Eco: mensagem enviada pela própria conta (pelo Dish Desk ou pelo app). Não é do cliente.
     if (!message || message.is_echo) continue;
 
     const normalized = NormalizedMessage.safeParse({
@@ -80,7 +80,7 @@ function messageBody(message: NonNullable<z.infer<typeof IgEvent>["message"]>) {
       media: { mimeType: `${attachment.type === "file" ? "application" : attachment.type}/*`, url: attachment.payload.url },
     };
   }
-  return { type: "TEXT" as const, text: ATTACHMENT_TEXT[attachment.type] ?? "Mensagem de um tipo que o Comanda ainda não exibe." };
+  return { type: "TEXT" as const, text: ATTACHMENT_TEXT[attachment.type] ?? "Mensagem de um tipo que o Dish Desk ainda não exibe." };
 }
 
 /** Acrescenta à recusa da Meta em qual passo ela aconteceu (a mensagem dela sozinha não diz). */

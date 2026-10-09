@@ -1,4 +1,11 @@
-import { BusinessHours, type TenantSettingsDto, UpdateAutomationTextsRequest, UpdateOrderLinksRequest } from "@comanda/shared";
+import {
+  BusinessHours,
+  OrderForecastSettings,
+  type TenantSettingsDto,
+  UpdateAutomationTextsRequest,
+  UpdateOrderLinksRequest,
+  UpdatePersonalityRequest,
+} from "@dishdesk/shared";
 import { Body, Controller, Get, Param, ParseUUIDPipe, Put } from "@nestjs/common";
 import { CurrentAuth, type RequestAuth } from "../auth/auth.decorators.js";
 import { ZodPipe } from "../common/zod.pipe.js";
@@ -31,6 +38,15 @@ export class SettingsController {
     return this.settings.updateAutomationTexts(auth, tenantId, body);
   }
 
+  @Put(":tenantId/personality")
+  updatePersonality(
+    @Param("tenantId", ParseUUIDPipe) tenantId: string,
+    @Body(new ZodPipe(UpdatePersonalityRequest)) body: UpdatePersonalityRequest,
+    @CurrentAuth() auth: RequestAuth,
+  ): Promise<TenantSettingsDto> {
+    return this.settings.updatePersonality(auth, tenantId, body);
+  }
+
   @Put(":tenantId/business-hours")
   updateBusinessHours(
     @Param("tenantId", ParseUUIDPipe) tenantId: string,
@@ -38,5 +54,14 @@ export class SettingsController {
     @CurrentAuth() auth: RequestAuth,
   ): Promise<TenantSettingsDto> {
     return this.settings.updateBusinessHours(auth, tenantId, body);
+  }
+
+  @Put(":tenantId/order-forecast")
+  updateOrderForecast(
+    @Param("tenantId", ParseUUIDPipe) tenantId: string,
+    @Body(new ZodPipe(OrderForecastSettings)) body: OrderForecastSettings,
+    @CurrentAuth() auth: RequestAuth,
+  ): Promise<TenantSettingsDto> {
+    return this.settings.updateOrderForecast(auth, tenantId, body);
   }
 }

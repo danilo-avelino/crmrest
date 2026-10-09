@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { type AutomationMessages, PERSONALITY_MESSAGES, Personality, personalityOf } from "./personalities.js";
 
 export const ORDER_LINKS_MAX = 5;
 
@@ -24,9 +25,11 @@ export type TenantSettingsDto = {
   tenantName: string;
   /** Só o administrador do restaurante altera. */
   canEdit: boolean;
+  personality: Personality;
   orderLinks: OrderLink[];
   automationTexts: AutomationTexts;
   businessHours: BusinessHours;
+  orderForecast: OrderForecastSettings;
 };
 
 /** Os links guardados em `tenant.settings` (um valor fora do formato conta como nenhum link). */
@@ -34,9 +37,9 @@ export function orderLinksOf(settings: unknown): OrderLink[] {
   return z.looseObject({ orderLinks: z.array(OrderLink).optional() }).safeParse(settings).data?.orderLinks ?? [];
 }
 
-/** O texto que o cliente recebe com os links (o mesmo da automação). */
-export function orderLinksMessage(links: OrderLink[]): string {
-  return `Você pode fazer seu pedido por aqui:\n${links.map((link) => `• ${link.label}: ${link.url}`).join("\n")}`;
+/** O texto que o cliente recebe com os links (o mesmo da automação); `intro` é o da personalidade. */
+export function orderLinksMessage(links: OrderLink[], intro: string): string {
+  return `${intro}\n${links.map((link) => `• ${link.label}: ${link.url}`).join("\n")}`;
 }
 
 /** Resposta rápida (atalho "/" no composer). O atalho aceita "/atraso" ou "atraso" e é guardado sem a barra. */
@@ -52,14 +55,15 @@ export type QuickReplyRequest = z.infer<typeof QuickReplyRequest>;
 
 // ---------- Mensagens automáticas (E15) ----------
 
-/** Textos padrão das automações; o admin pode trocar cada um. Na saudação, {nome} vira o primeiro nome do cliente. */
-export const AUTOMATION_TEXT_DEFAULTS = {
-  greeting: "Olá, {nome}! 👋 Em que podemos ajudar?",
-  phoneRequest: "Para garantirmos seu atendimento caso a conversa caia, pode nos informar seu telefone com DDD?",
-  phoneReminder: "Só lembrando: pode nos passar seu telefone com DDD? 😊",
-  phoneConfirmation: "Obrigado! Já anotamos seu telefone.",
-};
-export type AutomationTexts = typeof AUTOMATION_TEXT_DEFAULTS;
+/** Textos que o admin pode trocar; o padrão de cada um vem da personalidade. Na saudação, {nome} vira o primeiro nome do cliente. */
+export const AUTOMATION_TEXT_KEYS = ["greeting", "phoneRequest", "phoneReminder", "phoneConfirmation"] as const;
+export type AutomationTexts = Pick<AutomationMessages, (typeof AUTOMATION_TEXT_KEYS)[number]>;
+
+/** Os textos editáveis como saem da personalidade, sem nada trocado pelo admin. */
+export function automationTextDefaults(personality: Personality): AutomationTexts {
+  const messages = PERSONALITY_MESSAGES[personality];
+  return Object.fromEntries(AUTOMATION_TEXT_KEYS.map((key) => [key, messages[key]])) as AutomationTexts;
+}
 
 const AutomationText = z.string().trim().min(1, "Escreva a mensagem.").max(1000, "Use até 1000 caracteres.");
 export const UpdateAutomationTextsRequest = z.object({
@@ -70,15 +74,38 @@ export const UpdateAutomationTextsRequest = z.object({
 });
 export type UpdateAutomationTextsRequest = z.infer<typeof UpdateAutomationTextsRequest>;
 
-/** Os textos guardados em `tenant.settings`, com o padrão no lugar do que faltar ou estiver fora do formato. */
+/** Os textos guardados em `tenant.settings`, com o da personalidade no lugar do que faltar ou estiver fora do formato. */
 export function automationTextsOf(settings: unknown): AutomationTexts {
   const saved = z.looseObject({ automationTexts: z.record(z.string(), z.unknown()).optional() }).safeParse(settings).data?.automationTexts;
-  const texts = { ...AUTOMATION_TEXT_DEFAULTS };
-  for (const key of Object.keys(texts) as (keyof AutomationTexts)[]) {
+  const texts = automationTextDefaults(personalityOf(settings));
+  for (const key of AUTOMATION_TEXT_KEYS) {
     const value = AutomationText.safeParse(saved?.[key]);
     if (value.success) texts[key] = value.data;
   }
   return texts;
+}
+
+/** Todas as mensagens das automações do restaurante: as da personalidade, com os textos que o admin trocou. */
+export function automationMessagesOf(settings: unknown): AutomationMessages {
+  return {
+    ...PERSONALITY_MESSAGES[personalityOf(settings)],
+    ...automationTextsOf(settings),
+    closedMessage: businessHoursOf(settings).closedMessage,
+  };
+}
+
+export const UpdatePersonalityRequest = z.object({ personality: Personality });
+export type UpdatePersonalityRequest = z.infer<typeof UpdatePersonalityRequest>;
+
+// ---------- Previsão de saída do pedido (E26) ----------
+
+/** showQueue: a mensagem de previsão diz quantos pedidos estão na frente na cozinha (ligado por padrão). */
+export const OrderForecastSettings = z.object({ showQueue: z.boolean() });
+export type OrderForecastSettings = z.infer<typeof OrderForecastSettings>;
+
+export function orderForecastOf(settings: unknown): OrderForecastSettings {
+  const saved = z.looseObject({ orderForecast: OrderForecastSettings.optional() }).safeParse(settings).data?.orderForecast;
+  return saved ?? { showQueue: true };
 }
 
 /** As opções do menu de atendimento: fixas, porque a automação lê a resposta pelo número. */
@@ -110,11 +137,13 @@ export type BusinessHours = z.infer<typeof BusinessHours>;
 export const DEFAULT_BUSINESS_HOURS: BusinessHours = {
   enabled: false,
   days: Array.from({ length: 7 }, () => ({ open: "11:00", close: "23:00" })),
-  closedMessage: "Olá! 👋 No momento estamos fechados. Assim que abrirmos, respondemos sua mensagem.",
+  closedMessage: PERSONALITY_MESSAGES.cordial.closedMessage,
 };
 
+/** Sem horário salvo, a mensagem de fora do horário é a da personalidade. */
 export function businessHoursOf(settings: unknown): BusinessHours {
-  return z.looseObject({ businessHours: BusinessHours.optional() }).safeParse(settings).data?.businessHours ?? DEFAULT_BUSINESS_HOURS;
+  const saved = z.looseObject({ businessHours: BusinessHours.optional() }).safeParse(settings).data?.businessHours;
+  return saved ?? { ...DEFAULT_BUSINESS_HOURS, closedMessage: PERSONALITY_MESSAGES[personalityOf(settings)].closedMessage };
 }
 
 const BRASILIA_CLOCK = new Intl.DateTimeFormat("en-US", {

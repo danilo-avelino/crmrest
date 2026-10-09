@@ -1,5 +1,5 @@
-import type { TenantScope } from "@comanda/database";
-import type { TenantRole } from "@comanda/database/enums";
+import type { TenantScope } from "@dishdesk/database";
+import type { TenantRole } from "@dishdesk/database/enums";
 import { createParamDecorator, type ExecutionContext, SetMetadata } from "@nestjs/common";
 
 export const IS_PUBLIC = "isPublic";

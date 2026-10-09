@@ -1,5 +1,5 @@
-import type { TenantTx } from "@comanda/database";
-import type { DuplicateReason } from "@comanda/shared";
+import type { TenantTx } from "@dishdesk/database";
+import type { DuplicateReason } from "@dishdesk/shared";
 
 export type DuplicateCandidate = { a: string; b: string; tenantId: string; reasons: DuplicateReason[] };
 

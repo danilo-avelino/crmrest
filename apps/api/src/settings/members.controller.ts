@@ -1,5 +1,5 @@
-import type { TenantTx } from "@comanda/database";
-import { CreateMemberRequest, type TeamMemberDto, UpdateMemberRequest } from "@comanda/shared";
+import type { TenantTx } from "@dishdesk/database";
+import { CreateMemberRequest, type TeamMemberDto, UpdateMemberRequest } from "@dishdesk/shared";
 import { hash } from "@node-rs/argon2";
 import { randomUUID } from "node:crypto";
 import { Body, Controller, ForbiddenException, Get, NotFoundException, Param, ParseUUIDPipe, Patch, Post } from "@nestjs/common";

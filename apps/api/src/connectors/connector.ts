@@ -1,4 +1,4 @@
-import type { ChannelType } from "@comanda/database/enums";
+import type { ChannelType } from "@dishdesk/database/enums";
 
 export type OutboundText = { type: "TEXT"; text: string };
 export type OutboundTemplate = { name: string; language: string; variables: string[] };

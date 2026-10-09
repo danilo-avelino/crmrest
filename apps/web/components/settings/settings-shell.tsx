@@ -1,6 +1,6 @@
 "use client";
 
-import type { AuthContext } from "@comanda/shared";
+import type { AuthContext } from "@dishdesk/shared";
 import { CheckIcon, ChevronDownIcon, LoaderCircleIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";

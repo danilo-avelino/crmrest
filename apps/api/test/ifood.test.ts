@@ -1,13 +1,14 @@
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
-import { blindIndex, parseEncryptionKey } from "@comanda/database";
+import { blindIndex, parseEncryptionKey } from "@dishdesk/database";
 import { getQueueToken } from "@nestjs/bullmq";
 import type { INestApplication } from "@nestjs/common";
 import type { Queue } from "bullmq";
+import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { IfoodService } from "../src/inbound/ifood.service.js";
 import { QUEUES } from "../src/queues/queues.module.js";
-import { admin, createChannelFixture, createTestApp } from "./helpers.js";
+import { accessTokenFor, admin, createChannelFixture, createTestApp } from "./helpers.js";
 
 /** Merchant API falsa: token, polling (eventos na fila), detalhes do pedido e confirmação. */
 async function startMockIfood() {
@@ -76,18 +77,19 @@ describe("iFood (pedidos por polling)", () => {
   let fx: Awaited<ReturnType<typeof createChannelFixture>>;
   let ifood: Awaited<ReturnType<typeof startMockIfood>>;
   let service: IfoodService;
-  const event = (id: string, fullCode: string, orderId: string, merchantId = fx.ifood.externalId) => ({
+  const event = (id: string, fullCode: string, orderId: string, merchantId = fx.ifood.externalId, at = new Date(), metadata?: object) => ({
     id,
     code: fullCode.slice(0, 3),
     fullCode,
     orderId,
     merchantId,
-    createdAt: new Date().toISOString(),
+    createdAt: at.toISOString(),
+    ...(metadata && { metadata }),
   });
 
   beforeAll(async () => {
     ifood = await startMockIfood();
-    app = await createTestApp({ IFOOD_CLIENT_ID: "cliente", IFOOD_CLIENT_SECRET: "segredo", IFOOD_API_URL: ifood.url });
+    app = await createTestApp({ IFOOD_CLIENT_ID: "cliente", IFOOD_CLIENT_SECRET: "segredo", IFOOD_API_URL: ifood.url, IFOOD_WIDGET_ID: "widget-teste" });
     // O teste chama o polling direto: sem o agendamento a cada 30s.
     await app.get<Queue>(getQueueToken(QUEUES.ifood)).removeJobScheduler("ifood-polling");
     service = app.get(IfoodService);
@@ -100,7 +102,7 @@ describe("iFood (pedidos por polling)", () => {
     await ifood?.close();
   });
 
-  it("pedido novo: cliente com CPF da nota e endereço, pedido e card na conversa", async () => {
+  it("pedido novo: cliente com CPF da nota e endereço e o pedido, sem abrir conversa (o iFood não deixa responder)", async () => {
     ifood.state.orders["pedido-1"] = ifoodOrder("pedido-1", "4852");
     ifood.state.events.push(event("ev-1", "PLACED", "pedido-1"));
     await service.poll();
@@ -111,7 +113,7 @@ describe("iFood (pedidos por polling)", () => {
 
     const order = await admin.order.findFirstOrThrow({
       where: { tenantId: fx.tenant.id, externalOrderId: "pedido-1" },
-      include: { items: true, contact: { include: { addresses: true, identities: true } }, conversation: { include: { messages: { orderBy: { createdAt: "asc" } } } } },
+      include: { items: true, contact: { include: { addresses: true, identities: true } } },
     });
     expect(order).toMatchObject({ displayCode: "4852", status: "PLACED" });
     expect(order.total.toString()).toBe("94.8");
@@ -123,11 +125,8 @@ describe("iFood (pedidos por polling)", () => {
     });
     expect(order.contact.addresses).toEqual([expect.objectContaining({ street: "Rua dos Pinheiros", number: "120", district: "Pinheiros" })]);
     expect(order.contact.identities.map((i) => [i.channelType, i.externalId])).toEqual([["IFOOD", "cliente-carlos"]]);
-    expect(order.conversation).toMatchObject({ status: "OPEN", unreadCount: 1, channelId: fx.ifood.id });
-    expect(order.conversation!.messages.map((m) => m.content)).toEqual([
-      { event: "conversation_opened", text: "Conversa aberta via iFood" },
-      { event: "order", orderId: order.id },
-    ]);
+    expect(order.conversationId).toBeNull();
+    expect(await admin.conversation.count({ where: { tenantId: fx.tenant.id, channelId: fx.ifood.id } })).toBe(0);
   });
 
   it("eventos de status avançam o pedido", async () => {
@@ -139,15 +138,26 @@ describe("iFood (pedidos por polling)", () => {
     expect(ifood.state.acked).toEqual(expect.arrayContaining(["ev-2", "ev-3"]));
   });
 
-  it("novo pedido do mesmo cliente volta para a mesma conversa, sem duplicar endereço", async () => {
+  it("novo pedido do mesmo cliente entra no mesmo cadastro, sem duplicar endereço", async () => {
     ifood.state.orders["pedido-2"] = ifoodOrder("pedido-2", "4901");
     ifood.state.events.push(event("ev-4", "PLACED", "pedido-2"));
     await service.poll();
     const orders = await admin.order.findMany({ where: { tenantId: fx.tenant.id }, include: { contact: { include: { addresses: true } } } });
-    expect(new Set(orders.map((o) => o.conversationId)).size).toBe(1);
+    expect(new Set(orders.map((o) => o.contactId)).size).toBe(1);
     expect(orders[0]!.contact.addresses).toHaveLength(1);
-    const conversation = await admin.conversation.findUniqueOrThrow({ where: { id: orders[0]!.conversationId! } });
-    expect(conversation.unreadCount).toBe(2);
+  });
+
+  it("loja com id fora do formato do iFood fica de fora do polling (sem derrubar as outras)", async () => {
+    const invalid = await admin.channel.create({
+      data: { tenantId: fx.tenant.id, type: "IFOOD", name: "iFood exemplo", externalId: "loja-de-exemplo", credentials: Buffer.from("{}"), status: "CONNECTED" },
+    });
+    try {
+      await service.poll();
+      expect(ifood.state.pollingMerchants.at(-1)).toContain(fx.ifood.externalId);
+      expect(ifood.state.pollingMerchants.at(-1)).not.toContain("loja-de-exemplo");
+    } finally {
+      await admin.channel.delete({ where: { id: invalid.id } });
+    }
   });
 
   it("confirma eventos de lojas desconhecidas e não confirma os que falharam", async () => {
@@ -155,5 +165,126 @@ describe("iFood (pedidos por polling)", () => {
     await service.poll();
     expect(ifood.state.acked).toContain("ev-5");
     expect(ifood.state.acked).not.toContain("ev-6"); // detalhes indisponíveis: volta no próximo polling
+  });
+
+  it("linha do tempo: guarda cada evento com o horário; pronto, coleta pelo entregador e conclusão", async () => {
+    ifood.state.orders["pedido-3"] = ifoodOrder("pedido-3", "5010");
+    const minute = 60_000;
+    const placed = Date.now() - 40 * minute;
+    const at = (minutes: number) => new Date(placed + minutes * minute);
+    ifood.state.events.push(
+      event("ev-30", "PLACED", "pedido-3", undefined, at(0)),
+      event("ev-31", "CONFIRMED", "pedido-3", undefined, at(1)),
+      event("ev-32", "READY_TO_PICKUP", "pedido-3", undefined, at(19)),
+    );
+    await service.poll();
+    const ready = await admin.order.findFirstOrThrow({ where: { tenantId: fx.tenant.id, externalOrderId: "pedido-3" } });
+    expect(ready.status).toBe("READY");
+
+    ifood.state.events.push(
+      event("ev-33", "COLLECTED", "pedido-3", undefined, at(24), { workerName: "Fulano da Silva" }),
+      event("ev-34", "CONCLUDED", "pedido-3", undefined, at(90)),
+      event("ev-32", "READY_TO_PICKUP", "pedido-3", undefined, at(19)), // reenviado: não duplica
+    );
+    await service.poll();
+    const timeline = await admin.order.findFirstOrThrow({
+      where: { tenantId: fx.tenant.id, externalOrderId: "pedido-3" },
+      include: { events: { orderBy: { occurredAt: "asc" } } },
+    });
+    expect(timeline.events.map((e) => [e.code, e.occurredAt.getTime()])).toEqual([
+      ["PLACED", at(0).getTime()],
+      ["CONFIRMED", at(1).getTime()],
+      ["READY_TO_PICKUP", at(19).getTime()],
+      ["COLLECTED", at(24).getTime()],
+      ["CONCLUDED", at(90).getTime()],
+    ]);
+    expect(timeline.events[3]!.metadata).toEqual({ workerName: "Fulano da Silva" });
+    // A coleta é a saída do restaurante; a conclusão (horas depois) não vira horário de entrega.
+    expect(timeline).toMatchObject({ status: "DELIVERED", dispatchedAt: at(24), deliveredAt: null });
+  });
+
+  it("pedido alterado pelo cliente (ORDER_PATCHED): itens e total atualizados", async () => {
+    ifood.state.orders["pedido-3"] = {
+      ...ifoodOrder("pedido-3", "5010"),
+      items: [{ name: "Pizza Margherita G", quantity: 1, unitPrice: 44.9, totalPrice: 44.9 }],
+      total: { subTotal: 44.9, deliveryFee: 5, orderAmount: 49.9 },
+    };
+    ifood.state.events.push(event("ev-35", "ORDER_PATCHED", "pedido-3"));
+    await service.poll();
+    const order = await admin.order.findFirstOrThrow({ where: { tenantId: fx.tenant.id, externalOrderId: "pedido-3" }, include: { items: true } });
+    expect(order.total.toString()).toBe("49.9");
+    expect(order.items.map((i) => [i.name, i.quantity])).toEqual([["Pizza Margherita G", 1]]);
+    expect(ifood.state.acked).toContain("ev-35");
+  });
+
+  it("aba Pedidos: lista os pedidos com a linha do tempo e o tempo de preparo (confirmado → pronto)", async () => {
+    const token = await accessTokenFor(app, fx.user.email, fx.tenant.id);
+    const { body } = await request(app.getHttpServer()).get("/api/orders?period=7d").set("Authorization", `Bearer ${token}`).expect(200);
+    expect(body).toMatchObject({ total: 3, page: 1 });
+    const order = body.items.find((o: { displayCode: string }) => o.displayCode === "5010");
+    expect(order).toMatchObject({
+      channelType: "IFOOD",
+      status: "DELIVERED",
+      total: "49.90",
+      contact: { name: "Carlos Mendes" },
+      preparationSeconds: 18 * 60, // confirmado 1 min depois do pedido, pronto aos 19
+    });
+    expect(order.events.map((e: { code: string }) => e.code)).toEqual(["PLACED", "CONFIRMED", "READY_TO_PICKUP", "COLLECTED", "ORDER_PATCHED", "CONCLUDED"]);
+
+    const filtered = await request(app.getHttpServer())
+      .get("/api/orders?period=7d&status=DISPATCHED")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    expect(filtered.body.items.map((o: { displayCode: string }) => o.displayCode)).toEqual(["4852"]);
+  });
+
+  it("widget do iFood: id do widget e as lojas iFood do restaurante", async () => {
+    const token = await accessTokenFor(app, fx.user.email, fx.tenant.id);
+    const { body } = await request(app.getHttpServer()).get("/api/ifood-widget").set("Authorization", `Bearer ${token}`).expect(200);
+    expect(body).toEqual({ widgetId: "widget-teste", merchantIds: [fx.ifood.externalId] });
+  });
+
+  it("saiu para entrega com o cliente conversando pelo WhatsApp: avisa na conversa, uma vez só", async () => {
+    const { contactId } = await admin.order.findFirstOrThrow({ where: { tenantId: fx.tenant.id, externalOrderId: "pedido-2" } });
+    const conversation = await admin.conversation.create({
+      data: {
+        tenantId: fx.tenant.id,
+        contactId,
+        channelId: fx.whatsapp.id,
+        status: "OPEN",
+        lastMessageAt: new Date(),
+        windowExpiresAt: new Date(Date.now() + 60 * 60_000),
+      },
+    });
+    // Entregador do iFood: "coletado" depois de "saiu para entrega" não repete o aviso.
+    ifood.state.events.push(event("ev-aviso-1", "CONFIRMED", "pedido-2"), event("ev-aviso-2", "DISPATCHED", "pedido-2"), event("ev-aviso-3", "COLLECTED", "pedido-2"));
+    await service.poll();
+    const messages = await admin.message.findMany({ where: { conversationId: conversation.id } });
+    expect(messages.map((m) => m.content)).toEqual([
+      { automation: "order_dispatched", text: expect.stringMatching(/^🛵 Boa notícia! Seu pedido #4901 saiu para entrega às \d{2}:\d{2}\.$/) },
+    ]);
+    expect(messages[0]!.direction).toBe("OUTBOUND");
+
+    // Entregue: avisa; o CONCLUDED que vem depois não repete.
+    ifood.state.events.push(event("ev-aviso-4", "DELIVERED", "pedido-2"), event("ev-aviso-5", "CONCLUDED", "pedido-2"));
+    await service.poll();
+    const after = await admin.message.findMany({ where: { conversationId: conversation.id }, orderBy: { createdAt: "asc" } });
+    expect(after.map((m) => m.content)).toEqual([
+      expect.objectContaining({ automation: "order_dispatched" }),
+      { automation: "order_delivered", text: "✅ Seu pedido #4901 foi entregue! Bom apetite 😋" },
+    ]);
+  });
+
+  it("entregue só pelo CONCLUDED (que chega horas depois): não avisa", async () => {
+    ifood.state.orders["pedido-4"] = ifoodOrder("pedido-4", "6020");
+    ifood.state.events.push(event("ev-aviso-6", "PLACED", "pedido-4"));
+    await service.poll();
+    const { contactId } = await admin.order.findFirstOrThrow({ where: { tenantId: fx.tenant.id, externalOrderId: "pedido-4" } });
+    const conversation = await admin.conversation.findFirstOrThrow({ where: { tenantId: fx.tenant.id, contactId, channelId: fx.whatsapp.id } });
+    ifood.state.events.push(event("ev-aviso-7", "CONCLUDED", "pedido-4"));
+    await service.poll();
+    expect((await admin.order.findFirstOrThrow({ where: { tenantId: fx.tenant.id, externalOrderId: "pedido-4" } })).status).toBe("DELIVERED");
+    const texts = (await admin.message.findMany({ where: { conversationId: conversation.id } })).map((m) => (m.content as { text?: string }).text);
+    expect(texts.some((text) => text?.includes("#6020"))).toBe(false);
   });
 });

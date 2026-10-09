@@ -23,10 +23,10 @@ importers:
       '@bull-board/express':
         specifier: ^9.10.2
         version: 9.10.2(bullmq@6.3.11(ioredis@5.11.1)(pg@8.23.1))(typescript@6.0.3)
-      '@comanda/database':
+      '@dishdesk/database':
         specifier: workspace:*
         version: link:../../packages/database
-      '@comanda/shared':
+      '@dishdesk/shared':
         specifier: workspace:*
         version: link:../../packages/shared
       '@nestjs/bullmq':
@@ -141,7 +141,7 @@ importers:
       '@base-ui/react':
         specifier: ^1.8.0
         version: 1.8.0(@types/react@19.3.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
-      '@comanda/shared':
+      '@dishdesk/shared':
         specifier: workspace:*
         version: link:../../packages/shared
       '@sentry/nextjs':
@@ -260,7 +260,7 @@ importers:
 
   packages/shared:
     dependencies:
-      '@comanda/database':
+      '@dishdesk/database':
         specifier: workspace:*
         version: link:../database
       libphonenumber-js:

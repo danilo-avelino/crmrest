@@ -1,4 +1,4 @@
-import { createPrismaClient, type PrismaClient, type TenantScope, type TenantTx, withTenants } from "@comanda/database";
+import { createPrismaClient, type PrismaClient, type TenantScope, type TenantTx, withTenants } from "@dishdesk/database";
 import { Inject, Injectable, type OnModuleDestroy, type OnModuleInit } from "@nestjs/common";
 import { ENV, type Env } from "../config/env.js";
 

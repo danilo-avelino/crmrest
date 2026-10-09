@@ -1,4 +1,4 @@
-import type { TenantTx } from "@comanda/database";
+import type { TenantTx } from "@dishdesk/database";
 
 export type DeliveryAddress = {
   street: string;

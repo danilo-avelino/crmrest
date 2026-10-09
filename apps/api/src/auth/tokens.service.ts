@@ -1,5 +1,5 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import { TenantRole } from "@comanda/database/enums";
+import { TenantRole } from "@dishdesk/database/enums";
 import { Inject, Injectable } from "@nestjs/common";
 import { jwtVerify, SignJWT } from "jose";
 import { z } from "zod";

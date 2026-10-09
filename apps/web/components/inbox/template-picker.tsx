@@ -1,6 +1,6 @@
 "use client";
 
-import { renderTemplate, type WhatsAppTemplate } from "@comanda/shared";
+import { renderTemplate, type WhatsAppTemplate } from "@dishdesk/shared";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronLeftIcon, LoaderCircleIcon } from "lucide-react";
 import { useState } from "react";

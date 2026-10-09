@@ -9,7 +9,7 @@ const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 const fraunces = Fraunces({ subsets: ["latin"], axes: ["opsz"], variable: "--font-fraunces" });
 
 export const metadata: Metadata = {
-  title: "Comanda",
+  title: "Dish Desk",
   description: "Atendimento omnichannel para restaurantes",
 };
 

@@ -1,5 +1,5 @@
 {
-  "name": "@comanda/web",
+  "name": "@dishdesk/web",
   "version": "0.0.0",
   "private": true,
   "scripts": {
@@ -13,7 +13,7 @@
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",
-    "@comanda/shared": "workspace:*",
+    "@dishdesk/shared": "workspace:*",
     "@sentry/nextjs": "^11.4.0",
     "@tanstack/react-query": "^5.104.1",
     "class-variance-authority": "^0.7.1",

@@ -1,4 +1,4 @@
-# Comanda
+# Dish Desk
 
 CRM omnichannel para restaurantes: WhatsApp, Instagram e pedidos do iFood numa inbox só, com multi-tenancy por RLS no Postgres.
 Especificação em [PROJETO_CRM_RESTAURANTES.md](PROJETO_CRM_RESTAURANTES.md), fases em [ROADMAP.md](ROADMAP.md) e design em `CRM Restaurantes.html`.
@@ -45,9 +45,9 @@ O CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) roda tudo isso, incl
 ### Imagens
 
 ```sh
-docker build -f apps/api/Dockerfile -t comanda-api .
-docker build -f apps/api/Dockerfile --target migrate -t comanda-migrate .
-docker build -f apps/web/Dockerfile -t comanda-web \
+docker build -f apps/api/Dockerfile -t dishdesk-api .
+docker build -f apps/api/Dockerfile --target migrate -t dishdesk-migrate .
+docker build -f apps/web/Dockerfile -t dishdesk-web \
   --build-arg API_URL=http://api:4000 \
   --build-arg NEXT_PUBLIC_REALTIME_URL=https://realtime.seudominio.com.br \
   --build-arg NEXT_PUBLIC_SENTRY_DSN=... .
@@ -57,10 +57,23 @@ A imagem da API roda um papel por processo, escolhido por `APP_ROLE`: `api` (RES
 
 Health checks: `GET /api/health/live` (processo de pé) e `GET /api/health/ready` (banco e Redis respondendo).
 
+### Railway
+
+Projeto com três serviços na região US East (Virginia), a mesma do Supabase (`us-east-1`): a Railway não tem região no Brasil.
+
+| Serviço | Origem | Configuração | Variáveis |
+| --- | --- | --- | --- |
+| `Redis` | template de Redis da Railway | — | — |
+| `api` | GitHub, `main` | `/apps/api/railway.json` | as da tabela abaixo; `APP_ROLE=all`, `PORT=4000`, `REDIS_URL=${{Redis.REDIS_URL}}?family=0` (o `family=0` faz o ioredis aceitar o IPv6 da rede privada), `WEB_ORIGIN=https://${{web.RAILWAY_PUBLIC_DOMAIN}}` |
+| `web` | GitHub, `main` | `/apps/web/railway.json` | `API_URL=http://${{api.RAILWAY_PRIVATE_DOMAIN}}:4000`, `NEXT_PUBLIC_REALTIME_URL=https://${{api.RAILWAY_PUBLIC_DOMAIN}}`, `NEXT_PUBLIC_SENTRY_DSN`, `PORT=3000` |
+
+As variáveis do `web` entram como build args do Dockerfile. `api` e `web` têm domínio público; o do `api` atende o Socket.IO e os webhooks da Meta. Com **Wait for CI** ligado, a Railway só publica depois do CI; as migrations rodam no Supabase pelo [deploy-db.yml](.github/workflows/deploy-db.yml), que precisa do segredo `SUPABASE_DATABASE_URL`.
+
 ### Banco
 
-- **Role da aplicação:** `DATABASE_URL` usa um login sem superusuário e sem `BYPASSRLS`, membro de `app_user`. A API recusa subir com uma role que ignore a RLS. Crie-o como em [01-app-roles.sql](infra/docker/postgres/init/01-app-roles.sql), com senha forte.
-- **Migrations:** antes de cada deploy, rode `comanda-migrate` com `DATABASE_ADMIN_URL`, o dono das tabelas. Só esse job e as CLIs abaixo usam essa URL.
+- **Supabase** (`us-east-1`), sempre pelo **Session pooler** (porta 5432, IPv4): `DATABASE_URL=postgresql://comanda_app.<ref>:<senha>@<host do pooler>:5432/postgres` e `DATABASE_ADMIN_URL` com `postgres.<ref>`. A Data API fica desligada (Project Settings → Data API). Migrations novas nascem no Postgres local (`pnpm db:migrate`) e chegam ao Supabase só por `migrate deploy`: o `migrate dev` no Supabase pode propor apagar o banco.
+- **Role da aplicação:** `DATABASE_URL` usa um login sem superusuário e sem `BYPASSRLS`, membro de `app_user`. A API recusa subir com uma role que ignore a RLS. Crie-o como em [01-app-roles.sql](infra/docker/postgres/init/01-app-roles.sql), com senha forte (no Supabase, pelo SQL Editor, depois das migrations, que criam `app_user`).
+- **Migrations:** antes de cada deploy, rode `dishdesk-migrate` com `DATABASE_ADMIN_URL`, o dono das tabelas. Só esse job e as CLIs abaixo usam essa URL.
 - **Backup:** Postgres gerenciado com backup diário e PITR (critério de aceite do MVP).
 
 ### Variáveis da API
@@ -84,7 +97,7 @@ Health checks: `GET /api/health/live` (processo de pé) e `GET /api/health/ready
 
 ## Onboarding de um restaurante
 
-Enquanto não existem o Super Admin (E16) e a tela de Canais (E14), o cadastro é feito pelas CLIs. Elas usam `DATABASE_ADMIN_URL` e `ENCRYPTION_KEY`. Localmente: `pnpm <comando>`. Na imagem: `docker run --rm --env-file <arquivo> comanda-api node apps/api/scripts/<comando>.mjs ...`.
+Enquanto não existem o Super Admin (E16) e a tela de Canais (E14), o cadastro é feito pelas CLIs. Elas usam `DATABASE_ADMIN_URL` e `ENCRYPTION_KEY`. Localmente: `pnpm <comando>`. Na imagem: `docker run --rm --env-file <arquivo> dishdesk-api node apps/api/scripts/<comando>.mjs ...`.
 
 ```sh
 pnpm tenant:add --nome "Cantina da Nonna" --slug cantina-da-nonna

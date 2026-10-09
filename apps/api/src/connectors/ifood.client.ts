@@ -1,4 +1,4 @@
-import type { OrderStatus } from "@comanda/database/enums";
+import type { OrderStatus } from "@dishdesk/database/enums";
 import { z } from "zod";
 import type { Env } from "../config/env.js";
 
@@ -10,6 +10,7 @@ export const IfoodEvent = z.looseObject({
   orderId: z.string(),
   merchantId: z.string(),
   createdAt: z.string(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
 });
 export type IfoodEvent = z.infer<typeof IfoodEvent>;
 
@@ -46,13 +47,18 @@ export const IfoodOrder = z.looseObject({
 });
 export type IfoodOrder = z.infer<typeof IfoodOrder>;
 
-/** Eventos de status (fullCode) → status do pedido no Comanda. Os demais são só confirmados. */
+/**
+ * Eventos (fullCode) que mudam o status do pedido no Dish Desk; todos os eventos entram na linha do tempo (order_events).
+ * COLLECTED: o entregador do iFood coletou (a saída real). DELIVERED: entregue na retirada/autoatendimento.
+ */
 export const IFOOD_STATUS: Record<string, OrderStatus> = {
   PLACED: "PLACED",
   CONFIRMED: "CONFIRMED",
   PREPARATION_STARTED: "PREPARING",
-  READY_TO_PICKUP: "PREPARING",
+  READY_TO_PICKUP: "READY",
   DISPATCHED: "DISPATCHED",
+  COLLECTED: "DISPATCHED",
+  DELIVERED: "DELIVERED",
   CONCLUDED: "DELIVERED",
   CANCELLED: "CANCELED",
 };

@@ -1,17 +1,24 @@
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
-import { encrypt, parseEncryptionKey } from "@comanda/database";
+import { encrypt, parseEncryptionKey } from "@dishdesk/database";
 import { getQueueToken } from "@nestjs/bullmq";
 import type { INestApplication } from "@nestjs/common";
 import type { Queue } from "bullmq";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { CardapioWebService } from "../src/inbound/cardapio-web.service.js";
+import type { CardapioWebImportJob } from "../src/queues/queues.module.js";
 import { QUEUES } from "../src/queues/queues.module.js";
 import { admin, createChannelFixture, createTestApp, drainQueues, metaPayload, postMetaWebhook, startMockGraph } from "./helpers.js";
 
-/** API de parceiros falsa: pedidos alterados (polling) e detalhes do pedido, com a chave da loja. */
+/** API de parceiros falsa: pedidos alterados (polling), detalhes do pedido e base de clientes, com a chave da loja. */
 async function startMockCardapioWeb() {
-  const state = { updated: [] as object[], orders: {} as Record<string, object>, since: [] as string[] };
+  const state = {
+    updated: [] as object[],
+    orders: {} as Record<string, object>,
+    since: [] as string[],
+    customerPages: [] as object[][],
+    customerRequests: [] as string[],
+  };
   const server = createServer((req, res) => {
     const url = new URL(req.url ?? "", "http://cardapio.web");
     const json = (status: number, body?: unknown) =>
@@ -25,6 +32,13 @@ async function startMockCardapioWeb() {
         return json(400, { code: 4000, message: "Parâmetros inválidos.", details: "updated_since deve ser depois de 24 horas atrás" });
       }
       return json(200, state.updated);
+    }
+    if (url.pathname === "/api/partner/v1/merchant/customers") {
+      state.customerRequests.push(url.search);
+      const page = Number(url.searchParams.get("page"));
+      const total = state.customerPages.reduce((sum, customers) => sum + customers.length, 0);
+      const pagination = { current_page: page, total_pages: state.customerPages.length, total_customers: total };
+      return json(200, { customers: state.customerPages[page - 1] ?? [], pagination });
     }
     const id = url.pathname.match(/^\/api\/partner\/v1\/orders\/(\d+)$/)?.[1];
     if (id) return state.orders[id] ? json(200, state.orders[id]) : json(404);
@@ -204,6 +218,137 @@ describe("Cardápio Web (pedidos por polling)", () => {
     expect(content.some((c) => c.event === "contacts_merged")).toBe(false); // mesmo cadastro desde o pedido
     expect(content.flatMap((c) => (c.automation ? [c.automation] : []))).toEqual(["menu", "order_lookup", "order_confirmed"]);
     expect(content.find((c) => c.automation === "order_lookup")!.text).toMatch(/^Encontramos o pedido #48 \(saiu para entrega\):\n/);
-    expect(content.at(-2)!.text).toBe("Pedido confirmado 👍 Enquanto um atendente chega, já nos conte o problema ou a sua dúvida, assim agilizamos o atendimento.");
+    // O pedido já saiu para entrega: a confirmação diz quando saiu, no lugar da previsão.
+    expect(content.find((c) => c.automation === "order_confirmed")!.text).toMatch(
+      /^Pedido confirmado 👍\n🛵 Seu pedido já saiu para entrega às \d{2}:\d{2} \(.+\)\.\n\nEnquanto um atendente chega, já nos conte o problema ou a sua dúvida, assim agilizamos o atendimento\.$/,
+    );
+  });
+
+  it("saiu para entrega e entregue com a conversa do cliente em andamento: avisa uma vez cada, pelo WhatsApp", async () => {
+    const order = cwOrder(9003, 50);
+    cardapioWeb.state.orders["9003"] = order;
+    cardapioWeb.state.updated = [summary(order, "confirmed")];
+    await service.poll();
+    const conversation = { tenantId: fx.tenant.id, contactId: whatsappContactId, channelId: fx.whatsapp.id };
+    const notices = async () =>
+      (await admin.message.findMany({ where: { conversation }, orderBy: { createdAt: "asc" } }))
+        .map((m) => m.content as { automation?: string; text?: string })
+        .filter((c) => c.automation === "order_dispatched" || c.automation === "order_delivered");
+    expect(await notices()).toEqual([]); // confirmado não avisa
+
+    const sentBefore = graph.requests.length;
+    cardapioWeb.state.updated = [summary(order, "released")];
+    await service.poll();
+    await drainQueues(app);
+    expect(await notices()).toEqual([
+      { automation: "order_dispatched", text: expect.stringMatching(/^🛵 Boa notícia! Seu pedido #50 saiu para entrega às \d{2}:\d{2}\.$/) },
+    ]);
+    expect(graph.requests.slice(sentBefore).map((r) => r.body)).toEqual([
+      expect.objectContaining({ to: "5585994197929", text: expect.objectContaining({ body: expect.stringContaining("#50 saiu para entrega") }) }),
+    ]);
+
+    // O mesmo status lido de novo (a leitura se sobrepõe) não repete o aviso.
+    await service.poll();
+    await drainQueues(app);
+    expect(await notices()).toHaveLength(1);
+
+    cardapioWeb.state.updated = [summary(order, "delivered")];
+    await service.poll();
+    await drainQueues(app);
+    expect((await notices()).at(-1)).toEqual({ automation: "order_delivered", text: "✅ Seu pedido #50 foi entregue! Bom apetite 😋" });
+    // "closed" também é entregue: não repete.
+    cardapioWeb.state.updated = [summary(order, "closed")];
+    await service.poll();
+    await drainQueues(app);
+    expect(await notices()).toHaveLength(2);
+  });
+
+  it("base de clientes: importa todas as páginas, junta pelo telefone, não repete quem já está ligado nem traz quem só tem nome", async () => {
+    // Cliente que só falou pelo WhatsApp, sem nome no cadastro.
+    const whatsappOnly = await admin.contact.create({
+      data: { tenantId: fx.tenant.id, phone: "+5585977776666", phoneSource: "channel", phoneStatus: "ok" },
+    });
+    const customer = (id: number, data: object) => ({ id, created_at: "2024-03-10T12:00:00.000-03:00", loyalty_points: 0, ...data });
+    cardapioWeb.state.customerPages = [
+      [
+        // Já ligado ao cadastro pelo pedido 9001: fica como está.
+        customer(1574794, { name: "Matheus Lessa", phone_number: "85994197929", ddi: "55", notifications_enabled: true }),
+        customer(2001, {
+          name: "Ana Souza",
+          phone_number: "85988887777",
+          ddi: "55",
+          email: "ana@teste.com",
+          birth_date: "1990-05-12",
+          notifications_enabled: false,
+        }),
+      ],
+      [
+        customer(2002, { name: "Carlos Lima", phone_number: "85977776666", ddi: "55", email: null, birth_date: null }),
+        customer(2003, { name: "Sem Telefone", phone_number: null, ddi: null, email: "sem.telefone@teste.com", birth_date: "00/00/0000" }),
+        // Só nome (telefone inválido, sem e-mail): fica de fora.
+        customer(2004, { name: "Só Nome", phone_number: "123", ddi: "55", email: null, birth_date: "1985-01-01" }),
+      ],
+    ];
+    const queue = app.get<Queue>(getQueueToken(QUEUES.cardapioWeb));
+    const importAll = async () => {
+      await service.importCustomers({ tenantId: fx.tenant.id, channelId, page: 1, imported: 0 });
+      // As páginas seguintes vêm pela fila.
+      await vi.waitFor(
+        async () => {
+          const counts = await queue.getJobCounts("waiting", "active", "delayed");
+          expect(Object.values(counts).reduce((sum, n) => sum + n, 0)).toBe(0);
+        },
+        { timeout: 15_000, interval: 100 },
+      );
+    };
+    await importAll();
+
+    expect(cardapioWeb.state.customerRequests).toEqual(["?page=1&per_page=50", "?page=2&per_page=50"]);
+    const imported = await admin.contactIdentity.findMany({
+      where: { tenantId: fx.tenant.id, channelType: "CARDAPIO_WEB" },
+      include: { contact: { include: { consents: true } } },
+      orderBy: { externalId: "asc" },
+    });
+    expect(imported.map((i) => i.externalId)).toEqual(["1574794", "2001", "2002", "2003"]);
+    const [matheus, ana, carlos, semTelefone] = imported.map((i) => i.contact);
+    expect(matheus).toMatchObject({ id: whatsappContactId, name: "Matheus" });
+    expect(ana).toMatchObject({ name: "Ana Souza", phone: "+5585988887777", email: "ana@teste.com", lastSeenAt: null });
+    expect(ana!.birthDate?.toISOString()).toBe("1990-05-12T00:00:00.000Z");
+    expect(ana!.firstSeenAt.toISOString()).toBe("2024-03-10T15:00:00.000Z");
+    expect(ana!.consents).toEqual([expect.objectContaining({ purpose: "marketing_whatsapp", granted: false, source: "cardapio_web" })]);
+    expect(carlos).toMatchObject({ id: whatsappOnly.id, name: "Carlos Lima", phone: "+5585977776666" });
+    expect(carlos!.consents).toEqual([]);
+    expect(semTelefone).toMatchObject({ name: "Sem Telefone", phone: null, email: "sem.telefone@teste.com", birthDate: null });
+    expect(await admin.contact.count({ where: { tenantId: fx.tenant.id, name: "Só Nome" } })).toBe(0);
+
+    // Conectar de novo importa outra vez sem duplicar ninguém.
+    const contactsBefore = await admin.contact.count({ where: { tenantId: fx.tenant.id } });
+    await importAll();
+    expect(await admin.contact.count({ where: { tenantId: fx.tenant.id } })).toBe(contactsBefore);
+    expect(await admin.consent.count({ where: { tenantId: fx.tenant.id, source: "cardapio_web" } })).toBe(1);
+  });
+
+  it("base de clientes: loja desconectada no meio da importação para de ler", async () => {
+    await admin.channel.update({ where: { id: channelId }, data: { status: "DISCONNECTED" } });
+    const requests = cardapioWeb.state.customerRequests.length;
+    const job: CardapioWebImportJob = { tenantId: fx.tenant.id, channelId, page: 2, imported: 10 };
+    await service.importCustomers(job);
+    expect(cardapioWeb.state.customerRequests).toHaveLength(requests);
+    await admin.channel.update({ where: { id: channelId }, data: { status: "CONNECTED" } });
+  });
+
+  it("conversa resolvida não recebe o aviso de saída", async () => {
+    await admin.conversation.updateMany({ where: { tenantId: fx.tenant.id, contactId: whatsappContactId }, data: { status: "RESOLVED" } });
+    const order = cwOrder(9004, 51);
+    cardapioWeb.state.orders["9004"] = order;
+    cardapioWeb.state.updated = [summary(order, "confirmed")];
+    await service.poll();
+    cardapioWeb.state.updated = [summary(order, "released")];
+    await service.poll();
+    await drainQueues(app);
+    const texts = (await admin.message.findMany({ where: { tenantId: fx.tenant.id, conversation: { contactId: whatsappContactId } } })).map(
+      (m) => (m.content as { text?: string }).text ?? "",
+    );
+    expect(texts.some((text) => text.includes("#51"))).toBe(false);
   });
 });

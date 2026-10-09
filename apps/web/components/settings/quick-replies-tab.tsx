@@ -1,6 +1,6 @@
 "use client";
 
-import { type QuickReplyDto, QuickReplyRequest } from "@comanda/shared";
+import { type QuickReplyDto, QuickReplyRequest } from "@dishdesk/shared";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { PencilIcon, PlusIcon, Trash2Icon } from "lucide-react";
 import { useId, useState } from "react";

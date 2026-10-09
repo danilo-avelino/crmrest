@@ -1,7 +1,7 @@
-import type { ChannelType } from "@comanda/database/enums";
+import type { ChannelType } from "@dishdesk/database/enums";
 
 export type ChannelCapabilities = {
-  /** O atendente pode responder pelo Comanda. */
+  /** O atendente pode responder pelo Dish Desk. */
   send: boolean;
   /** Resposta livre só até 24h depois da última mensagem do cliente (§5.1). */
   window24h: boolean;

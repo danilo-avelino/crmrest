@@ -1,4 +1,4 @@
-import { type AuthSession, LoginRequest, SelectContextRequest } from "@comanda/shared";
+import { type AuthSession, LoginRequest, SelectContextRequest } from "@dishdesk/shared";
 import { Body, Controller, Get, HttpCode, Inject, Post, Req, Res, UseGuards } from "@nestjs/common";
 import { Throttle, ThrottlerGuard } from "@nestjs/throttler";
 import type { Request, Response } from "express";
@@ -7,7 +7,7 @@ import { ENV, type Env } from "../config/env.js";
 import { CurrentAuth, Public, type RequestAuth } from "./auth.decorators.js";
 import { AuthService } from "./auth.service.js";
 
-const SESSION_COOKIE = "comanda_session";
+const SESSION_COOKIE = "dishdesk_session";
 const SESSION_COOKIE_PATH = "/api/auth";
 
 @Controller("auth")

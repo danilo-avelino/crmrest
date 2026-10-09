@@ -1,6 +1,6 @@
 "use client";
 
-import { BusinessHours, type TenantSettingsDto, WEEKDAY_LABELS } from "@comanda/shared";
+import { BusinessHours, type TenantSettingsDto, WEEKDAY_LABELS } from "@dishdesk/shared";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { SparklesIcon } from "lucide-react";
 import { useState } from "react";

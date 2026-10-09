@@ -1,6 +1,6 @@
 "use client";
 
-import type { ConversationCounts, ConversationListItem, ConversationPage } from "@comanda/shared";
+import type { ConversationCounts, ConversationListItem, ConversationPage } from "@dishdesk/shared";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { BellRingIcon, CheckIcon, ListFilterIcon, SearchIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -296,7 +296,7 @@ function useUnreadSignals(items: ConversationListItem[], calling: number) {
   const total = items.reduce((sum, conversation) => sum + conversation.unreadCount, 0);
   const previous = useRef<number | null>(null);
   useEffect(() => {
-    const title = total > 0 ? `(${total}) Comanda` : "Comanda";
+    const title = total > 0 ? `(${total}) Dish Desk` : "Dish Desk";
     document.title = calling > 0 ? `🔔 Chamando atendente · ${title}` : title;
     if (previous.current !== null && total > previous.current && calling === 0) beep();
     previous.current = total;

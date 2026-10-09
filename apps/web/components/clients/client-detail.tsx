@@ -9,7 +9,7 @@ import {
   phoneFromWhatsAppId,
   toE164,
   type UpdateContactRequest,
-} from "@comanda/shared";
+} from "@dishdesk/shared";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertCircleIcon, ChevronLeftIcon, ChevronRightIcon, LoaderCircleIcon, MoreHorizontalIcon, TriangleAlertIcon } from "lucide-react";
 import Link from "next/link";
@@ -49,10 +49,11 @@ const CONVERSATION_STATUS = {
 } as const;
 
 // Cor do selo de cada status de pedido na aba Pedidos (o texto vem do card de pedido da Inbox).
-const ORDER_TONE: Record<OrderDto["status"], "open" | "pending" | "resolved"> = {
+export const ORDER_TONE: Record<OrderDto["status"], "open" | "pending" | "resolved"> = {
   PLACED: "open",
   CONFIRMED: "pending",
   PREPARING: "pending",
+  READY: "pending",
   DISPATCHED: "resolved",
   DELIVERED: "resolved",
   CANCELED: "open",

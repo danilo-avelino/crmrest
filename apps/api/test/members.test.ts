@@ -1,4 +1,4 @@
-import { createPrismaClient, withTenants } from "@comanda/database";
+import { createPrismaClient, withTenants } from "@dishdesk/database";
 import type { INestApplication } from "@nestjs/common";
 import { hash } from "@node-rs/argon2";
 import request from "supertest";

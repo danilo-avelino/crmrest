@@ -4,9 +4,10 @@ import {
   ORDER_LINKS_MAX,
   type OrderLink,
   orderLinksMessage,
+  PERSONALITY_MESSAGES,
   type TenantSettingsDto,
   UpdateOrderLinksRequest,
-} from "@comanda/shared";
+} from "@dishdesk/shared";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { PlusIcon, SparklesIcon, Trash2Icon } from "lucide-react";
 import { Fragment, useId, useState } from "react";
@@ -18,9 +19,6 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/components/ui/toast";
 import { usePendingAction } from "@/hooks/use-pending-action";
 import { ApiError } from "@/lib/api";
-
-// O que a opção 2 responde quando não há links (o mesmo texto do menu de atendimento).
-const HANDOFF = "Certo! Um atendente já vai falar com você.";
 
 /** Aba "Links de pedido" do restaurante escolhido. */
 export function OrderLinksTab() {
@@ -51,6 +49,7 @@ function OrderLinksSection({ settings }: { settings: TenantSettingsDto }) {
     .map((row, index) => ({ index, label: row.label.trim(), url: row.url.trim() }))
     .filter((row) => row.label || row.url);
   const links = filled.map(({ label, url }) => ({ label, url }));
+  const messages = PERSONALITY_MESSAGES[settings.personality];
   const dirty = JSON.stringify(links) !== JSON.stringify(settings.orderLinks);
 
   const change = (index: number, field: keyof OrderLink, value: string) => {
@@ -186,7 +185,10 @@ function OrderLinksSection({ settings }: { settings: TenantSettingsDto }) {
             <SparklesIcon className="size-3" aria-hidden />
             {links.length ? "Automação · links para pedir" : "Automação · encaminhado à equipe"}
           </div>
-          <div className="leading-[1.45] break-words whitespace-pre-wrap">{links.length ? orderLinksMessage(links) : HANDOFF}</div>
+          {/* Sem links, a opção 2 chama a equipe (o mesmo texto do menu de atendimento). */}
+          <div className="leading-[1.45] break-words whitespace-pre-wrap">
+            {links.length ? orderLinksMessage(links, messages.orderLinks) : messages.handoff}
+          </div>
         </div>
       </div>
     </section>

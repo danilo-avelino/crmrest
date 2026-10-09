@@ -1,6 +1,6 @@
-import type { Message, Order, OrderItem, Prisma } from "@comanda/database";
-import type { ChannelType } from "@comanda/database/enums";
-import type { ConversationListItem, MessageContent, MessageDto, OrderDto } from "@comanda/shared";
+import type { Message, Order, OrderItem, Prisma } from "@dishdesk/database";
+import type { ChannelType } from "@dishdesk/database/enums";
+import type { ConversationListItem, MessageContent, MessageDto, OrderDto } from "@dishdesk/shared";
 
 export function toMessageDto(message: Message & { sentByUser?: { id: string; name: string } | null }): MessageDto {
   return {
@@ -28,7 +28,7 @@ export function toOrderDto(order: Order & { items: OrderItem[]; channel: { type:
     placedAt: order.placedAt.toISOString(),
     dispatchedAt: order.dispatchedAt?.toISOString() ?? null,
     deliveredAt: order.deliveredAt?.toISOString() ?? null,
-    items: order.items.map((item) => ({ name: item.name, quantity: item.quantity, unitPrice: item.unitPrice.toFixed(2) })),
+    items: order.items.map((item) => ({ name: item.name, quantity: item.quantity, unitPrice: item.unitPrice.toFixed(2), notes: item.notes })),
   };
 }
 

@@ -3,12 +3,13 @@ import {
   type ContactFilterOptions,
   ContactListQuery,
   type ContactPage,
+  type ContactSummary,
   ContactPairRequest,
   type ConversationListItem,
   type DuplicatePair,
   type OrderDto,
   UpdateContactRequest,
-} from "@comanda/shared";
+} from "@dishdesk/shared";
 import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Query } from "@nestjs/common";
 import { CurrentAuth, type RequestAuth } from "../auth/auth.decorators.js";
 import { ZodPipe } from "../common/zod.pipe.js";
@@ -26,6 +27,11 @@ export class ContactsController {
   @Get("filters")
   filterOptions(@CurrentAuth() auth: RequestAuth): Promise<ContactFilterOptions> {
     return this.contacts.filterOptions(auth);
+  }
+
+  @Get("summary")
+  summary(@CurrentAuth() auth: RequestAuth): Promise<ContactSummary> {
+    return this.contacts.summary(auth);
   }
 
   @Get("duplicates")

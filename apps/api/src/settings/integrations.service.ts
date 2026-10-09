@@ -1,5 +1,5 @@
 import { createHmac, randomInt, timingSafeEqual } from "node:crypto";
-import { encrypt, parseEncryptionKey } from "@comanda/database";
+import { encrypt, parseEncryptionKey } from "@dishdesk/database";
 import {
   type AddIntegrationRequest,
   CHANNEL_LABEL,
@@ -8,7 +8,8 @@ import {
   type IntegrationsDto,
   type IntegrationType,
   type WhatsAppSignupRequest,
-} from "@comanda/shared";
+} from "@dishdesk/shared";
+import { InjectQueue } from "@nestjs/bullmq";
 import {
   ConflictException,
   ForbiddenException,
@@ -19,12 +20,14 @@ import {
   NotFoundException,
   UnprocessableEntityException,
 } from "@nestjs/common";
+import type { Queue } from "bullmq";
 import { z } from "zod";
 import type { RequestAuth } from "../auth/auth.decorators.js";
 import { ENV, type Env } from "../config/env.js";
 import { CardapioWebClient } from "../connectors/cardapio-web.client.js";
 import { ConnectorsService } from "../connectors/connectors.service.js";
 import { DatabaseService } from "../core/database.service.js";
+import { type CardapioWebImportJob, QUEUES } from "../queues/queues.module.js";
 import { isTenantAdmin, requireTenantAdmin } from "./tenant-admin.js";
 
 /** O que vai para o canal depois de a credencial ser conferida no sistema de origem. */
@@ -52,6 +55,7 @@ export class IntegrationsService {
   constructor(
     private readonly db: DatabaseService,
     private readonly connectors: ConnectorsService,
+    @InjectQueue(QUEUES.cardapioWeb) private readonly cardapioWebQueue: Queue,
     @Inject(ENV) private readonly env: Env,
   ) {
     this.key = parseEncryptionKey(env.ENCRYPTION_KEY);
@@ -83,10 +87,18 @@ export class IntegrationsService {
     };
   }
 
-  /** Confere a credencial e cadastra a integração; a mesma conta já conectada aqui só tem a credencial atualizada. */
+  /**
+   * Confere a credencial e cadastra a integração; a mesma conta já conectada aqui só tem a credencial atualizada.
+   * Loja do Cardápio Web conectada: a base de clientes dela é importada em segundo plano.
+   */
   async add(auth: RequestAuth, tenantId: string, body: AddIntegrationRequest): Promise<IntegrationDto> {
     requireTenantAdmin(auth, tenantId);
-    return this.save(tenantId, auth.userId, await this.verify(body));
+    const saved = await this.save(tenantId, auth.userId, await this.verify(body));
+    if (saved.type === "CARDAPIO_WEB" && this.cardapioWeb.configured) {
+      const job: CardapioWebImportJob = { tenantId, channelId: saved.id, page: 1, imported: 0 };
+      await this.cardapioWebQueue.add("import-customers", job);
+    }
+    return saved;
   }
 
   /** Endereço da tela de login do Instagram; o `state` assinado diz, na volta, para qual restaurante é a conta. */
