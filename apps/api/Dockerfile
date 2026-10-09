@@ -3,7 +3,7 @@
 #   docker build -f apps/api/Dockerfile -t dishdesk-api .
 #   docker build -f apps/api/Dockerfile --target migrate -t dishdesk-migrate .   (migrations, antes de cada deploy)
 
-FROM node:24-alpine AS base
+FROM public.ecr.aws/docker/library/node:24-alpine AS base
 ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 RUN corepack enable
 WORKDIR /app

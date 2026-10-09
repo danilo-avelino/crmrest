@@ -5,7 +5,7 @@
 #     --build-arg NEXT_PUBLIC_SENTRY_DSN=... \
 #     -t dishdesk-web .
 
-FROM node:24-alpine AS base
+FROM public.ecr.aws/docker/library/node:24-alpine AS base
 ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 RUN corepack enable
 WORKDIR /app
@@ -31,7 +31,7 @@ ENV API_URL=$API_URL \
     NEXT_TELEMETRY_DISABLED=1
 RUN pnpm turbo build --filter=@dishdesk/web
 
-FROM node:24-alpine AS runtime
+FROM public.ecr.aws/docker/library/node:24-alpine AS runtime
 ENV NODE_ENV=production HOSTNAME=0.0.0.0 PORT=3000 NEXT_TELEMETRY_DISABLED=1
 WORKDIR /app
 COPY --from=build /app/apps/web/.next/standalone ./

@@ -64,10 +64,10 @@ Projeto com três serviços na região US East (Virginia), a mesma do Supabase (
 | Serviço | Origem | Configuração | Variáveis |
 | --- | --- | --- | --- |
 | `Redis` | template de Redis da Railway | — | — |
-| `api` | GitHub, `main` | `/apps/api/railway.json` | as da tabela abaixo; `APP_ROLE=all`, `PORT=4000`, `REDIS_URL=${{Redis.REDIS_URL}}?family=0` (o `family=0` faz o ioredis aceitar o IPv6 da rede privada), `WEB_ORIGIN=https://${{web.RAILWAY_PUBLIC_DOMAIN}}` |
-| `web` | GitHub, `main` | `/apps/web/railway.json` | `API_URL=http://${{api.RAILWAY_PRIVATE_DOMAIN}}:4000`, `NEXT_PUBLIC_REALTIME_URL=https://${{api.RAILWAY_PUBLIC_DOMAIN}}`, `NEXT_PUBLIC_SENTRY_DSN`, `PORT=3000` |
+| `api` | GitHub, `main` | Dockerfile `/apps/api/Dockerfile`, health check `/api/health/ready` | as da tabela abaixo; `APP_ROLE=all`, `PORT=4000`, `REDIS_URL=${{Redis.REDIS_URL}}?family=0` (o `family=0` faz o ioredis aceitar o IPv6 da rede privada), `WEB_ORIGIN=https://${{web.RAILWAY_PUBLIC_DOMAIN}}` |
+| `web` | GitHub, `main` | Dockerfile `/apps/web/Dockerfile`, health check `/login` | `API_URL=http://${{api.RAILWAY_PRIVATE_DOMAIN}}:4000`, `NEXT_PUBLIC_REALTIME_URL=https://${{api.RAILWAY_PUBLIC_DOMAIN}}`, `NEXT_PUBLIC_SENTRY_DSN`, `PORT=3000` |
 
-As variáveis do `web` entram como build args do Dockerfile. `api` e `web` têm domínio público; o do `api` atende o Socket.IO e os webhooks da Meta. Com **Wait for CI** ligado, a Railway só publica depois do CI; as migrations rodam no Supabase pelo [deploy-db.yml](.github/workflows/deploy-db.yml), que precisa do segredo `SUPABASE_DATABASE_URL`.
+A configuração fica no painel (Settings de cada serviço), sem comando de build ou de início: o Dockerfile define os dois. A Railway não aceita mais `railway.json` em serviços novos. As variáveis do `web` entram como build args do Dockerfile. `api` e `web` têm domínio público; o do `api` atende o Socket.IO e os webhooks da Meta. Com **Wait for CI** ligado, a Railway só publica depois do CI; as migrations rodam no Supabase pelo [deploy-db.yml](.github/workflows/deploy-db.yml), que precisa do segredo `SUPABASE_DATABASE_URL`.
 
 ### Banco
 
