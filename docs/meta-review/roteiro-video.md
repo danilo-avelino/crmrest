@@ -3,7 +3,7 @@
 A Meta pede um vídeo de tela por permissão (ou um vídeo que mostre todas, desde que cada uma apareça claramente). O avaliador precisa ver **o fluxo inteiro, sem cortes**: o login no Dish Desk, a tela de autorização da Meta e o resultado no Dish Desk.
 
 **Dicas que evitam recusa**
-- Grave a tela inteira do navegador, com a barra de endereço visível (`app.dishdesk.com.br`).
+- Grave a tela inteira do navegador, com a barra de endereço visível (`www.dishdesk.com.br`).
 - Não acelere nem corte entre a autorização e o resultado.
 - Use o restaurante "Revisão Meta", sem dados de clientes reais.
 - A interface é em português: coloque legendas curtas em inglês (o editor de vídeo do Windows, o Clipchamp, faz isso) ou mostre os textos da tabela de traduções no começo.
@@ -15,7 +15,7 @@ A Meta pede um vídeo de tela por permissão (ou um vídeo que mostre todas, des
 
 Antes de gravar: a conta do Instagram que vai aparecer no vídeo precisa ser **profissional** e estar como **testadora** no app (Funções do app). Deixe no celular uma segunda conta do Instagram para mandar a DM.
 
-1. Abra `https://app.dishdesk.com.br/login` e entre com o usuário de teste.
+1. Abra `https://www.dishdesk.com.br/login` e entre com o usuário de teste.
    - Legenda: *"Logging in to Dish Desk as restaurant staff."*
 2. Escolha o restaurante **Revisão Meta**.
 3. Vá em **Configurações → Integrações** e clique em **Adicionar integração com o Instagram**.
