@@ -9,7 +9,13 @@ const nextConfig: NextConfig = {
   devIndicators: false,
   // A API fica atrás de /api na mesma origem: o cookie de sessão funciona sem CORS.
   async rewrites() {
-    return [{ source: "/api/:path*", destination: `${process.env.API_URL ?? "http://localhost:4000"}/api/:path*` }];
+    return [
+      { source: "/api/:path*", destination: `${process.env.API_URL ?? "http://localhost:4000"}/api/:path*` },
+      // Site institucional: HTML estático em public/, servido na raiz do mesmo domínio do painel.
+      { source: "/", destination: "/index.html" },
+      { source: "/privacidade", destination: "/privacidade/index.html" },
+      { source: "/exclusao-de-dados", destination: "/exclusao-de-dados/index.html" },
+    ];
   },
 };
 
