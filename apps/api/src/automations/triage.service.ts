@@ -6,6 +6,7 @@ import {
   businessHoursOf,
   CHANNEL_CAPABILITIES,
   CHANNEL_LABEL,
+  COURIER_TAG,
   fillMessage,
   isOpenAt,
   menuMessage,
@@ -70,7 +71,7 @@ type FoundOrder = { status: OrderStatus; total: { toString(): string }; items: {
  * Resultado de uma etapa: mensagens a enviar, se o menu acabou, outras conversas a avisar e se o menu passou o atendimento
  * à equipe (marca o início do tempo de resposta; não vale quando a automação resolveu sozinha).
  */
-type Step = { send: string[]; done: boolean; notify?: string[]; handoff?: boolean };
+type Step = { send: string[]; done: boolean; notify?: string[]; handoff?: boolean; courier?: boolean };
 
 /**
  * Menu de atendimento do WhatsApp e do Instagram ("Em que podemos ajudar?"). "Falar sobre um pedido" pede o número,
@@ -99,7 +100,7 @@ export class TriageService {
           where: { id: event.conversationId },
           select: { id: true, tenantId: true, channelId: true },
         });
-        await systemEvent(tx, conversation, { event: "handoff", text: "Atendimento passado para a equipe" });
+        await systemEvent(tx, conversation, { event: "handoff", text: result.courier ? "Entregador chamando" : "Atendimento passado para a equipe" });
         // Chamando o atendente (alarme e topo da Inbox) até alguém responder; se já chamava, vale a primeira chamada.
         await tx.conversation.updateMany({ where: { id: conversation.id, awaitingAgentSince: null }, data: { awaitingAgentSince: new Date() } });
       }
@@ -113,8 +114,13 @@ export class TriageService {
   private async step(tx: TenantTx, event: InboundEvent): Promise<Step> {
     const conversation = await tx.conversation.findUniqueOrThrow({
       where: { id: event.conversationId },
-      select: { id: true, tenantId: true, channelId: true, automationState: true, contact: true },
+      select: { id: true, tenantId: true, channelId: true, automationState: true, awaitingAgentSince: true, contact: true },
     });
+    // Entregador: sem menu, aviso de horário nem coleta de telefone. Chama a equipe a cada mensagem, a não ser que já esteja chamando.
+    if (conversation.contact.tags.includes(COURIER_TAG)) {
+      if (event.newAttendance) await setAutomationState(tx, conversation.id, { triage: "done" });
+      return { send: [], done: false, handoff: !conversation.awaitingAgentSince, courier: true };
+    }
     const state = conversation.automationState as AutomationState;
     const settings = await tenantSettings(tx, conversation.tenantId);
     const messages = automationMessagesOf(settings);

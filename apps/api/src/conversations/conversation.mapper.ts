@@ -57,7 +57,7 @@ export function toOrderDto(order: Order & { items: OrderItem[]; channel: { type:
 export const conversationListInclude = {
   tenant: { select: { id: true, name: true } },
   channel: { select: { id: true, type: true, name: true } },
-  contact: { select: { id: true, name: true, phoneStatus: true } },
+  contact: { select: { id: true, name: true, phoneStatus: true, tags: true } },
   assignedUser: { select: { id: true, name: true } },
   messages: {
     where: { type: { not: "NOTE" } },

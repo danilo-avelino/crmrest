@@ -65,7 +65,7 @@ describe("API de Clientes", () => {
         name: "Mariana Souza",
         phone: "+5511987654321",
         phoneSource: "informed_by_customer",
-        tags: ["VIP", "recorrente"],
+        tags: ["VIP", "Recorrente"],
         firstSeenAt: daysAgo(270),
         lastSeenAt: daysAgo(0.1),
         identities: {
@@ -191,7 +191,7 @@ describe("API de Clientes", () => {
     expect(body.items[0]).toMatchObject({
       tenant: { id: fx.a.id, name: "Teste A" },
       name: "Mariana Souza",
-      tags: ["VIP", "recorrente"],
+      tags: ["VIP", "Recorrente"],
       phone: "+5511987654321",
       district: "Vila Madalena",
       ordersCount: 2,
@@ -232,7 +232,7 @@ describe("API de Clientes", () => {
 
   it("opções dos filtros vêm dos cadastros do restaurante", async () => {
     const { body } = await get("/contacts/filters").expect(200);
-    expect(body.tags.sort()).toEqual(["VIP", "recorrente"].sort());
+    expect(body.tags.sort()).toEqual(["Recorrente", "VIP"]);
     expect(body.districts).toEqual(["Itaim Bibi", "Vila Madalena"]);
   });
 
@@ -260,7 +260,7 @@ describe("API de Clientes", () => {
       total: 3,
       newLast30d: 1, // João
       vip: 1, // Mariana
-      recurring: 1, // Mariana, com 2 pedidos
+      recurring: 1, // Mariana
       inactive: 1, // Ana, há 40 dias sem contato
       upset: 1, // João
       phonePending: 1, // Ana
@@ -327,7 +327,7 @@ describe("API de Clientes", () => {
     expect(body).toHaveLength(2);
   });
 
-  it("une os cadastros: fica o mais antigo, com canais, conversas e tags do outro", async () => {
+  it("une os cadastros: fica o mais antigo, com canais e conversas do outro, e as tags são recalculadas", async () => {
     await send("post", "/contacts/merge", { contactIds: [maria.id, ana.id] }).expect(403);
     await send("post", "/contacts/merge", { contactIds: [carlos.id, maria.id] }, masterToken).expect(400);
 
@@ -335,7 +335,8 @@ describe("API de Clientes", () => {
     expect(body).toEqual({ contactId: carlos.id });
     expect(await admin.contact.findUnique({ where: { id: carlosIg.id } })).toBeNull();
     const detail = await get(`/contacts/${carlos.id}`, adminToken).expect(200);
-    expect(detail.body).toMatchObject({ name: "Carlos Mendes", tags: ["sem glúten"], conversationsCount: 2 });
+    // "sem glúten" (do outro cadastro) não é do sistema; Carlos fez o primeiro pedido há 5 dias.
+    expect(detail.body).toMatchObject({ name: "Carlos Mendes", tags: ["Novo"], conversationsCount: 2 });
     expect(detail.body.identities.map((i: { channelType: string }) => i.channelType).sort()).toEqual(["INSTAGRAM", "WHATSAPP"]);
     expect(await admin.auditLog.findFirst({ where: { entityId: carlos.id, action: "contact.merged" } })).toMatchObject({ userId: fx.user.id });
 

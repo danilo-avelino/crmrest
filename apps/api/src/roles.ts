@@ -6,6 +6,7 @@ import { PhoneCollectionService } from "./automations/phone-collection.service.j
 import { SurveyService } from "./automations/survey.service.js";
 import { TriageService } from "./automations/triage.service.js";
 import { InstagramTokensProcessor, InstagramTokensService } from "./channels/instagram-tokens.service.js";
+import { ContactTagsService } from "./contacts/contact-tags.service.js";
 import { ContactsController } from "./contacts/contacts.controller.js";
 import { ContactsService } from "./contacts/contacts.service.js";
 import { ConversationsController } from "./conversations/conversations.controller.js";
@@ -69,6 +70,7 @@ export class RealtimeRoleModule {}
     SurveyService,
     TriageService,
     InactivityService,
+    ContactTagsService,
     AutomationsProcessor,
     IfoodService,
     IfoodProcessor,

@@ -8,6 +8,7 @@ import {
   MapPinIcon,
   SparklesIcon,
   StickyNoteIcon,
+  TriangleAlertIcon,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
@@ -84,13 +85,16 @@ function SystemEvent({ message }: { message: MessageDto }) {
   const { event, text } = message.content;
   const tone = SUCCESS_EVENTS.has(event)
     ? "border border-success-line bg-success-lt text-success-ink"
-    : WARNING_EVENTS.has(event)
+    : event === "cancellation_alert"
+      ? "border border-tomate-line bg-tomate-lt font-semibold text-tomate"
+      : WARNING_EVENTS.has(event)
       ? "border border-warning-line bg-warning-lt text-warning-ink"
       : "bg-surface-2 text-ink-3";
   return (
     <div className="flex justify-center">
       <span className={cn("flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px]", tone)}>
         {SUCCESS_EVENTS.has(event) && <CheckCircle2Icon className="size-3" aria-hidden />}
+        {event === "cancellation_alert" && <TriangleAlertIcon className="size-3" aria-hidden />}
         {text}
         {event === "conversation_opened" && ` · ${weekdayClock(message.createdAt)}`}
       </span>

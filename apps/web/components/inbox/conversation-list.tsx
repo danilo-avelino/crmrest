@@ -1,8 +1,8 @@
 "use client";
 
-import type { ConversationCounts, ConversationListItem, ConversationPage } from "@dishdesk/shared";
+import { type ConversationCounts, type ConversationListItem, type ConversationPage, COURIER_TAG } from "@dishdesk/shared";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
-import { BellRingIcon, CheckIcon, ListFilterIcon, SearchIcon } from "lucide-react";
+import { BellRingIcon, BikeIcon, CheckIcon, ListFilterIcon, SearchIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
 import { Avatar, StatusBadge } from "@/components/inbox/bits";
@@ -68,11 +68,14 @@ export function ConversationList({
     queryKey: ["counts", null],
     queryFn: () => request<ConversationCounts>("/conversations/counts"),
   });
-  const calling = allCounts.data?.awaitingAgent ?? 0;
+  // Entregador chamando tem o próprio som (a frase falada), sem o alarme dos clientes.
+  const couriers = allCounts.data?.awaitingCourier ?? 0;
+  const calling = (allCounts.data?.awaitingAgent ?? 0) - couriers;
   const alarm = useAgentAlarm(calling > 0);
+  const courierAlarm = useAgentAlarm(couriers > 0, "courier");
 
   const items = conversations.data?.pages.flatMap((page) => page.items) ?? [];
-  useUnreadSignals(items, calling);
+  useUnreadSignals(items, calling + couriers);
 
   return (
     <section className="flex w-80 shrink-0 flex-col border-r border-rule bg-surface">
@@ -107,6 +110,15 @@ export function ConversationList({
           <span className="flex-1">
             {calling === 1 ? "1 cliente chamando um atendente" : `${calling} clientes chamando um atendente`}
             {alarm.blocked && <span className="block text-[10.5px] font-normal opacity-90">Clique na página para ativar o som.</span>}
+          </span>
+        </div>
+      )}
+      {couriers > 0 && (
+        <div role="alert" className="flex shrink-0 items-center gap-2 bg-ink px-4 py-2 text-[12px] font-semibold text-paper">
+          <BikeIcon className="size-4 shrink-0" aria-hidden />
+          <span className="flex-1">
+            {couriers === 1 ? "1 entregador chamando" : `${couriers} entregadores chamando`}
+            {courierAlarm.blocked && <span className="block text-[10.5px] font-normal opacity-90">Clique na página para ativar o som.</span>}
           </span>
         </div>
       )}
@@ -202,6 +214,7 @@ function ConversationRow({
   const unread = conversation.unreadCount > 0;
   const resolved = conversation.status === "RESOLVED";
   const calling = conversation.awaitingAgentSince !== null;
+  const courier = conversation.contact.tags.includes(COURIER_TAG);
   const time = conversation.lastMessageAt ?? conversation.createdAt;
 
   return (
@@ -229,8 +242,8 @@ function ConversationRow({
       <div className="min-w-0 flex-1">
         {calling && (
           <div className="mb-1 inline-flex animate-pulse items-center gap-1 rounded-sm bg-tomate px-1.5 py-0.5 text-[10px] font-semibold text-white">
-            <BellRingIcon className="size-3" aria-hidden />
-            Chamando atendente · {ago(conversation.awaitingAgentSince!, now)}
+            {courier ? <BikeIcon className="size-3" aria-hidden /> : <BellRingIcon className="size-3" aria-hidden />}
+            {courier ? "Entregador chamando" : "Chamando atendente"} · {ago(conversation.awaitingAgentSince!, now)}
           </div>
         )}
         <div className="mb-0.5 flex items-baseline justify-between gap-2">

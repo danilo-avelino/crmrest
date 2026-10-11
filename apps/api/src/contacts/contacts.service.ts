@@ -11,6 +11,7 @@ import {
   type DuplicatePair,
   type DuplicateSide,
   INACTIVE_AFTER_DAYS,
+  MANUAL_TAGS,
   maskCpf,
   type MessageContent,
   type OrderDto,
@@ -33,6 +34,7 @@ import { RealtimeEmitter } from "../realtime/realtime.emitter.js";
 import { findDuplicatePairs } from "./contact-duplicates.js";
 import { mergeContacts } from "./contact-merge.js";
 import { contactSearch } from "./contact-search.js";
+import { refreshContactTags } from "./contact-tags.service.js";
 
 const DAY = 24 * 60 * 60_000;
 // Mês do aniversário no fuso dos restaurantes.
@@ -145,21 +147,21 @@ export class ContactsService {
         SELECT
           count(*) AS total,
           count(*) FILTER (WHERE first_seen_at >= ${newSince}) AS new_last_30d,
-          count(*) FILTER (WHERE EXISTS (SELECT 1 FROM unnest(tags) AS tag WHERE lower(tag) = 'vip')) AS vip,
+          count(*) FILTER (WHERE 'VIP' = ANY(tags)) AS vip,
+          count(*) FILTER (WHERE 'Recorrente' = ANY(tags)) AS recurring,
           count(*) FILTER (WHERE last_seen_at IS NULL OR last_seen_at < ${inactiveSince}) AS inactive,
           count(*) FILTER (WHERE phone IS NULL) AS phone_pending,
           count(*) FILTER (WHERE EXTRACT(MONTH FROM birth_date) = ${month}) AS birthdays
         FROM contacts WHERE deleted_at IS NULL`;
       const valid = { status: { not: "CANCELED" as const }, contact: { deletedAt: null } };
       const orders = await tx.order.aggregate({ where: valid, _count: { _all: true }, _sum: { total: true } });
-      const recurring = await tx.order.groupBy({ by: ["contactId"], where: valid, having: { contactId: { _count: { gte: 2 } } } });
       const ordersCount = orders._count._all;
       const upset = await upsetContactIds(tx);
       return {
         total: Number(counts?.total ?? 0),
         newLast30d: Number(counts?.new_last_30d ?? 0),
         vip: Number(counts?.vip ?? 0),
-        recurring: recurring.length,
+        recurring: Number(counts?.recurring ?? 0),
         inactive: Number(counts?.inactive ?? 0),
         upset: upset.length,
         phonePending: Number(counts?.phone_pending ?? 0),
@@ -221,12 +223,17 @@ export class ContactsService {
   /** Edição pelo atendente: os dados digitados passam a valer sobre os automáticos (§5.2). */
   async update(auth: RequestAuth, id: string, body: UpdateContactRequest): Promise<ContactDetail> {
     const { detail, conversationIds } = await this.db.withTenants(auth.scope, async (tx) => {
-      if ((await this.load(tx, id)).anonymized) throw new ConflictException("Este cliente foi anonimizado.");
+      const current = await this.load(tx, id);
+      if (current.anonymized) throw new ConflictException("Este cliente foi anonimizado.");
+      const manual: readonly string[] = MANUAL_TAGS;
       const data: Prisma.ContactUpdateInput = {
         ...(body.name !== undefined && { name: body.name }),
         ...(body.email !== undefined && { email: body.email }),
         ...(body.notes !== undefined && { notes: body.notes }),
-        ...(body.tags !== undefined && { tags: [...new Set(body.tags)] }),
+        // Só as manuais mudam, sempre antes das automáticas (a ordem do recálculo).
+        ...(body.tags !== undefined && {
+          tags: [...MANUAL_TAGS.filter((tag) => body.tags!.includes(tag)), ...current.tags.filter((tag) => !manual.includes(tag))],
+        }),
         ...(body.phone !== undefined &&
           (body.phone
             ? { phone: body.phone, phoneSource: "agent", phoneStatus: "ok" }
@@ -308,6 +315,8 @@ export class ContactsService {
           result.conflict === "telefone" ? "Estes cadastros têm telefones diferentes." : "Estes cadastros têm CPFs diferentes.",
         );
       }
+      // Os pedidos dos dois cadastros agora são de um só: as tags mudam com eles.
+      await refreshContactTags(tx);
       const conversations = await tx.conversation.findMany({ where: { contactId: result.contactId }, select: { id: true } });
       return { contactId: result.contactId, tenantId: a.tenantId, conversationIds: conversations.map((c) => c.id) };
     });

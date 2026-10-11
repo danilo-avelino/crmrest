@@ -168,7 +168,7 @@ function Comparison({ pair, onDone }: { pair: DuplicatePair; onDone: () => void 
     <section className="flex flex-1 flex-col gap-4 overflow-y-auto px-7 py-6">
       <div className="rounded-[7px] border border-rule bg-surface px-4 py-2.5 text-[12.5px] leading-normal text-ink-2">
         <strong className="text-ink">Regra:</strong> Fica o cadastro mais antigo. Os campos exclusivos do outro são copiados. Tags
-        são somadas. Endereços repetidos não se duplicam.
+        são recalculadas com os pedidos dos dois. Endereços repetidos não se duplicam.
       </div>
 
       <div className="grid grid-cols-2 gap-4">
@@ -183,7 +183,6 @@ function Comparison({ pair, onDone }: { pair: DuplicatePair; onDone: () => void 
       <div className="rounded-xl border border-success-line bg-success-lt px-[18px] py-3.5 text-[12.5px] leading-[1.55] text-success-ink">
         <div className="mb-1 font-medium">O que vai acontecer</div>
         Vão para <strong>{nameOf(keep)}:</strong> {moved.length > 0 ? `${moved.join(", ")}.` : "nenhum canal, conversa ou pedido."}
-        {other.tags.length > 0 && " Tags somadas."}
         {other.addressKeys.length > newAddresses && " Endereços repetidos não se duplicam."} O cadastro de {nameOf(other)} será
         removido.
       </div>

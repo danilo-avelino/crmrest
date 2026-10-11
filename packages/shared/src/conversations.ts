@@ -43,7 +43,8 @@ export type MessageContent = {
     | "merge_conflict"
     | "order_ambiguous"
     | "rating"
-    | "handoff";
+    | "handoff"
+    | "cancellation_alert";
   orderId?: string;
   /** Template aprovado do WhatsApp (o único envio permitido fora da janela de 24h). */
   template?: { name: string; language: string; variables: string[] };
@@ -90,7 +91,7 @@ export type ConversationListItem = {
   /** Desde quando o cliente espera um atendente (a automação chamou a equipe e ninguém respondeu); null = não espera. */
   awaitingAgentSince: string | null;
   channel: { id: string; type: ChannelType; name: string };
-  contact: { id: string; name: string | null; phoneStatus: string | null };
+  contact: { id: string; name: string | null; phoneStatus: string | null; tags: string[] };
   assignedUser: { id: string; name: string } | null;
   lastMessage: { direction: Direction; preview: string } | null;
   /** Código do último pedido ligado à conversa (cabeçalho "iFood · #485329"). */
@@ -98,8 +99,8 @@ export type ConversationListItem = {
 };
 
 export type ConversationPage = { items: ConversationListItem[]; nextCursor: string | null };
-/** Conversas por status e quantas estão chamando um atendente (alarme da Inbox). */
-export type ConversationCounts = Record<ConversationStatus, number> & { awaitingAgent: number };
+/** Conversas por status e quantas estão chamando um atendente (alarme da Inbox); `awaitingCourier` = quantas delas são de entregadores. */
+export type ConversationCounts = Record<ConversationStatus, number> & { awaitingAgent: number; awaitingCourier: number };
 export type ConversationMessages = { messages: MessageDto[]; orders: Record<string, OrderDto> };
 
 export const ConversationListQuery = z.object({

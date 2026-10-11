@@ -3,6 +3,7 @@ import { automationMessagesOf, CHANNEL_CAPABILITIES } from "@dishdesk/shared";
 import { InjectQueue } from "@nestjs/bullmq";
 import { Injectable } from "@nestjs/common";
 import type { Queue } from "bullmq";
+import { refreshContactTags } from "../contacts/contact-tags.service.js";
 import { DatabaseService } from "../core/database.service.js";
 import { type OutboundJob, QUEUES } from "../queues/queues.module.js";
 import { RealtimeEmitter } from "../realtime/realtime.emitter.js";
@@ -61,6 +62,8 @@ export class SurveyService {
       await tx.rating.create({
         data: { tenantId, conversationId: conversation.id, orderId: state.linkedOrder?.id ?? null, score: Number(score) },
       });
+      // A tag Insatisfeito entra (ou sai) na hora, com a nota.
+      await refreshContactTags(tx);
       await systemEvent(tx, conversation, { event: "rating", text: `Avaliação do atendimento: ${score}/5` });
       const { surveyThanks } = automationMessagesOf(await tenantSettings(tx, tenantId));
       const id = await automationMessage(tx, conversation, "survey_thanks", surveyThanks);

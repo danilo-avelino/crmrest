@@ -128,7 +128,7 @@ describe("API da Inbox", () => {
   it("filtra por status e conta por status", async () => {
     const pending = await get("/conversations?status=PENDING").expect(200);
     expect(pending.body.items.map((c: { id: string }) => c.id)).toEqual([joaoChat.id]);
-    expect((await get("/conversations/counts").expect(200)).body).toEqual({ OPEN: 1, PENDING: 1, RESOLVED: 0, awaitingAgent: 0 });
+    expect((await get("/conversations/counts").expect(200)).body).toEqual({ OPEN: 1, PENDING: 1, RESOLVED: 0, awaitingAgent: 0, awaitingCourier: 0 });
   });
 
   it("busca por nome, telefone e CPF", async () => {
@@ -216,11 +216,15 @@ describe("API da Inbox", () => {
       recentOrders: [{ displayCode: "485329", status: "DISPATCHED" }],
     });
 
-    const updated = await send("patch", `/contacts/${maria.id}`, {
-      phone: "+5511912345678",
-      tags: ["VIP", "VIP", "sem glúten"],
-    }).expect(200);
-    expect(updated.body).toMatchObject({ phone: "+5511912345678", phoneSource: "agent", tags: ["VIP", "sem glúten"] });
+    const updated = await send("patch", `/contacts/${maria.id}`, { phone: "+5511912345678" }).expect(200);
+    expect(updated.body).toMatchObject({ phone: "+5511912345678", phoneSource: "agent" });
+
+    // Tags: a equipe só marca as manuais; as automáticas (aqui, VIP) ficam como estão.
+    await admin.contact.update({ where: { id: maria.id }, data: { tags: ["VIP"] } });
+    const tagged = await send("patch", `/contacts/${maria.id}`, { tags: ["Entregador", "Cancelamento recorrente"] }).expect(200);
+    expect(tagged.body.tags).toEqual(["Cancelamento recorrente", "Entregador", "VIP"]);
+    expect((await send("patch", `/contacts/${maria.id}`, { tags: [] }).expect(200)).body.tags).toEqual(["VIP"]);
+    await send("patch", `/contacts/${maria.id}`, { tags: ["Golpista"] }).expect(400);
     await send("patch", `/contacts/${maria.id}`, { cpf: "12345678900" }).expect(400);
 
     const revealed = await send("post", `/contacts/${maria.id}/cpf`).expect(200);

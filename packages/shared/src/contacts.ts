@@ -43,6 +43,39 @@ export function maskCpf(digits: string): string {
   return `***.${digits.slice(3, 6)}.${digits.slice(6, 9)}-**`;
 }
 
+/** Números das regras das tags automáticas (iguais para todos os restaurantes). */
+export const AUTO_TAG_RULES = {
+  vipTopPercent: 10,
+  /** Quem pediu uma vez só não é VIP, mesmo numa base pequena. */
+  vipMinOrders: 2,
+  recurringOrders: 3,
+  recurringDays: 90,
+  newDays: 30,
+  goneDays: 60,
+  upsetMaxScore: 2,
+} as const;
+
+/**
+ * Tags automáticas: o sistema põe e tira sozinho, pela regra de cada uma. Pedidos cancelados não contam. VIP nunca
+ * passa dos 10%: clientes empatados em pedidos entram todos ou nenhum.
+ */
+export const AUTO_TAG_INFO = {
+  VIP: `Está entre os ${AUTO_TAG_RULES.vipTopPercent}% de clientes com mais pedidos.`,
+  Recorrente: `Fez ${AUTO_TAG_RULES.recurringOrders} pedidos ou mais nos últimos ${AUTO_TAG_RULES.recurringDays} dias.`,
+  Novo: `Fez o primeiro pedido nos últimos ${AUTO_TAG_RULES.newDays} dias.`,
+  Sumido: `Já pediu, mas está há ${AUTO_TAG_RULES.goneDays} dias ou mais sem pedir.`,
+  Insatisfeito: `Deu nota ${AUTO_TAG_RULES.upsetMaxScore} ou menos na última avaliação.`,
+} as const;
+export type AutoTag = keyof typeof AUTO_TAG_INFO;
+
+/** Quem aplica o golpe do cancelamento: cada novo atendimento abre com um alerta para a equipe. */
+export const CANCELLATION_TAG = "Cancelamento recorrente";
+/** Entregador: sem menu de atendimento, chama a equipe na hora (com o aviso sonoro próprio). */
+export const COURIER_TAG = "Entregador";
+/** As únicas tags que a equipe põe e tira à mão; o recálculo das automáticas não mexe nelas. */
+export const MANUAL_TAGS = [CANCELLATION_TAG, COURIER_TAG] as const;
+export type ManualTag = (typeof MANUAL_TAGS)[number];
+
 export type ContactOrderSummary = {
   id: string;
   displayCode: string | null;
@@ -146,7 +179,7 @@ export type ContactSummary = {
   newLast30d: number;
   /** Com a tag VIP. */
   vip: number;
-  /** Dois pedidos ou mais. */
+  /** Com a tag Recorrente. */
   recurring: number;
   inactive: number;
   /** Chateados: o último pedido foi cancelado. */
@@ -186,7 +219,8 @@ export const UpdateContactRequest = z.object({
   phone: z.e164().nullable().optional(),
   email: z.email().nullable().optional(),
   cpf: z.string().refine(isValidCpf, "CPF inválido.").nullable().optional(),
-  tags: z.array(z.string().trim().min(1).max(40)).max(20).optional(),
+  /** As tags manuais que o cliente passa a ter (as automáticas ficam como estão). */
+  tags: z.array(z.enum(MANUAL_TAGS)).optional(),
   notes: z.string().trim().max(2000).nullable().optional(),
 });
 export type UpdateContactRequest = z.infer<typeof UpdateContactRequest>;

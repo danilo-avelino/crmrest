@@ -5,6 +5,7 @@ import {
   type ConversationListQuery,
   type ConversationMessages,
   type ConversationPage,
+  COURIER_TAG,
   type MessageContent,
   type MessageDto,
   renderTemplate,
@@ -73,13 +74,15 @@ export class ConversationsService {
   }
 
   async counts(auth: RequestAuth, tenantId?: string): Promise<ConversationCounts> {
-    const [groups, awaitingAgent] = await this.db.withTenants(scopeFor(auth, tenantId), (tx) =>
+    const calling = { awaitingAgentSince: { not: null }, status: { not: "RESOLVED" } } satisfies Prisma.ConversationWhereInput;
+    const [groups, awaitingAgent, awaitingCourier] = await this.db.withTenants(scopeFor(auth, tenantId), (tx) =>
       Promise.all([
         tx.conversation.groupBy({ by: ["status"], _count: { _all: true } }),
-        tx.conversation.count({ where: { awaitingAgentSince: { not: null }, status: { not: "RESOLVED" } } }),
+        tx.conversation.count({ where: calling }),
+        tx.conversation.count({ where: { ...calling, contact: { tags: { has: COURIER_TAG } } } }),
       ]),
     );
-    const counts: ConversationCounts = { OPEN: 0, PENDING: 0, RESOLVED: 0, awaitingAgent };
+    const counts: ConversationCounts = { OPEN: 0, PENDING: 0, RESOLVED: 0, awaitingAgent, awaitingCourier };
     for (const group of groups) counts[group.status] = group._count._all;
     return counts;
   }

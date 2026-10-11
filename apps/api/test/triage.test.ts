@@ -461,6 +461,75 @@ describe("menu de atendimento, busca do pedido e pesquisa de satisfação", () =
     expect((await conversationOf("5511970000016")).awaitingAgentSince).toBeNull();
   });
 
+  /** Cadastro que a equipe já marcou com uma tag manual, antes de a pessoa escrever de novo. */
+  const tagged = (waId: string, tag: string) =>
+    admin.contact.create({
+      data: {
+        tenantId: fx.tenant.id,
+        name: "Marcado",
+        tags: [tag],
+        identities: { create: { tenantId: fx.tenant.id, channelType: "WHATSAPP", externalId: waId } },
+      },
+    });
+  const reply = async (conversationId: string, text: string) => {
+    await request(app.getHttpServer())
+      .post(`/api/conversations/${conversationId}/messages`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ text })
+      .expect(201);
+    await drainQueues(app);
+  };
+
+  it("entregador: sem menu, chama a equipe na hora e de novo a cada mensagem depois da resposta", async () => {
+    await tagged("5511970000021", "Entregador");
+    await say("5511970000021", "wamid.ENT1", "Cheguei no endereço");
+    const conversation = await conversationOf("5511970000021");
+    expect(await automations("5511970000021")).toEqual([]);
+    expect(conversation.messages.at(-1)!.content).toEqual({ event: "handoff", text: "Entregador chamando" });
+    expect(conversation.awaitingAgentSince).not.toBeNull();
+    const handoffs = async () => (await contents("5511970000021")).filter((c) => c.event === "handoff").length;
+
+    // O painel sabe que quem chama é um entregador (som e aviso próprios).
+    const api = (path: string) => request(app.getHttpServer()).get(`/api${path}`).set("Authorization", `Bearer ${token}`).expect(200);
+    const counts = (await api("/conversations/counts")).body;
+    expect(counts.awaitingCourier).toBe(1);
+    expect(counts.awaitingAgent).toBeGreaterThanOrEqual(1);
+    expect((await api(`/conversations/${conversation.id}`)).body.contact.tags).toEqual(["Entregador"]);
+
+    // Já chamando: outra mensagem não repete o chamado.
+    await say("5511970000021", "wamid.ENT2", "O cliente não atende");
+    expect(await handoffs()).toBe(1);
+
+    // A equipe responde e o alarme para; a mensagem seguinte do entregador chama de novo.
+    await reply(conversation.id, "Já estou ligando para o cliente.");
+    expect((await conversationOf("5511970000021")).awaitingAgentSince).toBeNull();
+    expect((await api("/conversations/counts")).body.awaitingCourier).toBe(0);
+    await say("5511970000021", "wamid.ENT3", "Ele desceu, obrigado");
+    expect(await handoffs()).toBe(2);
+    expect((await conversationOf("5511970000021")).awaitingAgentSince).not.toBeNull();
+    expect(await automations("5511970000021")).toEqual([]);
+  });
+
+  it("cancelamento recorrente: cada atendimento novo abre com o alerta, que não vai para o cliente", async () => {
+    await tagged("5511970000022", "Cancelamento recorrente");
+    await say("5511970000022", "wamid.CANC1", "Oi");
+    await say("5511970000022", "wamid.CANC2", "3");
+    const alerts = async () => (await contents("5511970000022")).filter((c) => c.event === "cancellation_alert");
+    // Um alerta por atendimento, não por mensagem; o menu segue normalmente.
+    expect(await alerts()).toEqual([{ event: "cancellation_alert", text: "Atenção: cliente com cancelamento recorrente" }]);
+    expect(await automations("5511970000022")).toEqual(["menu", "handoff"]);
+
+    const { id } = await conversationOf("5511970000022");
+    await request(app.getHttpServer())
+      .patch(`/api/conversations/${id}`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ status: "RESOLVED" })
+      .expect(200);
+    await say("5511970000022", "wamid.CANC3", "Oi de novo");
+    expect(await alerts()).toHaveLength(2);
+    expect(JSON.stringify(graph.requests.map((sent) => sent.body)).toLowerCase()).not.toContain("cancelamento recorrente");
+  });
+
   it("não encerra quando o cliente falou por último ou a conversa está pendente; sem pedido, não pede avaliação", async () => {
     await say("5511970000009", "wamid.J1", "Oi");
     await say("5511970000009", "wamid.J2", "3");

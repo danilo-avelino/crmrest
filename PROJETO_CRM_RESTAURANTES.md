@@ -228,6 +228,19 @@ Todo contato que interage com o restaurante gera ou atualiza um **cadastro unifi
 
 **Campos do cadastro:** nome, telefone(s), e-mail, CPF (criptografado), data de nascimento, endereços, tags, observações, preferências, canais vinculados (identidades), consentimentos, métricas (primeiro contato, último contato, total de pedidos).
 
+**Tags manuais:** só duas, marcadas pela equipe no "+ tag" do cliente (`MANUAL_TAGS`); o recálculo das automáticas não mexe nelas.
+- **Cancelamento recorrente:** quem aplica o golpe do cancelamento. A cada atendimento que esse cliente começa, a conversa recebe um alerta vermelho, visível só para a equipe.
+- **Entregador:** não recebe o menu, o aviso de fora do horário nem a coleta de telefone. Cada mensagem chama a equipe na hora (a não ser que já esteja chamando), e o painel fala "Entregador chamando"; sem voz em português no navegador, tocam dois bipes graves, sempre no mesmo tom.
+
+**Tags automáticas:** as demais tags do cliente são do sistema, que as põe e tira sozinho. Regras iguais para todos os restaurantes, em `AUTO_TAG_RULES` ([packages/shared/src/contacts.ts](packages/shared/src/contacts.ts)); pedidos cancelados não contam:
+- **VIP:** está entre os 10% de clientes com mais pedidos do restaurante, com 2 pedidos ou mais. Nunca passa dos 10%: clientes empatados entram todos ou nenhum.
+- **Recorrente:** 3 pedidos ou mais nos últimos 90 dias.
+- **Novo:** primeiro pedido nos últimos 30 dias.
+- **Sumido:** já pediu, mas está há 60 dias ou mais sem pedir.
+- **Insatisfeito:** nota 1 ou 2 na última avaliação.
+
+O recálculo roda de hora em hora para todos os restaurantes e na hora em que chega uma nota da pesquisa ou dois cadastros são unidos.
+
 **Resolução de identidade (merge):**
 1. Busca identidade existente por `(tenant_id, channel_type, external_id)`.
 2. Se não existir, tenta casar por **telefone normalizado (E.164)** e depois por **CPF (hash)**.

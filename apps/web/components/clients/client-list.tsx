@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  AUTO_TAG_RULES,
   CHANNEL_LABEL,
   type ContactFilterOptions,
   type ContactListItem,
@@ -59,7 +60,7 @@ function SummaryCards() {
   const cards: { label: string; value: string; note: string; good?: boolean }[] = [
     { label: "Clientes", value: data ? count(data.total) : "—", note: data ? `+${count(data.newLast30d)} nos últimos 30 dias` : " ", good: Boolean(data?.newLast30d) },
     { label: "VIPs", value: data ? count(data.vip) : "—", note: data ? share(data.vip) : " " },
-    { label: "Recorrentes", value: data ? count(data.recurring) : "—", note: "2 pedidos ou mais" },
+    { label: "Recorrentes", value: data ? count(data.recurring) : "—", note: `${AUTO_TAG_RULES.recurringOrders}+ pedidos em ${AUTO_TAG_RULES.recurringDays} dias` },
     { label: "Inativos", value: data ? count(data.inactive) : "—", note: `sem contato há +${INACTIVE_AFTER_DAYS} dias` },
     { label: "Chateados", value: data ? count(data.upset) : "—", note: "último pedido cancelado" },
     {

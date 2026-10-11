@@ -1,9 +1,14 @@
 "use client";
 
 import {
+  AUTO_TAG_INFO,
+  type AutoTag,
+  CANCELLATION_TAG,
   CHANNEL_LABEL,
   type ContactDetail,
   formatPhone,
+  MANUAL_TAGS,
+  type ManualTag,
   phoneFromWhatsAppId,
   toE164,
   type UpdateContactRequest,
@@ -17,6 +22,7 @@ import { CurrentOrder } from "@/components/inbox/current-order";
 import { ORDER_STATUS } from "@/components/inbox/order-card";
 import { sourcesText } from "@/components/orders/customer-history";
 import { Button } from "@/components/ui/button";
+import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { usePendingAction } from "@/hooks/use-pending-action";
@@ -186,53 +192,44 @@ function Row({ icon: Icon, children }: { icon: typeof PhoneIcon; children: React
   );
 }
 
-export function Tags({ tags, onChange }: { tags: string[]; onChange: (tags: string[]) => Promise<void> }) {
-  const [adding, setAdding] = useState(false);
-  const [draft, setDraft] = useState("");
-  const [change] = usePendingAction(onChange);
+/** Tags do cliente: as automáticas (a regra aparece ao passar o mouse) e as manuais, que a equipe marca no "+ tag". */
+export function Tags({ tags, onChange }: { tags: string[]; onChange: (manual: ManualTag[]) => Promise<void> }) {
+  const [change, saving] = usePendingAction(onChange);
+  const manual = MANUAL_TAGS.filter((tag) => tags.includes(tag));
 
   return (
     <div className="flex flex-wrap gap-1">
       {tags.map((tag) => (
-        <span key={tag} className="group inline-flex items-center gap-0.5 rounded-sm border border-dashed border-tag-line px-[7px] py-0.5 text-[10.5px] text-ink-2">
+        <span
+          key={tag}
+          title={AUTO_TAG_INFO[tag as AutoTag]}
+          className={cn(
+            "rounded-sm border border-dashed px-[7px] py-0.5 text-[10.5px]",
+            tag === CANCELLATION_TAG ? "border-tomate-line bg-tomate-lt font-medium text-tomate" : "border-tag-line text-ink-2",
+          )}
+        >
           {tag}
-          <button
-            type="button"
-            aria-label={`Remover tag ${tag}`}
-            onClick={() => change(tags.filter((t) => t !== tag))}
-            className="hidden text-ink-3 group-hover:inline hover:text-ink"
-          >
-            ×
-          </button>
         </span>
       ))}
-      {adding ? (
-        <input
-          autoFocus
-          value={draft}
-          maxLength={40}
-          aria-label="Nova tag"
-          onChange={(event) => setDraft(event.target.value)}
-          onBlur={() => setAdding(false)}
-          onKeyDown={(event) => {
-            if (event.key === "Escape") setAdding(false);
-            if (event.key === "Enter" && draft.trim()) {
-              change([...tags, draft.trim()]);
-              setDraft("");
-              setAdding(false);
-            }
-          }}
-          className="w-24 rounded-sm border border-dashed border-ink-3 px-[7px] py-0.5 text-[10.5px] outline-none"
-        />
-      ) : (
-        <button
-          type="button"
-          onClick={() => setAdding(true)}
-          className="rounded-sm border border-dashed border-tag-line px-[7px] py-0.5 text-[10.5px] text-ink-3 hover:text-ink-2"
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          disabled={saving}
+          className="rounded-sm border border-dashed border-tag-line px-[7px] py-0.5 text-[10.5px] text-ink-3 hover:text-ink-2 disabled:cursor-not-allowed"
         >
-          + tag
-        </button>
-      )}
+          {saving ? "Carregando…" : "+ tag"}
+        </DropdownMenuTrigger>
+        <DropdownMenuContent className="w-56">
+          {MANUAL_TAGS.map((tag) => (
+            <DropdownMenuCheckboxItem
+              key={tag}
+              checked={manual.includes(tag)}
+              onCheckedChange={(on) => change(on ? [...manual, tag] : manual.filter((other) => other !== tag))}
+            >
+              {tag}
+            </DropdownMenuCheckboxItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   );
 }
