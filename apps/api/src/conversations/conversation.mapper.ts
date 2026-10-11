@@ -1,6 +1,27 @@
 import type { Message, Order, OrderItem, Prisma } from "@dishdesk/database";
 import type { ChannelType } from "@dishdesk/database/enums";
 import type { ConversationListItem, MessageContent, MessageDto, OrderDto } from "@dishdesk/shared";
+import type { RequestAuth } from "../auth/auth.decorators.js";
+import { type AutomationState, RATING_ANSWER } from "../automations/automation.js";
+import { isTenantAdmin } from "../settings/tenant-admin.js";
+
+/** O que o atendente vê no lugar da nota da pesquisa de satisfação: o valor é só do administrador. */
+const RATING_HIDDEN = "Avaliação do atendimento recebida";
+
+/** Linha do tempo do atendente: some a resposta do cliente à pesquisa e o evento da avaliação fica sem a nota. */
+export function withoutRatingScores(messages: MessageDto[]): MessageDto[] {
+  let awaitingAnswer = false;
+  return messages.flatMap((message) => {
+    if (message.content.automation === "survey") awaitingAnswer = true;
+    else if (message.direction === "INBOUND") {
+      // Só a primeira mensagem do cliente depois da pergunta pode ser a nota (como em SurveyService.handleAnswer).
+      const answer = awaitingAnswer && RATING_ANSWER.test(message.content.text ?? "");
+      awaitingAnswer = false;
+      if (answer) return [];
+    }
+    return message.content.event === "rating" ? [{ ...message, content: { ...message.content, text: RATING_HIDDEN } }] : [message];
+  });
+}
 
 export function toMessageDto(message: Message & { sentByUser?: { id: string; name: string } | null }): MessageDto {
   return {
@@ -49,7 +70,16 @@ export const conversationListInclude = {
 
 type ConversationWithList = Prisma.ConversationGetPayload<{ include: typeof conversationListInclude }>;
 
-export function toListItem(conversation: ConversationWithList): ConversationListItem {
+/** A última mensagem mostra a nota (o evento, ou a resposta do cliente ainda por registrar) e quem pede é atendente. */
+function hidesRating(conversation: ConversationWithList, auth: RequestAuth): boolean {
+  const last = conversation.messages[0];
+  if (!last || isTenantAdmin(auth, conversation.tenantId)) return false;
+  const content = last.content as MessageContent;
+  const { survey } = conversation.automationState as AutomationState;
+  return content.event === "rating" || (last.direction === "INBOUND" && survey === "awaiting_rating" && RATING_ANSWER.test(content.text ?? ""));
+}
+
+export function toListItem(conversation: ConversationWithList, auth: RequestAuth): ConversationListItem {
   const last = conversation.messages[0];
   return {
     id: conversation.id,
@@ -63,7 +93,9 @@ export function toListItem(conversation: ConversationWithList): ConversationList
     channel: conversation.channel,
     contact: conversation.contact,
     assignedUser: conversation.assignedUser,
-    lastMessage: last ? { direction: last.direction, preview: preview(last.type, last.content as MessageContent) } : null,
+    lastMessage: last
+      ? { direction: last.direction, preview: hidesRating(conversation, auth) ? RATING_HIDDEN : preview(last.type, last.content as MessageContent) }
+      : null,
     orderCode: conversation.orders[0]?.displayCode ?? null,
   };
 }

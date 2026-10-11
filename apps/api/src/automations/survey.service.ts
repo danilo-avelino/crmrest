@@ -12,6 +12,7 @@ import {
   dispatch,
   type InboundEvent,
   localDate,
+  RATING_ANSWER,
   setAutomationState,
   systemEvent,
   tenantSettings,
@@ -47,7 +48,7 @@ export class SurveyService {
 
   /** Resposta à pesquisa: grava a nota e agradece. Devolve true se a mensagem era a nota (e não um novo atendimento). */
   async handleAnswer(event: InboundEvent): Promise<boolean> {
-    const score = /^\s*([1-5])\s*$/.exec(event.text ?? "")?.[1];
+    const score = RATING_ANSWER.exec(event.text ?? "")?.[1];
     const { tenantId } = event.channel;
     const messageId = await this.db.withTenants({ tenantIds: [tenantId] }, async (tx) => {
       const conversation = await this.load(tx, event.conversationId);

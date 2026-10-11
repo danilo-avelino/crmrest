@@ -198,7 +198,7 @@ export class ContactsService {
         include: conversationListInclude,
         orderBy: [{ lastMessageAt: { sort: "desc", nulls: "last" } }, { createdAt: "desc" }],
       });
-      return rows.map(toListItem);
+      return rows.map((row) => toListItem(row, auth));
     });
   }
 

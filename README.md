@@ -1,7 +1,7 @@
 # Dish Desk
 
 CRM omnichannel para restaurantes: WhatsApp, Instagram e pedidos do iFood numa inbox só, com multi-tenancy por RLS no Postgres.
-Especificação em [PROJETO_CRM_RESTAURANTES.md](PROJETO_CRM_RESTAURANTES.md), fases em [ROADMAP.md](ROADMAP.md) e design em `CRM Restaurantes.html`.
+Especificação em [PROJETO_CRM_RESTAURANTES.md](PROJETO_CRM_RESTAURANTES.md), fases em [ROADMAP.md](ROADMAP.md) e design em `Dish Desk Design.html`.
 
 | Pasta | O que é |
 | --- | --- |

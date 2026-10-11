@@ -92,9 +92,9 @@ export function SettingsShell({ children }: { children: ReactNode }) {
             })}
           </nav>
         </header>
-        {/* Integrações (board Configurações · Integrações): cartões brancos sobre o papel, na largura da tela; as outras abas ficam numa coluna estreita. */}
+        {/* Integrações (board Configurações · Integrações): cartões brancos sobre o papel, na largura do board; as outras abas ficam numa coluna estreita. */}
         <div className={cn("flex-1 overflow-y-auto px-7 py-6", integrations && "bg-paper px-8")}>
-          <div className={integrations ? "max-w-[1400px]" : "max-w-[680px]"}>
+          <div className={integrations ? "max-w-[1072px]" : "max-w-[680px]"}>
             <SettingsTenantContext value={tenant}>{children}</SettingsTenantContext>
           </div>
         </div>

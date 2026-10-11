@@ -74,9 +74,9 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 ## 8. Referências do projeto (consultar SEMPRE)
 
 - **Especificação:** [PROJETO_CRM_RESTAURANTES.md](PROJETO_CRM_RESTAURANTES.md) — visão, stack, arquitetura, modelo de dados, roadmap e convenções.
-- **Design:** [CRM Restaurantes 2.html](CRM Restaurantes 2.html) — fonte da verdade visual (substitui o antigo `CRM Restaurantes.html`). **Antes de criar ou alterar qualquer tela/componente de UI, consultar este arquivo** e seguir suas cores, tipografia, espaçamentos e componentes. Não inventar estilos fora dele; se algo não existir no design, perguntar.
+- **Design:** [Dish Desk Design.html](Dish Desk Design.html) — fonte da verdade visual (substitui os antigos `CRM Restaurantes.html` e `CRM Restaurantes 2.html`). **Antes de criar ou alterar qualquer tela/componente de UI, consultar este arquivo** e seguir suas cores, tipografia, espaçamentos e componentes. Não inventar estilos fora dele; se algo não existir no design, perguntar.
 
-O HTML é um bundle (≈3,3 MB): o conteúdo fica em `<script type="__bundler/manifest">` (base64 + gzip), com bundles aninhados. Boards: **Sistema de Design**, **Login · Escolha de restaurante**, **Inbox · Conversa ativa · Painel do cliente**, **Módulo Campanhas (extra pago)**, **Clientes · Lista · Detalhe · Duplicados · LGPD**. Para ler: decodificar o manifest com Python (`base64` → `gzip.decompress`) e repetir no bundle interno; o HTML de cada board fica no `__bundler/template` interno (uma string JSON).
+O HTML é um bundle (≈3,7 MB): o conteúdo fica em `<script type="__bundler/manifest">` (base64 + gzip), com bundles aninhados. Boards: **Sistema de Design**, **Login · Escolha de restaurante**, **Inbox · Conversa ativa · Painel do cliente**, **Módulo Campanhas (extra pago)**, **Clientes · Lista · Detalhe · Duplicados · LGPD**, **Configurações · Integrações** (lista por sistema, modal de detalhe da conexão e painel "Adicionar integração"). Para ler: decodificar o manifest com Python (`base64` → `gzip.decompress`) e repetir no bundle interno; o HTML de cada board fica no `__bundler/template` interno (uma string JSON).
 
 Resumo do Sistema de Design (marca **"Dish Desk"**, Next.js + Tailwind + shadcn/ui):
 
@@ -95,7 +95,8 @@ Resumo do Sistema de Design (marca **"Dish Desk"**, Next.js + Tailwind + shadcn/
 - **Tipografia:** Display Fraunces 700/28px (−0.5px); título UI Fraunces 600/16px; label Inter 500/13px; body Inter 400/13px lh 1.5; números sempre `tabular-nums`.
 - **Botões (36px, radius 6px, Inter 500/13px):** primário ink (`#1A1814` / texto paper), secundário branco com borda rule, destrutivo/ação tomate (`#C4341A`), ghost transparente; desabilitado com opacity 0.55.
 - **Badges de status:** Aberta (tomate), Pendente (âmbar `#FEF9EC`/`#7A5008`), Resolvida (verde `#EAF6EF`/`#1D5C33`); tags com borda tracejada `#C4B8A0`.
-- **Cores de canal só como indicador pontual (bolinha):** WhatsApp `#25D366`, Instagram `#E1306C`, iFood `#EA1D2C`, Cardápio Web roxo `#7C3AED` (pedido do usuário); Anota AI será azul-claro quando a integração existir.
+- **Logo:** manter o ícone de barras (três linhas no quadrado; menu lateral, login e [components/brand/logo-mark.tsx](apps/web/components/brand/logo-mark.tsx)). **Não trocar pelo monograma "D"** que aparece nos boards do arquivo novo: o usuário preferiu o de barras.
+- **Cores de canal só como indicador pontual (bolinha) e no ícone do sistema em Configurações → Integrações:** WhatsApp `#25D366`, Instagram `#E1306C`, iFood `#EA1D2C`, Cardápio Web roxo `#7C3AED` (pedido do usuário); Anota AI será azul-claro quando a integração existir.
 - **Balões:** entrada branco com borda rule (radius `12 12 12 2`); saída ink com texto paper (radius `12 12 2 12`); automação/nota interna centralizadas em âmbar (nota com borda tracejada).
 - **Inputs:** 36px, borda rule; foco borda ink + `box-shadow 0 0 0 3px rgba(26,24,20,.08)`; erro borda e mensagem em tomate.
 

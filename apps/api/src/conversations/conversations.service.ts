@@ -30,7 +30,8 @@ import { contactSearch } from "../contacts/contact-search.js";
 import { DatabaseService } from "../core/database.service.js";
 import { type AutomationJob, type OutboundJob, QUEUES } from "../queues/queues.module.js";
 import { RealtimeEmitter } from "../realtime/realtime.emitter.js";
-import { conversationListInclude, toListItem, toMessageDto, toOrderDto } from "./conversation.mapper.js";
+import { isTenantAdmin } from "../settings/tenant-admin.js";
+import { conversationListInclude, toListItem, toMessageDto, toOrderDto, withoutRatingScores } from "./conversation.mapper.js";
 
 const PAGE_SIZE = 50;
 const MESSAGES_LIMIT = 200;
@@ -65,7 +66,7 @@ export class ConversationsService {
         ...(query.cursor && { cursor: { id: query.cursor }, skip: 1 }),
       }),
     );
-    const items = rows.slice(0, PAGE_SIZE).map(toListItem);
+    const items = rows.slice(0, PAGE_SIZE).map((row) => toListItem(row, auth));
     return { items, nextCursor: rows.length > PAGE_SIZE ? (items.at(-1)?.id ?? null) : null };
   }
 
@@ -86,19 +87,21 @@ export class ConversationsService {
       tx.conversation.findUnique({ where: { id }, include: conversationListInclude }),
     );
     if (!conversation) throw new NotFoundException("Conversa não encontrada.");
-    return toListItem(conversation);
+    return toListItem(conversation, auth);
   }
 
   async messages(auth: RequestAuth, id: string): Promise<ConversationMessages> {
     return this.db.withTenants(auth.scope, async (tx) => {
-      await this.requireConversation(tx, id);
+      const conversation = await this.requireConversation(tx, id);
       const latest = await tx.message.findMany({
         where: { conversationId: id },
         include: { sentByUser: { select: { id: true, name: true } } },
         orderBy: { createdAt: "desc" },
         take: MESSAGES_LIMIT,
       });
-      const messages = latest.reverse().map(toMessageDto);
+      const all = latest.reverse().map(toMessageDto);
+      // A nota da pesquisa de satisfação é só do administrador do restaurante.
+      const messages = isTenantAdmin(auth, conversation.tenantId) ? all : withoutRatingScores(all);
       const orderIds = messages.flatMap((m) => (m.content.event === "order" && m.content.orderId ? [m.content.orderId] : []));
       const orders = orderIds.length
         ? await tx.order.findMany({ where: { id: { in: orderIds } }, include: { items: true, channel: { select: { type: true } } } })
@@ -292,7 +295,7 @@ export class ConversationsService {
     // Fim do atendimento: a pesquisa de satisfação decide no worker se pergunta a nota.
     if (resolved) await this.automations.add("survey", { tenantId: conversation.tenantId, conversationId });
     this.realtime.inboxChanged(conversation.tenantId, conversationId);
-    return toListItem(conversation);
+    return toListItem(conversation, auth);
   }
 
   private async requireConversation(tx: TenantTx, id: string) {

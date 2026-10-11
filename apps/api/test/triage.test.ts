@@ -159,6 +159,26 @@ describe("menu de atendimento, busca do pedido e pesquisa de satisfação", () =
     const content = conversation.messages.map((m) => m.content as Content);
     expect(content).toContainEqual({ event: "rating", text: "Avaliação do atendimento: 5/5" });
     expect(content.at(-1)).toMatchObject({ automation: "survey_thanks" });
+
+    // O atendente vê que houve avaliação, mas não a nota: nem no evento, nem na resposta do cliente, nem na prévia.
+    const texts = async (as: string) => {
+      const { body } = await request(app.getHttpServer()).get(`/api/conversations/${id}/messages`).set("Authorization", `Bearer ${as}`).expect(200);
+      return (body.messages as { content: Content }[]).map((m) => m.content.text);
+    };
+    const asAgent = await texts(token);
+    expect(asAgent).toContain("Avaliação do atendimento recebida");
+    expect(asAgent).toContain("1"); // a opção do menu continua na conversa
+    expect(asAgent).not.toContain("5");
+    expect(asAgent).not.toContain("Avaliação do atendimento: 5/5");
+    const listed = await request(app.getHttpServer()).get(`/api/conversations/${id}`).set("Authorization", `Bearer ${token}`).expect(200);
+    expect(listed.body.lastMessage.preview).not.toContain("5/5");
+
+    // O administrador continua vendo tudo.
+    const member = { tenantId_userId: { tenantId: fx.tenant.id, userId: fx.user.id } };
+    await admin.tenantMember.update({ where: member, data: { role: "ADMIN" } });
+    const asAdmin = await texts(await accessTokenFor(app, fx.user.email, fx.tenant.id));
+    await admin.tenantMember.update({ where: member, data: { role: "AGENT" } });
+    expect(asAdmin).toEqual(expect.arrayContaining(["5", "Avaliação do atendimento: 5/5"]));
   });
 
   it("depois de resolvida, uma mensagem nova começa outro atendimento com o menu", async () => {

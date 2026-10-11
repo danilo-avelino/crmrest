@@ -29,6 +29,9 @@ export type AutomationState = {
   survey?: "awaiting_rating" | "answered" | "skipped";
 };
 
+/** Resposta à pesquisa de satisfação: só a nota, de 1 a 5. */
+export const RATING_ANSWER = /^\s*([1-5])\s*$/;
+
 /** Mensagem recebida, como as automações a veem. */
 export type InboundEvent = {
   channel: { id: string; tenantId: string; type: ChannelType };
