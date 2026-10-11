@@ -44,7 +44,22 @@ Esta é a lista do que falta para o Dish Desk atender restaurantes de verdade. Q
   - [ ] Passar pela homologação.
   - [ ] Cadastrar o widget e configurar o `IFOOD_WIDGET_ID` — Claude, depois da conta Empresa.
 
-## 2. Riscos no código
+## 2. Cadastro pelo site, teste grátis e cobrança
+
+Feito em 11/10 (Claude): o botão da landing leva a `/cadastro`, que cria o restaurante com 15 dias de teste. Depois do teste, o painel bloqueia e mostra `/assinatura`, com R$ 99 por mês no cartão ou R$ 999 por ano no Pix, pagos na Stripe. O WhatsApp e o CPF ou CNPJ de quem se cadastrou aparecem em `/plataforma`.
+
+- [ ] **Conta da Stripe** — sem ela, o restaurante bloqueado vê "O pagamento ainda não está disponível"
+  - [ ] Criar a conta com o CNPJ da Avelino Gastronomia e ativar o Pix nos meios de pagamento — você.
+  - [ ] Criar o webhook `https://www.dishdesk.com.br/api/webhooks/stripe` com os eventos `checkout.session.completed`, `checkout.session.async_payment_succeeded` e `invoice.paid` — você, com o Claude orientando.
+  - [ ] Pôr `STRIPE_SECRET_KEY` e `STRIPE_WEBHOOK_SECRET` no serviço `api` da Railway — você.
+  - [ ] Fazer um pagamento de cada plano no modo de teste da Stripe e conferir se o restaurante é liberado (o teste automático usa uma Stripe simulada).
+- [ ] **Cadastro sem confirmação de e-mail.** Qualquer pessoa cria um restaurante com um e-mail que não é dela. O limite é de 10 cadastros por hora, e hoje vale para todos os visitantes somados, porque a API não enxerga o IP de quem acessa (o mesmo vale para o limite do login). Depende do provedor de e-mail e de a API confiar no proxy — Claude.
+- [x] **Teste grátis repetido** — Claude, 11/10. Quem cria outra conta e conecta um canal (WhatsApp, Instagram, iFood ou Cardápio Web) que já passou por um teste grátis encerrado há menos de 60 dias tem o teste encerrado na hora e cai na tela de pagamento, com o aviso. Depois de pagar, o canal sai do restaurante antigo e conecta no novo. Continua possível repetir o teste com outro número, outra conta e outra loja.
+- [ ] **Cancelar a assinatura.** O cliente não cancela pelo painel; hoje só você, no painel da Stripe.
+- [ ] **Nota fiscal.** A emissão é manual, com o CPF ou CNPJ que aparece em `/plataforma` e no pagamento da Stripe.
+- [ ] **Canais durante o teste.** Enquanto a Meta não aprovar o app (item 1), quem se cadastra pelo site não consegue conectar WhatsApp nem Instagram: só contas testadoras conectam.
+
+## 3. Riscos no código
 
 - [ ] **Token do WhatsApp sem renovação.** O cadastro incorporado usa o modelo "token de 60 dias", e o código só renova os tokens do Instagram. Um número conectado pela tela pode parar em cerca de 60 dias. Falta confirmar com um número real e resolver, com o token permanente de Tech Provider ou com um job de renovação — Claude.
 - [ ] **Mídia recebida.** Desde 11/10 a conversa mostra a imagem e toca o áudio (vídeo e documento têm "Baixar"), buscando o arquivo na Meta cada vez que a conversa é aberta. Nada é guardado: quando a Meta apaga o arquivo (no WhatsApp, a documentação fala em 7 dias para o id que chega no webhook), a conversa mostra "não está mais disponível".
@@ -56,7 +71,7 @@ Esta é a lista do que falta para o Dish Desk atender restaurantes de verdade. Q
 - [ ] **Cabeçalhos de segurança.** A API e o painel não enviam cabeçalhos como CSP — Claude.
 - [ ] **Repositório público.** O `danilo-avelino/crmrest` está público no GitHub. Decidir se continua assim — você.
 
-## 3. Pode ficar para depois do piloto
+## 4. Pode ficar para depois do piloto
 
 - [ ] Versões mobile e tablet das telas.
 - [ ] Envio de mídia pelo atendente.

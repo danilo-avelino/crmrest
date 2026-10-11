@@ -1,7 +1,16 @@
-import type { AuthContext, AuthSession, AuthTenant, AuthUser, SelectContextRequest } from "@dishdesk/shared";
-import { SelectContextRequest as SelectContextSchema } from "@dishdesk/shared";
+import { randomUUID } from "node:crypto";
+import type { AuthContext, AuthSession, AuthTenant, AuthUser, SelectContextRequest, SignupRequest } from "@dishdesk/shared";
+import { SelectContextRequest as SelectContextSchema, slugify, tenantBlock, TRIAL_DAYS } from "@dishdesk/shared";
 import { hash, verify } from "@node-rs/argon2";
-import { ForbiddenException, Injectable, type OnModuleInit, UnauthorizedException } from "@nestjs/common";
+import {
+  ConflictException,
+  ForbiddenException,
+  HttpException,
+  HttpStatus,
+  Injectable,
+  type OnModuleInit,
+  UnauthorizedException,
+} from "@nestjs/common";
 import { DatabaseService } from "../core/database.service.js";
 import {
   formatRefreshToken,
@@ -14,7 +23,7 @@ import {
 
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
-type Profile = { user: AuthUser; tenants: AuthTenant[] };
+export type Profile = { user: AuthUser; tenants: AuthTenant[] };
 
 @Injectable()
 export class AuthService implements OnModuleInit {
@@ -36,23 +45,31 @@ export class AuthService implements OnModuleInit {
     const valid = await verify(found?.password_hash ?? this.dummyHash, password);
     if (!found || !valid || !found.is_active) throw new UnauthorizedException("E-mail ou senha inválidos.");
 
-    const secret = newRefreshSecret();
-    const session = await this.db.withTenants({ tenantIds: [], userId: found.id }, (tx) =>
-      tx.session.create({
-        data: {
-          userId: found.id,
-          tokenHash: hashSecret(secret),
-          userAgent: userAgent?.slice(0, 300),
-          expiresAt: new Date(Date.now() + SESSION_TTL_MS),
-        },
-        select: { id: true },
-      }),
-    );
+    const refreshToken = await this.openSession(found.id, userAgent);
     const profile = await this.loadProfile(found.id);
-    return {
-      refreshToken: formatRefreshToken(found.id, session.id, secret),
-      session: { ...profile, context: null, accessToken: null } satisfies AuthSession,
-    };
+    return { refreshToken, session: { ...profile, context: null, accessToken: null } satisfies AuthSession };
+  }
+
+  /** Cadastro pelo site: cria o restaurante em teste e já entra nele como administrador. */
+  async signup(body: SignupRequest, userAgent?: string) {
+    const passwordHash = await hash(body.password);
+    const [tenantId, userId] = [randomUUID(), randomUUID()];
+    const slug = slugify(body.restaurantName).slice(0, 50) || "restaurante";
+    const [result] = await this.db.client.$queryRaw<{ created: boolean }[]>`
+      SELECT app.signup_tenant(
+        ${tenantId}::uuid, ${userId}::uuid, ${body.restaurantName}, ${slug}, ${body.name}, ${body.email},
+        ${passwordHash}, ${body.phone}, ${body.taxId}, ${TRIAL_DAYS}::int
+      ) AS created`;
+    if (!result?.created) throw new ConflictException("Já existe uma conta com este e-mail. Entre no sistema.");
+
+    const refreshToken = await this.openSession(userId, userAgent);
+    return { refreshToken, session: await this.selectContext(refreshToken, { mode: "tenant", tenantId }) };
+  }
+
+  /** Usuário e restaurantes da sessão do cookie, para o que acontece antes de escolher o restaurante (pagamento). */
+  async sessionProfile(refreshToken: string | undefined): Promise<Profile> {
+    const { userId } = await this.requireSession(refreshToken);
+    return this.loadProfile(userId);
   }
 
   async selectContext(refreshToken: string | undefined, request: SelectContextRequest): Promise<AuthSession> {
@@ -90,6 +107,22 @@ export class AuthService implements OnModuleInit {
     );
   }
 
+  private async openSession(userId: string, userAgent?: string): Promise<string> {
+    const secret = newRefreshSecret();
+    const session = await this.db.withTenants({ tenantIds: [], userId }, (tx) =>
+      tx.session.create({
+        data: {
+          userId,
+          tokenHash: hashSecret(secret),
+          userAgent: userAgent?.slice(0, 300),
+          expiresAt: new Date(Date.now() + SESSION_TTL_MS),
+        },
+        select: { id: true },
+      }),
+    );
+    return formatRefreshToken(userId, session.id, secret);
+  }
+
   private async requireSession(refreshToken: string | undefined) {
     const parsed = parseRefreshToken(refreshToken);
     if (!parsed) throw new UnauthorizedException();
@@ -115,7 +148,7 @@ export class AuthService implements OnModuleInit {
       }),
       memberships: await tx.tenantMember.findMany({
         where: { userId, isActive: true, tenant: { status: "ACTIVE" } },
-        select: { role: true, tenant: { select: { id: true, name: true, slug: true } } },
+        select: { role: true, tenant: { select: { id: true, name: true, slug: true, trialEndsAt: true, paidUntil: true, trialRevokedAt: true } } },
         orderBy: { tenant: { name: "asc" } },
       }),
     }));
@@ -132,13 +165,21 @@ export class AuthService implements OnModuleInit {
 
     return {
       user: { id: user.id, name: user.name, email: user.email, isSuperAdmin: user.isSuperAdmin },
-      tenants: memberships.map((m) => ({ ...m.tenant, role: m.role, openConversations: open.get(m.tenant.id) ?? 0 })),
+      tenants: memberships.map(({ role, tenant }) => ({
+        id: tenant.id,
+        name: tenant.name,
+        slug: tenant.slug,
+        role,
+        openConversations: open.get(tenant.id) ?? 0,
+        blockedBy: tenantBlock(tenant),
+      })),
     };
   }
 
   /**
    * Restaurante ou painel master. Super admin pode entrar num restaurante de que não é membro (acesso de suporte):
    * age como administrador e a entrada fica na auditoria da plataforma. O banco confere o super admin (RLS).
+   * Restaurante bloqueado (teste encerrado ou assinatura vencida) não recebe token; o acesso de suporte continua.
    */
   private async resolveContext(
     userId: string,
@@ -169,11 +210,16 @@ export class AuthService implements OnModuleInit {
 
 function resolveContext(tenants: AuthTenant[], request: SelectContextRequest): AuthContext {
   const toContext = (list: AuthTenant[]) => list.map((t) => ({ id: t.id, name: t.name, role: t.role }));
+  const blocked = () =>
+    new HttpException("O acesso a este restaurante depende do pagamento da assinatura.", HttpStatus.PAYMENT_REQUIRED);
   if (request.mode === "master") {
     if (tenants.length < 2) throw new ForbiddenException("O painel master exige acesso a mais de um restaurante.");
-    return { mode: "master", tenants: toContext(tenants) };
+    const open = tenants.filter((t) => !t.blockedBy);
+    if (open.length === 0) throw blocked();
+    return { mode: "master", tenants: toContext(open) };
   }
   const tenant = tenants.find((t) => t.id === request.tenantId);
   if (!tenant) throw new ForbiddenException("Sem acesso a este restaurante.");
+  if (tenant.blockedBy) throw blocked();
   return { mode: "tenant", tenants: toContext([tenant]) };
 }

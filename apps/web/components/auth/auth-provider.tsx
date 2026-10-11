@@ -1,6 +1,6 @@
 "use client";
 
-import type { AuthSession, SelectContextRequest } from "@dishdesk/shared";
+import type { AuthSession, SelectContextRequest, SignupRequest } from "@dishdesk/shared";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createContext, type ReactNode, useContext, useMemo } from "react";
 import { ApiError, apiDownload, apiRequest } from "@/lib/api";
@@ -10,10 +10,14 @@ type AuthValue = {
   session: AuthSession | null;
   loading: boolean;
   login(email: string, password: string): Promise<void>;
+  /** Cadastro pelo site: cria o restaurante em teste e já entra nele. */
+  signup(body: SignupRequest): Promise<void>;
   selectContext(request: SelectContextRequest): Promise<void>;
   logout(): Promise<void>;
   /** Volta para a escolha de restaurante sem sair da conta. */
   switchContext(): void;
+  /** Busca a sessão de novo (ex.: depois do pagamento, para saber se o restaurante foi liberado). */
+  reload(): Promise<AuthSession | null>;
   /** Chamada autenticada à API; renova o access token uma vez se ele tiver expirado. */
   request<T>(path: string, init?: { method?: string; body?: unknown }): Promise<T>;
   /** Arquivo da API (imagem ou áudio de uma mensagem), com a mesma renovação do token. */
@@ -73,6 +77,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       async login(email, password) {
         setSession(await apiRequest<AuthSession>("/auth/login", { method: "POST", body: { email, password } }));
       },
+      async signup(body) {
+        setSession(await apiRequest<AuthSession>("/auth/signup", { method: "POST", body }));
+      },
       async selectContext(request) {
         setSession(await apiRequest<AuthSession>("/auth/context", { method: "POST", body: request }));
       },
@@ -82,6 +89,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       },
       switchContext() {
         if (session) setSession({ ...session, context: null, accessToken: null });
+      },
+      reload() {
+        return queryClient.fetchQuery({ queryKey: SESSION_KEY, queryFn: fetchSession, staleTime: 0 });
       },
       request<T>(path: string, init: { method?: string; body?: unknown } = {}) {
         return authenticated((token) => apiRequest<T>(path, { ...init, token }));

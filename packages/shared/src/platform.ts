@@ -9,6 +9,11 @@ export type PlatformTenantDto = {
   slug: string;
   status: "ACTIVE" | "SUSPENDED";
   createdAt: string;
+  /** Só em quem se cadastrou pelo site: fim do teste, pago até, WhatsApp e CPF/CNPJ (sem pontuação) de contato. */
+  trialEndsAt: string | null;
+  paidUntil: string | null;
+  contactPhone: string | null;
+  taxId: string | null;
   activeMembers: number;
   connectedChannels: number;
   openConversations: number;

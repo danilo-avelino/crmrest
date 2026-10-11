@@ -456,6 +456,15 @@ function IntegrationPanel({ system, data, adding, onClose }: { system: System; d
   );
 }
 
+/**
+ * 402 ao conectar: a conta já passou por outro teste grátis e o restaurante acabou de ser bloqueado. Recarrega na
+ * tela de pagamento, que explica o motivo (a sessão é buscada de novo e já vem sem acesso).
+ */
+function leaveIfBlocked(error: unknown, tenantId: string): void {
+  // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- recarregar é o objetivo: a sessão em memória ainda tem acesso
+  if (error instanceof ApiError && error.status === 402) window.location.assign(`/assinatura?restaurante=${tenantId}`);
+}
+
 /** "Adicionar outro número" / "Conectar o …": ação em tomate do rodapé do modal. */
 function AddButton({ children, onClick, disabled }: { children: ReactNode; onClick: () => unknown; disabled?: boolean }) {
   return (
@@ -538,6 +547,7 @@ function WhatsAppSignup({ tenantId, ids, label }: { tenantId: string; ids: { app
       await queryClient.invalidateQueries({ queryKey: ["integrations", tenantId] });
       toast("WhatsApp conectado");
     } catch (error) {
+      leaveIfBlocked(error, tenantId);
       setFailure(error instanceof Error ? error.message : "Não foi possível conectar o WhatsApp.");
     }
   }
@@ -621,6 +631,7 @@ function IntegrationForm({ system, tenantId, onClose }: { system: System; tenant
       toast(`Integração com o ${label} adicionada`);
       onClose();
     } catch (error) {
+      leaveIfBlocked(error, tenantId);
       setFailure(error instanceof ApiError ? error.message : "Não foi possível conectar.");
     }
   });

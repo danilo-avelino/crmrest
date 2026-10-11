@@ -7,6 +7,7 @@ import {
   type IntegrationDto,
   type IntegrationsDto,
   type IntegrationType,
+  TRIAL_REUSE_DAYS,
   type WhatsAppSignupRequest,
 } from "@dishdesk/shared";
 import { InjectQueue } from "@nestjs/bullmq";
@@ -14,6 +15,7 @@ import {
   ConflictException,
   ForbiddenException,
   HttpException,
+  HttpStatus,
   Inject,
   Injectable,
   Logger,
@@ -132,6 +134,10 @@ export class IntegrationsService {
       await this.save(state.tenantId, state.userId, await this.verify({ type: "INSTAGRAM", accessToken }));
       return back({ instagram: "conectado" });
     } catch (error) {
+      // Teste grátis repetido: o restaurante acabou de ser bloqueado, e a tela de pagamento explica o motivo.
+      if (error instanceof HttpException && error.getStatus() === HttpStatus.PAYMENT_REQUIRED) {
+        return `${this.env.WEB_ORIGIN}/assinatura?restaurante=${state.tenantId}`;
+      }
       const reason = error instanceof Error ? error.message : String(error);
       this.logger.warn(`Login do Instagram não concluído: ${reason}`);
       return back({ motivo: error instanceof HttpException ? reason : `Não foi possível conectar o Instagram: ${reason.replace(/\.$/, "")}.` });
@@ -182,6 +188,7 @@ export class IntegrationsService {
   }
 
   private async save(tenantId: string, userId: string, verified: VerifiedChannel): Promise<IntegrationDto> {
+    await this.claim(tenantId, userId, verified);
     const data = { name: verified.name, credentials: encrypt(JSON.stringify(verified.secrets), this.key), status: "CONNECTED" as const };
     try {
       return await this.db.withTenants({ tenantIds: [tenantId], userId }, async (tx) => {
@@ -196,6 +203,28 @@ export class IntegrationsService {
       if ((error as { code?: string }).code === "P2002") throw new ConflictException("Esta conta já está conectada a outro restaurante.");
       throw error;
     }
+  }
+
+  /**
+   * Conta que está em outro restaurante (app.claim_channel). Trava do teste grátis repetido: se este restaurante está
+   * em teste e a conta já passou por outro teste há menos de TRIAL_REUSE_DAYS dias, o teste daqui é encerrado. Roda
+   * numa transação própria: o bloqueio tem de ficar gravado mesmo com a conexão recusada.
+   */
+  private async claim(tenantId: string, userId: string, verified: VerifiedChannel): Promise<void> {
+    const empty = encrypt(JSON.stringify({}), this.key);
+    const [claim] = await this.db.withTenants({ tenantIds: [tenantId], userId }, (tx) =>
+      tx.$queryRaw<{ result: "free" | "taken" | "trial_used" }[]>`
+        SELECT app.claim_channel(
+          ${tenantId}::uuid, ${verified.type}::"ChannelType", ${verified.externalId}, ${TRIAL_REUSE_DAYS}::int, ${empty}::bytea
+        ) AS result`,
+    );
+    if (claim?.result === "trial_used") {
+      throw new HttpException(
+        `Esta conta já foi usada em um teste grátis nos últimos ${TRIAL_REUSE_DAYS} dias. Para continuar, assine um plano.`,
+        HttpStatus.PAYMENT_REQUIRED,
+      );
+    }
+    if (claim?.result === "taken") throw new ConflictException("Esta conta já está conectada a outro restaurante.");
   }
 
   private async verify(body: AddIntegrationRequest): Promise<VerifiedChannel> {

@@ -1,5 +1,7 @@
 "use client";
 
+import { TRIAL_DAYS } from "@dishdesk/shared";
+import Link from "next/link";
 import { useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
 import { LogoMark } from "@/components/brand/logo-mark";
@@ -128,7 +130,12 @@ export function LoginForm() {
       )}
 
       <p className="mt-auto pt-8 text-[12px] text-ink-3">
-        Não tem acesso? Solicite ao <span className="font-medium text-ink-2">admin do restaurante</span>.
+        Não tem acesso? Solicite ao <span className="font-medium text-ink-2">admin do restaurante</span>. Ainda não usa o Dish
+        Desk?{" "}
+        <Link href="/cadastro" className="font-medium text-ink-2 underline underline-offset-2">
+          Teste grátis por {TRIAL_DAYS} dias
+        </Link>
+        .
       </p>
     </section>
   );

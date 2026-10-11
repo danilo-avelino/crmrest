@@ -1,5 +1,6 @@
 import type { TenantRole } from "@dishdesk/database/enums";
 import { z } from "zod";
+import type { TenantBlock } from "./billing.js";
 
 export const LoginRequest = z.object({
   email: z.email().transform((email) => email.toLowerCase()),
@@ -17,8 +18,18 @@ export type SelectContextRequest = z.infer<typeof SelectContextRequest>;
 /** isSuperAdmin: equipe da plataforma (painel Super Admin, E16). */
 export type AuthUser = { id: string; name: string; email: string; isSuperAdmin: boolean };
 
-/** Restaurante em que o usuário tem acesso, como aparece na tela "Escolha o restaurante". */
-export type AuthTenant = { id: string; name: string; slug: string; role: TenantRole; openConversations: number };
+/**
+ * Restaurante em que o usuário tem acesso, como aparece na tela "Escolha o restaurante".
+ * blockedBy: o teste acabou ou a assinatura venceu; só entra depois de pagar.
+ */
+export type AuthTenant = {
+  id: string;
+  name: string;
+  slug: string;
+  role: TenantRole;
+  openConversations: number;
+  blockedBy: TenantBlock | null;
+};
 
 /** support: super admin num restaurante de que não é membro (acesso de suporte, auditado); age como admin. */
 export type AuthContext = {

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { decrypt, parseEncryptionKey } from "@dishdesk/database";
@@ -308,5 +309,86 @@ describe("Integrações (Configurações)", () => {
     await add({ type: "WHATSAPP", phoneNumberId: "abc", wabaId: "999000222", accessToken: "token-do-system-user-123" }).expect(400);
     await add({ type: "TELEGRAM", token: "x" }).expect(400);
     expect(graph.requests.length).toBe(before);
+  });
+
+  // Por último: fx (quem conecta) e other (quem já usou a conta) viram restaurantes cadastrados pelo site.
+  describe("teste grátis repetido", () => {
+    const days = (count: number) => new Date(Date.now() + count * 24 * 60 * 60 * 1000);
+    const tenant = (id: string) => admin.tenant.findUniqueOrThrow({ where: { id } });
+    const inTrial = (id: string, trialEndsAt: Date) =>
+      admin.tenant.update({ where: { id }, data: { trialEndsAt, paidUntil: null, trialRevokedAt: null } });
+    const storeOf = (tenantId: string) =>
+      admin.channel.create({
+        data: { tenantId, type: "IFOOD", name: "Loja", externalId: randomUUID(), credentials: Buffer.from("x"), status: "CONNECTED" },
+      });
+    const channel = (id: string) => admin.channel.findUniqueOrThrow({ where: { id } });
+
+    it("conta de um teste encerrado há menos de 60 dias: o teste daqui é encerrado e o restaurante fica bloqueado", async () => {
+      await inTrial(other.tenant.id, days(-10));
+      await inTrial(fx.tenant.id, days(10));
+
+      const { body } = await add({ type: "IFOOD", merchantId: other.ifood.externalId }).expect(402);
+      expect(body.message).toBe("Esta conta já foi usada em um teste grátis nos últimos 60 dias. Para continuar, assine um plano.");
+      const blocked = await tenant(fx.tenant.id);
+      expect(blocked.trialRevokedAt).not.toBeNull();
+      expect(blocked.trialEndsAt!.getTime()).toBeLessThanOrEqual(Date.now());
+      expect(await channel(other.ifood.id)).toMatchObject({ tenantId: other.tenant.id, externalId: other.ifood.externalId, status: "CONNECTED" });
+
+      const agent = request.agent(app.getHttpServer());
+      const login = await agent.post("/api/auth/login").send({ email: fx.user.email, password: PASSWORD }).expect(200);
+      expect(login.body.tenants).toMatchObject([{ id: fx.tenant.id, blockedBy: "reused" }]);
+      await agent.post("/api/auth/context").send({ mode: "tenant", tenantId: fx.tenant.id }).expect(402);
+    });
+
+    it("login do Instagram com a conta de outro teste: volta direto para a tela de pagamento", async () => {
+      // A conta conectada nos testes acima passa a ser do outro restaurante.
+      await admin.channel.updateMany({ where: { type: "INSTAGRAM", externalId: "17841499990001" }, data: { tenantId: other.tenant.id } });
+      await inTrial(fx.tenant.id, days(10));
+      const login = await request(app.getHttpServer())
+        .get(`/api/integrations/${fx.tenant.id}/instagram/login`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(200);
+      const state = new URL(login.body.url).searchParams.get("state") ?? "";
+
+      const { headers } = await request(app.getHttpServer())
+        .get(`/api/integrations/instagram/callback?${new URLSearchParams({ code: "codigo-do-login", state }).toString()}`)
+        .expect(302);
+      expect(headers.location).toBe(`http://painel.teste/assinatura?restaurante=${fx.tenant.id}`);
+      expect((await tenant(fx.tenant.id)).trialRevokedAt).not.toBeNull();
+    });
+
+    it("depois de pagar, a conta sai do teste antigo (que fica com o histórico) e conecta aqui", async () => {
+      await admin.tenant.update({ where: { id: fx.tenant.id }, data: { paidUntil: days(30) } });
+
+      const { body } = await add({ type: "IFOOD", merchantId: other.ifood.externalId }).expect(201);
+      expect(body).toMatchObject({ externalId: other.ifood.externalId, status: "CONNECTED" });
+      const released = await channel(other.ifood.id);
+      expect(released).toMatchObject({ tenantId: other.tenant.id, externalId: `${other.ifood.externalId}#${other.ifood.id}`, status: "DISCONNECTED" });
+      expect(JSON.parse(decrypt(released.credentials, parseEncryptionKey(process.env.ENCRYPTION_KEY ?? "")))).toEqual({});
+    });
+
+    it("teste antigo encerrado há 60 dias ou mais: a conta entra num teste novo", async () => {
+      const store = await storeOf(other.tenant.id);
+      await inTrial(other.tenant.id, days(-61));
+      await inTrial(fx.tenant.id, days(10));
+
+      await add({ type: "IFOOD", merchantId: store.externalId }).expect(201);
+      expect(await tenant(fx.tenant.id)).toMatchObject({ trialRevokedAt: null });
+      expect((await channel(store.id)).status).toBe("DISCONNECTED");
+    });
+
+    it("conta em uso num teste em andamento continua do outro restaurante, mesmo para quem paga", async () => {
+      const store = await storeOf(other.tenant.id);
+      await inTrial(other.tenant.id, days(5));
+      await admin.tenant.update({ where: { id: fx.tenant.id }, data: { paidUntil: days(30) } });
+
+      const { body } = await add({ type: "IFOOD", merchantId: store.externalId }).expect(409);
+      expect(body.message).toBe("Esta conta já está conectada a outro restaurante.");
+      expect((await channel(store.id)).status).toBe("CONNECTED");
+
+      // Desconectada lá, pode ser conectada aqui.
+      await admin.channel.update({ where: { id: store.id }, data: { status: "DISCONNECTED" } });
+      await add({ type: "IFOOD", merchantId: store.externalId }).expect(201);
+    });
   });
 });

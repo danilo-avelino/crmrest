@@ -25,6 +25,11 @@ enum TenantRole {
   AGENT
 }
 
+enum BillingPlan {
+  MONTHLY
+  ANNUAL
+}
+
 model Tenant {
   id        String       @id @default(uuid(7)) @db.Uuid
   name      String
@@ -33,7 +38,18 @@ model Tenant {
   settings  Json         @default("{}") // horário de funcionamento, textos automáticos, links para pedir (orderLinks)...
   createdAt DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
 
+  // Cadastro pelo site: teste grátis até trialEndsAt e, depois, acesso até paidUntil. Sem trialEndsAt (restaurante
+  // criado pela plataforma) não há teste nem cobrança. trialRevokedAt: teste encerrado antes da hora porque um canal
+  // conectado já tinha passado por outro teste grátis (app.claim_channel).
+  trialEndsAt      DateTime? @map("trial_ends_at") @db.Timestamptz(3)
+  trialRevokedAt   DateTime? @map("trial_revoked_at") @db.Timestamptz(3)
+  paidUntil        DateTime? @map("paid_until") @db.Timestamptz(3)
+  contactPhone     String?   @map("contact_phone") // WhatsApp de quem se cadastrou (E.164)
+  taxId            String?   @map("tax_id") // CPF ou CNPJ para a nota fiscal, sem pontuação
+  stripeCustomerId String?   @unique @map("stripe_customer_id")
+
   members             TenantMember[]
+  billingPayments     BillingPayment[]
   channels            Channel[]
   contacts            Contact[]
   contactIdentities   ContactIdentity[]
@@ -100,6 +116,21 @@ model TenantMember {
   @@id([tenantId, userId])
   @@index([userId])
   @@map("tenant_members")
+}
+
+// Pagamento confirmado pela Stripe. O id é o da fatura (mensal) ou da sessão de checkout (anual): o mesmo evento
+// reenviado não conta duas vezes. Só a função app.record_tenant_payment grava.
+model BillingPayment {
+  id          String      @id
+  tenantId    String      @map("tenant_id") @db.Uuid
+  plan        BillingPlan
+  amountCents Int         @map("amount_cents")
+  createdAt   DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("billing_payments")
 }
 
 // ---------- Canais ----------

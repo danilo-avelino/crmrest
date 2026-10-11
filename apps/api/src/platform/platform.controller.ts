@@ -102,7 +102,17 @@ export class PlatformController {
     const tenants = await this.db.withTenants({ tenantIds: [], userId }, async (tx) => {
       await requireSuperAdmin(tx, userId);
       return tx.tenant.findMany({
-        select: { id: true, name: true, slug: true, status: true, createdAt: true },
+        select: {
+          id: true,
+          name: true,
+          slug: true,
+          status: true,
+          createdAt: true,
+          trialEndsAt: true,
+          paidUntil: true,
+          contactPhone: true,
+          taxId: true,
+        },
         orderBy: { name: "asc" },
       });
     });
@@ -130,6 +140,10 @@ export class PlatformController {
       slug: t.slug,
       status: t.status,
       createdAt: t.createdAt.toISOString(),
+      trialEndsAt: t.trialEndsAt?.toISOString() ?? null,
+      paidUntil: t.paidUntil?.toISOString() ?? null,
+      contactPhone: t.contactPhone,
+      taxId: t.taxId,
       activeMembers: m.get(t.id) ?? 0,
       connectedChannels: c.get(t.id) ?? 0,
       openConversations: o.get(t.id) ?? 0,

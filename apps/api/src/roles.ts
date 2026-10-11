@@ -31,6 +31,7 @@ import { QuickRepliesController } from "./settings/quick-replies.controller.js";
 import { SettingsController } from "./settings/settings.controller.js";
 import { SettingsService } from "./settings/settings.service.js";
 import { MetaWebhookController } from "./webhooks/meta-webhook.controller.js";
+import { StripeWebhookController } from "./webhooks/stripe-webhook.controller.js";
 
 // Um módulo por papel de processo (§3.2); o AppModule monta os do APP_ROLE.
 
@@ -52,8 +53,8 @@ import { MetaWebhookController } from "./webhooks/meta-webhook.controller.js";
 })
 export class ApiRoleModule {}
 
-/** gateway: endpoints públicos dos canais; só valida e enfileira. */
-@Module({ controllers: [MetaWebhookController] })
+/** gateway: endpoints públicos dos canais (só valida e enfileira) e o webhook de pagamento da Stripe. */
+@Module({ controllers: [MetaWebhookController, StripeWebhookController] })
 export class GatewayRoleModule {}
 
 /** realtime: Socket.IO para os painéis. */

@@ -1,6 +1,6 @@
 "use client";
 
-import { CreateTenantRequest, type PlatformTenantDto, slugify } from "@dishdesk/shared";
+import { CreateTenantRequest, formatPhone, formatTaxId, type PlatformTenantDto, slugify, tenantBlock } from "@dishdesk/shared";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertCircleIcon, LogInIcon, PlusIcon, TriangleAlertIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -209,11 +209,15 @@ function TenantRow({ tenant }: { tenant: PlatformTenantDto }) {
       <div className="min-w-0">
         <div className={cn("truncate font-medium", suspended && "text-ink-3")}>{tenant.name}</div>
         <div className="truncate text-[12px] text-ink-3">{tenant.slug}</div>
+        {/* Só em quem se cadastrou pelo site: WhatsApp de contato e CPF ou CNPJ para a nota fiscal. */}
+        {(tenant.contactPhone || tenant.taxId) && (
+          <div className="truncate text-[12px] text-ink-3 tabular-nums">
+            {[tenant.contactPhone && formatPhone(tenant.contactPhone), tenant.taxId && formatTaxId(tenant.taxId)].filter(Boolean).join(" · ")}
+          </div>
+        )}
         {error && <p className="text-[11px] text-tomate">{error}</p>}
       </div>
-      <span>
-        {suspended ? <StatusBadge tone="pending">Suspenso</StatusBadge> : <StatusBadge tone="resolved">Ativo</StatusBadge>}
-      </span>
+      <div>{suspended ? <StatusBadge tone="pending">Suspenso</StatusBadge> : <AccessStatus tenant={tenant} />}</div>
       <Metric value={tenant.activeMembers} />
       <Metric value={tenant.connectedChannels} />
       <Metric value={tenant.openConversations} />
@@ -268,6 +272,27 @@ function TenantRow({ tenant }: { tenant: PlatformTenantDto }) {
         </DialogContent>
       </Dialog>
     </li>
+  );
+}
+
+/** Situação de quem se cadastrou pelo site (em teste, pago ou bloqueado até pagar); os outros são só "Ativo". */
+function AccessStatus({ tenant }: { tenant: PlatformTenantDto }) {
+  if (!tenant.trialEndsAt) return <StatusBadge tone="resolved">Ativo</StatusBadge>;
+  const until = tenant.paidUntil ?? tenant.trialEndsAt;
+  const block = tenantBlock({ trialEndsAt: new Date(tenant.trialEndsAt), paidUntil: tenant.paidUntil ? new Date(tenant.paidUntil) : null });
+  return (
+    <>
+      {block ? (
+        <StatusBadge tone="open">Bloqueado</StatusBadge>
+      ) : tenant.paidUntil ? (
+        <StatusBadge tone="resolved">Pago</StatusBadge>
+      ) : (
+        <StatusBadge tone="pending">Em teste</StatusBadge>
+      )}
+      <div className="mt-0.5 text-[10.5px] text-ink-3 tabular-nums">
+        {block ? "desde" : "até"} {fullDate(until)}
+      </div>
+    </>
   );
 }
 

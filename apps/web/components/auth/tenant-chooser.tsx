@@ -2,6 +2,7 @@
 
 import type { SelectContextRequest } from "@dishdesk/shared";
 import { ChevronRightIcon, LayersIcon, LoaderCircleIcon } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { type ReactNode, useEffect, useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
 import { usePendingAction } from "@/hooks/use-pending-action";
@@ -11,10 +12,12 @@ import { cn } from "@/lib/utils";
 // Cores das iniciais na ordem do design.
 const BADGE_COLORS = ["bg-tomate", "bg-[#1A2D3A]", "bg-[#2A1A34]"];
 const ROLE_LABEL = { ADMIN: "Admin", AGENT: "Atendente" } as const;
+const BLOCK_LABEL = { trial: "teste encerrado", payment: "assinatura vencida", reused: "teste já utilizado" } as const;
 
 /** Painel direito (escuro) do board "Login · Escolha de restaurante". */
 export function TenantChooser() {
   const { session, selectContext } = useAuth();
+  const router = useRouter();
   const [choosing, setChoosing] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -67,11 +70,16 @@ export function TenantChooser() {
                   badge={<span className="font-heading text-[14px] font-bold tracking-[-0.5px] text-white">{initials(tenant.name)}</span>}
                   badgeClassName={BADGE_COLORS[index % BADGE_COLORS.length]!}
                   title={tenant.name}
-                  subtitle={`${ROLE_LABEL[tenant.role]} · ${openLabel(tenant.openConversations)}`}
-                  active={tenant.openConversations > 0}
+                  subtitle={`${ROLE_LABEL[tenant.role]} · ${tenant.blockedBy ? BLOCK_LABEL[tenant.blockedBy] : openLabel(tenant.openConversations)}`}
+                  active={!tenant.blockedBy && tenant.openConversations > 0}
                   loading={choosing === tenant.id}
                   disabled={pending}
-                  onClick={() => choose({ mode: "tenant", tenantId: tenant.id }, tenant.id)}
+                  // Bloqueado (teste encerrado ou assinatura vencida): em vez de entrar, vai para o pagamento.
+                  onClick={() =>
+                    tenant.blockedBy
+                      ? router.push(`/assinatura?restaurante=${tenant.id}`)
+                      : choose({ mode: "tenant", tenantId: tenant.id }, tenant.id)
+                  }
                 />
               ))}
 

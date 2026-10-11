@@ -1,4 +1,4 @@
-import { type AuthSession, LoginRequest, SelectContextRequest } from "@dishdesk/shared";
+import { type AuthSession, LoginRequest, SelectContextRequest, SignupRequest } from "@dishdesk/shared";
 import { Body, Controller, Get, HttpCode, Inject, Post, Req, Res, UseGuards } from "@nestjs/common";
 import { Throttle, ThrottlerGuard } from "@nestjs/throttler";
 import type { Request, Response } from "express";
@@ -28,13 +28,22 @@ export class AuthController {
     @Res({ passthrough: true }) response: Response,
   ): Promise<AuthSession> {
     const { refreshToken, session } = await this.auth.login(body.email, body.password, request.headers["user-agent"]);
-    response.cookie(SESSION_COOKIE, refreshToken, {
-      httpOnly: true,
-      sameSite: "lax",
-      secure: this.env.NODE_ENV === "production",
-      path: SESSION_COOKIE_PATH,
-      maxAge: 30 * 24 * 60 * 60 * 1000,
-    });
+    this.setSessionCookie(response, refreshToken);
+    return session;
+  }
+
+  /** Cadastro pelo site (teste grátis). Não confirma o e-mail: o limite por hora segura os cadastros em massa. */
+  @Public()
+  @Post("signup")
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ default: { limit: 10, ttl: 60 * 60_000 } })
+  async signup(
+    @Body(new ZodPipe(SignupRequest)) body: SignupRequest,
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<AuthSession> {
+    const { refreshToken, session } = await this.auth.signup(body, request.headers["user-agent"]);
+    this.setSessionCookie(response, refreshToken);
     return session;
   }
 
@@ -67,9 +76,19 @@ export class AuthController {
   me(@CurrentAuth() auth: RequestAuth) {
     return { userId: auth.userId, mode: auth.mode, tenants: auth.tenants };
   }
+
+  private setSessionCookie(response: Response, refreshToken: string): void {
+    response.cookie(SESSION_COOKIE, refreshToken, {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: this.env.NODE_ENV === "production",
+      path: SESSION_COOKIE_PATH,
+      maxAge: 30 * 24 * 60 * 60 * 1000,
+    });
+  }
 }
 
-function sessionCookie(request: Request): string | undefined {
+export function sessionCookie(request: Request): string | undefined {
   const cookies = request.cookies as Record<string, string> | undefined;
   return cookies?.[SESSION_COOKIE];
 }
