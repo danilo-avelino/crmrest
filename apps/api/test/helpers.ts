@@ -183,7 +183,8 @@ export async function startMockGraph() {
     const request = { method: req.method ?? "GET", path: req.url ?? "", authorization: req.headers.authorization, body: parsed };
     requests.push(request);
     const { status, body } = reply(request);
-    res.writeHead(status, { "Content-Type": "application/json" }).end(JSON.stringify(body));
+    // Buffer = o download de um arquivo de mídia, devolvido como veio.
+    res.writeHead(status, { "Content-Type": "application/json" }).end(Buffer.isBuffer(body) ? body : JSON.stringify(body));
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   return {

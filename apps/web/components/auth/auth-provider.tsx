@@ -3,7 +3,7 @@
 import type { AuthSession, SelectContextRequest } from "@dishdesk/shared";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createContext, type ReactNode, useContext, useMemo } from "react";
-import { ApiError, apiRequest } from "@/lib/api";
+import { ApiError, apiDownload, apiRequest } from "@/lib/api";
 
 type AuthValue = {
   /** null depois de carregar = sem sessão. */
@@ -16,6 +16,8 @@ type AuthValue = {
   switchContext(): void;
   /** Chamada autenticada à API; renova o access token uma vez se ele tiver expirado. */
   request<T>(path: string, init?: { method?: string; body?: unknown }): Promise<T>;
+  /** Arquivo da API (imagem ou áudio de uma mensagem), com a mesma renovação do token. */
+  download(path: string): Promise<Blob>;
 };
 
 export const SESSION_KEY = ["auth", "session"] as const;
@@ -53,6 +55,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       queryClient.setQueryData(SESSION_KEY, next);
     };
     const token = () => queryClient.getQueryData<AuthSession | null>(SESSION_KEY)?.accessToken ?? null;
+    const authenticated = async <T,>(call: (token: string | null) => Promise<T>): Promise<T> => {
+      try {
+        return await call(token());
+      } catch (error) {
+        if (!(error instanceof ApiError) || error.status !== 401) throw error;
+        // Várias chamadas com 401 ao mesmo tempo dividem uma única renovação.
+        const renewed = await queryClient.fetchQuery({ queryKey: SESSION_KEY, queryFn: fetchSession, staleTime: 0 });
+        if (!renewed?.accessToken) throw error;
+        return call(renewed.accessToken);
+      }
+    };
 
     return {
       session,
@@ -70,16 +83,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       switchContext() {
         if (session) setSession({ ...session, context: null, accessToken: null });
       },
-      async request<T>(path: string, init: { method?: string; body?: unknown } = {}) {
-        try {
-          return await apiRequest<T>(path, { ...init, token: token() });
-        } catch (error) {
-          if (!(error instanceof ApiError) || error.status !== 401) throw error;
-          // Várias chamadas com 401 ao mesmo tempo dividem uma única renovação.
-          const renewed = await queryClient.fetchQuery({ queryKey: SESSION_KEY, queryFn: fetchSession, staleTime: 0 });
-          if (!renewed?.accessToken) throw error;
-          return apiRequest<T>(path, { ...init, token: renewed.accessToken });
-        }
+      request<T>(path: string, init: { method?: string; body?: unknown } = {}) {
+        return authenticated((token) => apiRequest<T>(path, { ...init, token }));
+      },
+      download(path) {
+        return authenticated((token) => apiDownload(path, token));
       },
     };
   }, [session, isPending, queryClient]);

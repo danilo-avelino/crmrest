@@ -18,6 +18,7 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
   UnprocessableEntityException,
 } from "@nestjs/common";
@@ -38,6 +39,7 @@ const MESSAGES_LIMIT = 200;
 
 @Injectable()
 export class ConversationsService {
+  private readonly logger = new Logger(ConversationsService.name);
   private readonly key: Buffer;
 
   constructor(
@@ -108,6 +110,35 @@ export class ConversationsService {
         : [];
       return { messages, orders: Object.fromEntries(orders.map((order) => [order.id, toOrderDto(order)])) };
     });
+  }
+
+  /**
+   * Arquivo (imagem, áudio...) de uma mensagem recebida. O Dish Desk não guarda mídia: busca na plataforma a cada pedido,
+   * pelo id (WhatsApp) ou pelo endereço (Instagram) que veio no webhook. Só funciona enquanto a plataforma guardar o arquivo.
+   */
+  async media(auth: RequestAuth, conversationId: string, messageId: string): Promise<{ body: ReadableStream; mimeType: string }> {
+    const message = await this.db.withTenants(auth.scope, (tx) =>
+      tx.message.findFirst({
+        where: { id: messageId, conversationId },
+        select: { content: true, channel: { select: { type: true, credentials: true } } },
+      }),
+    );
+    const media = (message?.content as MessageContent | undefined)?.media;
+    if (!message || !media) throw new NotFoundException("Esta mensagem não tem arquivo.");
+    try {
+      let file: Response;
+      if (media.url) file = await fetch(media.url, { signal: AbortSignal.timeout(60_000) });
+      else if (media.externalMediaId && message.channel.type === "WHATSAPP") {
+        file = await this.connectors.whatsapp.fetchMedia(media.externalMediaId, this.connectors.secrets(message.channel.credentials).accessToken);
+      } else throw new Error("mídia sem origem");
+      if (!file.ok || !file.body) throw new Error(`HTTP ${file.status}`);
+      // O Instagram não informa o tipo no webhook ("image/*"): vale o que o arquivo diz.
+      const mimeType = media.mimeType.includes("*") ? (file.headers.get("content-type") ?? "application/octet-stream") : media.mimeType;
+      return { body: file.body, mimeType };
+    } catch (error) {
+      this.logger.warn(`Mídia da mensagem ${messageId} indisponível: ${error instanceof Error ? error.message : String(error)}`);
+      throw new NotFoundException("O arquivo não está mais disponível.");
+    }
   }
 
   /** Grava a resposta como pendente e enfileira o envio; o status chega depois pelo canal. */

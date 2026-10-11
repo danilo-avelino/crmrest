@@ -268,6 +268,20 @@ export class WhatsAppConnector implements ChannelConnector {
     });
   }
 
+  /**
+   * Arquivo de uma mensagem recebida (imagem, áudio...). O id que veio no webhook vira um endereço que vale 5 minutos,
+   * baixado com o token do canal. A Meta guarda o arquivo por poucos dias; depois disso, recusa o id.
+   */
+  async fetchMedia(mediaId: string, accessToken: string): Promise<Response> {
+    if (this.env.CHANNELS_DRY_RUN) throw new Error("Mídia indisponível na simulação.");
+    const headers = { Authorization: `Bearer ${accessToken}` };
+    const { url } = (await graph(fetch(`${this.env.META_GRAPH_URL}/${mediaId}`, { headers, signal: AbortSignal.timeout(15_000) }))) as {
+      url?: string;
+    };
+    if (!url) throw new Error("Meta: a resposta não trouxe o endereço do arquivo.");
+    return fetch(url, { headers, signal: AbortSignal.timeout(60_000) });
+  }
+
   private async post(target: SendTarget, payload: object): Promise<{ externalMessageId: string }> {
     if (this.env.CHANNELS_DRY_RUN) return { externalMessageId: `dry-run.${randomUUID()}` };
 

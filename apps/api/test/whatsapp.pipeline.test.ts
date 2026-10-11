@@ -319,6 +319,48 @@ describe("pipeline do WhatsApp", () => {
     }
   });
 
+  it("imagem recebida: a API busca o arquivo na Meta com o token do canal, enquanto a Meta o guardar", async () => {
+    const image = metaPayload(fx.whatsapp.externalId, {
+      contacts: [{ profile: { name: "Cliente Foto" }, wa_id: "5511911110010" }],
+      messages: [{ from: "5511911110010", id: "wamid.FOTO", timestamp: nowSeconds(), type: "image", image: { id: "MEDIA1", mime_type: "image/jpeg" } }],
+    });
+    await postMetaWebhook(app, image).expect(200);
+    await drainQueues(app);
+    const messages = await admin.message.findMany({
+      where: { tenantId: fx.tenant.id, conversation: { contact: { phone: "+5511911110010" } } },
+      orderBy: { createdAt: "asc" },
+    });
+    const photo = messages.find((m) => m.externalMessageId === "wamid.FOTO")!;
+    expect(photo).toMatchObject({ type: "IMAGE", content: { media: { mimeType: "image/jpeg", externalMediaId: "MEDIA1" } } });
+    const media = (messageId: string) =>
+      request(app.getHttpServer())
+        .get(`/api/conversations/${photo.conversationId}/messages/${messageId}/media`)
+        .set("Authorization", `Bearer ${token}`);
+
+    graph.reply((req) =>
+      req.path === "/MEDIA1"
+        ? { status: 200, body: { url: `${graph.url}/arquivo/MEDIA1`, mime_type: "image/jpeg" } }
+        : { status: 200, body: Buffer.from("bytes-da-foto") },
+    );
+    try {
+      const response = await media(photo.id).expect(200);
+      expect(response.headers["content-type"]).toBe("image/jpeg");
+      expect((response.body as Buffer).toString()).toBe("bytes-da-foto");
+      expect(graph.requests.slice(-2).map((r) => [r.method, r.path, r.authorization])).toEqual([
+        ["GET", "/MEDIA1", "Bearer token-de-teste"],
+        ["GET", "/arquivo/MEDIA1", "Bearer token-de-teste"],
+      ]);
+
+      // Passado o prazo da Meta, o id deixa de valer.
+      graph.reply(() => ({ status: 400, body: { error: { message: "Unsupported get request." } } }));
+      expect((await media(photo.id).expect(404)).body.message).toBe("O arquivo não está mais disponível.");
+    } finally {
+      graph.resetReply();
+    }
+    // Mensagem sem mídia (o menu de atendimento).
+    expect((await media(messages.at(-1)!.id).expect(404)).body.message).toBe("Esta mensagem não tem arquivo.");
+  });
+
   it("painel conectado recebe o aviso em tempo real", async () => {
     const port = (app.getHttpServer().address() as AddressInfo).port;
     const socket = io(`http://127.0.0.1:${port}`, { auth: { token }, transports: ["websocket"] });

@@ -5,7 +5,6 @@ import {
   AlertCircleIcon,
   CheckCircle2Icon,
   ClockIcon,
-  FileIcon,
   MapPinIcon,
   SparklesIcon,
   StickyNoteIcon,
@@ -14,6 +13,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
 import { Avatar } from "@/components/inbox/bits";
+import { MessageMedia } from "@/components/inbox/message-media";
 import { OrderCard } from "@/components/inbox/order-card";
 import { usePendingAction } from "@/hooks/use-pending-action";
 import { ApiError } from "@/lib/api";
@@ -41,14 +41,6 @@ const AUTOMATION_LABEL: Record<NonNullable<MessageContent["automation"]>, string
 
 const SUCCESS_EVENTS = new Set<MessageContent["event"]>(["phone_collected", "contacts_merged", "rating"]);
 const WARNING_EVENTS = new Set<MessageContent["event"]>(["phone_pending", "opt_out", "merge_conflict", "order_ambiguous"]);
-
-const MEDIA_LABEL: Partial<Record<MessageDto["type"], string>> = {
-  IMAGE: "Imagem",
-  AUDIO: "Áudio",
-  VIDEO: "Vídeo",
-  DOCUMENT: "Documento",
-  STICKER: "Figurinha",
-};
 
 /** Linha do tempo da conversa: mensagens, eventos, notas e pedidos (board Inbox → "Mensagens"). */
 export function MessageTimeline({
@@ -165,17 +157,10 @@ function Outbound({ message }: { message: MessageDto }) {
 }
 
 function MessageBody({ message }: { message: MessageDto }) {
-  const { text, media, location } = message.content;
-  const mediaLabel = MEDIA_LABEL[message.type];
+  const { text, location } = message.content;
   return (
     <>
-      {mediaLabel && (
-        <div className="mb-1 flex items-center gap-1.5 text-[12px] opacity-80">
-          <FileIcon className="size-3.5" aria-hidden />
-          {mediaLabel}
-          {media?.filename && ` · ${media.filename}`}
-        </div>
-      )}
+      <MessageMedia message={message} />
       {location && (
         <a
           href={`https://www.google.com/maps?q=${location.latitude},${location.longitude}`}

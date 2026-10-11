@@ -1,3 +1,4 @@
+import { Readable } from "node:stream";
 import {
   type ConversationCounts,
   ConversationListQuery,
@@ -9,7 +10,7 @@ import {
   UpdateConversationRequest,
   type WhatsAppTemplate,
 } from "@dishdesk/shared";
-import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Query } from "@nestjs/common";
+import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Query, StreamableFile } from "@nestjs/common";
 import { CurrentAuth, type RequestAuth } from "../auth/auth.decorators.js";
 import { ZodPipe } from "../common/zod.pipe.js";
 import { ConversationsService } from "./conversations.service.js";
@@ -60,6 +61,16 @@ export class ConversationsController {
     @CurrentAuth() auth: RequestAuth,
   ): Promise<MessageDto> {
     return this.conversations.sendText(auth, id, body.text);
+  }
+
+  @Get(":id/messages/:messageId/media")
+  async media(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Param("messageId", ParseUUIDPipe) messageId: string,
+    @CurrentAuth() auth: RequestAuth,
+  ): Promise<StreamableFile> {
+    const { body, mimeType } = await this.conversations.media(auth, id, messageId);
+    return new StreamableFile(Readable.fromWeb(body), { type: mimeType });
   }
 
   @Post(":id/messages/:messageId/retry")
