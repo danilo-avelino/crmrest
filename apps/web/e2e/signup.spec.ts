@@ -46,7 +46,8 @@ async function fillSignup(page: Page, restaurant: string, email: string, taxId: 
 test("cadastro pelo site entra na Inbox em teste; com o teste encerrado, cai na tela de pagamento", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("link", { name: "Testar grátis por 15 dias" }).click();
-  await expect(page).toHaveURL(/\/cadastro$/);
+  // Espera a página carregar (como o goto): digitar antes de o React assumir o formulário perde o que foi digitado.
+  await page.waitForURL(/\/cadastro$/);
   await expect(page.getByRole("heading", { name: "Teste grátis por 15 dias" })).toBeVisible();
 
   await fillSignup(page, `Cantina E2E ${suffix}`, emails.first, "123.456.789-00");
