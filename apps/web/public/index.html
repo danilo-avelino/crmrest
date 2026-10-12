@@ -38,7 +38,7 @@
       <h1>Todo o atendimento do seu restaurante, <em>em uma caixa de entrada só.</em></h1>
       <p class="lead">O Dish Desk junta as mensagens do WhatsApp, do Instagram e do iFood em um só lugar, com o histórico de pedidos de cada cliente ao lado da conversa.</p>
       <div class="hero-cta">
-        <a class="btn btn-accent btn-lg" href="https://wa.me/5586998179385?text=Ol%C3%A1!%20Quero%20conhecer%20o%20Dish%20Desk.">Falar com a gente</a>
+        <a class="btn btn-accent btn-lg" href="https://wa.me/5586999731647?text=Ol%C3%A1!%20Quero%20conhecer%20o%20Dish%20Desk.">Falar com a gente</a>
         <a class="btn btn-ghost btn-lg" href="/cadastro">Testar grátis por 15 dias</a>
       </div>
       <div class="shot">
@@ -225,8 +225,8 @@
       <h2>Quer ver o Dish Desk no seu restaurante?</h2>
       <p>Fale com a gente pelo WhatsApp ou por e-mail. Se já tem uma conta, é só entrar.</p>
       <div class="hero-cta">
-        <a class="btn btn-accent btn-lg" href="https://wa.me/5586998179385?text=Ol%C3%A1!%20Quero%20conhecer%20o%20Dish%20Desk.">WhatsApp +55 86 99817-9385</a>
-        <a class="btn btn-ghost btn-lg" href="mailto:grupoavelinoltda@gmail.com">grupoavelinoltda@gmail.com</a>
+        <a class="btn btn-accent btn-lg" href="https://wa.me/5586999731647?text=Ol%C3%A1!%20Quero%20conhecer%20o%20Dish%20Desk.">Fale com a gente</a>
+        <a class="btn btn-ghost btn-lg" href="mailto:dishdesk.crm@gmail.com">dishdesk.crm@gmail.com</a>
       </div>
     </div>
   </section>
@@ -251,8 +251,8 @@
       <div>
         <h4>Contato e legal</h4>
         <ul>
-          <li><a href="tel:+5586998179385">+55 86 99817-9385</a></li>
-          <li><a href="mailto:grupoavelinoltda@gmail.com">grupoavelinoltda@gmail.com</a></li>
+          <li><a href="tel:+5586999731647">+55 86 99973-1647</a></li>
+          <li><a href="mailto:dishdesk.crm@gmail.com">dishdesk.crm@gmail.com</a></li>
           <li><a href="privacidade/">Política de privacidade</a></li>
           <li><a href="exclusao-de-dados/">Exclusão de dados</a></li>
         </ul>
@@ -271,6 +271,18 @@
     function onScroll() { h.classList.toggle('scrolled', window.scrollY > 8); }
     window.addEventListener('scroll', onScroll, { passive: true }); onScroll();
   })();
+  // Sem programa de e-mail configurado o mailto não abre nada: o clique também copia o endereço e avisa no botão.
+  document.querySelectorAll('a.btn[href^="mailto:"]').forEach(function (a) {
+    var label = a.textContent;
+    a.addEventListener('click', function () {
+      if (!navigator.clipboard) return;
+      navigator.clipboard.writeText(a.href.slice(7).split('?')[0]).then(function () {
+        a.style.minWidth = a.offsetWidth + 'px';
+        a.textContent = 'E-mail copiado';
+        setTimeout(function () { a.textContent = label; }, 2000);
+      });
+    });
+  });
 </script>
 </body>
 </html>

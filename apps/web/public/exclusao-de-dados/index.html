@@ -38,17 +38,17 @@
 
     <h2>Como pedir a exclusão dos seus dados</h2>
     <ol class="steps">
-      <li>Envie um e-mail para <strong><a href="mailto:grupoavelinoltda@gmail.com?subject=Exclus%C3%A3o%20de%20dados">grupoavelinoltda@gmail.com</a></strong> com o assunto "Exclusão de dados" ou peça diretamente ao restaurante com que você conversou.</li>
+      <li>Envie um e-mail para <strong><a href="mailto:dishdesk.crm@gmail.com?subject=Exclus%C3%A3o%20de%20dados">dishdesk.crm@gmail.com</a></strong> com o assunto "Exclusão de dados" ou peça diretamente ao restaurante com que você conversou.</li>
       <li>Informe o canal usado (WhatsApp ou Instagram) e o seu telefone ou nome de usuário do Instagram.</li>
       <li>Confirmamos a exclusão por e-mail em até 15 dias, exceto os registros que a lei obriga a manter.</li>
     </ol>
 
     <div class="callout">
       <p><strong>E-mail para pedidos de exclusão</strong></p>
-      <p><a href="mailto:grupoavelinoltda@gmail.com?subject=Exclus%C3%A3o%20de%20dados">grupoavelinoltda@gmail.com</a> · assunto "Exclusão de dados"</p>
+      <p><a href="mailto:dishdesk.crm@gmail.com?subject=Exclus%C3%A3o%20de%20dados">dishdesk.crm@gmail.com</a> · assunto "Exclusão de dados"</p>
     </div>
 
-    <p style="margin-top:12px;"><a class="btn btn-accent" href="mailto:grupoavelinoltda@gmail.com?subject=Exclus%C3%A3o%20de%20dados">Pedir exclusão por e-mail</a></p>
+    <p style="margin-top:12px;"><a class="btn btn-accent" href="mailto:dishdesk.crm@gmail.com?subject=Exclus%C3%A3o%20de%20dados">Pedir exclusão por e-mail</a></p>
 
     <p style="margin-top:32px;">Responsável pelo tratamento: AVELINO GASTRONOMIA LTDA, CNPJ 66.832.307/0001-67. Para os demais direitos previstos na LGPD, veja a <a href="../privacidade/">Política de Privacidade completa</a>.</p>
   </div>
@@ -73,8 +73,8 @@
       <div>
         <h4>Contato e legal</h4>
         <ul>
-          <li><a href="tel:+5586998179385">+55 86 99817-9385</a></li>
-          <li><a href="mailto:grupoavelinoltda@gmail.com">grupoavelinoltda@gmail.com</a></li>
+          <li><a href="tel:+5586999731647">+55 86 99973-1647</a></li>
+          <li><a href="mailto:dishdesk.crm@gmail.com">dishdesk.crm@gmail.com</a></li>
           <li><a href="../privacidade/">Política de privacidade</a></li>
           <li><a href="../exclusao-de-dados/">Exclusão de dados</a></li>
         </ul>
@@ -93,6 +93,18 @@
     function onScroll() { h.classList.toggle('scrolled', window.scrollY > 8); }
     window.addEventListener('scroll', onScroll, { passive: true }); onScroll();
   })();
+  // Sem programa de e-mail configurado o mailto não abre nada: o clique também copia o endereço e avisa no botão.
+  document.querySelectorAll('a.btn[href^="mailto:"]').forEach(function (a) {
+    var label = a.textContent;
+    a.addEventListener('click', function () {
+      if (!navigator.clipboard) return;
+      navigator.clipboard.writeText(a.href.slice(7).split('?')[0]).then(function () {
+        a.style.minWidth = a.offsetWidth + 'px';
+        a.textContent = 'E-mail copiado';
+        setTimeout(function () { a.textContent = label; }, 2000);
+      });
+    });
+  });
 </script>
 </body>
 </html>

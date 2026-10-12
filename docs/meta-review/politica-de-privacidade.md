@@ -61,13 +61,13 @@ Respondemos em até 15 dias. Você também pode reclamar à Autoridade Nacional 
 
 ## 7. Como pedir a exclusão dos seus dados
 
-Envie um e-mail para **grupoavelinoltda@gmail.com** com o assunto "Exclusão de dados" ou peça diretamente ao restaurante com que você conversou. Informe o canal usado (WhatsApp ou Instagram) e o seu telefone ou nome de usuário do Instagram.
+Envie um e-mail para **dishdesk.crm@gmail.com** com o assunto "Exclusão de dados" ou peça diretamente ao restaurante com que você conversou. Informe o canal usado (WhatsApp ou Instagram) e o seu telefone ou nome de usuário do Instagram.
 
 Confirmamos a exclusão por e-mail em até 15 dias, exceto os registros que a lei obriga a manter.
 
 ## 8. Contato e alterações
 
-Dúvidas sobre esta política ou sobre os seus dados: **grupoavelinoltda@gmail.com**.
+Dúvidas sobre esta política ou sobre os seus dados: **dishdesk.crm@gmail.com**.
 
 Responsável: AVELINO GASTRONOMIA LTDA, CNPJ 66.832.307/0001-67.
 

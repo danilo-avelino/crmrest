@@ -1,3 +1,4 @@
+import type { BillingPlan } from "@dishdesk/database/enums";
 import { z } from "zod";
 import { isValidCpf, toE164 } from "./contacts.js";
 
@@ -8,10 +9,10 @@ export const TRIAL_DAYS = 15;
 /** Um canal que passou por um teste grátis só entra em outro teste este tanto de dias depois de o primeiro acabar. */
 export const TRIAL_REUSE_DAYS = 60;
 
-/** Planos da assinatura: mensal no cartão (renova sozinho) ou anual no Pix (pagamento único). */
+/** Planos da assinatura: mensal no cartão (renova sozinho) ou anual em pagamento único, no meio que o cliente escolher. */
 export const BILLING_PLANS = {
-  monthly: { amountCents: 9_900, method: "card" },
-  annual: { amountCents: 99_900, method: "pix" },
+  monthly: { amountCents: 9_900 },
+  annual: { amountCents: 99_900 },
 } as const;
 export type BillingPlanKey = keyof typeof BILLING_PLANS;
 
@@ -54,24 +55,56 @@ export const SignupRequest = z.object({
 export type SignupRequest = z.infer<typeof SignupRequest>;
 
 /**
+ * Com a assinatura vencida, o restaurante pode liberar o próprio acesso por este tanto de dias ("Liberar acesso por
+ * confiança"), uma vez por atraso: o direito volta quando o pagamento chega.
+ */
+export const TRUST_DAYS = 3;
+
+/**
  * Por que o restaurante está bloqueado: o teste acabou sem pagamento, a assinatura venceu ou o teste foi encerrado
  * porque um canal conectado já tinha passado por outro teste grátis ("reused").
  */
 export type TenantBlock = "trial" | "payment" | "reused";
 
+type TenantAccess = { trialEndsAt: Date | null; paidUntil: Date | null; trialRevokedAt?: Date | null; trustUntil?: Date | null };
+
 /** Restaurante criado pela plataforma (sem trialEndsAt) nunca é bloqueado. */
-export function tenantBlock(
-  tenant: { trialEndsAt: Date | null; paidUntil: Date | null; trialRevokedAt?: Date | null },
-  now = new Date(),
-): TenantBlock | null {
+export function tenantBlock(tenant: TenantAccess, now = new Date()): TenantBlock | null {
   if (!tenant.trialEndsAt) return null;
-  if (tenant.paidUntil) return tenant.paidUntil > now ? null : "payment";
+  if (tenant.paidUntil) return tenant.paidUntil > now || (tenant.trustUntil && tenant.trustUntil > now) ? null : "payment";
   if (tenant.trialRevokedAt) return "reused";
   return tenant.trialEndsAt > now ? null : "trial";
+}
+
+/** Cobrança de um restaurante que se cadastrou pelo site, como o painel mostra. */
+export type TenantBilling = {
+  /** Último plano pago; null enquanto só houve o teste grátis. */
+  plan: BillingPlan | null;
+  /** Fim do teste grátis ou do período pago. */
+  accessUntil: string;
+  /** Pagamento pendente com o acesso liberado por confiança até esta data. */
+  trustUntil: string | null;
+  /** Pagamento pendente e a liberação por confiança deste atraso ainda não foi usada. */
+  trustAvailable: boolean;
+};
+
+/** null = restaurante criado pela plataforma, sem cobrança pelo sistema. */
+export function tenantBilling(tenant: TenantAccess & { billingPlan: BillingPlan | null }, now = new Date()): TenantBilling | null {
+  if (!tenant.trialEndsAt) return null;
+  const overdue = Boolean(tenant.paidUntil && tenant.paidUntil <= now);
+  return {
+    plan: tenant.billingPlan,
+    accessUntil: (tenant.paidUntil ?? tenant.trialEndsAt).toISOString(),
+    trustUntil: overdue && tenant.trustUntil && tenant.trustUntil > now ? tenant.trustUntil.toISOString() : null,
+    trustAvailable: overdue && !tenant.trustUntil,
+  };
 }
 
 export const CheckoutRequest = z.object({ tenantId: z.uuid(), plan: z.enum(["monthly", "annual"]) });
 export type CheckoutRequest = z.infer<typeof CheckoutRequest>;
 
-/** Endereço da página de pagamento da Stripe. */
+/** Endereço da página da Stripe: o pagamento ou, para quem já assina o mensal, a troca do cartão. */
 export type CheckoutResponse = { url: string };
+
+export const TrustReleaseRequest = z.object({ tenantId: z.uuid() });
+export type TrustReleaseRequest = z.infer<typeof TrustReleaseRequest>;

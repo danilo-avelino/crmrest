@@ -5,7 +5,7 @@ import { NavRail } from "@/components/inbox/nav-rail";
 export default function ClientsLayout({ children }: LayoutProps<"/clientes">) {
   return (
     <RequireAdminContext>
-      <div className="flex h-screen overflow-hidden bg-paper">
+      <div className="flex h-full overflow-hidden bg-paper">
         <NavRail />
         {children}
       </div>

@@ -1,14 +1,13 @@
 "use client";
 
 import type { AuthContext } from "@dishdesk/shared";
-import { CheckIcon, ChevronDownIcon, LoaderCircleIcon } from "lucide-react";
+import { LoaderCircleIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { createContext, type ReactNode, useContext, useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
+import { TenantPicker } from "@/components/auth/tenant-picker";
 import { NavRail } from "@/components/inbox/nav-rail";
-import { buttonVariants } from "@/components/ui/button";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 
 type SettingsTenant = AuthContext["tenants"][number];
@@ -20,20 +19,34 @@ const TABS = [
   { href: "/configuracoes/respostas-rapidas", label: "Respostas rápidas" },
   { href: "/configuracoes/integracoes", label: "Integrações" },
   { href: "/configuracoes/usuarios", label: "Usuários" },
+  { href: "/configuracoes/pagamento", label: "Pagamento" },
 ];
 
-const SettingsTenantContext = createContext<SettingsTenant | null>(null);
+type SettingsTenants = { tenant: SettingsTenant; tenants: SettingsTenant[]; choose: (tenantId: string) => void };
+
+const SettingsTenantContext = createContext<SettingsTenants | null>(null);
+
+function useSettingsTenants(): SettingsTenants {
+  const value = useContext(SettingsTenantContext);
+  if (!value) throw new Error("useSettingsTenant precisa estar dentro de <SettingsShell>");
+  return value;
+}
 
 /** O restaurante cujas configurações estão na tela (no painel master, o escolhido no seletor). */
 export function useSettingsTenant(): SettingsTenant {
-  const tenant = useContext(SettingsTenantContext);
-  if (!tenant) throw new Error("useSettingsTenant precisa estar dentro de <SettingsShell>");
-  return tenant;
+  return useSettingsTenants().tenant;
+}
+
+/** O seletor de restaurante do painel master, para a aba que o põe ao lado do próprio título. */
+export function SettingsTenantPicker() {
+  const { tenant, tenants, choose } = useSettingsTenants();
+  return <TenantPicker tenants={tenants} tenant={tenant} onChange={choose} />;
 }
 
 /**
  * Configurações: cabeçalho com as abas do board Campanhas e o título do board Clientes (o design ainda não tem
- * um board de Configurações). No painel master, um seletor escolhe o restaurante para todas as abas. Desktop no MVP.
+ * um board de Configurações). No painel master, um seletor no topo do conteúdo escolhe o restaurante para todas as abas.
+ * Desktop no MVP.
  */
 export function SettingsShell({ children }: { children: ReactNode }) {
   const { session } = useAuth();
@@ -46,32 +59,13 @@ export function SettingsShell({ children }: { children: ReactNode }) {
   if (!tenant) return null;
 
   return (
-    <div className="flex h-screen overflow-hidden bg-paper">
+    <div className="flex h-full overflow-hidden bg-paper">
       <NavRail />
       <main className="flex flex-1 flex-col overflow-hidden bg-surface">
         <header className="shrink-0 border-b border-rule-soft px-7 pt-5">
-          <div className="mb-3 flex items-start justify-between gap-4">
-            <div>
-              <h1 className="mb-[3px] font-heading text-[21px] font-bold tracking-[-0.3px]">Configurações</h1>
-              <p className="text-[12px] text-ink-3">{adminTenants.length > 1 ? "Painel master" : tenant.name}</p>
-            </div>
-            {adminTenants.length > 1 && (
-              <DropdownMenu>
-                <DropdownMenuTrigger aria-label="Escolher o restaurante" className={buttonVariants({ variant: "outline", size: "sm" })}>
-                  {tenant.name}
-                  <ChevronDownIcon aria-hidden />
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-60">
-                  {adminTenants.map((item) => (
-                    <DropdownMenuItem key={item.id} onClick={() => setTenantId(item.id)}>
-                      <span className="flex-1">{item.name}</span>
-                      <span className="text-[10.5px] text-ink-3">admin</span>
-                      {item.id === tenant.id && <CheckIcon className="size-3.5" aria-hidden />}
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            )}
+          <div className="mb-3">
+            <h1 className="mb-[3px] font-heading text-[21px] font-bold tracking-[-0.3px]">Configurações</h1>
+            <p className="text-[12px] text-ink-3">{adminTenants.length > 1 ? "Painel master" : tenant.name}</p>
           </div>
           <nav aria-label="Seções das configurações" className="-mb-px flex">
             {TABS.map((tab) => {
@@ -95,7 +89,13 @@ export function SettingsShell({ children }: { children: ReactNode }) {
         {/* Integrações (board Configurações · Integrações): cartões brancos sobre o papel, na largura do board; as outras abas ficam numa coluna estreita. */}
         <div className={cn("flex-1 overflow-y-auto px-7 py-6", integrations && "bg-paper px-8")}>
           <div className={integrations ? "max-w-[1072px]" : "max-w-[680px]"}>
-            <SettingsTenantContext value={tenant}>{children}</SettingsTenantContext>
+            {/* Integrações põe o seletor ao lado do título; as outras abas não têm título fora dos cartões. */}
+            {!integrations && adminTenants.length > 1 && (
+              <div className="mb-4">
+                <TenantPicker tenants={adminTenants} tenant={tenant} onChange={setTenantId} />
+              </div>
+            )}
+            <SettingsTenantContext value={{ tenant, tenants: adminTenants, choose: setTenantId }}>{children}</SettingsTenantContext>
           </div>
         </div>
       </main>

@@ -8,6 +8,7 @@ import {
   businessHoursOf,
   isOpenAt,
   menuMessage,
+  reopeningAt,
 } from "../src/settings.js";
 
 // Horários de Brasília (-03:00). 2026-10-05 é segunda-feira.
@@ -35,6 +36,7 @@ describe("personalidade do atendimento", () => {
   /** Marcadores que cada mensagem precisa ter: sem eles, o cliente não recebe o número do pedido, a hora... */
   const REQUIRED: Partial<Record<keyof AutomationMessages, string[]>> = {
     greeting: ["nome"],
+    closedMessage: ["retorno"],
     orderFound: ["pedido", "status"],
     orderNotFound: ["pedido"],
     forecast: ["hora"],
@@ -89,5 +91,16 @@ describe("horário de funcionamento", () => {
     expect(isOpenAt(hours, at("2026-10-11T01:30:00"))).toBe(true); // domingo de madrugada: turno de sábado
     expect(isOpenAt(hours, at("2026-10-11T02:00:00"))).toBe(false);
     expect(isOpenAt(hours, at("2026-10-06T01:00:00"))).toBe(false); // segunda não passa da meia-noite
+  });
+
+  it("quando o atendimento volta: hoje, amanhã ou o dia da semana", () => {
+    expect(reopeningAt(hours, at("2026-10-05T12:00:00"))).toBe("hoje às 18:00"); // segunda, antes de abrir
+    expect(reopeningAt(hours, at("2026-10-05T23:30:00"))).toBe("amanhã às 18:00"); // segunda, depois de fechar
+    expect(reopeningAt(hours, at("2026-10-10T03:00:00"))).toBe("hoje às 18:00"); // sábado, o turno de sexta acabou às 02:00
+    expect(reopeningAt(hours, at("2026-10-11T10:00:00"))).toBe("amanhã às 18:00"); // domingo fechado
+    const onlyMonday: BusinessHours = { ...hours, days: [closed, { open: "11:00", close: "15:00" }, closed, closed, closed, closed, closed] };
+    expect(reopeningAt(onlyMonday, at("2026-10-09T20:00:00"))).toBe("na segunda-feira às 11:00"); // sexta
+    expect(reopeningAt(onlyMonday, at("2026-10-05T16:00:00"))).toBe("na segunda-feira às 11:00"); // segunda, já fechou
+    expect(reopeningAt({ ...hours, days: Array(7).fill(closed) }, at("2026-10-05T12:00:00"))).toBe("em breve");
   });
 });

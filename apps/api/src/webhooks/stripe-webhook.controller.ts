@@ -12,14 +12,14 @@ import {
 import type { Request } from "express";
 import { z } from "zod";
 import { Public } from "../auth/auth.decorators.js";
-import { verifyStripeSignature } from "../billing/stripe.js";
+import { cancelOtherSubscriptions, verifyStripeSignature } from "../billing/stripe.js";
 import { ENV, type Env } from "../config/env.js";
 import { DatabaseService } from "../core/database.service.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-// A fatura da renovação é cobrada cerca de uma hora depois de o período virar, e um cartão recusado é tentado de novo
-// por alguns dias: o restaurante só bloqueia se a renovação não chegar dentro desta folga.
-const RENEWAL_GRACE_MS = 3 * DAY_MS;
+// A fatura da renovação é cobrada cerca de uma hora depois de o período virar: a folga cobre essa espera. Passado um
+// dia sem a renovação, o restaurante cai na tela de pagamento pendente (com a liberação por confiança).
+const RENEWAL_GRACE_MS = DAY_MS;
 
 const Event = z.looseObject({ type: z.string(), data: z.looseObject({ object: z.unknown() }) });
 
@@ -29,7 +29,8 @@ const CheckoutSession = z.looseObject({
   payment_status: z.string(),
   client_reference_id: z.uuid(),
   customer: z.string().nullish(),
-  // Fatura da primeira mensalidade (só no modo assinatura): o evento invoice.paid dela não conta de novo.
+  // Assinatura e fatura da primeira mensalidade (só no modo assinatura): o evento invoice.paid dela não conta de novo.
+  subscription: z.string().nullish(),
   invoice: z.string().nullish(),
   amount_total: z.number(),
   created: z.number(),
@@ -54,14 +55,14 @@ export class StripeWebhookController {
   @Post()
   @HttpCode(200)
   async receive(@Req() request: RawBodyRequest<Request>, @Headers("stripe-signature") signature: string | undefined): Promise<string> {
-    if (!this.env.STRIPE_WEBHOOK_SECRET) throw new ServiceUnavailableException("Webhook da Stripe não configurado.");
+    if (!this.env.STRIPE_WEBHOOK_SECRET || !this.env.STRIPE_SECRET_KEY) throw new ServiceUnavailableException("Webhook da Stripe não configurado.");
     const { rawBody } = request;
     if (!rawBody || !verifyStripeSignature(rawBody, signature, this.env.STRIPE_WEBHOOK_SECRET)) throw new UnauthorizedException();
 
     // Evento que não é de um checkout nosso (outro formato, sem o restaurante) é ignorado: responder erro só faria
     // a Stripe reenviar por dias.
     const event = Event.parse(request.body);
-    // O Pix pode confirmar depois de o cliente sair da página: aí chega async_payment_succeeded.
+    // Pix e boleto podem confirmar depois de o cliente sair da página: aí chega async_payment_succeeded.
     if (event.type === "checkout.session.completed" || event.type === "checkout.session.async_payment_succeeded") {
       const { data: session } = CheckoutSession.safeParse(event.data.object);
       if (session?.payment_status !== "paid") return "ok";
@@ -72,6 +73,7 @@ export class StripeWebhookController {
       } else {
         await this.record(session.id, session.client_reference_id, session.customer, "ANNUAL", session.amount_total, null);
       }
+      if (session.customer) await cancelOtherSubscriptions(this.env, session.customer, session.subscription ?? null);
     } else if (event.type === "invoice.paid") {
       // Renovação da mensalidade: o restaurante é o do cliente da Stripe, gravado no primeiro pagamento.
       const { data: invoice } = Invoice.safeParse(event.data.object);

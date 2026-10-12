@@ -34,7 +34,7 @@ const EnvSchema = z.object({
   IFOOD_WIDGET_ID: z.string().min(1).optional(),
   // Cardápio Web: a chave de API é de cada loja (fica no canal); aqui só o endereço da API. Sem ele, o polling fica desligado.
   CARDAPIO_WEB_API_URL: z.url().optional(),
-  // Stripe (assinatura depois do teste grátis). Sem a chave, o checkout responde 503; sem o segredo, o webhook também.
+  // Stripe (assinatura depois do teste grátis). Sem a chave, o checkout e o webhook respondem 503; sem o segredo, o webhook também.
   STRIPE_SECRET_KEY: z.string().min(1).optional(),
   STRIPE_WEBHOOK_SECRET: z.string().min(1).optional(),
   STRIPE_API_URL: z.url().default("https://api.stripe.com"),

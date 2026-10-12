@@ -5,7 +5,7 @@ import { NavRail } from "@/components/inbox/nav-rail";
 export default function PlatformLayout({ children }: LayoutProps<"/plataforma">) {
   return (
     <RequireSuperAdmin>
-      <div className="flex h-screen overflow-hidden bg-paper">
+      <div className="flex h-full overflow-hidden bg-paper">
         <NavRail />
         {children}
       </div>

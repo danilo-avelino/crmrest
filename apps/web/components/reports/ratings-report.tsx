@@ -2,12 +2,12 @@
 
 import type { RatingsReportDto, ReportPeriod } from "@dishdesk/shared";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { AlertCircleIcon, CheckIcon, ChevronDownIcon, StarIcon } from "lucide-react";
+import { AlertCircleIcon, StarIcon } from "lucide-react";
 import Link from "next/link";
 import { type ReactNode, useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
-import { Button, buttonVariants } from "@/components/ui/button";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { TenantPicker } from "@/components/auth/tenant-picker";
+import { Button } from "@/components/ui/button";
 import { useNow } from "@/hooks/use-now";
 import { count, dayTime, responseTime, score } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -42,27 +42,12 @@ export function RatingsReport() {
   return (
     <main className="flex min-w-0 flex-1 flex-col overflow-hidden bg-surface">
       <header className="shrink-0 border-b border-rule-soft px-7 pt-5">
-        <div className="mb-4 flex items-start justify-between gap-4">
-          <div>
-            <h1 className="mb-[3px] font-heading text-[21px] leading-tight font-bold tracking-[-0.3px]">Avaliações</h1>
-            <span className="text-xs text-ink-3">{adminTenants.length > 1 ? "Painel master" : tenant.name}</span>
+        <div className="mb-4">
+          <div className="mb-[3px] flex items-center gap-3">
+            <h1 className="font-heading text-[21px] leading-tight font-bold tracking-[-0.3px]">Avaliações</h1>
+            <TenantPicker tenants={adminTenants} tenant={tenant} onChange={setTenantId} />
           </div>
-          {adminTenants.length > 1 && (
-            <DropdownMenu>
-              <DropdownMenuTrigger aria-label="Escolher o restaurante" className={buttonVariants({ variant: "outline", size: "sm" })}>
-                {tenant.name}
-                <ChevronDownIcon aria-hidden />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-60">
-                {adminTenants.map((item) => (
-                  <DropdownMenuItem key={item.id} onClick={() => setTenantId(item.id)}>
-                    <span className="flex-1">{item.name}</span>
-                    {item.id === tenant.id && <CheckIcon className="size-3.5" aria-hidden />}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
+          <span className="text-xs text-ink-3">{adminTenants.length > 1 ? "Painel master" : tenant.name}</span>
         </div>
         <div className="flex gap-1.5 pb-3" role="group" aria-label="Período">
           {PERIODS.map((item) => (

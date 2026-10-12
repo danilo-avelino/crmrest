@@ -1,6 +1,6 @@
 "use client";
 
-import { BILLING_PLANS, type BillingPlanKey, type CheckoutResponse, TRIAL_REUSE_DAYS } from "@dishdesk/shared";
+import { BILLING_PLANS, type BillingPlanKey, type CheckoutResponse, TRIAL_REUSE_DAYS, TRUST_DAYS } from "@dishdesk/shared";
 import { LoaderCircleIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -13,7 +13,7 @@ import { usePendingAction } from "@/hooks/use-pending-action";
 import { ApiError, apiRequest } from "@/lib/api";
 import { currency, currencyWhole } from "@/lib/format";
 
-const SUPPORT_WHATSAPP = "https://wa.me/5586998179385";
+const SUPPORT_WHATSAPP = "https://wa.me/5586999731647";
 // Depois de voltar da Stripe, a confirmação chega pelo webhook: confere de 3 em 3 segundos, por até 2 minutos.
 const CONFIRM_INTERVAL_MS = 3_000;
 const CONFIRM_ATTEMPTS = 40;
@@ -24,20 +24,21 @@ const PLANS: { key: BillingPlanKey; title: string; period: string; description: 
     key: "annual",
     title: "Anual",
     period: "por ano",
-    description: `Pix, pagamento único. Sai por ${currency(BILLING_PLANS.annual.amountCents / 100 / 12)} ao mês.`,
-    action: "Pagar com Pix",
+    description: `Pagamento único, no meio que você preferir. Sai por ${currency(BILLING_PLANS.annual.amountCents / 100 / 12)} ao mês.`,
+    action: "Pagar o plano anual",
   },
 ];
 
 const TITLE = {
   trial: "Seu teste grátis acabou",
-  payment: "Sua assinatura venceu",
+  payment: "Pagamento pendente",
   reused: "Este teste grátis já foi usado",
 } as const;
 
 /**
  * Restaurante bloqueado (teste encerrado, assinatura vencida ou canal que já passou por outro teste grátis): escolha
- * do plano e ida para o pagamento na Stripe.
+ * do plano e ida para o pagamento na Stripe. Com a assinatura vencida, qualquer usuário do restaurante pode liberar o
+ * acesso por confiança, uma vez por atraso.
  * O design ainda não tem este board: segue o board "Login · Escolha de restaurante". Desktop no MVP.
  */
 export function SubscriptionWall() {
@@ -88,6 +89,18 @@ export function SubscriptionWall() {
       await new Promise((resolve) => setTimeout(resolve, 5_000));
     } catch (failure) {
       setError(failure instanceof ApiError ? failure.message : "Não foi possível abrir o pagamento. Tente novamente.");
+    }
+  });
+
+  const [release, releasing] = usePendingAction(async () => {
+    if (!tenant) return;
+    setError(null);
+    try {
+      await apiRequest("/auth/billing/trust", { method: "POST", body: { tenantId: tenant.id } });
+      // Com o restaurante liberado, o efeito lá em cima entra nele.
+      await reload();
+    } catch (failure) {
+      setError(failure instanceof ApiError ? failure.message : "Não foi possível liberar o acesso. Tente novamente.");
     }
   });
 
@@ -148,7 +161,7 @@ export function SubscriptionWall() {
                 </div>
                 <p className="mt-0.5 text-ink-3">{plan.description}</p>
                 {tenant.role === "ADMIN" && (
-                  <Button className="mt-3 w-full" loading={paying && chosen === plan.key} disabled={paying} onClick={() => pay(plan.key)}>
+                  <Button className="mt-3 w-full" loading={paying && chosen === plan.key} disabled={paying || releasing} onClick={() => pay(plan.key)}>
                     {plan.action}
                   </Button>
                 )}
@@ -156,6 +169,20 @@ export function SubscriptionWall() {
             ))}
             {tenant.role !== "ADMIN" && (
               <p className="text-ink-2">Só o administrador do restaurante pode assinar. Peça a ele para entrar e escolher o plano.</p>
+            )}
+            {tenant.billing?.trustAvailable && (
+              <div className="rounded-xl border border-warning-line bg-warning-lt px-4 py-3.5">
+                <p className="text-xs text-warning-ink">
+                  Precisa de mais tempo? Libere o acesso por {TRUST_DAYS} dias enquanto o pagamento é concluído. Só pode ser usado
+                  uma vez.
+                </p>
+                <Button variant="outline" className="mt-3 w-full" loading={releasing} disabled={paying} onClick={() => release()}>
+                  Liberar acesso por confiança
+                </Button>
+              </div>
+            )}
+            {tenant.blockedBy === "payment" && !tenant.billing?.trustAvailable && (
+              <p className="text-[12px] text-ink-3">A liberação por confiança já foi usada. O acesso volta assim que o pagamento for confirmado.</p>
             )}
             {error && (
               <p role="alert" className="text-[11px] text-tomate">

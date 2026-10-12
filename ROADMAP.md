@@ -248,6 +248,65 @@ O E25 pode começar em paralelo a partir do E19. A ativação pode ser manual (S
 
 ---
 
+## Fase 4 — IA no atendimento
+
+Objetivo: o restaurante usa IA para atender o cliente de duas formas, **atendimento 100% com IA** (E27) ou **suporte com revisão por IA** (E28), e toda conversa recebe uma avaliação automática (E29).
+
+Vale para os três épicos:
+- A IA segue a **personalidade do atendimento** escolhida pelo restaurante (Configurações → Mensagens automáticas, CLAUDE.md §10), a mesma das mensagens automáticas.
+- As conversas têm dados pessoais e passam a ser enviadas a um provedor de LLM. Antes de ligar em produção: atualizar a política de privacidade, nunca enviar CPF nem dados de pagamento ao modelo e registrar o uso por tenant (LGPD).
+- O consumo de IA é medido por tenant desde o primeiro épico, para dar base à decisão de cobrança.
+
+#### E27 — Atendimento 100% com IA · **G** · depende de: E8, E15, E7 (busca do pedido)
+- Como restaurante, quero que a IA responda sozinha às conversas, no tom da personalidade do atendimento.
+- Como cliente, quero tirar dúvidas de cardápio, horário de funcionamento, endereço e status do meu pedido sem esperar um atendente.
+- Como cliente, quero pedir para falar com uma pessoa a qualquer momento e ser transferido.
+- Como restaurante, quero que a IA **transfira para um atendente** quando não souber responder, quando o cliente reclamar ou quando o assunto estiver fora do que ela pode resolver (ex.: reembolso, cancelamento).
+- Como atendente, quero assumir uma conversa que está com a IA. A partir daí a IA para de responder nessa conversa.
+- Como atendente, quero ver na conversa quais mensagens foram escritas pela IA.
+- Como admin, quero ligar e desligar o atendimento com IA por canal e definir em que horário ele vale (sempre, ou só fora do horário de funcionamento).
+- **Regra obrigatória:** a IA só afirma o que está nos dados do restaurante (cardápio, horários, pedido). Nunca inventa preço, prazo, promoção ou política. Sem a informação, ela transfere.
+- A IA respeita a janela de 24h e o opt-out, como qualquer mensagem enviada.
+- A definir na implementação:
+  - de onde vem o cardápio (Cardápio Web, iFood ou cadastro próprio);
+  - se a IA pode **anotar pedidos** ou só informa e tira dúvidas;
+  - o que acontece quando a IA transfere e não há atendente online;
+  - os limites por conversa (nº de mensagens da IA antes de transferir).
+
+#### E28 — Suporte com revisão por IA · **M** · depende de: E8, E15
+- Como atendente, quero escrever a resposta do meu jeito e pedir para a IA **ler a conversa e adaptar o meu texto** para a linguagem e a personalidade do restaurante.
+- Como atendente, quero ver o texto adaptado antes de enviar e poder aceitar, editar ou manter o meu original. Nada é enviado sem a minha confirmação.
+- Como restaurante, quero que a IA corrija ortografia, clareza e tom, **sem mudar o conteúdo**: valores, prazos e promessas ficam como o atendente escreveu.
+- Como admin, quero ligar e desligar a revisão por IA no restaurante.
+- ⚠️ O design do composer ainda não tem a revisão por IA. A tela precisa ser desenhada antes da implementação.
+- A definir na implementação:
+  - se a revisão é sob demanda (botão no composer) ou automática a cada envio;
+  - se a IA também **sugere uma resposta** quando o atendente ainda não escreveu nada.
+
+#### E29 — Avaliação automática da conversa · **M** · depende de: E8
+- Como plataforma, quero que uma LLM leia a conversa quando ela for resolvida e registre:
+  - se **o problema foi resolvido**;
+  - se **o cliente ficou satisfeito**;
+  - uma **nota para o atendimento**, de acordo com a reação do cliente.
+- Como admin, quero ver a avaliação na conversa e filtrar as conversas com nota baixa ou problema não resolvido.
+- Como admin, quero ver a nota média por atendente e por período. A avaliação vale tanto para o atendimento humano quanto para o da IA (E27).
+- Como plataforma, quero a avaliação rodando em **job assíncrono** (fila própria no `worker`), fora do caminho do atendimento. Uma falha na avaliação nunca atrasa nem bloqueia a conversa.
+- **Modelo:** preferência por um modelo aberto e barato, **Gemma ou Llama**, se a qualidade permitir. Validar antes com uma amostra de conversas reais em português, comparando com a avaliação de uma pessoa. Se não atingir a qualidade, usar outro modelo.
+- A definir na implementação:
+  - a escala da nota (ex.: 1 a 5) e os critérios de cada nível;
+  - onde o modelo roda (provedor de inferência ou servidor próprio);
+  - o que fazer com conversas sem reação do cliente (ex.: cliente que parou de responder);
+  - se a conversa reaberta é avaliada de novo.
+
+### Ordem sugerida (Fase 4)
+`E29 Avaliação → E28 Revisão por IA → E27 Atendimento 100% com IA`
+
+A avaliação vem primeiro porque não envia nada ao cliente (o risco é o menor) e porque cria a medida que vai dizer se os outros dois funcionam. A revisão vem em seguida porque mantém o atendente no controle. O atendimento 100% com IA fica por último: é o de maior risco e só deve ser ligado quando a nota do E29 mostrar que a IA atende tão bem quanto a equipe.
+
+Decidir antes: a IA entra no plano ou é um módulo pago como o Campanhas (`TenantModule`, E19)?
+
+---
+
 ## Itens ainda sem fase
 - **Login com Google (OAuth real).** O botão já existe visualmente desde o MVP.
 - **Versões mobile** de todas as telas (CLAUDE.md §7), adiadas no MVP.

@@ -65,12 +65,31 @@ test("cadastro pelo site entra na Inbox em teste; com o teste encerrado, cai na 
   await expect(page).toHaveURL(/\/assinatura$/);
   await expect(page.getByRole("heading", { name: "Seu teste grátis acabou" })).toBeVisible();
   await expect(page.getByText(`Cantina E2E ${suffix}`)).toBeVisible();
-  await expect(page.getByRole("button", { name: "Pagar com Pix" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Pagar o plano anual" })).toBeVisible();
   await page.screenshot({ path: "test-results/assinatura.png" });
 
   // Sem a chave da Stripe (ambiente de teste), o botão chega à API e mostra a resposta dela.
   await page.getByRole("button", { name: "Assinar no cartão" }).click();
   await expect(page.getByRole("alert").filter({ hasText: "O pagamento ainda não está disponível. Fale com a gente." })).toBeVisible();
+
+  // Assinatura vencida: a tela avisa do pagamento pendente e o acesso é liberado por confiança, uma vez.
+  await db.query(`UPDATE tenants SET paid_until = now() - interval '1 hour', billing_plan = 'MONTHLY' WHERE id IN (${TENANTS_OF_USER})`, [
+    emails.first,
+  ]);
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Pagamento pendente" })).toBeVisible();
+  await page.screenshot({ path: "test-results/pagamento-pendente.png" });
+  await page.getByRole("button", { name: "Liberar acesso por confiança" }).click();
+  await expect(page).toHaveURL(/\/inbox$/);
+  await expect(page.getByRole("status").filter({ hasText: "Avise ao financeiro para concluir o pagamento. 3 dias restantes." })).toBeVisible();
+  await page.screenshot({ path: "test-results/lembrete-confianca.png" });
+
+  await page.getByRole("link", { name: "Concluir pagamento" }).click();
+  await expect(page).toHaveURL(/\/configuracoes\/pagamento$/);
+  await expect(page.getByText("O acesso está liberado por confiança até")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Cadastrar novo cartão" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Gerar plano anual" })).toBeVisible();
+  await page.screenshot({ path: "test-results/aba-pagamento.png" });
 });
 
 test("conectar um canal que já passou por outro teste grátis encerra o teste e leva à tela de pagamento", async ({ page }) => {

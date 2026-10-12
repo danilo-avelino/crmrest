@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { AuthContext, AuthSession, AuthTenant, AuthUser, SelectContextRequest, SignupRequest } from "@dishdesk/shared";
-import { SelectContextRequest as SelectContextSchema, slugify, tenantBlock, TRIAL_DAYS } from "@dishdesk/shared";
+import { SelectContextRequest as SelectContextSchema, slugify, tenantBilling, tenantBlock, TRIAL_DAYS } from "@dishdesk/shared";
 import { hash, verify } from "@node-rs/argon2";
 import {
   ConflictException,
@@ -148,7 +148,12 @@ export class AuthService implements OnModuleInit {
       }),
       memberships: await tx.tenantMember.findMany({
         where: { userId, isActive: true, tenant: { status: "ACTIVE" } },
-        select: { role: true, tenant: { select: { id: true, name: true, slug: true, trialEndsAt: true, paidUntil: true, trialRevokedAt: true } } },
+        select: {
+          role: true,
+          tenant: {
+            select: { id: true, name: true, slug: true, trialEndsAt: true, paidUntil: true, trialRevokedAt: true, trustUntil: true, billingPlan: true },
+          },
+        },
         orderBy: { tenant: { name: "asc" } },
       }),
     }));
@@ -172,6 +177,7 @@ export class AuthService implements OnModuleInit {
         role,
         openConversations: open.get(tenant.id) ?? 0,
         blockedBy: tenantBlock(tenant),
+        billing: tenantBilling(tenant),
       })),
     };
   }

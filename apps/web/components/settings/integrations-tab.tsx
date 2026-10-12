@@ -13,7 +13,7 @@ import { useSearchParams } from "next/navigation";
 import { type ReactNode, useEffect, useId, useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
 import { IFOOD_WIDGET_KEY } from "@/components/ifood-widget";
-import { TabLoading, useSettingsTenant } from "@/components/settings/settings-shell";
+import { SettingsTenantPicker, TabLoading, useSettingsTenant } from "@/components/settings/settings-shell";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -179,6 +179,18 @@ function pendingOf(type: IntegrationType, platform: IntegrationsDto["platform"])
   return null;
 }
 
+function IntegrationsTitle() {
+  return (
+    <div>
+      <div className="flex items-center gap-3">
+        <h2 className="font-heading text-[21px] font-bold tracking-[-0.3px]">Integrações</h2>
+        <SettingsTenantPicker />
+      </div>
+      <p className="mt-1 text-ink-3">Conecte canais de atendimento e marketplaces ao Dish Desk</p>
+    </div>
+  );
+}
+
 /**
  * Aba "Integrações" (board Configurações · Integrações): um cartão por sistema que dá para conectar; o cartão abre
  * o modal com as contas conectadas e a nova conexão. "Adicionar integração" abre o painel com todos os sistemas.
@@ -194,16 +206,23 @@ export function IntegrationsTab() {
     queryKey: ["integrations", tenant.id],
     queryFn: () => request<IntegrationsDto>(`/integrations?tenantId=${tenant.id}`),
   });
-  if (!integrations.data) return <TabLoading failed={integrations.isError} />;
+  // Sem os dados ainda, o seletor de restaurante continua na tela: trocar de restaurante não o faz sumir.
+  if (!integrations.data) {
+    return (
+      <>
+        <div className="mb-8">
+          <IntegrationsTitle />
+        </div>
+        <TabLoading failed={integrations.isError} />
+      </>
+    );
+  }
   const data = integrations.data;
 
   return (
     <>
       <div className="mb-8 flex items-start justify-between gap-4">
-        <div>
-          <h2 className="font-heading text-[21px] font-bold tracking-[-0.3px]">Integrações</h2>
-          <p className="mt-1 text-ink-3">Conecte canais de atendimento e marketplaces ao Dish Desk</p>
-        </div>
+        <IntegrationsTitle />
         {data.canEdit && (
           <Button variant="accent" onClick={() => setCatalog(true)}>
             <PlusIcon aria-hidden />

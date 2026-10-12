@@ -8,6 +8,7 @@ import { admin, createTestApp, PASSWORD, startMockGraph } from "./helpers.js";
 const DAY_MS = 24 * 60 * 60 * 1000;
 const WEBHOOK_SECRET = "whsec_teste";
 const CHECKOUT_URL = "https://checkout.stripe.test/c/pay/cs_test_1";
+const PORTAL_URL = "https://billing.stripe.test/p/session/bps_test_1";
 
 describe("cadastro pelo site, teste grátis e assinatura", () => {
   let app: INestApplication;
@@ -19,6 +20,8 @@ describe("cadastro pelo site, teste grátis e assinatura", () => {
   let other: ReturnType<typeof request.agent>;
   let cantina: string;
   let segunda: string;
+  // Assinaturas que a Stripe simulada devolve para qualquer cliente.
+  let subscriptions: string[] = [];
 
   const signupBody = (email: string) => ({
     restaurantName: `Cantina Teste ${suffix}`,
@@ -30,6 +33,8 @@ describe("cadastro pelo site, teste grátis e assinatura", () => {
   });
 
   const tenant = (id: string) => admin.tenant.findUniqueOrThrow({ where: { id } });
+  const calls = () => stripe.requests.map((call) => `${call.method} ${call.path}`);
+  const form = (index: number) => Object.fromEntries(new URLSearchParams(String(stripe.requests[index]!.body)));
 
   const postStripe = (event: unknown, secret = WEBHOOK_SECRET) => {
     const raw = JSON.stringify(event);
@@ -50,8 +55,9 @@ describe("cadastro pelo site, teste grátis e assinatura", () => {
   beforeAll(async () => {
     stripe = await startMockGraph();
     stripe.reply((call) => {
-      if (call.method === "GET") return { status: 200, body: { data: [{ id: "sub_antiga" }] } };
-      return { status: 200, body: call.method === "POST" ? { id: "cs_test_1", url: CHECKOUT_URL } : {} };
+      if (call.method === "GET") return { status: 200, body: { data: subscriptions.map((id) => ({ id })) } };
+      if (call.method === "DELETE") return { status: 200, body: {} };
+      return { status: 200, body: { url: call.path === "/v1/billing_portal/sessions" ? PORTAL_URL : CHECKOUT_URL } };
     });
     app = await createTestApp({ STRIPE_SECRET_KEY: "sk_test_chave", STRIPE_WEBHOOK_SECRET: WEBHOOK_SECRET, STRIPE_API_URL: stripe.url });
     owner = request.agent(app.getHttpServer());
@@ -73,7 +79,7 @@ describe("cadastro pelo site, teste grátis e assinatura", () => {
     expect(String(response.headers["set-cookie"])).toMatch(/dishdesk_session=.+HttpOnly/);
     expect(response.body.user).toMatchObject({ name: "Bruna Lima", email, isSuperAdmin: false });
     expect(response.body.context).toMatchObject({ mode: "tenant", tenants: [{ name: `Cantina Teste ${suffix}`, role: "ADMIN" }] });
-    expect(response.body.tenants).toMatchObject([{ blockedBy: null }]);
+    expect(response.body.tenants).toMatchObject([{ blockedBy: null, billing: { plan: null, trustUntil: null, trustAvailable: false } }]);
     cantina = response.body.context.tenants[0].id;
     await request(app.getHttpServer()).get("/api/auth/me").set("Authorization", `Bearer ${response.body.accessToken}`).expect(200);
 
@@ -112,15 +118,17 @@ describe("cadastro pelo site, teste grátis e assinatura", () => {
     const refreshed = await owner.post("/api/auth/refresh").expect(200);
     expect(refreshed.body).toMatchObject({ context: null, accessToken: null, tenants: [{ id: cantina, blockedBy: "trial" }] });
     await owner.post("/api/auth/context").send({ mode: "tenant", tenantId: cantina }).expect(402);
+    // A liberação por confiança é só para assinatura vencida: quem nunca pagou não estica o teste.
+    expect(refreshed.body.tenants[0].billing.trustAvailable).toBe(false);
+    await owner.post("/api/auth/billing/trust").send({ tenantId: cantina }).expect(409);
   });
 
-  it("checkout: mensal no cartão e anual no Pix, só para o administrador de um restaurante bloqueado", async () => {
+  it("checkout: mensal no cartão e anual em qualquer meio, só para o administrador do restaurante", async () => {
     const checkout = (agent: ReturnType<typeof request.agent>, tenantId: string, plan: string) =>
       agent.post("/api/auth/billing/checkout").send({ tenantId, plan });
 
     await request(app.getHttpServer()).post("/api/auth/billing/checkout").send({ tenantId: cantina, plan: "monthly" }).expect(401);
     await checkout(other, cantina, "monthly").expect(403); // não é da equipe
-    await checkout(other, segunda, "monthly").expect(409); // ainda em teste
 
     const agentEmail = `atendente-${suffix}@teste.local`;
     emails.push(agentEmail);
@@ -136,7 +144,7 @@ describe("cadastro pelo site, teste grátis e assinatura", () => {
     expect(monthly.body).toEqual({ url: CHECKOUT_URL });
     expect(stripe.requests).toHaveLength(1);
     expect(stripe.requests[0]).toMatchObject({ method: "POST", path: "/v1/checkout/sessions", authorization: "Bearer sk_test_chave" });
-    expect(Object.fromEntries(new URLSearchParams(String(stripe.requests[0]!.body)))).toEqual({
+    expect(form(0)).toEqual({
       mode: "subscription",
       "payment_method_types[0]": "card",
       "line_items[0][quantity]": "1",
@@ -154,12 +162,18 @@ describe("cadastro pelo site, teste grátis e assinatura", () => {
     });
 
     await checkout(owner, cantina, "annual").expect(200);
-    expect(Object.fromEntries(new URLSearchParams(String(stripe.requests[1]!.body)))).toMatchObject({
-      mode: "payment",
-      "payment_method_types[0]": "pix",
-      "line_items[0][price_data][unit_amount]": "99900",
-    });
+    expect(form(1)).toMatchObject({ mode: "payment", "line_items[0][price_data][unit_amount]": "99900" });
     expect(String(stripe.requests[1]!.body)).not.toContain("recurring");
+    // Sem meio de pagamento fixo: a Stripe mostra os que estão ativos no painel.
+    expect(String(stripe.requests[1]!.body)).not.toContain("payment_method_types");
+
+    // Ainda no teste grátis, pela aba Pagamento: assina na hora e volta para as configurações.
+    await checkout(other, segunda, "monthly").expect(200);
+    expect(form(2)).toMatchObject({
+      mode: "subscription",
+      success_url: "http://localhost:3000/configuracoes/pagamento?pago=1",
+      cancel_url: "http://localhost:3000/configuracoes/pagamento",
+    });
   });
 
   it("webhook recusa assinatura errada e ignora pagamento ainda não confirmado", async () => {
@@ -185,8 +199,15 @@ describe("cadastro pelo site, teste grátis e assinatura", () => {
     expect((await tenant(cantina)).paidUntil).toEqual(paidUntil);
 
     const refreshed = await owner.post("/api/auth/refresh").expect(200);
-    expect(refreshed.body.tenants).toMatchObject([{ id: cantina, blockedBy: null }]);
+    expect(refreshed.body.tenants).toMatchObject([{ id: cantina, blockedBy: null, billing: { plan: "ANNUAL", accessUntil: paidUntil.toISOString() } }]);
     await owner.post("/api/auth/context").send({ mode: "tenant", tenantId: cantina }).expect(200);
+
+    // Com o plano anual em vigor o mensal não é oferecido; outro ano pode ser pago pela aba Pagamento.
+    stripe.requests.length = 0;
+    await owner.post("/api/auth/billing/checkout").send({ tenantId: cantina, plan: "monthly" }).expect(409);
+    await owner.post("/api/auth/billing/checkout").send({ tenantId: cantina, plan: "annual" }).expect(200);
+    expect(calls()).toEqual(["POST /v1/checkout/sessions"]);
+    expect(form(0).success_url).toBe("http://localhost:3000/configuracoes/pagamento?pago=1");
   });
 
   it("mensalidade: o primeiro pagamento libera um mês e cada renovação estende até o fim do período pago", async () => {
@@ -200,9 +221,9 @@ describe("cadastro pelo site, teste grátis e assinatura", () => {
     const first = await tenant(segunda);
     expect(first.stripeCustomerId).toBe(customer);
     const days = (date: Date | null) => (date!.getTime() - Date.now()) / DAY_MS;
-    // Um mês mais a folga de 3 dias para a cobrança da renovação.
-    expect(days(first.paidUntil)).toBeGreaterThan(30);
-    expect(days(first.paidUntil)).toBeLessThan(35);
+    // Um mês mais a folga de 1 dia para a cobrança da renovação.
+    expect(days(first.paidUntil)).toBeGreaterThan(28);
+    expect(days(first.paidUntil)).toBeLessThan(33);
 
     const invoice = (id: string, periodEnd: number) => ({
       type: "invoice.paid",
@@ -213,7 +234,7 @@ describe("cadastro pelo site, teste grátis e assinatura", () => {
     expect((await tenant(segunda)).paidUntil).toEqual(first.paidUntil);
 
     await postStripe(invoice(`in_${suffix}_2`, now + 61 * 86_400)).expect(200);
-    expect((await tenant(segunda)).paidUntil).toEqual(new Date((now + 64 * 86_400) * 1000));
+    expect((await tenant(segunda)).paidUntil).toEqual(new Date((now + 62 * 86_400) * 1000));
     expect(await admin.billingPayment.count({ where: { tenantId: segunda } })).toBe(2);
 
     // Fatura de um cliente da Stripe que não é de nenhum restaurante: ignorada.
@@ -221,20 +242,90 @@ describe("cadastro pelo site, teste grátis e assinatura", () => {
     expect(await admin.billingPayment.count({ where: { id: "x" } })).toBe(0);
   });
 
-  it("assinatura vencida bloqueia de novo; o checkout novo cancela a assinatura antiga e reaproveita o cliente", async () => {
-    await admin.tenant.update({ where: { id: segunda }, data: { paidUntil: new Date(Date.now() - 60_000) } });
-    const refreshed = await other.post("/api/auth/refresh").expect(200);
-    expect(refreshed.body.tenants).toMatchObject([{ id: segunda, blockedBy: "payment" }]);
+  it("quem assina o mensal e está em dia troca o cartão no portal da Stripe, sem outra assinatura", async () => {
+    subscriptions = ["sub_atual"];
+    stripe.requests.length = 0;
+    const response = await other.post("/api/auth/billing/checkout").send({ tenantId: segunda, plan: "monthly" }).expect(200);
+    expect(response.body).toEqual({ url: PORTAL_URL });
+    expect(calls()).toEqual([`GET /v1/subscriptions?customer=cus_${suffix}`, "POST /v1/billing_portal/sessions"]);
+    expect(form(1)).toEqual({
+      customer: `cus_${suffix}`,
+      locale: "pt-BR",
+      return_url: "http://localhost:3000/configuracoes/pagamento",
+      "flow_data[type]": "payment_method_update",
+      "flow_data[after_completion][type]": "redirect",
+      "flow_data[after_completion][redirect][return_url]": "http://localhost:3000/configuracoes/pagamento?cartao=1",
+    });
+  });
 
+  it("pagamento pendente: bloqueia, libera por confiança uma vez por atraso e mostra o prazo", async () => {
+    await admin.tenant.update({ where: { id: segunda }, data: { paidUntil: new Date(Date.now() - 60_000) } });
+    const blocked = await other.post("/api/auth/refresh").expect(200);
+    expect(blocked.body.tenants).toMatchObject([{ id: segunda, blockedBy: "payment", billing: { trustUntil: null, trustAvailable: true } }]);
+
+    await owner.post("/api/auth/billing/trust").send({ tenantId: segunda }).expect(403); // não é da equipe
+    await request(app.getHttpServer()).post("/api/auth/billing/trust").send({ tenantId: segunda }).expect(401);
+    await other.post("/api/auth/billing/trust").send({ tenantId: segunda }).expect(204);
+
+    const released = await other.post("/api/auth/refresh").expect(200);
+    expect(released.body.tenants).toMatchObject([{ id: segunda, blockedBy: null, billing: { plan: "MONTHLY", trustAvailable: false } }]);
+    const trustMs = new Date(released.body.tenants[0].billing.trustUntil).getTime() - Date.now();
+    expect(trustMs).toBeGreaterThan(3 * DAY_MS - 60_000);
+    expect(trustMs).toBeLessThanOrEqual(3 * DAY_MS);
+    await other.post("/api/auth/context").send({ mode: "tenant", tenantId: segunda }).expect(200);
+    await other.post("/api/auth/billing/trust").send({ tenantId: segunda }).expect(409);
+
+    // Os 3 dias passam sem pagamento: bloqueia de novo e a liberação deste atraso já foi usada.
+    await admin.tenant.update({ where: { id: segunda }, data: { trustUntil: new Date(Date.now() - 60_000) } });
+    const expired = await other.post("/api/auth/refresh").expect(200);
+    expect(expired.body.tenants).toMatchObject([{ id: segunda, blockedBy: "payment", billing: { trustUntil: null, trustAvailable: false } }]);
+    await other.post("/api/auth/billing/trust").send({ tenantId: segunda }).expect(409);
+  });
+
+  it("pagamento novo com a assinatura vencida: cobra na hora, cancela a antiga e devolve a liberação por confiança", async () => {
+    subscriptions = ["sub_antiga"];
     stripe.requests.length = 0;
     await other.post("/api/auth/billing/checkout").send({ tenantId: segunda, plan: "monthly" }).expect(200);
-    expect(stripe.requests.map((call) => `${call.method} ${call.path}`)).toEqual([
-      `GET /v1/subscriptions?customer=cus_${suffix}`,
-      "DELETE /v1/subscriptions/sub_antiga",
-      "POST /v1/checkout/sessions",
-    ]);
-    const params = new URLSearchParams(String(stripe.requests[2]!.body));
-    expect(params.get("customer")).toBe(`cus_${suffix}`);
-    expect(params.has("customer_email")).toBe(false);
+    // A assinatura antiga só é cancelada quando o pagamento novo é confirmado.
+    expect(calls()).toEqual(["POST /v1/checkout/sessions"]);
+    expect(form(0)).toMatchObject({
+      customer: `cus_${suffix}`,
+      success_url: `http://localhost:3000/assinatura?restaurante=${segunda}&pago=1`,
+    });
+    expect(form(0)).not.toHaveProperty("customer_email");
+
+    subscriptions = ["sub_antiga", "sub_nova"];
+    stripe.requests.length = 0;
+    await postStripe(
+      sessionEvent({
+        id: `cs_${suffix}_novo`,
+        mode: "subscription",
+        client_reference_id: segunda,
+        customer: `cus_${suffix}`,
+        subscription: "sub_nova",
+        invoice: `in_${suffix}_novo`,
+        amount_total: 9_900,
+      }),
+    ).expect(200);
+    expect(calls()).toEqual([`GET /v1/subscriptions?customer=cus_${suffix}`, "DELETE /v1/subscriptions/sub_antiga"]);
+
+    expect((await tenant(segunda)).trustUntil).toBeNull();
+    const paid = await other.post("/api/auth/refresh").expect(200);
+    expect(paid.body.tenants).toMatchObject([{ id: segunda, blockedBy: null, billing: { trustUntil: null, trustAvailable: false } }]);
+
+    // Num atraso futuro, a liberação por confiança volta a valer.
+    await admin.tenant.update({ where: { id: segunda }, data: { paidUntil: new Date(Date.now() - 60_000) } });
+    const again = await other.post("/api/auth/refresh").expect(200);
+    expect(again.body.tenants[0].billing.trustAvailable).toBe(true);
+  });
+
+  it("plano anual pago por quem assinava o mensal cancela a assinatura", async () => {
+    subscriptions = ["sub_nova"];
+    stripe.requests.length = 0;
+    await postStripe(
+      sessionEvent({ id: `cs_${suffix}_anual`, mode: "payment", client_reference_id: segunda, customer: `cus_${suffix}`, amount_total: 99_900 }),
+    ).expect(200);
+    expect(calls()).toEqual([`GET /v1/subscriptions?customer=cus_${suffix}`, "DELETE /v1/subscriptions/sub_nova"]);
+    expect(await tenant(segunda)).toMatchObject({ billingPlan: "ANNUAL", trustUntil: null });
   });
 });

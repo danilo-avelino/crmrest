@@ -1,6 +1,6 @@
 "use client";
 
-import { BusinessHours, type TenantSettingsDto, WEEKDAY_LABELS } from "@dishdesk/shared";
+import { BusinessHours, fillMessage, reopeningAt, type TenantSettingsDto, WEEKDAY_LABELS } from "@dishdesk/shared";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { SparklesIcon } from "lucide-react";
 import { useState } from "react";
@@ -139,6 +139,9 @@ function BusinessHoursForm({ settings }: { settings: TenantSettingsDto }) {
             onChange={(event) => setHours((current) => ({ ...current, closedMessage: event.target.value }))}
             className="w-full resize-y rounded-lg border border-input bg-surface px-3 py-2 text-[13px] leading-normal outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/8 disabled:opacity-55"
           />
+          <p className="text-[11px] text-ink-3">
+            {"{retorno}"} vira o dia e a hora em que o atendimento volta, como “hoje às 18:00” ou “amanhã às 11:00”.
+          </p>
         </div>
 
         {settings.canEdit ? (
@@ -164,7 +167,9 @@ function BusinessHoursForm({ settings }: { settings: TenantSettingsDto }) {
             <SparklesIcon className="size-3" aria-hidden />
             Automação · fora do horário
           </div>
-          <div className="leading-[1.45] break-words whitespace-pre-wrap">{hours.closedMessage}</div>
+          <div className="leading-[1.45] break-words whitespace-pre-wrap">
+            {fillMessage(hours.closedMessage, { retorno: reopeningAt(hours, new Date()) })}
+          </div>
         </div>
       </div>
     </section>

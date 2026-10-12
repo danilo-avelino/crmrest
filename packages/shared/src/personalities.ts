@@ -21,7 +21,7 @@ export const PERSONALITY_INFO: Record<Personality, { label: string; description:
 
 /**
  * Todas as mensagens que as automações mandam ao cliente. Marcadores trocados na hora do envio: {nome} (primeiro nome),
- * {pedido} (número do pedido), {status}, {hora} (19:45), {tempo} ("13 minutos atrás") e {quantidade}.
+ * {pedido} (número do pedido), {status}, {hora} (19:45), {tempo} ("13 minutos atrás"), {quantidade} e {retorno} ("amanhã às 11:00").
  * Uma mensagem automática nova entra aqui, com o texto de cada personalidade (regra do CLAUDE.md).
  */
 export type AutomationMessages = {
@@ -30,7 +30,7 @@ export type AutomationMessages = {
   phoneRequest: string;
   phoneReminder: string;
   phoneConfirmation: string;
-  /** Fora do horário, no lugar do menu. */
+  /** Fora do horário, no lugar do menu. {retorno} */
   closedMessage: string;
   /** O menu passou o atendimento à equipe. */
   handoff: string;
@@ -71,7 +71,7 @@ export const PERSONALITY_MESSAGES: Record<Personality, AutomationMessages> = {
     phoneRequest: "Para garantirmos seu atendimento caso a conversa caia, pode nos informar seu telefone com DDD?",
     phoneReminder: "Só lembrando: pode nos passar seu telefone com DDD? 😊",
     phoneConfirmation: "Obrigado! Já anotamos seu telefone.",
-    closedMessage: "Olá! 👋 No momento estamos fechados. Assim que abrirmos, respondemos sua mensagem.",
+    closedMessage: "Olá! 👋 No momento estamos fechados. Voltamos a atender {retorno} e, assim que abrirmos, respondemos sua mensagem.",
     handoff: "Certo! Um atendente já vai falar com você.",
     orderNumberRequest: "Qual é o número do pedido? Ele aparece no aplicativo ou no comprovante.",
     orderFound: "Encontramos o pedido #{pedido} ({status}):",
@@ -99,7 +99,8 @@ export const PERSONALITY_MESSAGES: Record<Personality, AutomationMessages> = {
       "Para darmos continuidade ao seu atendimento caso a conversa seja interrompida, poderia, por gentileza, informar seu telefone com DDD?",
     phoneReminder: "Ainda não recebemos o seu telefone. Poderia, por gentileza, informá-lo com DDD?",
     phoneConfirmation: "Agradecemos. Seu telefone foi registrado com sucesso.",
-    closedMessage: "Olá. No momento estamos fora do horário de atendimento. Sua mensagem será respondida assim que retomarmos as atividades.",
+    closedMessage:
+      "Olá. No momento estamos fora do horário de atendimento. Retomaremos as atividades {retorno}, quando sua mensagem será respondida.",
     handoff: "Perfeitamente. Um de nossos atendentes dará continuidade ao seu atendimento em instantes.",
     orderNumberRequest: "Por gentileza, informe o número do pedido. Ele consta no aplicativo ou no comprovante.",
     orderFound: "Localizamos o pedido #{pedido} ({status}):",
@@ -127,7 +128,7 @@ export const PERSONALITY_MESSAGES: Record<Personality, AutomationMessages> = {
     phoneRequest: "Rapidinho: pode mandar seu telefone com DDD? 📱 Assim, se a conversa cair, a gente te encontra!",
     phoneReminder: "Ei, não esquece da gente! 😄 Manda seu telefone com DDD?",
     phoneConfirmation: "Oba, telefone anotado! 🙌 Valeu!",
-    closedMessage: "Oiê! 🌙 A gente tá fechadinho agora, mas assim que abrir te respondemos, combinado? 😉",
+    closedMessage: "Oiê! 🌙 A gente tá fechadinho agora, mas volta {retorno} e te responde assim que abrir, combinado? 😉",
     handoff: "Show! 🙌 Já já um atendente vem falar com você!",
     orderNumberRequest: "Bora achar seu pedido! 🔎 Qual é o número dele? Tá no app ou no comprovante.",
     orderFound: "Achamos! 🎉 Pedido #{pedido} ({status}):",
@@ -153,7 +154,7 @@ export const PERSONALITY_MESSAGES: Record<Personality, AutomationMessages> = {
     phoneRequest: "Passa seu telefone com DDD pra gente? Aí, se a conversa cair, a gente não te perde de vista 😉",
     phoneReminder: "Opa, só lembrando: manda aquele telefone com DDD? 😉",
     phoneConfirmation: "Fechou, telefone anotado! 👊",
-    closedMessage: "Opa! Agora a gente tá fechado 😴 Mas relaxa: assim que abrir, a gente te responde.",
+    closedMessage: "Opa! Agora a gente tá fechado 😴 Mas relaxa: a gente volta {retorno} e te responde assim que abrir.",
     handoff: "Fechou! Já tem gente da equipe vindo falar com você 👊",
     orderNumberRequest: "Qual o número do pedido? Dá pra ver no app ou no comprovante.",
     orderFound: "Achamos aqui! Pedido #{pedido} ({status}):",
@@ -178,7 +179,8 @@ export const PERSONALITY_MESSAGES: Record<Personality, AutomationMessages> = {
     phoneRequest: "Para não perdermos o contato caso a conversa caia, pode nos deixar seu telefone com DDD? 🧡",
     phoneReminder: "Passando para lembrar com carinho: pode nos deixar seu telefone com DDD? 🧡",
     phoneConfirmation: "Muito obrigado! Seu telefone já está guardadinho com a gente.",
-    closedMessage: "Olá! 🧡 Agora estamos fechados, descansando para te receber da melhor forma. Assim que abrirmos, respondemos sua mensagem com todo carinho.",
+    closedMessage:
+      "Olá! 🧡 Agora estamos fechados, descansando para te receber da melhor forma. Voltamos {retorno} e respondemos sua mensagem com todo carinho.",
     handoff: "Pode deixar! Alguém da nossa equipe já vem conversar com você 🧡",
     orderNumberRequest: "Vamos encontrar seu pedido juntos! Qual é o número dele? Você encontra no aplicativo ou no comprovante.",
     orderFound: "Encontramos seu pedido #{pedido} ({status}):",
@@ -207,7 +209,7 @@ export const PERSONALITY_MESSAGES: Record<Personality, AutomationMessages> = {
     phoneRequest: "Informe seu telefone com DDD, por favor.",
     phoneReminder: "Lembrete: informe seu telefone com DDD.",
     phoneConfirmation: "Telefone cadastrado.",
-    closedMessage: "Estamos fechados no momento. Respondemos assim que abrirmos.",
+    closedMessage: "Estamos fechados no momento. Voltamos {retorno} e respondemos assim que abrirmos.",
     handoff: "Um atendente vai falar com você.",
     orderNumberRequest: "Qual é o número do pedido? Está no aplicativo ou no comprovante.",
     orderFound: "Pedido #{pedido} ({status}):",

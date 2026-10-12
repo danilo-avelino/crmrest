@@ -4,12 +4,23 @@ import { LoaderCircleIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { type ReactNode, useEffect } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
+import { TrustReminder } from "@/components/auth/trust-reminder";
 
 function ContextLoading() {
   return (
     <div className="flex min-h-screen items-center justify-center gap-2 text-ink-3" aria-busy>
       <LoaderCircleIcon className="size-4 animate-spin" aria-hidden />
       Carregando…
+    </div>
+  );
+}
+
+/** Moldura das páginas do painel: o lembrete da liberação por confiança no topo e a página no resto da tela. */
+function PanelFrame({ children }: { children: ReactNode }) {
+  return (
+    <div className="flex h-screen flex-col">
+      <TrustReminder />
+      <div className="min-h-0 flex-1">{children}</div>
     </div>
   );
 }
@@ -31,7 +42,7 @@ export function RequireContext({ children }: { children: ReactNode }) {
   if (!ready) {
     return <ContextLoading />;
   }
-  return children;
+  return <PanelFrame>{children}</PanelFrame>;
 }
 
 /** Páginas fora da Inbox: só administradores do restaurante. Atendentes voltam para a Inbox. */
@@ -49,7 +60,7 @@ export function RequireAdminContext({ children }: { children: ReactNode }) {
   if (!ready) {
     return <ContextLoading />;
   }
-  return children;
+  return <PanelFrame>{children}</PanelFrame>;
 }
 
 /** Painel da plataforma: só a equipe da plataforma (super admin). Os outros voltam para a Inbox. */
@@ -67,5 +78,5 @@ export function RequireSuperAdmin({ children }: { children: ReactNode }) {
   if (!ready) {
     return <ContextLoading />;
   }
-  return children;
+  return <PanelFrame>{children}</PanelFrame>;
 }

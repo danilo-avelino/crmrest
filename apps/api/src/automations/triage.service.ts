@@ -12,6 +12,7 @@ import {
   menuMessage,
   orderLinksMessage,
   orderLinksOf,
+  reopeningAt,
 } from "@dishdesk/shared";
 import { InjectQueue } from "@nestjs/bullmq";
 import { Injectable } from "@nestjs/common";
@@ -130,7 +131,8 @@ export class TriageService {
       // Fora do horário: avisa no lugar do menu (ninguém atenderia a opção escolhida); a coleta de telefone segue.
       const hours = businessHoursOf(settings);
       if (hours.enabled && !isOpenAt(hours, new Date())) {
-        const id = await automationMessage(tx, conversation, "after_hours", hours.closedMessage);
+        const text = fillMessage(hours.closedMessage, { retorno: reopeningAt(hours, new Date()) });
+        const id = await automationMessage(tx, conversation, "after_hours", text);
         await setAutomationState(tx, conversation.id, { triage: "done", afterHours: true });
         await this.keepPending(tx, conversation.id);
         return { send: [id], done: true };

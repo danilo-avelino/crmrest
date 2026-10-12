@@ -17,7 +17,7 @@ export function InboxView() {
   const offline = useInboxRealtime();
 
   return (
-    <div className="flex h-screen overflow-hidden bg-paper">
+    <div className="flex h-full overflow-hidden bg-paper">
       {offline && (
         <div
           role="status"

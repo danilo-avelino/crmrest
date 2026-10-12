@@ -346,12 +346,13 @@ describe("menu de atendimento, busca do pedido e pesquisa de satisfação", () =
 
       await admin.tenant.update({
         where: { id: fx.tenant.id },
-        data: { settings: { businessHours: { enabled: true, days, closedMessage: "Estamos fechados. Abrimos às 18h!" } } },
+        data: { settings: { businessHours: { enabled: true, days, closedMessage: "Estamos fechados. Voltamos {retorno}." } } },
       });
       await say("5511970000007", "wamid.H1", "Oi, vocês estão abertos?");
       // Fica pendente para a equipe responder quando abrir (sem encerramento por inatividade nem avaliação).
       expect(await conversationOf("5511970000007")).toMatchObject({ status: "PENDING", automationState: { triage: "done", afterHours: true } });
-      expect((await contents("5511970000007")).at(-1)).toMatchObject({ automation: "after_hours", text: "Estamos fechados. Abrimos às 18h!" });
+      // {retorno} vira quando o atendimento volta; sem nenhum dia aberto, "em breve".
+      expect((await contents("5511970000007")).at(-1)).toMatchObject({ automation: "after_hours", text: "Estamos fechados. Voltamos em breve." });
       // Mensagens seguintes do mesmo atendimento não repetem o aviso nem abrem o menu, e a conversa continua pendente.
       await say("5511970000007", "wamid.H2", "1");
       expect(await automations("5511970000007")).toEqual(["after_hours"]);

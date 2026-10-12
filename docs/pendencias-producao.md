@@ -46,13 +46,16 @@ Esta é a lista do que falta para o Dish Desk atender restaurantes de verdade. Q
 
 ## 2. Cadastro pelo site, teste grátis e cobrança
 
-Feito em 11/10 (Claude): o botão da landing leva a `/cadastro`, que cria o restaurante com 15 dias de teste. Depois do teste, o painel bloqueia e mostra `/assinatura`, com R$ 99 por mês no cartão ou R$ 999 por ano no Pix, pagos na Stripe. O WhatsApp e o CPF ou CNPJ de quem se cadastrou aparecem em `/plataforma`.
+Feito em 11/10 (Claude): o botão da landing leva a `/cadastro`, que cria o restaurante com 15 dias de teste. Depois do teste, o painel bloqueia e mostra `/assinatura`, com R$ 99 por mês no cartão (assinatura, débito automático) ou R$ 999 por ano em pagamento único, em qualquer meio de pagamento ativo na Stripe. O WhatsApp e o CPF ou CNPJ de quem se cadastrou aparecem em `/plataforma`.
+
+Pagamento pendente (Claude, 11/10): a renovação do mensal tem 1 dia de folga; passado esse dia (ou vencido o plano anual), o painel bloqueia com a tela "Pagamento pendente". Nela, qualquer usuário do restaurante pode "Liberar acesso por confiança" por 3 dias, uma vez por atraso (o direito volta quando o pagamento chega). Durante esses dias o painel mostra no topo "Avise ao financeiro para concluir o pagamento. X dias restantes". Quem só fez o teste grátis não tem essa liberação. Em Configurações → Pagamento o administrador vê a situação, cadastra um cartão novo (plano mensal) ou gera o plano anual.
 
 - [ ] **Conta da Stripe** — sem ela, o restaurante bloqueado vê "O pagamento ainda não está disponível"
-  - [ ] Criar a conta com o CNPJ da Avelino Gastronomia e ativar o Pix nos meios de pagamento — você.
-  - [ ] Criar o webhook `https://www.dishdesk.com.br/api/webhooks/stripe` com os eventos `checkout.session.completed`, `checkout.session.async_payment_succeeded` e `invoice.paid` — você, com o Claude orientando.
+  - [ ] Criar a conta com o CNPJ da Avelino Gastronomia e ativar, nos meios de pagamento, os que o plano anual deve aceitar (Pix, boleto, cartão): o checkout do anual mostra todos os ativos — você.
+  - [ ] Criar o webhook `https://www.dishdesk.com.br/api/webhooks/stripe` com os eventos `checkout.session.completed`, `checkout.session.async_payment_succeeded` e `invoice.paid` — você, com o Claude orientando. O do modo de teste foi criado em 12/10 (Claude), com o segredo no `.env` local; falta o do modo de produção, que tem outro segredo.
   - [ ] Pôr `STRIPE_SECRET_KEY` e `STRIPE_WEBHOOK_SECRET` no serviço `api` da Railway — você.
-  - [ ] Fazer um pagamento de cada plano no modo de teste da Stripe e conferir se o restaurante é liberado (o teste automático usa uma Stripe simulada).
+  - [ ] Salvar as configurações do portal do cliente (Customer Portal) no painel da Stripe, com a troca de meio de pagamento ligada: sem isso, "Cadastrar novo cartão" de quem já assina o mensal responde "Não foi possível abrir o pagamento" — você, com o Claude orientando.
+  - [ ] Fazer um pagamento de cada plano no modo de teste da Stripe e conferir se o restaurante é liberado; trocar o cartão pelo portal e pagar o anual com o mensal ativo, conferindo se a assinatura mensal é cancelada (o teste automático usa uma Stripe simulada).
 - [ ] **Cadastro sem confirmação de e-mail.** Qualquer pessoa cria um restaurante com um e-mail que não é dela. O limite é de 10 cadastros por hora, e hoje vale para todos os visitantes somados, porque a API não enxerga o IP de quem acessa (o mesmo vale para o limite do login). Depende do provedor de e-mail e de a API confiar no proxy — Claude.
 - [x] **Teste grátis repetido** — Claude, 11/10. Quem cria outra conta e conecta um canal (WhatsApp, Instagram, iFood ou Cardápio Web) que já passou por um teste grátis encerrado há menos de 60 dias tem o teste encerrado na hora e cai na tela de pagamento, com o aviso. Depois de pagar, o canal sai do restaurante antigo e conecta no novo. Continua possível repetir o teste com outro número, outra conta e outra loja.
 - [ ] **Cancelar a assinatura.** O cliente não cancela pelo painel; hoje só você, no painel da Stripe.

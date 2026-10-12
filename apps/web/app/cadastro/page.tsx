@@ -24,7 +24,7 @@ export default function SignupPage() {
       <SignupForm />
       <AuthAside
         title="Todo o atendimento na sua mesa"
-        subtitle={`Depois do teste, ${price("monthly")} por mês no cartão ou ${price("annual")} por ano no Pix.`}
+        subtitle={`Depois do teste, ${price("monthly")} por mês no cartão ou ${price("annual")} por ano.`}
         items={[
           "WhatsApp, Instagram e iFood na mesma caixa de entrada",
           "Pedido do cliente ao lado da conversa",

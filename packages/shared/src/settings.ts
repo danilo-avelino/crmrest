@@ -156,11 +156,15 @@ const BRASILIA_CLOCK = new Intl.DateTimeFormat("en-US", {
 const WEEKDAYS_EN = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const minutesOf = (clock: string) => Number(clock.slice(0, 2)) * 60 + Number(clock.slice(3));
 
+/** Dia da semana (0 = domingo) e minutos desde a meia-noite, no horário de Brasília. */
+function brasiliaClock(at: Date): { day: number; now: number } {
+  const parts = Object.fromEntries(BRASILIA_CLOCK.formatToParts(at).map((part) => [part.type, part.value]));
+  return { day: WEEKDAYS_EN.indexOf(parts.weekday ?? ""), now: Number(parts.hour) * 60 + Number(parts.minute) };
+}
+
 /** O restaurante está aberto neste instante (horário de Brasília)? */
 export function isOpenAt(hours: BusinessHours, at: Date): boolean {
-  const parts = Object.fromEntries(BRASILIA_CLOCK.formatToParts(at).map((part) => [part.type, part.value]));
-  const day = WEEKDAYS_EN.indexOf(parts.weekday ?? "");
-  const now = Number(parts.hour) * 60 + Number(parts.minute);
+  const { day, now } = brasiliaClock(at);
   const today = hours.days[day];
   const yesterday = hours.days[(day + 6) % 7];
   if (today) {
@@ -173,6 +177,24 @@ export function isOpenAt(hours: BusinessHours, at: Date): boolean {
     if (close <= open && now < close) return true;
   }
   return false;
+}
+
+const WEEKDAY_RETURN = ["no domingo", "na segunda-feira", "na terça-feira", "na quarta-feira", "na quinta-feira", "na sexta-feira", "no sábado"];
+
+/**
+ * Quando o atendimento volta, para o {retorno} da mensagem de fora do horário: "hoje às 18:00", "amanhã às 11:00",
+ * "na segunda-feira às 11:00". Sem nenhum dia aberto, "em breve".
+ */
+export function reopeningAt(hours: BusinessHours, at: Date): string {
+  const { day, now } = brasiliaClock(at);
+  for (let ahead = 0; ahead <= 7; ahead++) {
+    const shift = hours.days[(day + ahead) % 7];
+    // Hoje só vale o turno que ainda não começou.
+    if (!shift || (ahead === 0 && minutesOf(shift.open) <= now)) continue;
+    const when = ahead === 0 ? "hoje" : ahead === 1 ? "amanhã" : WEEKDAY_RETURN[(day + ahead) % 7];
+    return `${when} às ${shift.open}`;
+  }
+  return "em breve";
 }
 
 // ---------- Usuários do restaurante (E15) ----------
