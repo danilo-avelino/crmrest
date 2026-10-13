@@ -1,8 +1,20 @@
 import type { Prisma, TenantTx } from "@dishdesk/database";
-import { CHANNEL_LABEL, type CurrentOrderDto, type CustomerHistory, type OrderCustomerChat, type OrderListQuery, type OrderPage } from "@dishdesk/shared";
-import { Inject, Injectable, NotFoundException, UnprocessableEntityException } from "@nestjs/common";
+import type { ChannelType, OrderStatus } from "@dishdesk/database/enums";
+import {
+  type AnswerDisputeRequest,
+  CHANNEL_LABEL,
+  type CurrentOrderDto,
+  type CustomerHistory,
+  type OrderAction,
+  type OrderCancellationReason,
+  type OrderCustomerChat,
+  type OrderListQuery,
+  type OrderPage,
+} from "@dishdesk/shared";
+import { Inject, Injectable, Logger, NotFoundException, UnprocessableEntityException } from "@nestjs/common";
 import type { RequestAuth } from "../auth/auth.decorators.js";
 import { ENV, type Env } from "../config/env.js";
+import { IfoodClient } from "../connectors/ifood.client.js";
 import { toOrderDto } from "../conversations/conversation.mapper.js";
 import { scopeFor } from "../conversations/conversations.service.js";
 import { openIfoodConversation } from "../conversations/ifood-conversation.js";
@@ -11,6 +23,7 @@ import { RealtimeEmitter } from "../realtime/realtime.emitter.js";
 import { periodStart } from "../reports/reports.service.js";
 import { forecastOrder, orderUpdateMessage, PlatformOrder, promisedAt, STALE_MS } from "./forecast.js";
 import { customerHistory } from "./customer-history.js";
+import { eventDetail, openDispute, platformInfo } from "./ifood-order.js";
 import { latestOrderOf } from "./latest-order.js";
 
 const PAGE_SIZE = 50;
@@ -18,11 +31,16 @@ const PAGE_SIZE = 50;
 /** Aba Pedidos: todos os pedidos das integrações (iFood, Cardápio Web), sem abrir uma conversa para cada um. */
 @Injectable()
 export class OrdersService {
+  private readonly logger = new Logger(OrdersService.name);
+  private readonly ifood: IfoodClient;
+
   constructor(
     private readonly db: DatabaseService,
     private readonly realtime: RealtimeEmitter,
     @Inject(ENV) private readonly env: Env,
-  ) {}
+  ) {
+    this.ifood = new IfoodClient(env);
+  }
 
   async list(auth: RequestAuth, query: OrderListQuery, now = new Date()): Promise<OrderPage> {
     const where: Prisma.OrderWhereInput = {
@@ -39,7 +57,7 @@ export class OrdersService {
             channel: { select: { type: true } },
             tenant: { select: { id: true, name: true } },
             contact: { select: { id: true, name: true, phone: true, cpfHash: true, email: true } },
-            events: { orderBy: { occurredAt: "asc" }, select: { code: true, occurredAt: true } },
+            events: { orderBy: { occurredAt: "asc" }, select: { code: true, occurredAt: true, metadata: true } },
           },
           orderBy: [{ placedAt: "desc" }, { id: "desc" }],
           skip: (query.page - 1) * PAGE_SIZE,
@@ -59,13 +77,18 @@ export class OrdersService {
         const at = (code: string) => order.events.find((event) => event.code === code)?.occurredAt;
         const confirmed = at("CONFIRMED");
         const ready = at("READY_TO_PICKUP");
+        const ifood = order.channel.type === "IFOOD";
         return {
           ...toOrderDto(order),
           tenant: order.tenant,
           contact: { id: order.contact.id, name: order.contact.name },
           history: histories.get(order.contact.id)!,
-          events: order.events.map((event) => ({ code: event.code, occurredAt: event.occurredAt.toISOString() })),
+          events: order.events.map((event) => ({ code: event.code, occurredAt: event.occurredAt.toISOString(), detail: eventDetail(event) })),
           preparationSeconds: confirmed && ready ? Math.round((ready.getTime() - confirmed.getTime()) / 1000) : null,
+          nextAction: nextOrderAction(order),
+          cancelable: ifood && CANCELABLE.has(order.status),
+          platform: ifood ? platformInfo(order.raw) : null,
+          dispute: ifood ? openDispute(order.events, now) : null,
         };
       }),
       total,
@@ -81,6 +104,75 @@ export class OrdersService {
       if (!order) throw new NotFoundException("Pedido não encontrado.");
       return { text: (await orderUpdateMessage(tx, orderId))?.text ?? null };
     });
+  }
+
+  /** Botão do pedido: informa ao iFood a próxima etapa. O status só muda quando o evento do iFood chega pelo polling. */
+  async advance(auth: RequestAuth, orderId: string): Promise<{ action: OrderAction }> {
+    const order = await this.ifoodOrder(auth, orderId);
+    const action = nextOrderAction(order);
+    if (!action) throw new UnprocessableEntityException("Não há etapa para informar neste pedido.");
+    await this.askIfood(() => this.ifood.advance(order.externalOrderId, IFOOD_STEP[action]));
+    return { action };
+  }
+
+  /** Motivos que o iFood aceita para cancelar o pedido agora (lista vazia: não dá para cancelar). */
+  async cancellationReasons(auth: RequestAuth, orderId: string): Promise<{ reasons: OrderCancellationReason[] }> {
+    const order = await this.ifoodOrder(auth, orderId);
+    const reasons = await this.askIfood(() => this.ifood.cancellationReasons(order.externalOrderId));
+    return { reasons };
+  }
+
+  /** Pede o cancelamento ao iFood com um dos motivos que ele ofereceu; o pedido vira cancelado quando o evento chega. */
+  async cancel(auth: RequestAuth, orderId: string, code: string): Promise<void> {
+    const order = await this.ifoodOrder(auth, orderId);
+    const reasons = await this.askIfood(() => this.ifood.cancellationReasons(order.externalOrderId));
+    const reason = reasons.find((item) => item.code === code);
+    if (!reason) throw new UnprocessableEntityException("O iFood não aceita este motivo para o pedido. Escolha outro.");
+    await this.askIfood(() => this.ifood.requestCancellation(order.externalOrderId, reason));
+  }
+
+  /**
+   * Resposta da loja ao pedido do cliente em negociação (ex.: cancelamento): aceita ou recusa. O desfecho chega pelo
+   * polling (HANDSHAKE_SETTLEMENT e, se aceito, o cancelamento).
+   */
+  async answerDispute(auth: RequestAuth, orderId: string, answer: AnswerDisputeRequest, now = new Date()): Promise<void> {
+    const order = await this.ifoodOrder(auth, orderId);
+    const dispute = openDispute(order.events, now);
+    if (!dispute) throw new UnprocessableEntityException("Não há pedido do cliente aguardando resposta.");
+    if (answer.accept && dispute.acceptReasons.length && !dispute.acceptReasons.includes(answer.reason ?? "")) {
+      throw new UnprocessableEntityException("Escolha um dos motivos que o iFood aceita.");
+    }
+    if (!answer.accept && !answer.reason) throw new UnprocessableEntityException("Escolha o motivo da recusa.");
+    await this.askIfood(() => this.ifood.answerDispute(dispute.id, answer.accept ? "accept" : "reject", answer.reason));
+  }
+
+  private async ifoodOrder(auth: RequestAuth, orderId: string) {
+    const order = await this.db.withTenants(auth.scope, (tx) =>
+      tx.order.findUnique({
+        where: { id: orderId },
+        select: {
+          externalOrderId: true,
+          status: true,
+          raw: true,
+          channel: { select: { type: true } },
+          events: { orderBy: { occurredAt: "asc" }, select: { code: true, metadata: true } },
+        },
+      }),
+    );
+    if (!order) throw new NotFoundException("Pedido não encontrado.");
+    if (order.channel.type !== "IFOOD" || !this.ifood.configured) {
+      throw new UnprocessableEntityException("Este pedido não pode ser alterado pelo Dish Desk.");
+    }
+    return order;
+  }
+
+  private async askIfood<T>(call: () => Promise<T>): Promise<T> {
+    try {
+      return await call();
+    } catch (error) {
+      this.logger.warn(`iFood recusou a ação no pedido: ${error instanceof Error ? error.message : String(error)}`);
+      throw new UnprocessableEntityException("O iFood não aceitou. Confira se o pedido já mudou de etapa e tente de novo.");
+    }
   }
 
   /** Card do pedido informado por um entregador: por onde a equipe fala com o cliente. */
@@ -188,4 +280,22 @@ export class OrdersService {
       };
     });
   }
+}
+
+const IFOOD_STEP = { CONFIRM: "confirm", READY: "readyToPickup", DISPATCH: "dispatch" } as const;
+
+/** Depois de entregue (ou cancelado) não há o que cancelar; antes disso, o iFood decide pelos motivos que oferece. */
+const CANCELABLE = new Set<OrderStatus>(["PLACED", "CONFIRMED", "PREPARING", "READY", "DISPATCHED"]);
+
+/**
+ * Próxima etapa que a loja informa ao iFood. O despacho só existe na entrega feita pela própria loja: com entregador do
+ * iFood (ou retirada), a saída vem do evento de coleta.
+ */
+export function nextOrderAction(order: { status: OrderStatus; raw: unknown; channel: { type: ChannelType } }): OrderAction | null {
+  if (order.channel.type !== "IFOOD") return null;
+  if (order.status === "PLACED") return "CONFIRM";
+  if (order.status === "CONFIRMED" || order.status === "PREPARING") return "READY";
+  if (order.status !== "READY") return null;
+  const platform = PlatformOrder.safeParse(order.raw).data;
+  return platform?.orderType === "DELIVERY" && platform.delivery?.deliveredBy !== "IFOOD" ? "DISPATCH" : null;
 }

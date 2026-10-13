@@ -87,11 +87,15 @@ export async function forecastOrder(tx: TenantTx, orderId: string, now = new Dat
   return { departAt: new Date(departAt), late, ahead };
 }
 
-/** Campos do pedido da plataforma (guardado em `raw`): observações e horário prometido ao cliente (iFood). */
+/** Campos do pedido da plataforma (guardado em `raw`): observações, horário prometido ao cliente e quem entrega (iFood). */
 export const PlatformOrder = z.looseObject({
-  extraInfo: z.string().optional(),
-  delivery: z.looseObject({ deliveryDateTime: z.string().optional(), observations: z.string().optional() }).optional(),
-  takeout: z.looseObject({ takeoutDateTime: z.string().optional() }).optional(),
+  // O iFood manda `extraInfo: null` quando não há observação: os campos aceitam null, senão o pedido inteiro não é lido.
+  extraInfo: z.string().nullish(),
+  orderType: z.string().nullish(),
+  delivery: z
+    .looseObject({ deliveryDateTime: z.string().nullish(), observations: z.string().nullish(), deliveredBy: z.string().nullish() })
+    .nullish(),
+  takeout: z.looseObject({ takeoutDateTime: z.string().nullish() }).nullish(),
 });
 
 /** Entrega (ou retirada) prometida ao cliente pela plataforma; null se ela não informa. */

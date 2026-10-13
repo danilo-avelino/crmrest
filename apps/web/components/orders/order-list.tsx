@@ -10,6 +10,7 @@ import { ORDER_TONE } from "@/components/clients/client-detail";
 import { CHANNEL_DOT, StatusBadge } from "@/components/inbox/bits";
 import { ORDER_STATUS } from "@/components/inbox/order-card";
 import { CustomerHistoryLine } from "@/components/orders/customer-history";
+import { OrderActions } from "@/components/orders/order-actions";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -42,8 +43,25 @@ const EVENT_LABEL: Record<string, string> = {
   COLLECTED: "Entregador coletou",
   DELIVERED: "Entregue",
   CONCLUDED: "Concluído",
+  CANCELLATION_REQUESTED: "Cancelamento pedido",
+  CANCELLATION_REQUEST_FAILED: "Cancelamento não aceito pelo iFood",
+  HANDSHAKE_DISPUTE: "Cliente pediu cancelamento",
+  HANDSHAKE_SETTLEMENT: "Resposta ao cliente",
   CANCELLED: "Cancelado",
 };
+
+const PAYMENT_METHOD: Record<string, string> = {
+  CREDIT: "Crédito",
+  DEBIT: "Débito",
+  CASH: "Dinheiro",
+  PIX: "Pix",
+  MEAL_VOUCHER: "Vale-refeição",
+  FOOD_VOUCHER: "Vale-alimentação",
+  DIGITAL_WALLET: "Carteira digital",
+  GIFT_CARD: "Gift card",
+};
+/** Quem paga o cupom. */
+const SPONSOR: Record<string, string> = { IFOOD: "iFood", MERCHANT: "loja" };
 
 /**
  * Aba Pedidos (versão simples; o design ainda não tem este board): pedidos das integrações sem abrir uma conversa para
@@ -202,6 +220,7 @@ export function OrderList() {
                       <Td align="right">{currency(order.total)}</Td>
                       <Td>
                         <StatusBadge tone={ORDER_TONE[order.status]}>{ORDER_STATUS[order.status].label}</StatusBadge>
+                        {order.dispute && <div className="mt-0.5 text-[11px] text-warning">Cliente pediu cancelamento</div>}
                       </Td>
                     </tr>
                     {open && (
@@ -251,6 +270,7 @@ function OrderDetails({ order }: { order: OrderListItem }) {
           <div key={index} className="flex justify-between border-b border-surface-2 px-3.5 py-2.5">
             <span className="text-ink-2">
               {item.quantity}× {item.name}
+              {item.notes?.trim() && <span className="block text-[11px] text-ink-3">Obs.: {item.notes}</span>}
             </span>
             <span className="font-medium tabular-nums">{currency(Number(item.unitPrice) * item.quantity)}</span>
           </div>
@@ -268,14 +288,60 @@ function OrderDetails({ order }: { order: OrderListItem }) {
           <ol className="flex flex-col gap-1">
             {timeline.map((event, index) => (
               <li key={index} className="flex justify-between gap-3">
-                <span className="text-ink-2">{EVENT_LABEL[event.code]}</span>
+                <span className="text-ink-2">
+                  {EVENT_LABEL[event.code]}
+                  {event.detail && <span className="text-ink-3"> · {event.detail}</span>}
+                </span>
                 <span className="text-ink-3 tabular-nums">{clock(event.occurredAt)}</span>
               </li>
             ))}
           </ol>
         )}
       </div>
+      {order.platform && <PlatformInfo info={order.platform} />}
+      <OrderActions order={order} />
     </div>
+  );
+}
+
+/** Pagamento (com o troco a levar), cupom e quem paga, código de coleta, documento da nota e observações do pedido. */
+function PlatformInfo({ info }: { info: NonNullable<OrderListItem["platform"]> }) {
+  const rows: { label: string; value: string }[] = [
+    ...info.payments.map((payment) => ({
+      label: "Pagamento",
+      value: [
+        [PAYMENT_METHOD[payment.method] ?? payment.method, payment.brand].filter(Boolean).join(" "),
+        currency(payment.value),
+        payment.prepaid ? "pago pelo app" : "cobrar na entrega",
+        payment.changeFor && `troco para ${currency(payment.changeFor)} (levar ${currency(payment.change!)})`,
+      ]
+        .filter(Boolean)
+        .join(" · "),
+    })),
+    ...info.benefits.map((benefit) => ({
+      label: "Cupom",
+      value: [
+        currency(benefit.value),
+        benefit.sponsors.length > 0 &&
+          `pago por: ${benefit.sponsors.map((sponsor) => `${SPONSOR[sponsor.name] ?? sponsor.name} ${currency(sponsor.value)}`).join(", ")}`,
+      ]
+        .filter(Boolean)
+        .join(" · "),
+    })),
+    ...(info.pickupCode ? [{ label: "Código de coleta", value: info.pickupCode }] : []),
+    ...(info.document ? [{ label: "CPF/CNPJ na nota", value: info.document }] : []),
+    ...info.notes.map((note) => ({ label: "Observação", value: note })),
+  ];
+  if (rows.length === 0) return null;
+  return (
+    <dl className="col-span-2 rounded-[7px] border border-tomate-line bg-surface px-3.5 py-2.5 text-xs">
+      {rows.map((row, index) => (
+        <div key={index} className="flex gap-3 py-0.5">
+          <dt className="w-32 shrink-0 text-ink-3">{row.label}</dt>
+          <dd className="text-ink-2 tabular-nums">{row.value}</dd>
+        </div>
+      ))}
+    </dl>
   );
 }
 

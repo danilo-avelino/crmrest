@@ -18,6 +18,12 @@ async function startMockIfood() {
     acked: [] as string[],
     pollingMerchants: [] as string[],
     tokenRequests: [] as string[],
+    actions: [] as string[],
+    reasons: [] as { cancelCodeId: string; description: string }[],
+    reasonsAsDocumented: false,
+    cancellations: [] as object[],
+    disputes: [] as object[],
+    rejectActions: false,
   };
   const server = createServer(async (req, res) => {
     let raw = "";
@@ -39,6 +45,24 @@ async function startMockIfood() {
     if (url === "/order/v1.0/events/acknowledgment") {
       state.acked.push(...(JSON.parse(raw) as { id: string }[]).map((e) => e.id));
       return json(202);
+    }
+    const action = url.match(/^\/order\/v1\.0\/orders\/([^/]+)\/(confirm|readyToPickup|dispatch|cancellationReasons|requestCancellation)$/);
+    if (action) {
+      const [, orderId, step] = action;
+      if (step === "cancellationReasons") {
+        if (!state.reasons.length) return json(204);
+        // A documentação nova descreve outro formato para a mesma lista.
+        return json(200, state.reasonsAsDocumented ? { reasons: state.reasons.map((r) => ({ code: r.cancelCodeId, description: r.description })) } : state.reasons);
+      }
+      if (state.rejectActions) return json(409, { error: { code: "Conflict" } });
+      if (step === "requestCancellation") state.cancellations.push({ orderId, ...(JSON.parse(raw) as object) });
+      else state.actions.push(`${orderId}/${step}`);
+      return json(202);
+    }
+    const dispute = url.match(/^\/order\/v1\.0\/disputes\/([^/]+)\/(accept|reject)$/);
+    if (dispute) {
+      state.disputes.push({ id: dispute[1], answer: dispute[2], ...(JSON.parse(raw) as object) });
+      return json(201, { status: dispute[2] === "accept" ? "ACCEPTED" : "REJECTED" });
     }
     const order = url.match(/^\/order\/v1\.0\/orders\/(.+)$/)?.[1];
     if (order) return state.orders[order] ? json(200, state.orders[order]) : json(404);
@@ -297,5 +321,218 @@ describe("iFood (pedidos por polling)", () => {
     expect((await admin.order.findFirstOrThrow({ where: { tenantId: fx.tenant.id, externalOrderId: "pedido-4" } })).status).toBe("DELIVERED");
     const texts = (await admin.message.findMany({ where: { conversationId: conversation.id } })).map((m) => (m.content as { text?: string }).text);
     expect(texts.some((text) => text?.includes("#6020"))).toBe(false);
+  });
+
+  describe("ações do pedido", () => {
+    let token: string;
+    const orderOf = (externalOrderId: string) => admin.order.findFirstOrThrow({ where: { tenantId: fx.tenant.id, externalOrderId } });
+    const post = (orderId: string, path: string, body?: object) =>
+      request(app.getHttpServer()).post(`/api/orders/${orderId}/${path}`).set("Authorization", `Bearer ${token}`).send(body);
+    const listed = async (orderId: string) => {
+      const { body } = await request(app.getHttpServer()).get("/api/orders?period=7d").set("Authorization", `Bearer ${token}`).expect(200);
+      return body.items.find((o: { id: string }) => o.id === orderId);
+    };
+    /** Pedido novo, já com os eventos informados (o status só muda por evento do iFood). */
+    const placed = async (id: string, displayId: string, deliveredBy: string, ...codes: string[]) => {
+      const base = ifoodOrder(id, displayId, `cliente-${id}`);
+      ifood.state.orders[id] = { ...base, delivery: { ...base.delivery, deliveredBy } };
+      ifood.state.events.push(...["PLACED", ...codes].map((code) => event(`ev-${id}-${code}`, code, id)));
+      await service.poll();
+      return orderOf(id);
+    };
+    const arrives = async (id: string, code: string, metadata?: object) => {
+      ifood.state.events.push(event(`ev-${id}-${code}`, code, id, undefined, new Date(), metadata));
+      await service.poll();
+    };
+
+    beforeAll(async () => {
+      token = await accessTokenFor(app, fx.user.email, fx.tenant.id);
+    });
+
+    it("um botão só: confirma, avisa que ficou pronto e despacha, conforme o status", async () => {
+      const order = await placed("pedido-5", "7001", "MERCHANT");
+      expect(await listed(order.id)).toMatchObject({ nextAction: "CONFIRM", cancelable: true });
+      expect((await post(order.id, "advance").expect(200)).body).toEqual({ action: "CONFIRM" });
+      // O iFood só aceitou: o pedido muda quando o evento chega pelo polling.
+      expect((await orderOf("pedido-5")).status).toBe("PLACED");
+
+      await arrives("pedido-5", "CONFIRMED");
+      expect((await post(order.id, "advance").expect(200)).body).toEqual({ action: "READY" });
+      await arrives("pedido-5", "READY_TO_PICKUP");
+      expect((await post(order.id, "advance").expect(200)).body).toEqual({ action: "DISPATCH" });
+      await arrives("pedido-5", "DISPATCHED");
+
+      expect(ifood.state.actions).toEqual(["pedido-5/confirm", "pedido-5/readyToPickup", "pedido-5/dispatch"]);
+      expect(await listed(order.id)).toMatchObject({ status: "DISPATCHED", nextAction: null, cancelable: true });
+      await post(order.id, "advance").expect(422);
+    });
+
+    it("pronto com entregador do iFood: não há despacho pela loja", async () => {
+      const order = await placed("pedido-6", "7002", "IFOOD", "CONFIRMED", "READY_TO_PICKUP");
+      expect(await listed(order.id)).toMatchObject({ status: "READY", nextAction: null });
+      await post(order.id, "advance").expect(422);
+      expect(ifood.state.actions).not.toContain("pedido-6/dispatch");
+    });
+
+    it("cancelar: mostra os motivos do iFood e pede o cancelamento com o escolhido", async () => {
+      const order = await orderOf("pedido-6");
+      const reasons = () => request(app.getHttpServer()).get(`/api/orders/${order.id}/cancellation-reasons`).set("Authorization", `Bearer ${token}`);
+      expect((await reasons().expect(200)).body).toEqual({ reasons: [] }); // o iFood não deixa cancelar agora
+
+      ifood.state.reasons = [
+        { cancelCodeId: "501", description: "PROBLEMAS DE SISTEMA" },
+        { cancelCodeId: "503", description: "ITEM INDISPONÍVEL" },
+      ];
+      expect((await reasons().expect(200)).body).toEqual({
+        reasons: [
+          { code: "501", description: "PROBLEMAS DE SISTEMA" },
+          { code: "503", description: "ITEM INDISPONÍVEL" },
+        ],
+      });
+      ifood.state.reasonsAsDocumented = true;
+      expect((await reasons().expect(200)).body.reasons).toEqual(expect.arrayContaining([{ code: "503", description: "ITEM INDISPONÍVEL" }]));
+      ifood.state.reasonsAsDocumented = false;
+
+      await post(order.id, "cancel", { code: "999" }).expect(422);
+      await post(order.id, "cancel", {}).expect(400);
+      expect(ifood.state.cancellations).toEqual([]);
+
+      await post(order.id, "cancel", { code: "503" }).expect(204);
+      expect(ifood.state.cancellations).toEqual([{ orderId: "pedido-6", reason: "ITEM INDISPONÍVEL", cancellationCode: "503" }]);
+      expect((await orderOf("pedido-6")).status).toBe("READY");
+
+      await arrives("pedido-6", "CANCELLED", { CANCEL_CODE: "503", CANCEL_REASON: "ITEM INDISPONÍVEL" });
+      const canceled = await listed(order.id);
+      expect(canceled).toMatchObject({ status: "CANCELED", nextAction: null, cancelable: false });
+      expect(canceled.events.at(-1)).toMatchObject({ code: "CANCELLED", detail: "ITEM INDISPONÍVEL" });
+    });
+
+    it("detalhe do pedido: pagamento com o troco, cupom e quem paga, código de coleta, documento da nota e observações", async () => {
+      const base = ifoodOrder("pedido-8", "7004", "cliente-pedido-8");
+      ifood.state.orders["pedido-8"] = {
+        ...base,
+        extraInfo: null, // o iFood manda null quando não há observação do pedido
+        delivery: { ...base.delivery, deliveredBy: "MERCHANT", pickupCode: "3830", observations: "Portão azul" },
+        payments: {
+          prepaid: 30,
+          pending: 64.8,
+          methods: [
+            { method: "CREDIT", type: "ONLINE", prepaid: true, value: 30, card: { brand: "Visa" } },
+            { method: "CASH", type: "OFFLINE", prepaid: false, value: 64.8, cash: { changeFor: 100 } },
+          ],
+        },
+        benefits: [
+          {
+            value: 10,
+            target: "CART",
+            sponsorshipValues: [
+              { name: "IFOOD", value: 7 },
+              { name: "MERCHANT", value: 3 },
+              { name: "EXTERNAL", value: 0 },
+            ],
+          },
+        ],
+      };
+      ifood.state.events.push(event("ev-pedido-8-PLACED", "PLACED", "pedido-8"), event("ev-pedido-8-READY", "READY_TO_PICKUP", "pedido-8"));
+      await service.poll();
+      const order = await listed((await orderOf("pedido-8")).id);
+      expect(order.platform).toEqual({
+        payments: [
+          { method: "CREDIT", brand: "Visa", value: "30.00", prepaid: true, changeFor: null, change: null },
+          { method: "CASH", brand: null, value: "64.80", prepaid: false, changeFor: "100.00", change: "35.20" },
+        ],
+        benefits: [
+          {
+            value: "10.00",
+            sponsors: [
+              { name: "IFOOD", value: "7.00" },
+              { name: "MERCHANT", value: "3.00" },
+            ],
+          },
+        ],
+        pickupCode: "3830",
+        document: "123.456.789-09",
+        notes: ["Portão azul"],
+      });
+      // Com `extraInfo: null` o pedido continua legível: pronto, com entrega da loja, oferece o despacho.
+      expect(order.nextAction).toBe("DISPATCH");
+    });
+
+    it("cliente pede o cancelamento (Plataforma de Negociação): a loja aceita ou recusa, uma vez, dentro do prazo", async () => {
+      const order = await orderOf("pedido-8");
+      const dispute = (id: string, expiresAt: Date) => ({
+        id,
+        action: "CANCELLATION",
+        handshakeType: "PREPARATION_TIME",
+        message: "Pedi errado",
+        expiresAt: expiresAt.toISOString(),
+        timeoutAction: "ACCEPT_CANCELLATION",
+        metadata: { acceptCancellationReasons: ["CUSTOMER_REQUEST"] },
+      });
+      const soon = new Date(Date.now() + 5 * 60_000);
+      await post(order.id, "dispute", { accept: false, reason: "HIGH_STORE_DEMAND" }).expect(422); // nada a responder
+
+      ifood.state.events.push(event("ev-disputa-1", "HANDSHAKE_DISPUTE", "pedido-8", undefined, new Date(), dispute("disputa-1", soon)));
+      await service.poll();
+      expect((await listed(order.id)).dispute).toEqual({
+        id: "disputa-1",
+        action: "CANCELLATION",
+        message: "Pedi errado",
+        expiresAt: soon.toISOString(),
+        timeoutAction: "ACCEPT_CANCELLATION",
+        acceptReasons: ["CUSTOMER_REQUEST"],
+      });
+
+      await post(order.id, "dispute", { accept: false }).expect(422); // recusa pede motivo
+      await post(order.id, "dispute", { accept: true, reason: "OUTRO" }).expect(422); // aceite: só motivo que o iFood ofereceu
+      expect(ifood.state.disputes).toEqual([]);
+      await post(order.id, "dispute", { accept: false, reason: "HIGH_STORE_DEMAND" }).expect(204);
+      expect(ifood.state.disputes).toEqual([{ id: "disputa-1", answer: "reject", reason: "HIGH_STORE_DEMAND" }]);
+
+      // O desfecho chega pelo polling: a negociação sai da espera e entra na linha do tempo.
+      ifood.state.events.push(event("ev-acordo-1", "HANDSHAKE_SETTLEMENT", "pedido-8", undefined, new Date(), { disputeId: "disputa-1", status: "REJECTED" }));
+      await service.poll();
+      const settled = await listed(order.id);
+      expect(settled.dispute).toBeNull();
+      expect(settled.events.slice(-2)).toMatchObject([
+        { code: "HANDSHAKE_DISPUTE", detail: "Pedi errado" },
+        { code: "HANDSHAKE_SETTLEMENT", detail: "Recusada" },
+      ]);
+      await post(order.id, "dispute", { accept: true, reason: "CUSTOMER_REQUEST" }).expect(422);
+
+      // Outra negociação, aceita com o motivo oferecido; uma vencida não fica à espera.
+      ifood.state.events.push(event("ev-disputa-2", "HANDSHAKE_DISPUTE", "pedido-8", undefined, new Date(), dispute("disputa-2", soon)));
+      await service.poll();
+      await post(order.id, "dispute", { accept: true, reason: "CUSTOMER_REQUEST" }).expect(204);
+      expect(ifood.state.disputes.at(-1)).toEqual({ id: "disputa-2", answer: "accept", reason: "CUSTOMER_REQUEST" });
+      ifood.state.events.push(
+        event("ev-acordo-2", "HANDSHAKE_SETTLEMENT", "pedido-8", undefined, new Date(), { disputeId: "disputa-2", status: "ACCEPTED" }),
+        event("ev-disputa-3", "HANDSHAKE_DISPUTE", "pedido-8", undefined, new Date(), dispute("disputa-3", new Date(Date.now() - 60_000))),
+      );
+      await service.poll();
+      expect((await listed(order.id)).dispute).toBeNull();
+    });
+
+    it("o iFood recusa a etapa: o painel recebe o motivo, sem erro interno", async () => {
+      const order = await placed("pedido-7", "7003", "MERCHANT");
+      ifood.state.rejectActions = true;
+      try {
+        const { body } = await post(order.id, "advance").expect(422);
+        expect(body.message).toContain("O iFood não aceitou");
+      } finally {
+        ifood.state.rejectActions = false;
+      }
+    });
+
+    it("pedido de outro restaurante: não encontrado", async () => {
+      const other = await createChannelFixture();
+      try {
+        const outsider = await accessTokenFor(app, other.user.email, other.tenant.id);
+        const order = await orderOf("pedido-7");
+        await request(app.getHttpServer()).post(`/api/orders/${order.id}/advance`).set("Authorization", `Bearer ${outsider}`).expect(404);
+      } finally {
+        await other.cleanup();
+      }
+    });
   });
 });

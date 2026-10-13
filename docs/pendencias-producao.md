@@ -19,7 +19,7 @@ Esta é a lista do que falta para o Dish Desk atender restaurantes de verdade. Q
   - [x] Railway: plano Hobby assinado em 11/10/2026.
   - [ ] Supabase: sair do plano Free, que não tem backup. Backup diário é critério de aceite do MVP.
 - [ ] **Análise do app na Meta** — sem ela, só contas cadastradas como testadoras conectam Instagram e WhatsApp
-  - [ ] Verificar a empresa (CNPJ da Avelino Gastronomia) — você, com o Claude criando o registro de domínio.
+  - [x] Verificar a empresa (CNPJ da Avelino Gastronomia) — verificada pela Meta em 13/10 (portfólio Dish Desk, AVELINO GASTRONOMIA LTDA).
   - [x] Política de privacidade publicada: é a página `https://www.dishdesk.com.br/privacidade`, já cadastrada no app — 11/10.
   - [ ] Criar o usuário do avaliador no restaurante "Revisão Meta" e guardar a senha — você.
   - [ ] Gravar os vídeos, seguindo o [roteiro](meta-review/roteiro-video.md) — você.
@@ -58,7 +58,12 @@ Esta é a lista do que falta para o Dish Desk atender restaurantes de verdade. Q
     - [ ] Decidir se o widget fica mesmo invisível com a trava ligada (hoje fica: Notificações e Tracking do widget somem neste computador).
     - [ ] Distribuição para os restaurantes: publicar a extensão na Chrome Web Store (ícones, política de privacidade) e tirar `http://localhost:3000` das origens aceitas.
   - [ ] **Uma loja sem permissão derruba o polling de todas.** O Dish Desk consulta todas as lojas iFood numa chamada só, e o iFood responde 403 para a chamada inteira se uma delas não pertence à credencial (aconteceu em 13/10 com a loja de teste antiga ainda conectada). Com clientes reais, um restaurante que revogar o app no iFood deixa todos sem pedidos. Isolar a loja recusada e seguir com as outras — Claude.
-  - [ ] Passar pela homologação: abrir o ticket no app "Dish Desk" (botão "Abrir ticket"). A categoria PDV pede o fluxo completo do pedido (confirmar, despachar, cancelar), que o Dish Desk não faz hoje; conferir os critérios antes de abrir.
+  - [ ] Passar pela homologação. Conferido no Portal em 13/10: nenhuma homologação iniciada e nenhum ticket aberto. Para Order e Events o processo agora é automático (Portal → Homologação → Nova homologação, cerca de 10 minutos, uma tentativa a cada 4 horas, só o dono do app inicia): escolher o app e a loja de testes, testar a conexão e então confirmar, cancelar, despachar e concluir um pedido. O Dish Desk hoje só lê os eventos e os reconhece; [os critérios](https://developer.ifood.com.br/pt-BR/docs/food/guides/modules/order/homologation) pedem, pela API, confirmar o pedido (em até 8 minutos), cancelar com os motivos do iFood, avisar pedido pronto e despachar, além de mostrar pagamento, troco, cupom, observações e CPF/CNPJ.
+    - [x] Confirmar, marcar como pronto, despachar e cancelar (com os motivos do iFood) pela aba Pedidos, no detalhe do pedido: um botão que muda com o status e o "Cancelar pedido" — Claude, 13/10. Conferido no painel local com o pedido de teste real #9414: confirmar, marcar como pronto e cancelar funcionaram no iFood; o "Despachar" só foi testado com iFood simulado (o endpoint em si já tinha sido usado por script no #3314).
+    - [x] Mostrar no detalhe do pedido a forma de pagamento (bandeira, pago pelo app ou a cobrar, troco a levar), o cupom e quem paga, o código de coleta, o CPF/CNPJ da nota e as observações do pedido e dos itens — Claude, 13/10. Pagamento, código, documento e observação conferidos com o pedido real; troco e cupom só com iFood simulado (o pedido de teste não tem).
+    - [x] Responder ao pedido de cancelamento do cliente (Plataforma de Negociação): aviso no pedido e na lista, com "Aceitar" e "Recusar" e o motivo; o desfecho entra na linha do tempo — Claude, 13/10. Só com iFood simulado: o ambiente de teste não gera negociação. Contraproposta (reembolso parcial, mais prazo) não foi feita.
+    - [ ] Publicar (commit e deploy) — você pede.
+    - [ ] Desligar `IFOOD_CHAT_BRIDGE` na Railway e iniciar a homologação — você inicia, Claude acompanha.
   - [ ] Depois da homologação, trocar as credenciais de teste pelas do app "Dish Desk".
 
 ## 2. Cadastro pelo site, teste grátis e cobrança

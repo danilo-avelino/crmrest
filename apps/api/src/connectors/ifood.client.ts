@@ -2,7 +2,7 @@ import type { OrderStatus } from "@dishdesk/database/enums";
 import { z } from "zod";
 import type { Env } from "../config/env.js";
 
-// Merchant API do iFood: autenticação, polling de eventos, detalhes do pedido e confirmação (ack).
+// Merchant API do iFood: autenticação, polling de eventos, detalhes do pedido, confirmação (ack) e as etapas que a loja informa.
 
 export const IfoodEvent = z.looseObject({
   id: z.string(),
@@ -46,6 +46,15 @@ export const IfoodOrder = z.looseObject({
     .optional(),
 });
 export type IfoodOrder = z.infer<typeof IfoodOrder>;
+
+/** A API responde uma lista com `cancelCodeId`; a documentação nova fala em `{ reasons: [{ code }] }`. Aceita as duas. */
+const CancellationReason = z
+  .looseObject({ cancelCodeId: z.string().optional(), code: z.string().optional(), description: z.string() })
+  .transform((reason) => ({ code: reason.cancelCodeId ?? reason.code ?? "", description: reason.description }));
+const CancellationReasons = z
+  .union([z.array(CancellationReason), z.looseObject({ reasons: z.array(CancellationReason) }).transform((body) => body.reasons)])
+  .transform((reasons) => reasons.filter((reason) => reason.code));
+export type IfoodCancellationReason = { code: string; description: string };
 
 /**
  * Eventos (fullCode) que mudam o status do pedido no Dish Desk; todos os eventos entram na linha do tempo (order_events).
@@ -91,6 +100,35 @@ export class IfoodClient {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(eventIds.map((id) => ({ id }))),
+    });
+  }
+
+  /** Etapa informada pela loja. O iFood só aceita o pedido (202): o status muda quando o evento chega pelo polling. */
+  async advance(orderId: string, step: "confirm" | "readyToPickup" | "dispatch"): Promise<void> {
+    await this.call(`/order/v1.0/orders/${orderId}/${step}`, { method: "POST" });
+  }
+
+  /** Motivos que o iFood aceita para cancelar o pedido agora (vazio: não dá para cancelar). */
+  async cancellationReasons(orderId: string): Promise<IfoodCancellationReason[]> {
+    const response = await this.call(`/order/v1.0/orders/${orderId}/cancellationReasons`);
+    if (response.status === 204) return [];
+    return CancellationReasons.parse(await response.json());
+  }
+
+  async requestCancellation(orderId: string, reason: IfoodCancellationReason): Promise<void> {
+    await this.call(`/order/v1.0/orders/${orderId}/requestCancellation`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reason: reason.description, cancellationCode: reason.code }),
+    });
+  }
+
+  /** Plataforma de Negociação: resposta da loja ao pedido do cliente (ex.: cancelamento). Uma resposta por negociação. */
+  async answerDispute(disputeId: string, answer: "accept" | "reject", reason?: string): Promise<void> {
+    await this.call(`/order/v1.0/disputes/${disputeId}/${answer}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(reason ? { reason } : {}),
     });
   }
 

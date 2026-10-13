@@ -1,5 +1,14 @@
-import { type CurrentOrderDto, type OrderCustomerChat, OrderListQuery, type OrderPage } from "@dishdesk/shared";
-import { Controller, Get, HttpCode, Param, ParseUUIDPipe, Post, Query } from "@nestjs/common";
+import {
+  AnswerDisputeRequest,
+  CancelOrderRequest,
+  type CurrentOrderDto,
+  type OrderAction,
+  type OrderCancellationReason,
+  type OrderCustomerChat,
+  OrderListQuery,
+  type OrderPage,
+} from "@dishdesk/shared";
+import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Post, Query } from "@nestjs/common";
 import { CurrentAuth, type RequestAuth } from "../auth/auth.decorators.js";
 import { ZodPipe } from "../common/zod.pipe.js";
 import { OrdersService } from "./orders.service.js";
@@ -25,6 +34,37 @@ export class OrdersController {
   @Get(":id/forecast")
   forecast(@Param("id", ParseUUIDPipe) id: string, @CurrentAuth() auth: RequestAuth): Promise<{ text: string | null }> {
     return this.orders.forecast(auth, id);
+  }
+
+  @Post(":id/advance")
+  @HttpCode(200)
+  advance(@Param("id", ParseUUIDPipe) id: string, @CurrentAuth() auth: RequestAuth): Promise<{ action: OrderAction }> {
+    return this.orders.advance(auth, id);
+  }
+
+  @Get(":id/cancellation-reasons")
+  cancellationReasons(@Param("id", ParseUUIDPipe) id: string, @CurrentAuth() auth: RequestAuth): Promise<{ reasons: OrderCancellationReason[] }> {
+    return this.orders.cancellationReasons(auth, id);
+  }
+
+  @Post(":id/cancel")
+  @HttpCode(204)
+  cancel(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body(new ZodPipe(CancelOrderRequest)) body: CancelOrderRequest,
+    @CurrentAuth() auth: RequestAuth,
+  ): Promise<void> {
+    return this.orders.cancel(auth, id, body.code);
+  }
+
+  @Post(":id/dispute")
+  @HttpCode(204)
+  answerDispute(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body(new ZodPipe(AnswerDisputeRequest)) body: AnswerDisputeRequest,
+    @CurrentAuth() auth: RequestAuth,
+  ): Promise<void> {
+    return this.orders.answerDispute(auth, id, body);
   }
 
   @Get(":id/customer-chat")
