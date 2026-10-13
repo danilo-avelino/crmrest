@@ -1,6 +1,6 @@
 # Pendências para produção — Dish Desk
 
-Atualizado em 11 de outubro de 2026.
+Atualizado em 13 de outubro de 2026.
 
 Esta é a lista do que falta para o Dish Desk atender restaurantes de verdade. Quando um item for concluído, marque `[x]` e troque a data acima.
 
@@ -40,9 +40,20 @@ Esta é a lista do que falta para o Dish Desk atender restaurantes de verdade. Q
   - [ ] Ter o nome de exibição aprovado.
   - [ ] Criar os templates na conta de produção.
 - [ ] **iFood** — a produção usa credenciais de teste
-  - [ ] Criar a conta Empresa (CNPJ) no Portal do Desenvolvedor — você.
-  - [ ] Passar pela homologação.
-  - [ ] Cadastrar o widget e configurar o `IFOOD_WIDGET_ID` — Claude, depois da conta Empresa.
+  - [x] Criar a conta Empresa (CNPJ) no Portal do Desenvolvedor — feito em 12/10 (dishdesk.crm@gmail.com, perfil Profissional).
+  - [x] Cadastrar o app "Dish Desk" no Portal (Centralizado, categoria PDV, módulos Order e Events, não listado) — Claude, 12/10. Fica "Em desenvolvimento": o iFood só entrega as credenciais dele depois da homologação.
+  - [x] Cadastrar o widget "Dish Desk" (Chat e Tracking de Pedidos) — Claude, 12/10.
+  - [x] Pôr na `api` da Railway as três variáveis do app de teste da conta nova (`IFOOD_CLIENT_ID`, `IFOOD_CLIENT_SECRET`, `IFOOD_WIDGET_ID`) — feito em 12/10.
+  - [x] Trocar em produção a loja de teste do Danilo Lanches para a da conta nova (`a6f11939-67e8-4855-acad-a7c46e54226e`): loja nova conectada e a antiga desconectada em Configurações → Integrações — você, 13/10.
+  - [x] Pedido de teste com a credencial e a loja novas — 13/10. No ambiente local entrou e acompanhou os status até DISPATCHED; em produção o pedido #7685 entrou (PLACED) e passou a CONFIRMED.
+  - [ ] **Chat do iFood na Inbox, pela extensão do Chrome** ([apps/extension](../apps/extension/README.md)). O iFood não tem API de chat; a extensão lê o widget.
+    - [x] Versão 0.1.0, só leitura (ponte entre o painel e o iframe do widget) — Claude, 13/10.
+    - [ ] Autorizar o widget no Portal do Parceiro (botão do iFood no painel → "Ir para o portal do parceiro" → Autorizar) e carregar a extensão no Chrome — você.
+    - [ ] Mapear a estrutura do chat com uma conversa de teste aberta — Claude, depois do item acima.
+    - [ ] Levar as mensagens para a Inbox e responder por ela — Claude.
+  - [ ] **Uma loja sem permissão derruba o polling de todas.** O Dish Desk consulta todas as lojas iFood numa chamada só, e o iFood responde 403 para a chamada inteira se uma delas não pertence à credencial (aconteceu em 13/10 com a loja de teste antiga ainda conectada). Com clientes reais, um restaurante que revogar o app no iFood deixa todos sem pedidos. Isolar a loja recusada e seguir com as outras — Claude.
+  - [ ] Passar pela homologação: abrir o ticket no app "Dish Desk" (botão "Abrir ticket"). A categoria PDV pede o fluxo completo do pedido (confirmar, despachar, cancelar), que o Dish Desk não faz hoje; conferir os critérios antes de abrir.
+  - [ ] Depois da homologação, trocar as credenciais de teste pelas do app "Dish Desk".
 
 ## 2. Cadastro pelo site, teste grátis e cobrança
 
