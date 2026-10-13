@@ -1,4 +1,4 @@
-import { type IfoodChatOutboxItem, IfoodChatSendResult, IfoodChatSync } from "@dishdesk/shared";
+import { type IfoodChatOutboxItem, IfoodChatSendResult, IfoodChatSync, type IfoodChatSyncResult } from "@dishdesk/shared";
 import { Body, Controller, HttpCode, Param, ParseUUIDPipe, Post } from "@nestjs/common";
 import { CurrentAuth, type RequestAuth } from "../auth/auth.decorators.js";
 import { ZodPipe } from "../common/zod.pipe.js";
@@ -10,9 +10,9 @@ export class IfoodChatController {
   constructor(private readonly chat: IfoodChatService) {}
 
   @Post("sync")
-  @HttpCode(204)
-  async sync(@Body(new ZodPipe(IfoodChatSync)) body: IfoodChatSync, @CurrentAuth() auth: RequestAuth): Promise<void> {
-    await this.chat.sync(auth, body);
+  @HttpCode(200)
+  sync(@Body(new ZodPipe(IfoodChatSync)) body: IfoodChatSync, @CurrentAuth() auth: RequestAuth): Promise<IfoodChatSyncResult> {
+    return this.chat.sync(auth, body);
   }
 
   @Post("outbox/claim")

@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Dish Desk · iFood",
   "description": "Ponte entre o painel do Dish Desk e o widget do iFood.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "content_scripts": [
     {
       "matches": ["https://embeddables.ifood.com.br/*"],

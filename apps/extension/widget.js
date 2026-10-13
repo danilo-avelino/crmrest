@@ -13,17 +13,38 @@ function find(selector, index = 0) {
   return element;
 }
 
+/**
+ * HTML do elemento. Com `geometry`, cada elemento leva a posição na tela em data-dd-rect ("x,y,largura,altura"):
+ * o chat só diz quem mandou a mensagem pelo lado em que o balão aparece.
+ */
+function snapshot(element, geometry) {
+  if (!geometry) return element.outerHTML;
+  const copy = element.cloneNode(true);
+  const originals = [element, ...element.querySelectorAll("*")];
+  [copy, ...copy.querySelectorAll("*")].forEach((node, position) => {
+    const rect = originals[position].getBoundingClientRect();
+    node.setAttribute("data-dd-rect", [rect.x, rect.y, rect.width, rect.height].map(Math.round).join(","));
+  });
+  return copy.outerHTML;
+}
+
 /** HTML dos elementos do seletor; sem seletor, a página inteira do widget. */
-function html(selector) {
-  if (!selector) return [document.documentElement.outerHTML];
-  return [...document.querySelectorAll(selector)].map((element) => element.outerHTML);
+function html(selector, geometry) {
+  const elements = selector ? [...document.querySelectorAll(selector)] : [document.documentElement];
+  return elements.map((element) => snapshot(element, geometry));
 }
 
 /** Escreve num campo como se fosse digitado: o React só enxerga o valor posto pelo setter nativo, seguido do evento. */
 function fill(selector, index, text) {
   const element = find(selector, index);
-  if (element.isContentEditable) element.textContent = text;
-  else Object.getOwnPropertyDescriptor(Object.getPrototypeOf(element), "value").set.call(element, text);
+  if (element.isContentEditable) {
+    // Editor de texto rico: só aceita o texto como digitação, e para isso precisa do foco.
+    element.focus();
+    document.execCommand("selectAll");
+    document.execCommand("insertText", false, text);
+    return;
+  }
+  Object.getOwnPropertyDescriptor(Object.getPrototypeOf(element), "value").set.call(element, text);
   element.dispatchEvent(new Event("input", { bubbles: true }));
   element.dispatchEvent(new Event("change", { bubbles: true }));
 }
@@ -35,7 +56,7 @@ function press(selector, index, key) {
 
 const OPERATIONS = {
   ping: () => ({ version: chrome.runtime.getManifest().version }),
-  html: ({ selector }) => ({ html: html(selector) }),
+  html: ({ selector, geometry }) => ({ html: html(selector, geometry) }),
   click: ({ selector, index }) => void find(selector, index).click(),
   fill: ({ selector, index, text }) => fill(selector, index, String(text ?? "")),
   key: ({ selector, index, key }) => press(selector, index, key),

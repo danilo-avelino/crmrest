@@ -69,7 +69,7 @@ describe("Chat do iFood na Inbox (trava IFOOD_CHAT_BRIDGE ligada)", () => {
   it("conversa lida do widget: abre a conversa do cliente com o pedido e as mensagens, sem repetir na leitura seguinte", async () => {
     const automatic = shown("OUTBOUND", "Recebemos o seu pedido!", minutesAgo(19));
     const question = shown("INBOUND", "Oi, pode mandar sem cebola?", minutesAgo(10));
-    await post("/ifood-chat/sync", { orderCode: "6530", messages: [automatic, question] }).expect(204);
+    expect((await post("/ifood-chat/sync", { orderCode: "6530", messages: [automatic, question] }).expect(200)).body).toEqual({ found: true });
 
     const chat = await conversation();
     expect(chat).toMatchObject({ contactId: order.contactId, status: "OPEN", unreadCount: 1 });
@@ -83,15 +83,15 @@ describe("Chat do iFood na Inbox (trava IFOOD_CHAT_BRIDGE ligada)", () => {
 
     // A mesma conversa de novo, com uma mensagem nova no fim.
     const second = shown("INBOUND", "E sem picles", minutesAgo(9));
-    await post("/ifood-chat/sync", { orderCode: "6530", messages: [automatic, question, second] }).expect(204);
+    await post("/ifood-chat/sync", { orderCode: "6530", messages: [automatic, question, second] }).expect(200);
     expect(await timeline(chat.id)).toHaveLength(5);
     expect(await conversation()).toMatchObject({ id: chat.id, unreadCount: 2 });
   });
 
   it("pedido que ainda não chegou pelo polling, ou de outro restaurante: nada é gravado", async () => {
-    await post("/ifood-chat/sync", { orderCode: "9999", messages: [shown("INBOUND", "Olá", new Date())] }).expect(204);
+    expect((await post("/ifood-chat/sync", { orderCode: "9999", messages: [shown("INBOUND", "Olá", new Date())] }).expect(200)).body).toEqual({ found: false });
     const outsider = await accessTokenFor(app, other.user.email, other.a.id);
-    await post("/ifood-chat/sync", { orderCode: "6530", messages: [shown("INBOUND", "Invasor", new Date())] }, outsider).expect(204);
+    await post("/ifood-chat/sync", { orderCode: "6530", messages: [shown("INBOUND", "Invasor", new Date())] }, outsider).expect(200);
     expect(await admin.message.count({ where: { tenantId: fx.tenant.id, content: { path: ["text"], equals: "Invasor" } } })).toBe(0);
     expect(await admin.conversation.count({ where: { tenantId: fx.tenant.id, channelId: fx.ifood.id } })).toBe(1);
   });
@@ -109,7 +109,7 @@ describe("Chat do iFood na Inbox (trava IFOOD_CHAT_BRIDGE ligada)", () => {
     expect(await admin.message.findUniqueOrThrow({ where: { id: sent.id } })).toMatchObject({ status: "SENT" });
 
     // O widget passa a mostrar a resposta: ela já está na conversa.
-    await post("/ifood-chat/sync", { orderCode: "6530", messages: [shown("OUTBOUND", "Pode sim, sem cebola e sem picles.", new Date())] }).expect(204);
+    await post("/ifood-chat/sync", { orderCode: "6530", messages: [shown("OUTBOUND", "Pode sim, sem cebola e sem picles.", new Date())] }).expect(200);
     const replies = (await timeline(chat.id)).filter((m) => (m.content as { text?: string }).text === "Pode sim, sem cebola e sem picles.");
     expect(replies).toHaveLength(1);
     const confirmed = await admin.message.findUniqueOrThrow({ where: { id: sent.id } });

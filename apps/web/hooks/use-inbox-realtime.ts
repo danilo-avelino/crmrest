@@ -6,6 +6,8 @@ import { io } from "socket.io-client";
 import { SESSION_KEY, useAuth } from "@/components/auth/auth-provider";
 
 const REALTIME_URL = process.env.NEXT_PUBLIC_REALTIME_URL ?? "http://localhost:4000";
+/** Evento da janela a cada aviso do realtime, para quem não vive nas consultas (o chat do iFood busca as respostas a enviar). */
+export const INBOX_CHANGED_EVENT = "dishdesk:inbox-changed";
 const INBOX_QUERIES = ["conversations", "counts", "conversation", "messages", "contact"];
 /** No máximo uma renovação de sessão por minuto a pedido do realtime: evita laço se o servidor seguir recusando. */
 const RENEW_INTERVAL_MS = 60_000;
@@ -30,6 +32,7 @@ export function useInboxRealtime(): boolean {
       for (const queryKey of [["conversations"], ["counts"], ["conversation", conversationId], ["messages", conversationId], ["contact"], ["channels"], ["current-order", conversationId]]) {
         void queryClient.invalidateQueries({ queryKey });
       }
+      window.dispatchEvent(new Event(INBOX_CHANGED_EVENT));
     });
     // Reconexão (API reiniciou, rede caiu) ou conexão nova com token renovado: avisos podem ter se perdido no intervalo.
     socket.on("connect", () => {

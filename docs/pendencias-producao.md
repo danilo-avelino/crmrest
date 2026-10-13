@@ -50,9 +50,12 @@ Esta é a lista do que falta para o Dish Desk atender restaurantes de verdade. Q
     - [x] Versão 0.1.0, só leitura (ponte entre o painel e o iframe do widget) — Claude, 13/10.
     - [x] Autorizar o widget no Portal do Parceiro (login com o e-mail da conta de desenvolvedor e senha própria do Portal do Parceiro) — você, 13/10.
     - [x] Versão 0.2.0 da extensão (clicar e digitar no widget), trava `IFOOD_CHAT_BRIDGE` e a parte da API: receber a conversa lida do widget e entregar ao painel as respostas escritas na Inbox — Claude, 13/10.
-    - [ ] Carregar a extensão 0.2.0 no Chrome (`chrome://extensions` → Modo do desenvolvedor → Carregar sem compactação → `apps/extension`) e recarregar a aba do Dish Desk — você. Em 13/10 a ponte ainda não respondia no painel.
-    - [ ] Mapear a estrutura do chat (há uma conversa de teste aberta, pedido #6530) e fazer o painel ler o chat e digitar as respostas — Claude, depois do item acima.
-    - [ ] Ligar a trava em produção (`IFOOD_CHAT_BRIDGE=true` na `api` da Railway) — depois de testado. Desligar durante a homologação do iFood.
+    - [x] Carregar a extensão no Chrome — você, 13/10.
+    - [x] Mapear a estrutura do chat e fazer o painel ler o chat e digitar as respostas (extensão 0.3.0, que informa o lado dos balões) — Claude, 13/10.
+    - [x] Ligar a trava em produção (`IFOOD_CHAT_BRIDGE=true` na `api` da Railway) — 13/10. **Desligar durante a homologação do iFood.**
+    - [ ] Recarregar a extensão em `chrome://extensions` (seta circular no card; precisa mostrar 0.3.0) — você.
+    - [ ] Teste de ponta a ponta com um pedido de teste aberto: uma mensagem escrita como cliente (app do iFood com o usuário de testes) e uma resposta pela Inbox. É o que confirma o lado dos balões e o campo de resposta do widget — você e Claude.
+    - [ ] Decidir se o widget fica mesmo invisível com a trava ligada (hoje fica: Notificações e Tracking do widget somem neste computador).
     - [ ] Distribuição para os restaurantes: publicar a extensão na Chrome Web Store (ícones, política de privacidade) e tirar `http://localhost:3000` das origens aceitas.
   - [ ] **Uma loja sem permissão derruba o polling de todas.** O Dish Desk consulta todas as lojas iFood numa chamada só, e o iFood responde 403 para a chamada inteira se uma delas não pertence à credencial (aconteceu em 13/10 com a loja de teste antiga ainda conectada). Com clientes reais, um restaurante que revogar o app no iFood deixa todos sem pedidos. Isolar a loja recusada e seguir com as outras — Claude.
   - [ ] Passar pela homologação: abrir o ticket no app "Dish Desk" (botão "Abrir ticket"). A categoria PDV pede o fluxo completo do pedido (confirmar, despachar, cancelar), que o Dish Desk não faz hoje; conferir os critérios antes de abrir.

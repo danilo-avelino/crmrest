@@ -5,6 +5,7 @@ import {
   type IfoodChatOutboxItem,
   type IfoodChatSendResult,
   type IfoodChatSync,
+  type IfoodChatSyncResult,
   type MessageContent,
 } from "@dishdesk/shared";
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
@@ -39,8 +40,11 @@ export class IfoodChatService {
     @Inject(ENV) private readonly env: Env,
   ) {}
 
-  /** A conversa de um pedido como o widget mostra agora: grava só as mensagens que ainda não estavam na Inbox. */
-  async sync(auth: RequestAuth, body: IfoodChatSync): Promise<void> {
+  /**
+   * A conversa de um pedido como o widget mostra agora: grava só as mensagens que ainda não estavam na Inbox.
+   * `found: false` = o pedido ainda não chegou pelo polling; o painel manda a conversa de novo mais tarde.
+   */
+  async sync(auth: RequestAuth, body: IfoodChatSync): Promise<IfoodChatSyncResult> {
     this.requireEnabled();
     const changed = await this.db.withTenants(auth.scope, async (tx) => {
       const order = await tx.order.findFirst({
@@ -48,14 +52,14 @@ export class IfoodChatService {
         orderBy: { placedAt: "desc" },
         select: { id: true, tenantId: true, contactId: true, channelId: true, conversationId: true, externalOrderId: true, placedAt: true },
       });
-      if (!order) return null; // o pedido ainda não chegou pelo polling: a próxima leitura traz a conversa de novo
+      if (!order) return null;
       const entries = transcript(order, body.messages);
       const known = await tx.message.findMany({
         where: { channelId: order.channelId, externalMessageId: { in: entries.map((entry) => entry.key) } },
         select: { externalMessageId: true },
       });
       const fresh = entries.filter((entry) => !known.some((message) => message.externalMessageId === entry.key));
-      if (!fresh.length) return null;
+      if (!fresh.length) return {};
 
       const conversation = await this.openConversation(tx, order, fresh[0]!.at);
       let unread = 0;
@@ -87,7 +91,8 @@ export class IfoodChatService {
       });
       return { tenantId: order.tenantId, conversationId: conversation.id };
     });
-    if (changed) this.realtime.inboxChanged(changed.tenantId, changed.conversationId);
+    if (changed?.conversationId) this.realtime.inboxChanged(changed.tenantId, changed.conversationId);
+    return { found: changed !== null };
   }
 
   /** Respostas pendentes das conversas do iFood. Cada uma vai para um painel só, que a digita no chat do pedido. */
