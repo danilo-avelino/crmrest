@@ -321,6 +321,7 @@ model Conversation {
   lastMessageAt      DateTime?          @map("last_message_at") @db.Timestamptz(3)
   windowExpiresAt    DateTime?          @map("window_expires_at") @db.Timestamptz(3) // janela de 24h
   awaitingAgentSince DateTime?          @map("awaiting_agent_since") @db.Timestamptz(3) // automação chamou a equipe e ninguém respondeu ainda
+  awaitingAgentQuiet Boolean            @default(false) @map("awaiting_agent_quiet") // chamado sem urgência: aviso sonoro discreto no lugar do alarme
   unreadCount        Int                @default(0) @map("unread_count")
   createdAt          DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
 
@@ -460,6 +461,7 @@ model Rating {
   conversationId String   @map("conversation_id") @db.Uuid
   orderId        String?  @map("order_id") @db.Uuid
   score          Int // 1 a 5
+  channelType    ChannelType @map("channel_type") // canal em que a nota foi dada (filtros dos relatórios)
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
   tenant       Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)

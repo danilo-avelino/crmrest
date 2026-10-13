@@ -36,7 +36,7 @@ describe("tags automáticas dos clientes", () => {
   const chat = (contactId: string) =>
     admin.conversation.create({ data: { tenantId: fx.tenant.id, contactId, channelId: fx.whatsapp.id, status: "RESOLVED" } });
   const rate = (conversationId: string, score: number, createdAt: Date) =>
-    admin.rating.create({ data: { tenantId: fx.tenant.id, conversationId, score, createdAt } });
+    admin.rating.create({ data: { tenantId: fx.tenant.id, conversationId, score, channelType: "WHATSAPP", createdAt } });
   const refresh = () => app.get(DatabaseService).withTenants({ tenantIds: [fx.tenant.id] }, (tx) => refreshContactTags(tx, now));
   const tagsOf = async (id: string) => (await admin.contact.findUniqueOrThrow({ where: { id } })).tags;
 

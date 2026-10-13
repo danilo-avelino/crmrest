@@ -1,14 +1,22 @@
 import type { TenantTx } from "@dishdesk/database";
 import type { ChannelType, ConversationStatus } from "@dishdesk/database/enums";
-import type { MessageContent } from "@dishdesk/shared";
+import { CHANNEL_CAPABILITIES, type MessageContent } from "@dishdesk/shared";
 import type { Queue } from "bullmq";
+import type { Env } from "../config/env.js";
 import type { OutboundJob } from "../queues/queues.module.js";
 import type { RealtimeEmitter } from "../realtime/realtime.emitter.js";
 
 /** Estado das automações guardado em `conversation.automationState`; zera a cada novo atendimento. */
 export type AutomationState = {
-  /** Menu "Em que podemos ajudar?". */
-  triage?: "awaiting_option" | "awaiting_order_number" | "awaiting_order_confirmation" | "done";
+  /** Menu "Em que podemos ajudar?"; as três últimas etapas são do menu do entregador. */
+  triage?:
+    | "awaiting_option"
+    | "awaiting_order_number"
+    | "awaiting_order_confirmation"
+    | "done"
+    | "awaiting_arrival_order"
+    | "awaiting_problem_order"
+    | "awaiting_problem";
   /** O menu já foi repetido por uma resposta fora das opções: a próxima chama a equipe. */
   menuRepeated?: boolean;
   /** O cliente recebeu os links e pediu sozinho; se continuar escrevendo, o menu volta uma vez. */
@@ -44,6 +52,11 @@ export type InboundEvent = {
 };
 
 type ConversationRef = { id: string; tenantId: string; channelId: string };
+
+/** O canal aceita envios do Dish Desk? O iFood, só com a trava do chat ligada: quem envia é o painel, pela extensão. */
+export function channelSends(type: ChannelType, env: Pick<Env, "IFOOD_CHAT_BRIDGE">): boolean {
+  return CHANNEL_CAPABILITIES[type].send || (type === "IFOOD" && env.IFOOD_CHAT_BRIDGE);
+}
 
 /** `tenant.settings` do restaurante (textos automáticos, horário, links de pedido), como o admin salvou. */
 export async function tenantSettings(tx: TenantTx, tenantId: string): Promise<unknown> {

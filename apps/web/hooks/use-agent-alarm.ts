@@ -2,17 +2,17 @@
 
 import { useEffect, useState } from "react";
 
-/** Quem está chamando: o cliente (alarme agudo) ou o entregador (a frase falada, ou dois bipes graves). */
-type AlarmKind = "customer" | "courier";
+/** O chamado: com urgência (alarme agudo) ou sem (dois bipes graves, bem espaçados). */
+type AlarmKind = "urgent" | "quiet";
 
-const REPEAT_MS: Record<AlarmKind, number> = { customer: 1_500, courier: 4_000 };
+const REPEAT_MS: Record<AlarmKind, number> = { urgent: 1_500, quiet: 30_000 };
 
 /**
- * Alarme de "chamando o atendente", repetido sem parar enquanto `ringing`. Cliente: dois tons agudos alternados.
- * Entregador: o navegador fala "Entregador chamando"; sem voz em português, dois bipes graves, sempre no mesmo tom.
+ * Aviso de "chamando o atendente", repetido enquanto `ringing`. Com urgência: dois tons agudos alternados, sem parar.
+ * Sem urgência (entregador com outro assunto): dois bipes graves e baixos a cada meio minuto, para não incomodar.
  * O navegador só libera o som depois de um clique na página; até lá, `blocked` avisa a tela.
  */
-export function useAgentAlarm(ringing: boolean, kind: AlarmKind = "customer"): { blocked: boolean } {
+export function useAgentAlarm(ringing: boolean, kind: AlarmKind = "urgent"): { blocked: boolean } {
   const [blocked, setBlocked] = useState(false);
 
   useEffect(() => {
@@ -30,7 +30,7 @@ export function useAgentAlarm(ringing: boolean, kind: AlarmKind = "customer"): {
         return;
       }
       setBlocked(false);
-      if (kind === "courier") courierCall(audio);
+      if (kind === "quiet") for (const delay of [0, 0.32]) tone(audio, 523, audio.currentTime + delay, 0.2, "sine", 0.18);
       else for (let i = 0; i < 6; i++) tone(audio, i % 2 === 0 ? 988 : 740, audio.currentTime + i * 0.17, 0.15);
     };
     const unlock = () => void audio.resume().then(ring);
@@ -44,30 +44,11 @@ export function useAgentAlarm(ringing: boolean, kind: AlarmKind = "customer"): {
       document.removeEventListener("pointerdown", unlock);
       document.removeEventListener("keydown", unlock);
       setBlocked(false);
-      if (kind === "courier") speechOf()?.cancel();
       void audio.close();
     };
   }, [ringing, kind]);
 
   return { blocked };
-}
-
-/** Voz do navegador, se ele tiver uma em português (as vozes carregam depois da página: a primeira chamada pode ir de bipe). */
-function speechOf(): SpeechSynthesis | null {
-  if (!("speechSynthesis" in window)) return null;
-  return window.speechSynthesis.getVoices().some((voice) => voice.lang.toLowerCase().startsWith("pt")) ? window.speechSynthesis : null;
-}
-
-function courierCall(audio: AudioContext) {
-  const speech = speechOf();
-  if (!speech) {
-    for (const delay of [0, 0.32]) tone(audio, 523, audio.currentTime + delay, 0.2, "sine", 0.18);
-    return;
-  }
-  if (speech.speaking) return;
-  const phrase = new SpeechSynthesisUtterance("Entregador chamando");
-  phrase.lang = "pt-BR";
-  speech.speak(phrase);
 }
 
 function tone(audio: AudioContext, frequency: number, start: number, length: number, type: OscillatorType = "square", volume = 0.25) {

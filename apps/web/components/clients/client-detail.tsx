@@ -11,7 +11,7 @@ import {
   type UpdateContactRequest,
 } from "@dishdesk/shared";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertCircleIcon, ChevronLeftIcon, ChevronRightIcon, LoaderCircleIcon, MoreHorizontalIcon, TriangleAlertIcon } from "lucide-react";
+import { AlertCircleIcon, ChevronLeftIcon, ChevronRightIcon, LoaderCircleIcon, MoreHorizontalIcon, TriangleAlertIcon, XIcon } from "lucide-react";
 import Link from "next/link";
 import { type ReactNode, useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
@@ -59,8 +59,11 @@ export const ORDER_TONE: Record<OrderDto["status"], "open" | "pending" | "resolv
   CANCELED: "open",
 };
 
-/** Detalhe do cliente (board Clientes): cadastro à esquerda, métricas e abas Conversas/Pedidos à direita. */
-export function ClientDetail({ id }: { id: string }) {
+/**
+ * Detalhe do cliente (board Clientes): cadastro à esquerda, métricas e abas Conversas/Pedidos à direita.
+ * `onClose`: aberto num modal (pelo nome do cliente, na Inbox); o botão de fechar entra no lugar do link de voltar.
+ */
+export function ClientDetail({ id, onClose }: { id: string; onClose?: () => void }) {
   const { request } = useAuth();
   const queryClient = useQueryClient();
   const toast = useToast();
@@ -108,10 +111,12 @@ export function ClientDetail({ id }: { id: string }) {
   return (
     <main className="flex min-w-0 flex-1 flex-col overflow-hidden bg-paper">
       <header className="shrink-0 border-b border-rule-soft bg-surface px-7 py-4">
-        <Link href={lastListHref()} className="mb-3 inline-flex items-center gap-1 text-xs text-ink-3 hover:text-ink-2">
-          <ChevronLeftIcon className="size-3" aria-hidden />
-          Clientes
-        </Link>
+        {!onClose && (
+          <Link href={lastListHref()} className="mb-3 inline-flex items-center gap-1 text-xs text-ink-3 hover:text-ink-2">
+            <ChevronLeftIcon className="size-3" aria-hidden />
+            Clientes
+          </Link>
+        )}
         <div className="flex items-start justify-between gap-4">
           <div className="flex min-w-0 items-center gap-4">
             <ClientAvatar seed={data.id} name={data.name} anonymized={Boolean(anonymized)} className="size-[52px] text-lg" />
@@ -142,35 +147,42 @@ export function ClientDetail({ id }: { id: string }) {
             )}
           </div>
 
-          {!anonymized && (
-            <div className="flex shrink-0 items-center gap-2">
-              {data.latestConversationId ? (
-                <Link href={`/inbox?conversa=${data.latestConversationId}`} className={buttonVariants()}>
-                  Abrir conversa
-                </Link>
-              ) : (
-                <Button disabled title="Este cliente ainda não tem conversas">
-                  Abrir conversa
+          <div className="flex shrink-0 items-center gap-2">
+            {!anonymized && (
+              <>
+                {data.latestConversationId ? (
+                  <Link href={`/inbox?conversa=${data.latestConversationId}`} className={buttonVariants()}>
+                    Abrir conversa
+                  </Link>
+                ) : (
+                  <Button disabled title="Este cliente ainda não tem conversas">
+                    Abrir conversa
+                  </Button>
+                )}
+                <Button variant="outline" disabled={editing} onClick={() => setEditing(true)}>
+                  Editar
                 </Button>
-              )}
-              <Button variant="outline" disabled={editing} onClick={() => setEditing(true)}>
-                Editar
+                {admin && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger aria-label="Mais ações" className={buttonVariants({ variant: "outline", size: "icon" })}>
+                      <MoreHorizontalIcon aria-hidden />
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-52">
+                      <DropdownMenuItem onClick={() => setDialog("export")}>Exportar dados</DropdownMenuItem>
+                      <DropdownMenuItem variant="destructive" onClick={() => setDialog("anonymize")}>
+                        Anonimizar cliente
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
+              </>
+            )}
+            {onClose && (
+              <Button variant="outline" size="icon" aria-label="Fechar" onClick={onClose}>
+                <XIcon aria-hidden />
               </Button>
-              {admin && (
-                <DropdownMenu>
-                  <DropdownMenuTrigger aria-label="Mais ações" className={buttonVariants({ variant: "outline", size: "icon" })}>
-                    <MoreHorizontalIcon aria-hidden />
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-52">
-                    <DropdownMenuItem onClick={() => setDialog("export")}>Exportar dados</DropdownMenuItem>
-                    <DropdownMenuItem variant="destructive" onClick={() => setDialog("anonymize")}>
-                      Anonimizar cliente
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              )}
-            </div>
-          )}
+            )}
+          </div>
         </div>
 
         {admin && sameAs && twin && (

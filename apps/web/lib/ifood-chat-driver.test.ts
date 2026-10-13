@@ -11,7 +11,7 @@ const TODAY = new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit
 /** Widget do iFood de mentira, com a mesma estrutura de HTML do verdadeiro (classes à parte) e as posições que a extensão anota. */
 function fakeWidget(chats: FakeChat[], options: { authorized?: boolean; geometry?: boolean } = {}) {
   const { authorized = true, geometry = true } = options;
-  const state = { panel: false, tab: "HOME", drawer: null as string | null, draft: "", modal: false, clicks: [] as string[] };
+  const state = { authorized, panel: false, tab: "HOME", drawer: null as string | null, draft: "", modal: false as false | "invite" | "authorizing", clicks: [] as string[] };
   const rect = (x: number, width: number) => (geometry ? ` data-dd-rect="${x},0,${width},40"` : "");
   const bubble = (message: FakeMessage) => {
     const x = message.side === "store" ? 700 : message.side === "customer" ? 612 : 620;
@@ -34,7 +34,12 @@ function fakeWidget(chats: FakeChat[], options: { authorized?: boolean; geometry
            ${state.tab === "CHAT" ? `<div class="chats-tabs">${list(true)}${list(false)}</div>` : "<span>Widget do iFood</span>"}
            <div><button id="HOME"></button><button id="CHAT"></button></div></div>`
       : "";
-    const modal = state.modal ? '<div data-hit-region="true"><span>Conheça o widget do iFood!</span><button>Ir para o portal do parceiro</button></div>' : "";
+    const modal =
+      state.modal === "invite"
+        ? '<div data-hit-region="true"><span>Conheça o widget do iFood!</span><button>Ir para o portal do parceiro</button></div>'
+        : state.modal
+          ? '<div data-hit-region="true"><span>Autorização em andamento</span><span>Não feche esta janela.</span></div>'
+          : "";
     return `<body><div id="root"><div><div data-column-index="3">${drawer}</div><div data-column-index="2">${panel}<div data-hit-region="true"><button id="embeddables-main-button"></button></div></div></div>${modal}</div></body>`;
   };
   const bridge: Bridge = async (op, params = {}) => {
@@ -44,8 +49,8 @@ function fakeWidget(chats: FakeChat[], options: { authorized?: boolean; geometry
     const open = chats.find((chat) => chat.code === state.drawer);
     if (op === "fill") state.draft = String(params.text);
     else if (selector === LAUNCHER) {
-      if (authorized) state.panel = !state.panel;
-      else state.modal = true;
+      if (state.authorized) state.panel = !state.panel;
+      else state.modal = "invite";
     } else if (selector === CHAT_TAB) state.tab = "CHAT";
     else if (selector === CHAT_ITEM) state.drawer = readWidget(render()).chats.find((chat) => chat.index === params.index)!.orderCode;
     else if (selector.includes("ifdl-icon-close")) state.drawer = null;
@@ -170,10 +175,37 @@ describe("motor do chat do iFood", () => {
     ]);
   });
 
-  it("loja que não autorizou o widget: para e avisa", async () => {
-    const widget = fakeWidget([], { authorized: false });
-    const driver = new IfoodChatDriver(widget.bridge, fakeApi().api, instant);
+  it("conversa ainda sem mensagens: nada é copiado, mas a resposta da Inbox é a primeira mensagem dela", async () => {
+    const chat = order([], { stamp: "10:38" });
+    const widget = fakeWidget([chat]);
+    const { api, calls, outbox } = fakeApi();
+    const driver = new IfoodChatDriver(widget.bridge, api, instant);
+    await steps(driver, 3);
+    expect(calls.synced).toEqual([]);
+
+    outbox.push({ messageId: "m-1", conversationId: "c-1", orderCode: "6530", text: "Olá! Estamos chamando um atendente." });
+    await steps(driver, 1, true);
+    expect(calls.results).toEqual([["m-1", { status: "SENT" }]]);
+    expect(chat.messages).toEqual([{ side: "store", text: "Olá! Estamos chamando um atendente.", time: "12:30:00" }]);
+  });
+
+  it("loja que não autorizou o widget: para e avisa, sem mexer no widget enquanto ela autoriza; depois, volta a operar", async () => {
+    const widget = fakeWidget([order([{ side: "customer", text: "Olá", time: "10:00:00" }])], { authorized: false });
+    const { api, calls } = fakeApi();
+    const driver = new IfoodChatDriver(widget.bridge, api, instant);
     expect(await steps(driver, 2)).toBe("unauthorized");
+    expect(await driver.authorization()).toBe("unauthorized");
     expect(widget.state.clicks).toEqual([`click ${LAUNCHER}`]);
+
+    // A loja clica no convite e autoriza no Portal do Parceiro.
+    widget.state.modal = "authorizing";
+    expect(await steps(driver, 2)).toBe("authorizing");
+    expect(widget.state.clicks).toHaveLength(1);
+
+    widget.state.modal = false;
+    widget.state.authorized = true;
+    expect(await driver.authorization()).toBeNull();
+    expect(await steps(driver, 4)).toBe("working");
+    expect(calls.synced.map((sync) => sync.orderCode)).toEqual(["6530"]);
   });
 });

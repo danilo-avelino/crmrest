@@ -10,12 +10,17 @@ export type IfoodChatApi = {
   result(messageId: string, body: IfoodChatSendResult): Promise<void>;
 };
 
-/** `unauthorized`: a loja precisa autorizar o widget neste computador; o motor para até a página recarregar. */
-export type DriverStatus = "working" | "unauthorized";
+/**
+ * `unauthorized`: o widget pede a autorização da loja neste computador; `authorizing`: ela está sendo dada no Portal do
+ * Parceiro. Nos dois casos o motor não mexe no widget.
+ */
+export type DriverStatus = "working" | NonNullable<WidgetState["authorization"]>;
 
 /** A conversa aberta demora a carregar: quantas leituras esperar, e o intervalo entre elas. */
 const READ_ATTEMPTS = 12;
 const READ_WAIT_MS = 500;
+/** Conversa sem mensagens: quantas leituras iguais esperar antes de aceitar que ela está vazia, e não carregando. */
+const EMPTY_READS = 4;
 /** Conversa que não deu para copiar (pedido ainda fora do Dish Desk, erro): quando tentar de novo, e até quantas vezes. */
 const RETRY_MS = 30_000;
 const MAX_TRIES = 10;
@@ -45,7 +50,7 @@ export class IfoodChatDriver {
   /** `claim`: perguntar à API se há respostas novas da Inbox para enviar. */
   async step(claim: boolean): Promise<DriverStatus> {
     const state = await this.read();
-    if (state.unauthorized) return "unauthorized";
+    if (state.authorization) return state.authorization;
     if (!state.panel) return this.click(LAUNCHER);
     if (!state.chatTab) return this.click(CHAT_TAB);
     // Conversa que ficou aberta de um passo interrompido: fecha antes de seguir.
@@ -59,6 +64,11 @@ export class IfoodChatDriver {
       if (changed) await this.copy(changed);
     }
     return "working";
+  }
+
+  /** Como está a autorização da loja no widget, sem mexer nele (null: nada na tela sobre ela). */
+  async authorization(): Promise<WidgetState["authorization"]> {
+    return (await this.read()).authorization;
   }
 
   private async read(): Promise<WidgetState> {
@@ -133,18 +143,22 @@ export class IfoodChatDriver {
     await this.api.result(reply.messageId, outcome);
   }
 
-  /** Abre a conversa do pedido e espera as mensagens carregarem (duas leituras seguidas com a mesma quantidade). */
+  /**
+   * Abre a conversa do pedido e espera as mensagens carregarem (duas leituras seguidas com a mesma quantidade). Uma
+   * conversa ainda sem mensagens também abre: é nela que a loja escreve primeiro.
+   */
   private async open(orderCode: string): Promise<WidgetDrawer | null> {
     // A posição na lista é lida logo antes do clique: ela muda quando chega mensagem em outra conversa.
     const chats = (await this.read()).chats.filter((chat) => chat.orderCode === orderCode);
     const chat = chats.find((item) => item.open) ?? chats[0];
     if (!chat) return null;
     await this.bridge("click", { selector: CHAT_ITEM, index: chat.index });
-    let loaded = 0;
+    let loaded = -1;
+    let repeats = 0;
     return this.until(orderCode, (drawer) => {
-      const stable = drawer.bubbles.length > 0 && drawer.bubbles.length === loaded;
+      repeats = drawer.bubbles.length === loaded ? repeats + 1 : 0;
       loaded = drawer.bubbles.length;
-      return stable;
+      return repeats >= (loaded > 0 ? 1 : EMPTY_READS);
     });
   }
 

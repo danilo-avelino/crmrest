@@ -99,8 +99,9 @@ export class IfoodService implements OnModuleInit {
           ...(event.fullCode === "DELIVERED" && { deliveredAt: at }),
         },
       });
-      // Aviso ao cliente: saiu para entrega, ou entregue (só DELIVERED: o CONCLUDED chega horas depois).
-      const notice: NoticeStatus | null = status === "DISPATCHED" ? "DISPATCHED" : event.fullCode === "DELIVERED" ? "DELIVERED" : null;
+      // Aviso ao cliente: ficou pronto, saiu para entrega, ou entregue (só DELIVERED: o CONCLUDED chega horas depois).
+      const notice: NoticeStatus | null =
+        status === "READY" || status === "DISPATCHED" ? status : event.fullCode === "DELIVERED" ? "DELIVERED" : null;
       return { conversationId: order.conversationId, notice: notice && { orderId: order.id, status: notice } };
     });
     if (updated.conversationId) this.realtime.inboxChanged(channel.tenantId, updated.conversationId);

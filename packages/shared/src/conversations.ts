@@ -24,6 +24,7 @@ export type MessageContent = {
     | "order_lookup"
     | "order_confirmed"
     | "order_forecast"
+    | "order_ready"
     | "order_dispatched"
     | "order_delivered"
     | "order_links"
@@ -31,7 +32,11 @@ export type MessageContent = {
     | "survey"
     | "survey_thanks"
     | "after_hours"
-    | "inactivity_close";
+    | "inactivity_close"
+    | "courier_menu"
+    | "courier_arrival"
+    | "courier_arrival_confirmed"
+    | "courier_problem_request";
   /** Evento do sistema mostrado na conversa. */
   event?:
     | "conversation_opened"
@@ -46,6 +51,8 @@ export type MessageContent = {
     | "handoff"
     | "cancellation_alert";
   orderId?: string;
+  /** O card do pedido traz o botão de conversar com o cliente (pedido informado por um entregador). */
+  customerChat?: boolean;
   /** Template aprovado do WhatsApp (o único envio permitido fora da janela de 24h). */
   template?: { name: string; language: string; variables: string[] };
   media?: { mimeType: string; externalMediaId?: string; url?: string; filename?: string };
@@ -79,6 +86,12 @@ export type OrderDto = {
   items: { name: string; quantity: number; unitPrice: string; notes: string | null }[];
 };
 
+/**
+ * Por onde a equipe fala com o cliente de um pedido: WhatsApp, se o cadastro tem telefone e o restaurante tem um número
+ * conectado; senão, o chat do iFood do pedido. null = não há como conversar pelo Dish Desk.
+ */
+export type OrderCustomerChat = { channel: Extract<ChannelType, "WHATSAPP" | "IFOOD"> | null; contactName: string | null };
+
 /** Item da lista de conversas da Inbox (no painel master, `tenant` diz de qual restaurante é). */
 export type ConversationListItem = {
   id: string;
@@ -90,6 +103,8 @@ export type ConversationListItem = {
   windowExpiresAt: string | null;
   /** Desde quando o cliente espera um atendente (a automação chamou a equipe e ninguém respondeu); null = não espera. */
   awaitingAgentSince: string | null;
+  /** O chamado não é urgente (entregador com outro assunto): aviso sonoro discreto, sem o alarme. */
+  awaitingAgentQuiet: boolean;
   channel: { id: string; type: ChannelType; name: string };
   contact: { id: string; name: string | null; phoneStatus: string | null; tags: string[] };
   assignedUser: { id: string; name: string } | null;
@@ -99,8 +114,8 @@ export type ConversationListItem = {
 };
 
 export type ConversationPage = { items: ConversationListItem[]; nextCursor: string | null };
-/** Conversas por status e quantas estão chamando um atendente (alarme da Inbox); `awaitingCourier` = quantas delas são de entregadores. */
-export type ConversationCounts = Record<ConversationStatus, number> & { awaitingAgent: number; awaitingCourier: number };
+/** Conversas por status e quantas estão chamando um atendente (alarme da Inbox); `awaitingQuiet` = quantas delas chamam sem urgência. */
+export type ConversationCounts = Record<ConversationStatus, number> & { awaitingAgent: number; awaitingQuiet: number };
 export type ConversationMessages = { messages: MessageDto[]; orders: Record<string, OrderDto> };
 
 export const ConversationListQuery = z.object({

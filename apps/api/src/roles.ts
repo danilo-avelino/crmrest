@@ -1,6 +1,8 @@
 import { Module } from "@nestjs/common";
 import { TokensModule } from "./auth/tokens.module.js";
 import { AutomationsProcessor } from "./automations/automations.processor.js";
+import { CourierMenuService } from "./automations/courier-menu.service.js";
+import { IfoodAttendanceService } from "./automations/ifood-attendance.service.js";
 import { InactivityService } from "./automations/inactivity.service.js";
 import { PhoneCollectionService } from "./automations/phone-collection.service.js";
 import { SurveyService } from "./automations/survey.service.js";
@@ -72,7 +74,9 @@ export class RealtimeRoleModule {}
     OutboundProcessor,
     PhoneCollectionService,
     SurveyService,
+    CourierMenuService,
     TriageService,
+    IfoodAttendanceService,
     InactivityService,
     ContactTagsService,
     AutomationsProcessor,

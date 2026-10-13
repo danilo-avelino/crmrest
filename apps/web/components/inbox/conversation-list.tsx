@@ -2,7 +2,7 @@
 
 import { type ConversationCounts, type ConversationListItem, type ConversationPage, COURIER_TAG } from "@dishdesk/shared";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
-import { BellRingIcon, BikeIcon, CheckIcon, ListFilterIcon, SearchIcon } from "lucide-react";
+import { BellIcon, BellRingIcon, BikeIcon, CheckIcon, ListFilterIcon, SearchIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
 import { Avatar, StatusBadge } from "@/components/inbox/bits";
@@ -68,14 +68,14 @@ export function ConversationList({
     queryKey: ["counts", null],
     queryFn: () => request<ConversationCounts>("/conversations/counts"),
   });
-  // Entregador chamando tem o próprio som (a frase falada), sem o alarme dos clientes.
-  const couriers = allCounts.data?.awaitingCourier ?? 0;
-  const calling = (allCounts.data?.awaitingAgent ?? 0) - couriers;
+  // Chamado sem urgência (entregador com outro assunto) tem o próprio som, discreto, sem o alarme.
+  const quiet = allCounts.data?.awaitingQuiet ?? 0;
+  const calling = (allCounts.data?.awaitingAgent ?? 0) - quiet;
   const alarm = useAgentAlarm(calling > 0);
-  const courierAlarm = useAgentAlarm(couriers > 0, "courier");
+  const quietAlarm = useAgentAlarm(quiet > 0, "quiet");
 
   const items = conversations.data?.pages.flatMap((page) => page.items) ?? [];
-  useUnreadSignals(items, calling + couriers);
+  useUnreadSignals(items, calling + quiet);
 
   return (
     <section className="flex w-80 shrink-0 flex-col border-r border-rule bg-surface">
@@ -108,17 +108,17 @@ export function ConversationList({
         <div role="alert" className="flex shrink-0 items-center gap-2 bg-tomate px-4 py-2 text-[12px] font-semibold text-white">
           <BellRingIcon className="size-4 shrink-0 animate-bounce" aria-hidden />
           <span className="flex-1">
-            {calling === 1 ? "1 cliente chamando um atendente" : `${calling} clientes chamando um atendente`}
+            {calling === 1 ? "1 conversa chamando um atendente" : `${calling} conversas chamando um atendente`}
             {alarm.blocked && <span className="block text-[10.5px] font-normal opacity-90">Clique na página para ativar o som.</span>}
           </span>
         </div>
       )}
-      {couriers > 0 && (
-        <div role="alert" className="flex shrink-0 items-center gap-2 bg-ink px-4 py-2 text-[12px] font-semibold text-paper">
-          <BikeIcon className="size-4 shrink-0" aria-hidden />
+      {quiet > 0 && (
+        <div role="status" className="flex shrink-0 items-center gap-2 bg-ink px-4 py-2 text-[12px] font-semibold text-paper">
+          <BellIcon className="size-4 shrink-0" aria-hidden />
           <span className="flex-1">
-            {couriers === 1 ? "1 entregador chamando" : `${couriers} entregadores chamando`}
-            {courierAlarm.blocked && <span className="block text-[10.5px] font-normal opacity-90">Clique na página para ativar o som.</span>}
+            {quiet === 1 ? "1 conversa aguardando um atendente" : `${quiet} conversas aguardando um atendente`}
+            {quietAlarm.blocked && <span className="block text-[10.5px] font-normal opacity-90">Clique na página para ativar o som.</span>}
           </span>
         </div>
       )}
@@ -214,6 +214,7 @@ function ConversationRow({
   const unread = conversation.unreadCount > 0;
   const resolved = conversation.status === "RESOLVED";
   const calling = conversation.awaitingAgentSince !== null;
+  const quiet = calling && conversation.awaitingAgentQuiet;
   const courier = conversation.contact.tags.includes(COURIER_TAG);
   const time = conversation.lastMessageAt ?? conversation.createdAt;
 
@@ -227,8 +228,8 @@ function ConversationRow({
         active
           ? "border-b-[#F5C4BC] border-l-tomate bg-tomate-lt"
           : "border-b-rule-soft border-l-transparent bg-surface hover:bg-paper",
-        // Chamando o atendente: borda grossa e fundo tomate, para saltar aos olhos.
-        calling && "border-l-4 border-l-tomate bg-tomate-lt hover:bg-tomate-lt",
+        // Chamando o atendente: borda grossa e fundo tomate, para saltar aos olhos; sem urgência, só a borda, em ink.
+        calling && (quiet ? "border-l-4 border-l-ink" : "border-l-4 border-l-tomate bg-tomate-lt hover:bg-tomate-lt"),
         resolved && !active && "opacity-60",
       )}
     >
@@ -241,7 +242,12 @@ function ConversationRow({
       />
       <div className="min-w-0 flex-1">
         {calling && (
-          <div className="mb-1 inline-flex animate-pulse items-center gap-1 rounded-sm bg-tomate px-1.5 py-0.5 text-[10px] font-semibold text-white">
+          <div
+            className={cn(
+              "mb-1 inline-flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-[10px] font-semibold",
+              quiet ? "bg-ink text-paper" : "animate-pulse bg-tomate text-white",
+            )}
+          >
             {courier ? <BikeIcon className="size-3" aria-hidden /> : <BellRingIcon className="size-3" aria-hidden />}
             {courier ? "Entregador chamando" : "Chamando atendente"} · {ago(conversation.awaitingAgentSince!, now)}
           </div>

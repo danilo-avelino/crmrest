@@ -481,34 +481,115 @@ describe("menu de atendimento, busca do pedido e pesquisa de satisfação", () =
     await drainQueues(app);
   };
 
-  it("entregador: sem menu, chama a equipe na hora e de novo a cada mensagem depois da resposta", async () => {
+  const api = (path: string) => request(app.getHttpServer()).get(`/api${path}`).set("Authorization", `Bearer ${token}`).expect(200);
+  const COURIER_MENU = "1 - Avisar que cheguei (iFood)\n2 - Problema com um pedido\n3 - Outro assunto";
+
+  it("entregador: recebe o menu dele; outro assunto chama a equipe sem urgência, e só uma vez", async () => {
     await tagged("5511970000021", "Entregador");
-    await say("5511970000021", "wamid.ENT1", "Cheguei no endereço");
+    await say("5511970000021", "wamid.ENT1", "Boa noite");
+    const opened = await conversationOf("5511970000021");
+    expect(opened.messages.at(-1)!.content).toEqual({ automation: "courier_menu", text: `Olá, Marcado! 👋 Como podemos ajudar na entrega?\n${COURIER_MENU}` });
+    expect(opened.automationState).toEqual({ triage: "awaiting_option" });
+    expect(opened.awaitingAgentSince).toBeNull();
+
+    await say("5511970000021", "wamid.ENT2", "3");
     const conversation = await conversationOf("5511970000021");
-    expect(await automations("5511970000021")).toEqual([]);
-    expect(conversation.messages.at(-1)!.content).toEqual({ event: "handoff", text: "Entregador chamando" });
+    expect(conversation).toMatchObject({ awaitingAgentQuiet: true, automationState: { triage: "done" } });
     expect(conversation.awaitingAgentSince).not.toBeNull();
-    const handoffs = async () => (await contents("5511970000021")).filter((c) => c.event === "handoff").length;
+    expect(await automations("5511970000021")).toEqual(["courier_menu", "handoff"]);
+    const handoffs = async () => (await contents("5511970000021")).filter((c) => c.event === "handoff");
+    expect(await handoffs()).toEqual([{ event: "handoff", text: "Entregador chamando" }]);
 
-    // O painel sabe que quem chama é um entregador (som e aviso próprios).
-    const api = (path: string) => request(app.getHttpServer()).get(`/api${path}`).set("Authorization", `Bearer ${token}`).expect(200);
+    // O painel separa o chamado sem urgência (som discreto) do alarme.
     const counts = (await api("/conversations/counts")).body;
-    expect(counts.awaitingCourier).toBe(1);
+    expect(counts.awaitingQuiet).toBe(1);
     expect(counts.awaitingAgent).toBeGreaterThanOrEqual(1);
-    expect((await api(`/conversations/${conversation.id}`)).body.contact.tags).toEqual(["Entregador"]);
+    expect((await api(`/conversations/${conversation.id}`)).body).toMatchObject({ awaitingAgentQuiet: true, contact: { tags: ["Entregador"] } });
 
-    // Já chamando: outra mensagem não repete o chamado.
-    await say("5511970000021", "wamid.ENT2", "O cliente não atende");
-    expect(await handoffs()).toBe(1);
-
-    // A equipe responde e o alarme para; a mensagem seguinte do entregador chama de novo.
-    await reply(conversation.id, "Já estou ligando para o cliente.");
+    // A equipe responde e o chamado para; o que o entregador escrever depois não chama de novo.
+    await reply(conversation.id, "Pode falar.");
     expect((await conversationOf("5511970000021")).awaitingAgentSince).toBeNull();
-    expect((await api("/conversations/counts")).body.awaitingCourier).toBe(0);
-    await say("5511970000021", "wamid.ENT3", "Ele desceu, obrigado");
-    expect(await handoffs()).toBe(2);
-    expect((await conversationOf("5511970000021")).awaitingAgentSince).not.toBeNull();
-    expect(await automations("5511970000021")).toEqual([]);
+    expect((await api("/conversations/counts")).body.awaitingQuiet).toBe(0);
+    await say("5511970000021", "wamid.ENT3", "O portão está fechado");
+    expect(await handoffs()).toHaveLength(1);
+    expect((await conversationOf("5511970000021")).awaitingAgentSince).toBeNull();
+    expect(await automations("5511970000021")).toEqual(["courier_menu", "handoff"]);
+  });
+
+  it("entregador com problema em um pedido: o card do pedido fica na conversa e o relato chama a equipe com o alarme", async () => {
+    const order = await ifoodOrder("7171", new Date());
+    await tagged("5511970000023", "Entregador");
+    await say("5511970000023", "wamid.PRB1", "Oi");
+    await say("5511970000023", "wamid.PRB2", "2");
+    expect((await contents("5511970000023")).at(-1)).toEqual({ automation: "order_number_request", text: "Qual é o número do pedido?" });
+
+    await say("5511970000023", "wamid.PRB3", "pedido 7171");
+    const asked = await conversationOf("5511970000023");
+    const shown = asked.messages.map((m) => m.content as Content);
+    expect(shown).toContainEqual({ event: "order", orderId: order.id, customerChat: true });
+    expect(shown).toContainEqual({ automation: "courier_problem_request", text: "Encontramos o pedido #7171. O que aconteceu com ele?" });
+    expect(asked.awaitingAgentSince).toBeNull(); // a equipe só é chamada com o relato
+
+    await say("5511970000023", "wamid.PRB4", "O cliente não atende o interfone");
+    const conversation = await conversationOf("5511970000023");
+    expect(conversation).toMatchObject({ awaitingAgentQuiet: false, automationState: { triage: "done" } });
+    expect(conversation.awaitingAgentSince).not.toBeNull();
+    const after = conversation.messages.map((m) => m.content as Content);
+    expect(after).toContainEqual({ automation: "handoff", text: "Certo! Já estamos encaminhando para um atendente." });
+    expect(after).toContainEqual({ event: "handoff", text: "Entregador relatou um problema com um pedido" });
+    // O cadastro do entregador não se mistura com o do cliente do pedido.
+    expect(conversation.contactId).not.toBe(order.contactId);
+  });
+
+  it("entregador informa um pedido que não existe, ou avisa que chegou sem o chat do iFood na Inbox: a equipe assume, sem urgência", async () => {
+    await tagged("5511970000024", "Entregador");
+    await say("5511970000024", "wamid.NF1", "Oi");
+    await say("5511970000024", "wamid.NF2", "2");
+    await say("5511970000024", "wamid.NF3", "0998877");
+    const missing = await conversationOf("5511970000024");
+    expect(missing.messages.map((m) => m.content)).toContainEqual({
+      automation: "order_lookup",
+      text: "Não encontramos o pedido #998877. Um atendente já vai falar com você.",
+    });
+    expect(missing.messages.map((m) => m.content)).toContainEqual({
+      event: "handoff",
+      text: "Entregador com problema no pedido #998877, que não foi encontrado",
+    });
+    expect(missing).toMatchObject({ awaitingAgentQuiet: true });
+    expect(missing.awaitingAgentSince).not.toBeNull();
+
+    // Esta API de teste não tem a trava IFOOD_CHAT_BRIDGE: o aviso de chegada fica com a equipe.
+    await ifoodOrder("7272", new Date());
+    await tagged("5511970000025", "Entregador");
+    await say("5511970000025", "wamid.ARR1", "Oi");
+    await say("5511970000025", "wamid.ARR2", "1");
+    await say("5511970000025", "wamid.ARR3", "7272");
+    const arrived = await conversationOf("5511970000025");
+    expect(await automations("5511970000025")).toEqual(["courier_menu", "order_number_request", "handoff"]);
+    expect(arrived.messages.map((m) => m.content)).toContainEqual({ event: "handoff", text: "Entregador avisou que chegou com o pedido #7272" });
+    expect(arrived).toMatchObject({ status: "OPEN", awaitingAgentQuiet: true });
+  });
+
+  it("card do pedido informado pelo entregador: a equipe conversa com o cliente pelo WhatsApp quando o cadastro tem telefone", async () => {
+    const post = (path: string) => request(app.getHttpServer()).post(`/api${path}`).set("Authorization", `Bearer ${token}`);
+    // Sem telefone no cadastro (e sem o chat do iFood na Inbox), não há por onde conversar.
+    const silent = await ifoodOrder("7575", new Date());
+    expect((await api(`/orders/${silent.id}/customer-chat`)).body).toEqual({ channel: null, contactName: "Carlos Mendes" });
+    await post(`/orders/${silent.id}/customer-chat`).expect(422);
+
+    const order = await ifoodOrder("7474", new Date(), { phone: "+5511988887474" });
+    expect((await api(`/orders/${order.id}/customer-chat`)).body).toEqual({ channel: "WHATSAPP", contactName: "Carlos Mendes" });
+    const { body } = await post(`/orders/${order.id}/customer-chat`).expect(200);
+    const conversation = await admin.conversation.findUniqueOrThrow({
+      where: { id: body.conversationId },
+      include: { contact: { include: { identities: true } }, messages: true },
+    });
+    // Conversa nova no WhatsApp, sem janela de 24h (a equipe começa por um template), para o número do cadastro.
+    expect(conversation).toMatchObject({ channelId: fx.whatsapp.id, contactId: order.contactId, status: "OPEN", windowExpiresAt: null });
+    expect(conversation.contact.identities.map((i) => [i.channelType, i.externalId])).toContainEqual(["WHATSAPP", "5511988887474"]);
+    expect(conversation.messages.map((m) => m.content)).toEqual([{ event: "conversation_opened", text: "Conversa aberta via WhatsApp" }]);
+    // De novo: a mesma conversa.
+    expect((await post(`/orders/${order.id}/customer-chat`).expect(200)).body).toEqual({ conversationId: conversation.id });
   });
 
   it("cancelamento recorrente: cada atendimento novo abre com o alerta, que não vai para o cliente", async () => {

@@ -1,5 +1,5 @@
-import { type CurrentOrderDto, OrderListQuery, type OrderPage } from "@dishdesk/shared";
-import { Controller, Get, Param, ParseUUIDPipe, Query } from "@nestjs/common";
+import { type CurrentOrderDto, type OrderCustomerChat, OrderListQuery, type OrderPage } from "@dishdesk/shared";
+import { Controller, Get, HttpCode, Param, ParseUUIDPipe, Post, Query } from "@nestjs/common";
 import { CurrentAuth, type RequestAuth } from "../auth/auth.decorators.js";
 import { ZodPipe } from "../common/zod.pipe.js";
 import { OrdersService } from "./orders.service.js";
@@ -25,5 +25,16 @@ export class OrdersController {
   @Get(":id/forecast")
   forecast(@Param("id", ParseUUIDPipe) id: string, @CurrentAuth() auth: RequestAuth): Promise<{ text: string | null }> {
     return this.orders.forecast(auth, id);
+  }
+
+  @Get(":id/customer-chat")
+  customerChat(@Param("id", ParseUUIDPipe) id: string, @CurrentAuth() auth: RequestAuth): Promise<OrderCustomerChat> {
+    return this.orders.customerChat(auth, id);
+  }
+
+  @Post(":id/customer-chat")
+  @HttpCode(200)
+  openCustomerChat(@Param("id", ParseUUIDPipe) id: string, @CurrentAuth() auth: RequestAuth): Promise<{ conversationId: string }> {
+    return this.orders.openCustomerChat(auth, id);
   }
 }

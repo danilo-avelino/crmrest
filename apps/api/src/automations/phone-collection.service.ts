@@ -1,14 +1,17 @@
-import type { TenantTx } from "@dishdesk/database";
+import type { Contact, TenantTx } from "@dishdesk/database";
 import { automationTextsOf, CHANNEL_CAPABILITIES, toE164 } from "@dishdesk/shared";
 import { InjectQueue } from "@nestjs/bullmq";
-import { Injectable } from "@nestjs/common";
+import { Inject, Injectable } from "@nestjs/common";
 import type { Queue } from "bullmq";
+import { ENV, type Env } from "../config/env.js";
+import { mergeContacts } from "../contacts/contact-merge.js";
 import { DatabaseService } from "../core/database.service.js";
 import { type AutomationJob, type OutboundJob, QUEUES } from "../queues/queues.module.js";
 import { RealtimeEmitter } from "../realtime/realtime.emitter.js";
 import {
   type AutomationState,
   automationMessage,
+  channelSends,
   dispatch,
   type InboundEvent,
   setAutomationState,
@@ -19,7 +22,10 @@ import {
 /** Espera até o lembrete e, depois dele, até desistir. */
 export const PHONE_REMINDER_DELAY_MS = 10 * 60_000;
 
-/** Pede o telefone a quem chega sem ele (Instagram e afins) e cadastra o número informado: é o que qualifica o contato. */
+/**
+ * Pede o telefone a quem chega sem ele (Instagram, chat do iFood) e cadastra o número informado: é o que qualifica o
+ * contato. Se o número já é de outro cadastro, é a mesma pessoa em outro canal: os dois viram um.
+ */
 @Injectable()
 export class PhoneCollectionService {
   constructor(
@@ -27,12 +33,12 @@ export class PhoneCollectionService {
     private readonly realtime: RealtimeEmitter,
     @InjectQueue(QUEUES.outbound) private readonly outbound: Queue<OutboundJob>,
     @InjectQueue(QUEUES.automations) private readonly automations: Queue<AutomationJob>,
+    @Inject(ENV) private readonly env: Env,
   ) {}
 
   /** Roda depois de cada mensagem recebida, quando o menu de atendimento já terminou. */
   async afterInbound(event: InboundEvent): Promise<void> {
-    const capabilities = CHANNEL_CAPABILITIES[event.channel.type];
-    if (!capabilities.send || capabilities.providesPhone) return;
+    if (!channelSends(event.channel.type, this.env) || CHANNEL_CAPABILITIES[event.channel.type].providesPhone) return;
 
     const { tenantId } = event.channel;
     const result = await this.db.withTenants({ tenantIds: [tenantId] }, async (tx) => {
@@ -50,23 +56,44 @@ export class PhoneCollectionService {
       if (state.phoneCollection === "awaiting_phone" && event.text) {
         const phone = extractPhone(event.text);
         if (!phone) return null;
-        await tx.contact.update({
+        // Quem já tinha este telefone (o cadastro mais antigo, se houver mais de um).
+        const known = await tx.contact.findFirst({
+          where: { phone, deletedAt: null, id: { not: conversation.contact.id } },
+          orderBy: { firstSeenAt: "asc" },
+        });
+        const contact = await tx.contact.update({
           where: { id: conversation.contact.id },
           data: { phone, phoneSource: "informed_by_customer", phoneStatus: "ok" },
         });
         await systemEvent(tx, conversation, { event: "phone_collected", text: "Telefone informado e cadastrado" });
+        const notify = known ? await this.unify(tx, conversation, contact, known) : [];
         const messageId = await automationMessage(tx, conversation, "phone_confirmation", texts.phoneConfirmation);
         await setAutomationState(tx, conversation.id, { ...state, phoneCollection: "phone_collected" });
-        return { send: [messageId], remind: false };
+        return { send: [messageId], remind: false, notify };
       }
       return null;
     });
 
     if (!result) return;
     await dispatch(this.outbound, this.realtime, tenantId, event.conversationId, result.send);
+    for (const conversationId of result.notify ?? []) this.realtime.inboxChanged(tenantId, conversationId);
     if (result.remind) {
       await this.automations.add("phone-reminder", { tenantId, conversationId: event.conversationId }, { delay: PHONE_REMINDER_DELAY_MS });
     }
+  }
+
+  /** Une o cadastro da conversa ao que já tinha o telefone informado. Devolve as outras conversas do cliente, para avisar os painéis. */
+  private async unify(tx: TenantTx, conversation: { id: string; tenantId: string; channelId: string }, contact: Contact, known: Contact): Promise<string[]> {
+    const result = await mergeContacts(tx, contact, known);
+    if (!result.merged) {
+      const text = `${known.name ?? "Outro cliente"} já tem este telefone, com ${result.conflict} diferente`;
+      await systemEvent(tx, conversation, { event: "merge_conflict", text });
+      return [];
+    }
+    const text = `Cadastro unificado com o de ${known.name ?? "outro cliente"}, que já tinha este telefone`;
+    await systemEvent(tx, conversation, { event: "contacts_merged", text });
+    const others = await tx.conversation.findMany({ where: { contactId: result.contactId, id: { not: conversation.id } }, select: { id: true } });
+    return others.map((other) => other.id);
   }
 
   /** Um único lembrete, se o cliente ainda não informou o telefone. */

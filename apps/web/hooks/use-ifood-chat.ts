@@ -4,7 +4,7 @@ import type { IfoodChatOutboxItem, IfoodChatSyncResult } from "@dishdesk/shared"
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
 import { INBOX_CHANGED_EVENT } from "@/hooks/use-inbox-realtime";
-import { type Bridge, IfoodChatDriver } from "@/lib/ifood-chat-driver";
+import { type Bridge, type DriverStatus, IfoodChatDriver } from "@/lib/ifood-chat-driver";
 
 const WIDGET_ORIGIN = "https://embeddables.ifood.com.br";
 const TAG = "ifood-bridge";
@@ -53,17 +53,23 @@ function supported(version: string | undefined): boolean {
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 /**
- * Chat do iFood na Inbox (trava IFOOD_CHAT_BRIDGE): com a extensão instalada neste Chrome, copia as conversas do widget
- * e digita nele as respostas escritas na Inbox. Devolve true enquanto o motor opera o widget, que então fica invisível
- * (ele precisa ficar aberto na aba Chat). Sem a extensão, ou com a loja sem autorizar, o widget aparece como sempre.
+ * O que o motor do chat faz com o widget: `driving` = opera (o widget fica invisível, aberto na aba Chat);
+ * `unauthorized` = abriu o widget e ele pede a autorização da loja; `idle` = não mexe (o widget aparece como sempre).
  */
-export function useIfoodChat(enabled: boolean): boolean {
+export type IfoodChatMode = "idle" | "driving" | "unauthorized";
+
+/**
+ * Chat do iFood na Inbox (trava IFOOD_CHAT_BRIDGE): com a extensão instalada neste Chrome, copia as conversas do widget
+ * e digita nele as respostas escritas na Inbox. Sem a extensão, o widget aparece como sempre. Com a loja sem autorizar,
+ * o motor espera: volta sozinho quando a autorização termina.
+ */
+export function useIfoodChat(enabled: boolean): IfoodChatMode {
   const { request } = useAuth();
   const latestRequest = useRef(request);
   useEffect(() => {
     latestRequest.current = request;
   }, [request]);
-  const [driving, setDriving] = useState(false);
+  const [mode, setMode] = useState<IfoodChatMode>("idle");
 
   useEffect(() => {
     if (!enabled) return;
@@ -82,21 +88,41 @@ export function useIfoodChat(enabled: boolean): boolean {
     });
 
     void (async () => {
+      // O que o widget mostrou sobre a autorização da loja; null = nada, o motor opera.
+      let authorization: Exclude<DriverStatus, "working"> | null = null;
       while (!stopped) {
         const version = await bridge("ping").then((reply) => reply.version, () => undefined);
         if (stopped) return;
         if (!supported(version)) {
-          setDriving(false);
+          setMode("idle");
           await sleep(SEARCH_MS);
           continue;
         }
-        setDriving(true);
+        if (authorization) {
+          // Convite (ou andamento) da autorização na tela: o motor só observa.
+          const seen = await driver.authorization().catch(() => authorization);
+          if (stopped) return;
+          if (seen) {
+            authorization = seen;
+            setMode(seen === "unauthorized" ? "unauthorized" : "idle");
+            await sleep(STEP_MS);
+            continue;
+          }
+          if (authorization === "unauthorized") {
+            setMode("idle");
+            return; // a loja fechou o convite sem autorizar: o motor volta quando a página recarregar
+          }
+          authorization = null; // a autorização terminou: o motor segue
+        }
+        setMode("driving");
         const take: boolean = claim;
         claim = false;
         try {
-          if ((await driver.step(take)) === "unauthorized") {
-            if (!stopped) setDriving(false);
-            return; // a loja autoriza no Portal do Parceiro; o motor volta quando a página recarregar
+          const status = await driver.step(take);
+          if (status !== "working") {
+            authorization = status;
+            claim ||= take;
+            if (!stopped) setMode(status === "unauthorized" ? "unauthorized" : "idle");
           }
         } catch {
           // Widget recarregando, API fora do ar ou HTML diferente do esperado: o próximo passo tenta de novo.
@@ -113,5 +139,5 @@ export function useIfoodChat(enabled: boolean): boolean {
     };
   }, [enabled]);
 
-  return enabled && driving;
+  return enabled ? mode : "idle";
 }

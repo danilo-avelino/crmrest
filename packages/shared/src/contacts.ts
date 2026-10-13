@@ -70,7 +70,7 @@ export type AutoTag = keyof typeof AUTO_TAG_INFO;
 
 /** Quem aplica o golpe do cancelamento: cada novo atendimento abre com um alerta para a equipe. */
 export const CANCELLATION_TAG = "Cancelamento recorrente";
-/** Entregador: sem menu de atendimento, chama a equipe na hora (com o aviso sonoro próprio). */
+/** Entregador: no lugar do menu de atendimento, recebe o menu do entregador (avisar que chegou, problema com um pedido, outro assunto). */
 export const COURIER_TAG = "Entregador";
 /** As únicas tags que a equipe põe e tira à mão; o recálculo das automáticas não mexe nelas. */
 export const MANUAL_TAGS = [CANCELLATION_TAG, COURIER_TAG] as const;

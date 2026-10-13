@@ -128,7 +128,7 @@ describe("API da Inbox", () => {
   it("filtra por status e conta por status", async () => {
     const pending = await get("/conversations?status=PENDING").expect(200);
     expect(pending.body.items.map((c: { id: string }) => c.id)).toEqual([joaoChat.id]);
-    expect((await get("/conversations/counts").expect(200)).body).toEqual({ OPEN: 1, PENDING: 1, RESOLVED: 0, awaitingAgent: 0, awaitingCourier: 0 });
+    expect((await get("/conversations/counts").expect(200)).body).toEqual({ OPEN: 1, PENDING: 1, RESOLVED: 0, awaitingAgent: 0, awaitingQuiet: 0 });
   });
 
   it("busca por nome, telefone e CPF", async () => {

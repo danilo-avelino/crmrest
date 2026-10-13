@@ -230,7 +230,17 @@ Todo contato que interage com o restaurante gera ou atualiza um **cadastro unifi
 
 **Tags manuais:** só duas, marcadas pela equipe no "+ tag" do cliente (`MANUAL_TAGS`); o recálculo das automáticas não mexe nelas.
 - **Cancelamento recorrente:** quem aplica o golpe do cancelamento. A cada atendimento que esse cliente começa, a conversa recebe um alerta vermelho, visível só para a equipe.
-- **Entregador:** não recebe o menu, o aviso de fora do horário nem a coleta de telefone. Cada mensagem chama a equipe na hora (a não ser que já esteja chamando), e o painel fala "Entregador chamando"; sem voz em português no navegador, tocam dois bipes graves, sempre no mesmo tom.
+- **Entregador:** não recebe o menu de atendimento, o aviso de fora do horário nem a coleta de telefone. Recebe o menu do entregador (`CourierMenuService`), com três opções:
+  1. **Avisar que cheguei (iFood):** informa o número do pedido e o cliente recebe, no chat do iFood do pedido, o aviso de que o entregador está na porta. A conversa do entregador se resolve sozinha. Sem o pedido, ou sem o chat do iFood na Inbox (`IFOOD_CHAT_BRIDGE`), a equipe é chamada sem urgência.
+  2. **Problema com um pedido:** informa o número, o card do pedido entra na conversa com o botão de conversar com o cliente (WhatsApp, se o cadastro tem telefone; senão, chat do iFood) e o entregador conta o que houve. O relato chama a equipe **com o alarme**. Pedido não encontrado: chamado sem urgência.
+  3. **Outro assunto:** chama a equipe sem urgência.
+
+  Chamado sem urgência (`awaiting_agent_quiet`): dois bipes graves e baixos a cada 30 segundos, no lugar do alarme.
+
+**Chat do iFood (com `IFOOD_CHAT_BRIDGE`):** o cliente que escreve no chat não recebe menu, porque é sempre um problema com o pedido. Cada atendimento novo chama a equipe com o alarme e responde que um atendente está a caminho; se o cadastro não tem telefone, a mesma mensagem pede o número, que é anotado quando o cliente o envia (`IfoodAttendanceService`). Conversa copiada mais de 2 horas depois, ou já respondida pela loja, entra só como não lida. O encerramento por inatividade e a pesquisa de satisfação valem como nos outros canais, e toda avaliação guarda o canal em que foi dada (`ratings.channel_type`).
+- **Telefone que já é de outro cadastro** (vale para toda coleta de telefone, também a do Instagram): os dois cadastros viram um, ficando o mais antigo, com os canais e pedidos de ambos; CPFs diferentes impedem a união e a conversa recebe o aviso.
+- **Movimentações do pedido:** enquanto a conversa do cliente no chat do iFood está em andamento (ele escreveu e ela não foi resolvida), "ficou pronto", "saiu para entrega" e "entregue" vão para o chat do pedido (`OrderNoticeService`). Nos outros canais continuam só a saída e a entrega.
+- **Simulador (só desenvolvimento):** `pnpm simulate:ifood-chat --pedido 4224 --texto "..."` põe na Inbox uma mensagem como se o cliente a tivesse escrito no chat do pedido; as respostas das automações saem no chat de verdade.
 
 **Tags automáticas:** as demais tags do cliente são do sistema, que as põe e tira sozinho. Regras iguais para todos os restaurantes, em `AUTO_TAG_RULES` ([packages/shared/src/contacts.ts](packages/shared/src/contacts.ts)); pedidos cancelados não contam:
 - **VIP:** está entre os 10% de clientes com mais pedidos do restaurante, com 2 pedidos ou mais. Nunca passa dos 10%: clientes empatados entram todos ou nenhum.

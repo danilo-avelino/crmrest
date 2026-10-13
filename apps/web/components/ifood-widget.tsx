@@ -67,7 +67,7 @@ export function IfoodWidget() {
       setShown(current);
     });
   }, [loaded, key, data]);
-  const driving = useIfoodChat(shown && data?.chat === true);
+  const chat = useIfoodChat(shown && data?.chat === true);
 
   // O script fica na página depois de carregado uma vez (para conseguir esconder o widget ao sair).
   const [needed, setNeeded] = useState(false);
@@ -77,7 +77,9 @@ export function IfoodWidget() {
     <>
       <Script src="https://widgets.ifood.com.br/widget.js" strategy="afterInteractive" onReady={() => setLoaded(true)} />
       {/* O motor do chat mantém o widget aberto na aba Chat: invisível e sem cliques, para não cobrir o painel. */}
-      {driving && <style>{'iframe[src^="https://embeddables.ifood.com.br"]{opacity:0!important;pointer-events:none!important}'}</style>}
+      {chat === "driving" && <style>{'iframe[src^="https://embeddables.ifood.com.br"]{opacity:0!important;pointer-events:none!important}'}</style>}
+      {/* O convite de autorização foi aberto pelo motor, fora das áreas de clique que o widget marca: sem isto, o clique cai no painel. */}
+      {chat === "unauthorized" && <style>{'iframe[src^="https://embeddables.ifood.com.br"]{pointer-events:all!important}'}</style>}
     </>
   );
 }

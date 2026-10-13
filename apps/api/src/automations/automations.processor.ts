@@ -3,13 +3,14 @@ import type { Job } from "bullmq";
 import { ContactTagsService } from "../contacts/contact-tags.service.js";
 import { JobProcessor } from "../queues/job-processor.js";
 import { type AutomationJob, QUEUES } from "../queues/queues.module.js";
+import { IfoodAttendanceService } from "./ifood-attendance.service.js";
 import { InactivityService } from "./inactivity.service.js";
 import { PhoneCollectionService } from "./phone-collection.service.js";
 import { SurveyService } from "./survey.service.js";
 
 /**
- * Etapas das automações: lembrete e desistência da coleta de telefone; pesquisa ao resolver; encerramento por inatividade.
- * E, de hora em hora, as tags automáticas dos clientes.
+ * Etapas das automações: lembrete e desistência da coleta de telefone; pesquisa ao resolver; encerramento por inatividade;
+ * mensagem do cliente no chat do iFood. E, de hora em hora, as tags automáticas dos clientes.
  */
 @Processor(QUEUES.automations)
 export class AutomationsProcessor extends JobProcessor {
@@ -17,6 +18,7 @@ export class AutomationsProcessor extends JobProcessor {
     private readonly phoneCollection: PhoneCollectionService,
     private readonly survey: SurveyService,
     private readonly inactivity: InactivityService,
+    private readonly ifoodAttendance: IfoodAttendanceService,
     private readonly contactTags: ContactTagsService,
   ) {
     super();
@@ -29,5 +31,6 @@ export class AutomationsProcessor extends JobProcessor {
     if (job.name === "phone-give-up") await this.phoneCollection.giveUp(tenantId, conversationId);
     if (job.name === "survey") await this.survey.request(tenantId, conversationId);
     if (job.name === "inactivity") await this.inactivity.close(tenantId, conversationId);
+    if (job.name === "ifood-inbound" && job.data.ifood) await this.ifoodAttendance.afterInbound(job.data.ifood.event, job.data.ifood.orderId);
   }
 }

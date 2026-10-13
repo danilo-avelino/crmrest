@@ -111,10 +111,13 @@ export function orderForecastOf(settings: unknown): OrderForecastSettings {
 /** As opções do menu de atendimento: fixas, porque a automação lê a resposta pelo número. */
 export const MENU_OPTIONS = "1 - Falar sobre um pedido\n2 - Fazer um pedido\n3 - Outro assunto";
 
+/** As opções do menu do entregador (cadastro com a tag Entregador), também lidas pelo número. */
+export const COURIER_MENU_OPTIONS = "1 - Avisar que cheguei (iFood)\n2 - Problema com um pedido\n3 - Outro assunto";
+
 /** Saudação + opções. Sem nome, "{nome}" sai junto com a vírgula: "Olá, {nome}!" vira "Olá!". */
-export function menuMessage(greeting: string, name?: string): string {
+export function menuMessage(greeting: string, name?: string, options = MENU_OPTIONS): string {
   const text = name ? greeting.replaceAll("{nome}", name) : greeting.replace(/,?[ \t]*\{nome\}/g, "");
-  return `${text}\n${MENU_OPTIONS}`;
+  return `${text}\n${options}`;
 }
 
 // ---------- Horário de funcionamento (E15) ----------

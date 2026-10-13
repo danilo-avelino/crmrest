@@ -37,8 +37,11 @@ export type WidgetState = {
   /** O widget está aberto (dá para ver as abas). */
   panel: boolean;
   chatTab: boolean;
-  /** A loja não autorizou o widget neste computador: só ela resolve, no Portal do Parceiro. */
-  unauthorized: boolean;
+  /**
+   * A loja ainda não autorizou o widget neste computador, e só ela resolve: `unauthorized` = o widget mostra o convite
+   * para ir ao Portal do Parceiro; `authorizing` = a autorização está sendo dada lá.
+   */
+  authorization: "unauthorized" | "authorizing" | null;
   chats: WidgetChat[];
   drawers: WidgetDrawer[];
 };
@@ -60,7 +63,9 @@ export function readWidget(html: string): WidgetState {
     const drawer = readDrawer(region);
     return drawer ? [drawer] : [];
   });
-  return { panel, chatTab, unauthorized: !panel && /portal do parceiro/i.test(document.body.textContent ?? ""), chats, drawers };
+  const words = document.body.textContent ?? "";
+  const authorization = panel ? null : /autorização em andamento/i.test(words) ? "authorizing" : /portal do parceiro/i.test(words) ? "unauthorized" : null;
+  return { panel, chatTab, authorization, chats, drawers };
 }
 
 function readDrawer(region: Element): WidgetDrawer | null {

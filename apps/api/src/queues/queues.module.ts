@@ -1,5 +1,6 @@
 import { BullModule } from "@nestjs/bullmq";
 import { type DynamicModule, Global, Module } from "@nestjs/common";
+import type { InboundEvent } from "../automations/automation.js";
 import type { Env } from "../config/env.js";
 
 /**
@@ -18,7 +19,8 @@ export const QUEUES = {
 /** Payload bruto de um webhook, como chegou da plataforma. */
 export type InboundJob = { source: "meta"; payload: unknown };
 export type OutboundJob = { tenantId: string; messageId: string };
-export type AutomationJob = { tenantId: string; conversationId: string };
+/** `ifood`: só no job "ifood-inbound" (mensagem do cliente copiada do chat do iFood, com o pedido da conversa). */
+export type AutomationJob = { tenantId: string; conversationId: string; ifood?: { event: InboundEvent; orderId: string } };
 /** Uma página da base de clientes do Cardápio Web; `imported` soma o que as páginas anteriores trouxeram. */
 export type CardapioWebImportJob = { tenantId: string; channelId: string; page: number; imported: number };
 

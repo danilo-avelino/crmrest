@@ -6,7 +6,6 @@ import {
   type ConversationListQuery,
   type ConversationMessages,
   type ConversationPage,
-  COURIER_TAG,
   type MessageContent,
   type MessageDto,
   renderTemplate,
@@ -26,7 +25,7 @@ import {
 } from "@nestjs/common";
 import type { Queue } from "bullmq";
 import type { RequestAuth } from "../auth/auth.decorators.js";
-import type { AutomationState } from "../automations/automation.js";
+import { type AutomationState, channelSends } from "../automations/automation.js";
 import { ENV, type Env } from "../config/env.js";
 import { ConnectorsService } from "../connectors/connectors.service.js";
 import { contactSearch } from "../contacts/contact-search.js";
@@ -43,7 +42,6 @@ const MESSAGES_LIMIT = 200;
 export class ConversationsService {
   private readonly logger = new Logger(ConversationsService.name);
   private readonly key: Buffer;
-  private readonly ifoodChat: boolean;
 
   constructor(
     private readonly db: DatabaseService,
@@ -51,10 +49,9 @@ export class ConversationsService {
     @InjectQueue(QUEUES.outbound) private readonly outbound: Queue<OutboundJob>,
     @InjectQueue(QUEUES.automations) private readonly automations: Queue<AutomationJob>,
     private readonly connectors: ConnectorsService,
-    @Inject(ENV) env: Env,
+    @Inject(ENV) private readonly env: Env,
   ) {
     this.key = parseEncryptionKey(env.ENCRYPTION_KEY);
-    this.ifoodChat = env.IFOOD_CHAT_BRIDGE;
   }
 
   async list(auth: RequestAuth, query: ConversationListQuery): Promise<ConversationPage> {
@@ -78,14 +75,14 @@ export class ConversationsService {
 
   async counts(auth: RequestAuth, tenantId?: string): Promise<ConversationCounts> {
     const calling = { awaitingAgentSince: { not: null }, status: { not: "RESOLVED" } } satisfies Prisma.ConversationWhereInput;
-    const [groups, awaitingAgent, awaitingCourier] = await this.db.withTenants(scopeFor(auth, tenantId), (tx) =>
+    const [groups, awaitingAgent, awaitingQuiet] = await this.db.withTenants(scopeFor(auth, tenantId), (tx) =>
       Promise.all([
         tx.conversation.groupBy({ by: ["status"], _count: { _all: true } }),
         tx.conversation.count({ where: calling }),
-        tx.conversation.count({ where: { ...calling, contact: { tags: { has: COURIER_TAG } } } }),
+        tx.conversation.count({ where: { ...calling, awaitingAgentQuiet: true } }),
       ]),
     );
-    const counts: ConversationCounts = { OPEN: 0, PENDING: 0, RESOLVED: 0, awaitingAgent, awaitingCourier };
+    const counts: ConversationCounts = { OPEN: 0, PENDING: 0, RESOLVED: 0, awaitingAgent, awaitingQuiet };
     for (const group of groups) counts[group.status] = group._count._all;
     return counts;
   }
@@ -336,9 +333,9 @@ export class ConversationsService {
     return toListItem(conversation, auth);
   }
 
-  /** O canal aceita resposta pela Inbox? O iFood, só com a trava do chat ligada: quem envia é o painel, pela extensão. */
+  /** O canal aceita resposta pela Inbox? */
   private canSend(type: ChannelType): boolean {
-    return CHANNEL_CAPABILITIES[type].send || (type === "IFOOD" && this.ifoodChat);
+    return channelSends(type, this.env);
   }
 
   private async requireConversation(tx: TenantTx, id: string) {

@@ -37,8 +37,16 @@ const PHONE_SOURCE: Record<string, string> = {
   agent: "cadastrado pela equipe",
 };
 
-/** Painel do cliente (coluna de 344px do board Inbox). */
-export function ClientPanel({ contactId, conversationId }: { contactId: string; conversationId: string }) {
+/** Painel do cliente (coluna de 344px do board Inbox). O nome abre o cadastro completo (`onOpenProfile`). */
+export function ClientPanel({
+  contactId,
+  conversationId,
+  onOpenProfile,
+}: {
+  contactId: string;
+  conversationId: string;
+  onOpenProfile: () => void;
+}) {
   const { request } = useAuth();
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState(false);
@@ -68,7 +76,16 @@ export function ClientPanel({ contactId, conversationId }: { contactId: string; 
         <div className="flex items-start gap-2.5">
           <Avatar seed={data.id} name={data.name} className="size-11 text-[15px]" />
           <div className="min-w-0 flex-1">
-            <h3 className="mb-1 truncate font-heading text-[16px] font-bold tracking-[-0.3px]">{data.name ?? "Cliente sem nome"}</h3>
+            <h3 className="mb-1 font-heading text-[16px] font-bold tracking-[-0.3px]">
+              <button
+                type="button"
+                onClick={onOpenProfile}
+                title="Ver o cadastro completo"
+                className="block max-w-full truncate text-left underline-offset-2 hover:underline"
+              >
+                {data.name ?? "Cliente sem nome"}
+              </button>
+            </h3>
             <Tags tags={data.tags} onChange={(tags) => save({ tags })} />
           </div>
           <Button

@@ -1,18 +1,22 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { TenantTx } from "@dishdesk/database";
 import {
-  CHANNEL_LABEL,
   type IfoodChatOutboxItem,
   type IfoodChatSendResult,
   type IfoodChatSync,
   type IfoodChatSyncResult,
   type MessageContent,
 } from "@dishdesk/shared";
+import { InjectQueue } from "@nestjs/bullmq";
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import type { Queue } from "bullmq";
 import type { RequestAuth } from "../auth/auth.decorators.js";
+import { INACTIVITY_CLOSE_MS } from "../automations/inactivity.service.js";
 import { ENV, type Env } from "../config/env.js";
 import { DatabaseService } from "../core/database.service.js";
+import { type AutomationJob, QUEUES } from "../queues/queues.module.js";
 import { RealtimeEmitter } from "../realtime/realtime.emitter.js";
+import { openIfoodConversation } from "./ifood-conversation.js";
 
 /**
  * Marca de uma resposta que um painel pegou para digitar no widget. Fica em externalMessageId até a conversa lida do
@@ -22,10 +26,17 @@ const CLAIM = "ifood-chat-claim:";
 /** Uma resposta pega pelo painel só é procurada na conversa lida do widget por este tempo. */
 const CLAIM_MATCH_MS = 10 * 60_000;
 const HOUR_MS = 60 * 60_000;
+/**
+ * Mensagem do cliente só aciona as automações (alarme, resposta automática) até esta idade: conversa copiada bem depois,
+ * com o painel fechado na hora, entra só como não lida. A folga cobre o fuso do navegador (o widget só mostra a hora).
+ */
+const ATTEND_WITHIN_MS = 2 * HOUR_MS;
 const BRASILIA_DAY = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" });
 
 type ChatOrder = { id: string; tenantId: string; contactId: string; channelId: string; conversationId: string | null; externalOrderId: string; placedAt: Date };
 type Entry = { key: string; at: Date; direction: "INBOUND" | "OUTBOUND"; text: string };
+/** Conversa que uma leitura mudou e, quando o cliente espera resposta, o que vai para as automações. */
+type Synced = { tenantId: string; conversationId: string; ifood?: NonNullable<AutomationJob["ifood"]> };
 
 /**
  * Chat do iFood na Inbox. O iFood não tem API de chat: o painel lê a conversa de cada pedido no widget, pela extensão do
@@ -37,16 +48,18 @@ export class IfoodChatService {
   constructor(
     private readonly db: DatabaseService,
     private readonly realtime: RealtimeEmitter,
+    @InjectQueue(QUEUES.automations) private readonly automations: Queue<AutomationJob>,
     @Inject(ENV) private readonly env: Env,
   ) {}
 
   /**
    * A conversa de um pedido como o widget mostra agora: grava só as mensagens que ainda não estavam na Inbox.
    * `found: false` = o pedido ainda não chegou pelo polling; o painel manda a conversa de novo mais tarde.
+   * Mensagem nova do cliente, ainda sem resposta da loja, vai para as automações (IfoodAttendanceService).
    */
-  async sync(auth: RequestAuth, body: IfoodChatSync): Promise<IfoodChatSyncResult> {
+  async sync(auth: RequestAuth, body: IfoodChatSync, now = new Date()): Promise<IfoodChatSyncResult> {
     this.requireEnabled();
-    const changed = await this.db.withTenants(auth.scope, async (tx) => {
+    const changed = await this.db.withTenants(auth.scope, async (tx): Promise<Synced | { conversationId?: undefined } | null> => {
       const order = await tx.order.findFirst({
         where: { displayCode: body.orderCode, channel: { type: "IFOOD" } },
         orderBy: { placedAt: "desc" },
@@ -61,7 +74,13 @@ export class IfoodChatService {
       const fresh = entries.filter((entry) => !known.some((message) => message.externalMessageId === entry.key));
       if (!fresh.length) return {};
 
-      const conversation = await this.openConversation(tx, order, fresh[0]!.at);
+      const conversation = await openIfoodConversation(tx, order, fresh[0]!.at);
+      // Última vez que cliente e equipe se falaram, antes das mensagens novas (as automáticas do iFood não contam).
+      const touch = await tx.message.findFirst({
+        where: { conversationId: conversation.id, OR: [{ direction: "INBOUND" }, { direction: "OUTBOUND", sentByUserId: { not: null } }] },
+        orderBy: { createdAt: "desc" },
+        select: { createdAt: true },
+      });
       let unread = 0;
       for (const entry of fresh) {
         if (entry.direction === "OUTBOUND" && (await this.confirmSent(tx, conversation.id, entry))) continue;
@@ -89,9 +108,28 @@ export class IfoodChatService {
           ...(unread && { status: "OPEN", unreadCount: { increment: unread } }),
         },
       });
-      return { tenantId: order.tenantId, conversationId: conversation.id };
+      const result = { tenantId: order.tenantId, conversationId: conversation.id };
+      // As automações só entram se a conversa termina numa mensagem recente do cliente (a loja ainda não respondeu).
+      const newest = fresh.at(-1)!;
+      const waiting = newest === entries.at(-1) && newest.direction === "INBOUND" && now.getTime() - newest.at.getTime() <= ATTEND_WITHIN_MS;
+      if (!waiting) return result;
+      const inbound = fresh.filter((entry) => entry.direction === "INBOUND");
+      // Como nos outros canais: conversa nova, resolvida ou sem interação há INACTIVITY_CLOSE_MS começa um atendimento.
+      const idle = !touch || inbound[0]!.at.getTime() - touch.createdAt.getTime() >= INACTIVITY_CLOSE_MS;
+      const event = {
+        channel: { id: order.channelId, tenantId: order.tenantId, type: "IFOOD" as const },
+        conversationId: conversation.id,
+        previousStatus: conversation.previousStatus,
+        newAttendance: conversation.previousStatus === null || conversation.previousStatus === "RESOLVED" || idle,
+        text: inbound.map((entry) => entry.text).join("\n"),
+      };
+      return { ...result, ifood: { event, orderId: order.id } };
     });
-    if (changed?.conversationId) this.realtime.inboxChanged(changed.tenantId, changed.conversationId);
+    if (changed?.conversationId) {
+      this.realtime.inboxChanged(changed.tenantId, changed.conversationId);
+      const { tenantId, conversationId, ifood } = changed;
+      if (ifood) await this.automations.add("ifood-inbound", { tenantId, conversationId, ifood });
+    }
     return { found: changed !== null };
   }
 
@@ -157,32 +195,17 @@ export class IfoodChatService {
       });
       return message;
     });
-    if (message) this.realtime.inboxChanged(message.tenantId, message.conversationId);
+    if (!message) return;
+    this.realtime.inboxChanged(message.tenantId, message.conversationId);
+    // Como nos outros canais: se o cliente não responder, o atendimento é encerrado (a checagem acontece quando o job roda).
+    if (body.status === "SENT") {
+      const { tenantId, conversationId } = message;
+      await this.automations.add("inactivity", { tenantId, conversationId }, { delay: INACTIVITY_CLOSE_MS });
+    }
   }
 
   private requireEnabled(): void {
     if (!this.env.IFOOD_CHAT_BRIDGE) throw new NotFoundException();
-  }
-
-  /** Conversa do cliente no canal iFood da loja (a última, ou uma nova), com o pedido na linha do tempo. */
-  private async openConversation(tx: TenantTx, order: ChatOrder, at: Date) {
-    const where = { contactId: order.contactId, channelId: order.channelId };
-    const select = { id: true, lastMessageAt: true };
-    const latest = await tx.conversation.findFirst({ where, orderBy: { createdAt: "desc" }, select });
-    const conversation = latest ?? (await tx.conversation.create({ data: { tenantId: order.tenantId, ...where, status: "OPEN", createdAt: at }, select }));
-    const event = (content: MessageContent, createdAt: Date) =>
-      tx.message.create({
-        data: { tenantId: order.tenantId, conversationId: conversation.id, channelId: order.channelId, direction: "INTERNAL", type: "SYSTEM", content, createdAt },
-      });
-    if (!latest) await event({ event: "conversation_opened", text: `Conversa aberta via ${CHANNEL_LABEL.IFOOD}` }, new Date(at.getTime() - 2));
-    const shown = await tx.message.findFirst({
-      where: { conversationId: conversation.id, content: { path: ["orderId"], equals: order.id } },
-      select: { id: true },
-    });
-    if (!shown) await event({ event: "order", orderId: order.id }, new Date(at.getTime() - 1));
-    // Pedido já ligado a outra conversa (o cliente confirmou pelo WhatsApp) continua lá.
-    if (!order.conversationId) await tx.order.update({ where: { id: order.id }, data: { conversationId: conversation.id } });
-    return conversation;
   }
 
   /** A mensagem lida é uma resposta que o painel digitou a partir da Inbox? Então já está na conversa: só ganha a identificação. */

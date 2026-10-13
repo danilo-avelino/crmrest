@@ -126,6 +126,11 @@ export function dispatchedMessage(dispatchedAt: Date, messages: AutomationMessag
   return fillMessage(messages.dispatched, { hora: CLOCK.format(dispatchedAt), tempo: ago });
 }
 
+/** Aviso na hora em que o pedido fica pronto: "✅ Seu pedido #95 ficou pronto!" */
+export function readyNoticeMessage(code: string, messages: AutomationMessages): string {
+  return fillMessage(messages.readyNotice, { pedido: code });
+}
+
 /** Aviso na hora em que o pedido sai: "🛵 Boa notícia! Seu pedido #95 saiu para entrega às 19:23." */
 export function dispatchNoticeMessage(code: string, dispatchedAt: Date, messages: AutomationMessages): string {
   return fillMessage(messages.dispatchNotice, { pedido: code, hora: CLOCK.format(dispatchedAt) });

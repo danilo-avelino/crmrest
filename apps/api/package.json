@@ -11,6 +11,7 @@
     "lint": "oxlint --type-aware src/ test/",
     "test": "vitest run",
     "simulate:whatsapp": "node scripts/simulate-whatsapp.mjs",
+    "simulate:ifood-chat": "node scripts/simulate-ifood-chat.mjs",
     "channel:add": "node scripts/channel-add.mjs",
     "tenant:add": "node scripts/tenant-add.mjs",
     "tenant:links": "node scripts/tenant-links.mjs",

@@ -43,12 +43,12 @@ describe("aba Avaliações: notas e tempo de resposta por atendente", () => {
     await handoff(first.id, now - 60 * MINUTE);
     await reply(first.id, bruna.id, now - 58 * MINUTE);
     await reply(first.id, fx.user.id, now - 55 * MINUTE);
-    await admin.rating.create({ data: { tenantId: fx.tenant.id, conversationId: first.id, score: 4, createdAt: new Date(now - 50 * MINUTE) } });
+    await admin.rating.create({ data: { tenantId: fx.tenant.id, conversationId: first.id, score: 4, channelType: "WHATSAPP", createdAt: new Date(now - 50 * MINUTE) } });
 
     // Atendimento 2: ninguém da equipe respondeu; a nota 2 fica sem atendente.
     const second = await conversation();
     await handoff(second.id, now - 30 * MINUTE);
-    await admin.rating.create({ data: { tenantId: fx.tenant.id, conversationId: second.id, score: 2, createdAt: new Date(now - 20 * MINUTE) } });
+    await admin.rating.create({ data: { tenantId: fx.tenant.id, conversationId: second.id, score: 2, channelType: "WHATSAPP", createdAt: new Date(now - 20 * MINUTE) } });
 
     // Atendimento 3, há 10 dias: só entra nos últimos 30 dias (resposta em 1 min).
     const old = await conversation();

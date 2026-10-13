@@ -30,6 +30,7 @@ const AUTOMATION_LABEL: Record<NonNullable<MessageContent["automation"]>, string
   order_lookup: "Automação · busca do pedido",
   order_confirmed: "Automação · pedido confirmado",
   order_forecast: "Automação · previsão de saída",
+  order_ready: "Automação · pedido pronto",
   order_dispatched: "Automação · pedido saiu para entrega",
   order_delivered: "Automação · pedido entregue",
   order_links: "Automação · links para pedir",
@@ -38,6 +39,10 @@ const AUTOMATION_LABEL: Record<NonNullable<MessageContent["automation"]>, string
   survey_thanks: "Automação · avaliação recebida",
   after_hours: "Automação · fora do horário",
   inactivity_close: "Automação · encerrada por inatividade",
+  courier_menu: "Automação · menu do entregador",
+  courier_arrival: "Automação · entregador chegou",
+  courier_arrival_confirmed: "Automação · cliente avisado da chegada",
+  courier_problem_request: "Automação · problema com o pedido",
 };
 
 const SUCCESS_EVENTS = new Set<MessageContent["event"]>(["phone_collected", "contacts_merged", "rating"]);
@@ -47,9 +52,12 @@ const WARNING_EVENTS = new Set<MessageContent["event"]>(["phone_pending", "opt_o
 export function MessageTimeline({
   data,
   contact,
+  onOpenConversation,
 }: {
   data: ConversationMessages;
   contact: { id: string; name: string | null };
+  /** Abre outra conversa na Inbox (botão de conversar com o cliente, no card do pedido). */
+  onOpenConversation: (id: string) => void;
 }) {
   const end = useRef<HTMLDivElement>(null);
   const last = data.messages.at(-1)?.id;
@@ -63,7 +71,12 @@ export function MessageTimeline({
         const order = message.content.orderId ? data.orders[message.content.orderId] : undefined;
         if (message.type === "SYSTEM") {
           return order ? (
-            <OrderCard key={message.id} order={order} conversationId={message.conversationId} />
+            <OrderCard
+              key={message.id}
+              order={order}
+              conversationId={message.conversationId}
+              onOpenCustomerChat={message.content.customerChat ? onOpenConversation : undefined}
+            />
           ) : (
             <SystemEvent key={message.id} message={message} />
           );

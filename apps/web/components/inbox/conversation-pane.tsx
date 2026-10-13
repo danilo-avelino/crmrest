@@ -9,13 +9,15 @@ import {
 } from "@dishdesk/shared";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckIcon, EllipsisIcon, LoaderCircleIcon } from "lucide-react";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
+import { ClientDetail } from "@/components/clients/client-detail";
 import { Avatar, ChannelDot } from "@/components/inbox/bits";
 import { ClientPanel } from "@/components/inbox/client-panel";
 import { Composer } from "@/components/inbox/composer";
 import { MessageTimeline } from "@/components/inbox/message-timeline";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -28,9 +30,17 @@ import { useNow } from "@/hooks/use-now";
 import { ago } from "@/lib/format";
 
 /** Conversa aberta + painel do cliente (colunas centrais e direita do board Inbox). */
-export function ConversationPane({ conversationId }: { conversationId: string }) {
+export function ConversationPane({
+  conversationId,
+  onOpenConversation,
+}: {
+  conversationId: string;
+  /** Troca a conversa aberta na Inbox. */
+  onOpenConversation: (id: string) => void;
+}) {
   const { request } = useAuth();
   const queryClient = useQueryClient();
+  const [profileOpen, setProfileOpen] = useState(false);
   const conversation = useQuery({
     queryKey: ["conversation", conversationId],
     queryFn: () => request<ConversationListItem>(`/conversations/${conversationId}`),
@@ -72,10 +82,16 @@ export function ConversationPane({ conversationId }: { conversationId: string })
     <>
       <section className="flex min-w-0 flex-1 flex-col border-r border-rule bg-paper">
         <ConversationHeader conversation={conversation.data} />
-        <MessageTimeline data={messages.data} contact={conversation.data.contact} />
+        <MessageTimeline data={messages.data} contact={conversation.data.contact} onOpenConversation={onOpenConversation} />
         <Composer conversation={conversation.data} />
       </section>
-      <ClientPanel contactId={conversation.data.contact.id} conversationId={conversationId} />
+      <ClientPanel contactId={conversation.data.contact.id} conversationId={conversationId} onOpenProfile={() => setProfileOpen(true)} />
+      {/* Cadastro completo do cliente, como na aba Clientes. */}
+      <Dialog open={profileOpen} onOpenChange={setProfileOpen}>
+        <DialogContent aria-label="Cadastro do cliente" className="flex h-[min(820px,calc(100vh-4rem))] w-[1080px]">
+          {profileOpen && <ClientDetail id={conversation.data.contact.id} onClose={() => setProfileOpen(false)} />}
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

@@ -1,7 +1,7 @@
 "use client";
 
-import { CHANNEL_LABEL, type OrderDto } from "@dishdesk/shared";
-import { useQueryClient } from "@tanstack/react-query";
+import { CHANNEL_LABEL, type OrderCustomerChat, type OrderDto } from "@dishdesk/shared";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertCircleIcon } from "lucide-react";
 import { useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
@@ -23,8 +23,19 @@ export const ORDER_STATUS: Record<OrderDto["status"], { label: string; className
   CANCELED: { label: "Cancelado", className: "text-tomate" },
 };
 
-/** Card do pedido dentro da conversa (board Inbox → "Card do pedido iFood"; o Cardápio Web usa o mesmo card). */
-export function OrderCard({ order, conversationId }: { order: OrderDto; conversationId: string }) {
+/**
+ * Card do pedido dentro da conversa (board Inbox → "Card do pedido iFood"; o Cardápio Web usa o mesmo card).
+ * `onOpenCustomerChat`: pedido informado por um entregador; o card ganha o botão de conversar com o cliente.
+ */
+export function OrderCard({
+  order,
+  conversationId,
+  onOpenCustomerChat,
+}: {
+  order: OrderDto;
+  conversationId: string;
+  onOpenCustomerChat?: (conversationId: string) => void;
+}) {
   const status = ORDER_STATUS[order.status];
   const footer = [
     `Realizado às ${clock(order.placedAt)}`,
@@ -33,7 +44,7 @@ export function OrderCard({ order, conversationId }: { order: OrderDto; conversa
   ].filter(Boolean);
 
   return (
-    <div className="ml-[29px] max-w-[360px] overflow-hidden rounded-[10px] border border-rule bg-surface">
+    <div className="ml-[29px] max-w-[360px] shrink-0 overflow-hidden rounded-[10px] border border-rule bg-surface">
       <div className="flex items-center justify-between border-b border-rule bg-paper px-3.5 py-2.5">
         <div className="flex items-center gap-1.5">
           <span className={cn("size-[7px] shrink-0 rounded-full", CHANNEL_DOT[order.channelType])} />
@@ -73,8 +84,46 @@ export function OrderCard({ order, conversationId }: { order: OrderDto; conversa
       </div>
       <div className="flex items-center justify-between gap-2 border-t border-rule bg-paper px-3.5 py-[7px] text-[10.5px] text-ink-3 tabular-nums">
         <span>{footer.join(" · ")}</span>
-        {NOTIFIABLE.has(order.status) && <ForecastButton order={order} conversationId={conversationId} />}
+        {/* A previsão é para o cliente do pedido: não vai para a conversa do entregador. */}
+        {NOTIFIABLE.has(order.status) && !onOpenCustomerChat && <ForecastButton order={order} conversationId={conversationId} />}
       </div>
+      {onOpenCustomerChat && <CustomerChat order={order} onOpen={onOpenCustomerChat} />}
+    </div>
+  );
+}
+
+/** Quem é o cliente do pedido e o botão para conversar com ele: pelo WhatsApp, se o cadastro tem telefone; senão, pelo chat do iFood. */
+function CustomerChat({ order, onOpen }: { order: OrderDto; onOpen: (conversationId: string) => void }) {
+  const { request } = useAuth();
+  const queryClient = useQueryClient();
+  const toast = useToast();
+  const chat = useQuery({
+    queryKey: ["order-customer-chat", order.id],
+    queryFn: () => request<OrderCustomerChat>(`/orders/${order.id}/customer-chat`),
+  });
+  if (!chat.data) return null;
+  const { channel, contactName } = chat.data;
+
+  const open = async () => {
+    try {
+      const { conversationId } = await request<{ conversationId: string }>(`/orders/${order.id}/customer-chat`, { method: "POST" });
+      void queryClient.invalidateQueries({ queryKey: ["conversations"] });
+      onOpen(conversationId);
+    } catch (failure) {
+      toast(failure instanceof ApiError ? failure.message : "Não foi possível abrir a conversa.");
+    }
+  };
+
+  return (
+    <div className="flex items-center justify-between gap-2 border-t border-rule px-3.5 py-2 text-[11.5px]">
+      <span className="min-w-0 truncate text-ink-2">Cliente: {contactName ?? "sem nome"}</span>
+      {channel ? (
+        <Button variant="outline" size="xs" onClick={open}>
+          Conversar pelo {CHANNEL_LABEL[channel]}
+        </Button>
+      ) : (
+        <span className="shrink-0 text-ink-3">Sem contato pelo Dish Desk</span>
+      )}
     </div>
   );
 }

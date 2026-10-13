@@ -15,6 +15,7 @@
     "db:migrate": "pnpm --filter @dishdesk/database db:migrate",
     "db:seed": "pnpm --filter @dishdesk/database exec prisma db seed",
     "simulate:whatsapp": "pnpm --filter @dishdesk/api simulate:whatsapp",
+    "simulate:ifood-chat": "pnpm --filter @dishdesk/api simulate:ifood-chat",
     "channel:add": "pnpm --filter @dishdesk/api channel:add",
     "tenant:add": "pnpm --filter @dishdesk/api tenant:add",
     "tenant:links": "pnpm --filter @dishdesk/api tenant:links",

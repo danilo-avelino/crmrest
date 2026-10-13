@@ -1,11 +1,12 @@
 import { automationMessagesOf, CHANNEL_CAPABILITIES } from "@dishdesk/shared";
 import { InjectQueue } from "@nestjs/bullmq";
-import { Injectable } from "@nestjs/common";
+import { Inject, Injectable } from "@nestjs/common";
 import type { Queue } from "bullmq";
+import { ENV, type Env } from "../config/env.js";
 import { DatabaseService } from "../core/database.service.js";
 import { type OutboundJob, QUEUES } from "../queues/queues.module.js";
 import { RealtimeEmitter } from "../realtime/realtime.emitter.js";
-import { automationMessage, dispatch, tenantSettings } from "./automation.js";
+import { automationMessage, channelSends, dispatch, tenantSettings } from "./automation.js";
 import { SurveyService } from "./survey.service.js";
 
 /** Tempo sem resposta do cliente, depois da última mensagem do restaurante, até encerrar o atendimento. */
@@ -19,6 +20,7 @@ export class InactivityService {
     private readonly realtime: RealtimeEmitter,
     @InjectQueue(QUEUES.outbound) private readonly outbound: Queue<OutboundJob>,
     private readonly survey: SurveyService,
+    @Inject(ENV) private readonly env: Env,
   ) {}
 
   /** Roda INACTIVITY_CLOSE_MS depois de cada envio; se houve mensagem depois dele, não faz nada. */
@@ -41,7 +43,8 @@ export class InactivityService {
       // Cliente esperando um atendente (o "já vai falar com você" foi a última mensagem): não encerra.
       if (conversation.awaitingAgentSince) return null;
       const capabilities = CHANNEL_CAPABILITIES[conversation.channel.type];
-      if (!capabilities.send || (capabilities.window24h && !(conversation.windowExpiresAt && conversation.windowExpiresAt > now))) {
+      const sends = channelSends(conversation.channel.type, this.env);
+      if (!sends || (capabilities.window24h && !(conversation.windowExpiresAt && conversation.windowExpiresAt > now))) {
         return null;
       }
       // Só quando o restaurante falou por último: cliente esperando resposta não tem o atendimento encerrado.

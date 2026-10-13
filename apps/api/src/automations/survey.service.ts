@@ -1,8 +1,9 @@
 import type { TenantTx } from "@dishdesk/database";
 import { automationMessagesOf, CHANNEL_CAPABILITIES } from "@dishdesk/shared";
 import { InjectQueue } from "@nestjs/bullmq";
-import { Injectable } from "@nestjs/common";
+import { Inject, Injectable } from "@nestjs/common";
 import type { Queue } from "bullmq";
+import { ENV, type Env } from "../config/env.js";
 import { refreshContactTags } from "../contacts/contact-tags.service.js";
 import { DatabaseService } from "../core/database.service.js";
 import { type OutboundJob, QUEUES } from "../queues/queues.module.js";
@@ -10,6 +11,7 @@ import { RealtimeEmitter } from "../realtime/realtime.emitter.js";
 import {
   type AutomationState,
   automationMessage,
+  channelSends,
   dispatch,
   type InboundEvent,
   localDate,
@@ -26,6 +28,7 @@ export class SurveyService {
     private readonly db: DatabaseService,
     private readonly realtime: RealtimeEmitter,
     @InjectQueue(QUEUES.outbound) private readonly outbound: Queue<OutboundJob>,
+    @Inject(ENV) private readonly env: Env,
   ) {}
 
   /** Roda quando a conversa é resolvida: só pergunta se o atendimento teve um pedido associado hoje. */
@@ -36,7 +39,8 @@ export class SurveyService {
       const capabilities = CHANNEL_CAPABILITIES[conversation.channel.type];
       if (conversation.status !== "RESOLVED" || state.survey || !state.linkedOrder) return null;
       if (localDate(new Date(state.linkedOrder.at)) !== localDate(now)) return null;
-      if (!capabilities.send || (capabilities.window24h && !(conversation.windowExpiresAt && conversation.windowExpiresAt > now))) {
+      const sends = channelSends(conversation.channel.type, this.env);
+      if (!sends || (capabilities.window24h && !(conversation.windowExpiresAt && conversation.windowExpiresAt > now))) {
         return null;
       }
       const { surveyQuestion } = automationMessagesOf(await tenantSettings(tx, tenantId));
@@ -60,7 +64,13 @@ export class SurveyService {
         return null;
       }
       await tx.rating.create({
-        data: { tenantId, conversationId: conversation.id, orderId: state.linkedOrder?.id ?? null, score: Number(score) },
+        data: {
+          tenantId,
+          conversationId: conversation.id,
+          orderId: state.linkedOrder?.id ?? null,
+          score: Number(score),
+          channelType: conversation.channel.type,
+        },
       });
       // A tag Insatisfeito entra (ou sai) na hora, com a nota.
       await refreshContactTags(tx);

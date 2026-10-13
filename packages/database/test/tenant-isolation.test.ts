@@ -108,7 +108,7 @@ async function seedTenant(label: string): Promise<Seeded> {
       items: { create: { tenantId, name: "Lasanha Bolonhesa G", quantity: 1, unitPrice: "54.90" } },
     },
   });
-  await admin.rating.create({ data: { tenantId, conversationId: conversation.id, orderId: order.id, score: 5 } });
+  await admin.rating.create({ data: { tenantId, conversationId: conversation.id, orderId: order.id, score: 5, channelType: "WHATSAPP" } });
   await admin.orderEvent.create({
     data: { tenantId, orderId: order.id, externalEventId: `evento-${suffix}`, code: "CONFIRMED", occurredAt: new Date() },
   });

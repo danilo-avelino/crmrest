@@ -6,6 +6,7 @@ import {
   automationTextsOf,
   type BusinessHours,
   businessHoursOf,
+  COURIER_MENU_OPTIONS,
   isOpenAt,
   menuMessage,
   reopeningAt,
@@ -23,6 +24,9 @@ describe("mensagens automáticas", () => {
     );
     expect(menuMessage(CORDIAL.greeting).split("\n")[0]).toBe("Olá! 👋 Em que podemos ajudar?");
     expect(menuMessage("Bem-vindo à Cantina!").split("\n")[0]).toBe("Bem-vindo à Cantina!");
+    expect(menuMessage(PERSONALITY_MESSAGES.cordial.courierGreeting, "João", COURIER_MENU_OPTIONS)).toBe(
+      "Olá, João! 👋 Como podemos ajudar na entrega?\n1 - Avisar que cheguei (iFood)\n2 - Problema com um pedido\n3 - Outro assunto",
+    );
   });
 
   it("textos salvos valem; o que faltar ou vier vazio usa o padrão", () => {
@@ -45,6 +49,11 @@ describe("personalidade do atendimento", () => {
     dispatched: ["hora", "tempo"],
     dispatchNotice: ["pedido", "hora"],
     deliveredNotice: ["pedido"],
+    readyNotice: ["pedido"],
+    courierGreeting: ["nome"],
+    courierArrivalConfirmed: ["pedido"],
+    courierOrderNotFound: ["pedido"],
+    courierProblemRequest: ["pedido"],
   };
 
   it.each(PERSONALITIES)("%s: todas as mensagens preenchidas, com os marcadores certos", (personality) => {

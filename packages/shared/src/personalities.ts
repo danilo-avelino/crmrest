@@ -63,6 +63,25 @@ export type AutomationMessages = {
   dispatchNotice: string;
   /** Aviso na hora em que o pedido é entregue. {pedido} */
   deliveredNotice: string;
+  /** Aviso na hora em que o pedido fica pronto (só no chat do iFood do pedido). {pedido} */
+  readyNotice: string;
+  /** Saudação do menu do entregador (cadastro com a tag Entregador); as opções 1, 2 e 3 entram no fim. {nome} */
+  courierGreeting: string;
+  courierOrderNumberRequest: string;
+  /** Para o cliente, no chat do iFood do pedido: o entregador avisou que chegou. */
+  courierArrivalNotice: string;
+  /** Para o entregador: o cliente foi avisado. {pedido} */
+  courierArrivalConfirmed: string;
+  /** {pedido} */
+  courierOrderNotFound: string;
+  /** Pedido achado: pede ao entregador para contar o problema. {pedido} */
+  courierProblemRequest: string;
+  /** O entregador contou o problema: a equipe é chamada. */
+  courierProblemForwarded: string;
+  /** Primeira resposta ao cliente que escreve no chat do iFood: a equipe já está sendo chamada. */
+  ifoodHandoff: string;
+  /** Vem logo depois de `ifoodHandoff`, quando o cadastro não tem telefone. */
+  ifoodPhoneRequest: string;
 };
 
 export const PERSONALITY_MESSAGES: Record<Personality, AutomationMessages> = {
@@ -92,6 +111,17 @@ export const PERSONALITY_MESSAGES: Record<Personality, AutomationMessages> = {
     dispatched: "🛵 Seu pedido já saiu para entrega às {hora} ({tempo}).",
     dispatchNotice: "🛵 Boa notícia! Seu pedido #{pedido} saiu para entrega às {hora}.",
     deliveredNotice: "✅ Seu pedido #{pedido} foi entregue! Bom apetite 😋",
+    readyNotice: "✅ Seu pedido #{pedido} ficou pronto!",
+    courierGreeting: "Olá, {nome}! 👋 Como podemos ajudar na entrega?",
+    courierOrderNumberRequest: "Qual é o número do pedido?",
+    courierArrivalNotice: "O entregador nos avisou que está na sua porta! 🛵",
+    courierArrivalConfirmed: "Pronto! Avisamos o cliente do pedido #{pedido} que você chegou.",
+    courierOrderNotFound: "Não encontramos o pedido #{pedido}. Um atendente já vai falar com você.",
+    courierProblemRequest: "Encontramos o pedido #{pedido}. O que aconteceu com ele?",
+    courierProblemForwarded: "Certo! Já estamos encaminhando para um atendente.",
+    ifoodHandoff: "Olá! 👋 Estamos chamando um atendente.",
+    ifoodPhoneRequest:
+      "Enquanto ele chega, pode nos enviar seu número de telefone com DDD? É comum a conversa do iFood encerrar e ficarmos sem ter como entrar em contato.",
   },
   formal: {
     greeting: "Olá, {nome}. Agradecemos o seu contato. Como podemos ajudar?",
@@ -122,6 +152,17 @@ export const PERSONALITY_MESSAGES: Record<Personality, AutomationMessages> = {
     dispatched: "Seu pedido saiu para entrega às {hora} ({tempo}).",
     dispatchNotice: "Informamos que o seu pedido #{pedido} saiu para entrega às {hora}.",
     deliveredNotice: "Seu pedido #{pedido} foi entregue. Agradecemos a preferência e desejamos uma ótima refeição.",
+    readyNotice: "Informamos que o seu pedido #{pedido} está pronto.",
+    courierGreeting: "Olá, {nome}. Como podemos auxiliar na entrega?",
+    courierOrderNumberRequest: "Por gentileza, informe o número do pedido.",
+    courierArrivalNotice: "Informamos que o entregador acaba de nos avisar que está à sua porta.",
+    courierArrivalConfirmed: "O cliente do pedido #{pedido} foi avisado da sua chegada.",
+    courierOrderNotFound: "Não localizamos o pedido #{pedido}. Um de nossos atendentes dará continuidade em instantes.",
+    courierProblemRequest: "Localizamos o pedido #{pedido}. Por gentileza, descreva o que ocorreu.",
+    courierProblemForwarded: "Agradecemos. O caso está sendo encaminhado a um atendente.",
+    ifoodHandoff: "Olá. Estamos acionando um de nossos atendentes.",
+    ifoodPhoneRequest:
+      "Enquanto isso, poderia, por gentileza, informar seu telefone com DDD? É comum a conversa do iFood ser encerrada, o que nos impede de retomar o contato.",
   },
   jovial: {
     greeting: "Oiê, {nome}! 🤩 Que bom te ver por aqui! Como podemos te ajudar hoje?",
@@ -148,6 +189,17 @@ export const PERSONALITY_MESSAGES: Record<Personality, AutomationMessages> = {
     dispatched: "🛵 Seu pedido já tá a caminho! Saiu às {hora} ({tempo}).",
     dispatchNotice: "🛵 Oba! Seu pedido #{pedido} saiu para entrega às {hora}! Já já chega aí!",
     deliveredNotice: "🎉 Pedido #{pedido} entregue! Bom apetite! 😋",
+    readyNotice: "🎉 Oba! Seu pedido #{pedido} ficou prontinho!",
+    courierGreeting: "Oiê, {nome}! 🛵 Como a gente pode te ajudar na entrega?",
+    courierOrderNumberRequest: "Manda aí o número do pedido! 🔎",
+    courierArrivalNotice: "Chegou! 🎉 O entregador avisou que já está na sua porta! 🛵",
+    courierArrivalConfirmed: "Feito! 🙌 Já avisamos o cliente do pedido #{pedido} que você chegou!",
+    courierOrderNotFound: "Ihh, não achamos o pedido #{pedido} 😕 Mas relaxa: um atendente já vem falar com você!",
+    courierProblemRequest: "Achamos o pedido #{pedido}! Conta pra gente: o que rolou com ele?",
+    courierProblemForwarded: "Anotado! 🚀 Já estamos passando pra um atendente!",
+    ifoodHandoff: "Oiê! 🤩 Já estamos chamando um atendente pra você!",
+    ifoodPhoneRequest:
+      "Enquanto ele chega, manda seu telefone com DDD? 📱 É que a conversa do iFood costuma encerrar e aí a gente fica sem ter como te chamar!",
   },
   descontraido: {
     greeting: "E aí, {nome}! Tudo certo? 😎 No que a gente pode te ajudar?",
@@ -173,6 +225,16 @@ export const PERSONALITY_MESSAGES: Record<Personality, AutomationMessages> = {
     dispatched: "🛵 Seu pedido já saiu, foi às {hora} ({tempo}).",
     dispatchNotice: "🛵 Opa! Seu pedido #{pedido} saiu pra entrega às {hora}.",
     deliveredNotice: "✅ Pedido #{pedido} entregue! Bom apetite 🤙",
+    readyNotice: "✅ Opa! Seu pedido #{pedido} tá pronto.",
+    courierGreeting: "E aí, {nome}! 😎 No que a gente te ajuda na entrega?",
+    courierOrderNumberRequest: "Qual o número do pedido?",
+    courierArrivalNotice: "Opa! O entregador avisou que tá aí na sua porta 🛵",
+    courierArrivalConfirmed: "Fechou! Avisamos o cliente do pedido #{pedido} que você chegou 👊",
+    courierOrderNotFound: "Xi, não achamos o pedido #{pedido}. Mas sossega: alguém da equipe já vem falar com você.",
+    courierProblemRequest: "Achamos o pedido #{pedido}. Manda aí: o que rolou com ele?",
+    courierProblemForwarded: "Beleza! Já estamos passando pra alguém da equipe 👊",
+    ifoodHandoff: "E aí! Já estamos chamando alguém da equipe pra falar com você 😉",
+    ifoodPhoneRequest: "Enquanto isso, passa seu telefone com DDD? A conversa do iFood costuma fechar e aí a gente fica sem ter como te achar.",
   },
   acolhedor: {
     greeting: "Olá, {nome}! 🧡 Que alegria receber sua mensagem. Como podemos cuidar de você hoje?",
@@ -203,6 +265,17 @@ export const PERSONALITY_MESSAGES: Record<Personality, AutomationMessages> = {
     dispatched: "🛵 Seu pedido já está a caminho! Saiu às {hora} ({tempo}).",
     dispatchNotice: "🛵 Que notícia boa! Seu pedido #{pedido} saiu para entrega às {hora}.",
     deliveredNotice: "✅ Seu pedido #{pedido} foi entregue! Esperamos que você aproveite cada pedacinho 🧡",
+    readyNotice: "✅ Seu pedido #{pedido} ficou pronto, feito com todo carinho 🧡",
+    courierGreeting: "Olá, {nome}! 🧡 Como podemos te ajudar na entrega?",
+    courierOrderNumberRequest: "Pode nos dizer o número do pedido?",
+    courierArrivalNotice: "Que notícia boa! 🧡 O entregador nos avisou que já está na sua porta.",
+    courierArrivalConfirmed: "Prontinho! Avisamos o cliente do pedido #{pedido} que você chegou. Obrigado pelo cuidado 🧡",
+    courierOrderNotFound: "Não encontramos o pedido #{pedido}, mas não se preocupe: alguém da nossa equipe já vem falar com você 🧡",
+    courierProblemRequest: "Encontramos o pedido #{pedido}. Pode nos contar com calma o que aconteceu?",
+    courierProblemForwarded: "Obrigado por avisar! Já estamos encaminhando para alguém da nossa equipe 🧡",
+    ifoodHandoff: "Olá! 🧡 Já estamos chamando alguém da nossa equipe para cuidar de você.",
+    ifoodPhoneRequest:
+      "Enquanto isso, pode nos deixar seu telefone com DDD? É comum a conversa do iFood encerrar, e não queremos perder o contato com você.",
   },
   direto: {
     greeting: "Olá, {nome}. Como podemos ajudar?",
@@ -228,6 +301,16 @@ export const PERSONALITY_MESSAGES: Record<Personality, AutomationMessages> = {
     dispatched: "Seu pedido saiu para entrega às {hora} ({tempo}).",
     dispatchNotice: "Pedido #{pedido} saiu para entrega às {hora}.",
     deliveredNotice: "Pedido #{pedido} entregue. Bom apetite.",
+    readyNotice: "Pedido #{pedido} pronto.",
+    courierGreeting: "Olá, {nome}. Como podemos ajudar?",
+    courierOrderNumberRequest: "Qual é o número do pedido?",
+    courierArrivalNotice: "O entregador avisou que está na sua porta.",
+    courierArrivalConfirmed: "Cliente do pedido #{pedido} avisado.",
+    courierOrderNotFound: "Pedido #{pedido} não encontrado. Um atendente vai falar com você.",
+    courierProblemRequest: "Pedido #{pedido} encontrado. O que aconteceu?",
+    courierProblemForwarded: "Encaminhado a um atendente.",
+    ifoodHandoff: "Olá. Estamos chamando um atendente.",
+    ifoodPhoneRequest: "Enquanto isso, informe seu telefone com DDD: a conversa do iFood costuma encerrar e ficamos sem contato.",
   },
 };
 

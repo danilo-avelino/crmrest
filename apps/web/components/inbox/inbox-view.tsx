@@ -14,6 +14,12 @@ export function InboxView() {
   // ?conversa=<id> abre direto uma conversa (botão "Abrir conversa" da tela de Clientes).
   const linked = useSearchParams().get("conversa");
   const [selectedId, setSelectedId] = useState<string | null>(linked);
+  // Link para outra conversa aberto de dentro da Inbox (no cadastro do cliente): a seleção acompanha o endereço.
+  const [followed, setFollowed] = useState(linked);
+  if (linked !== followed) {
+    setFollowed(linked);
+    if (linked) setSelectedId(linked);
+  }
   const offline = useInboxRealtime();
 
   return (
@@ -37,7 +43,7 @@ export function InboxView() {
         <div className="flex min-h-0 flex-1">
           <ConversationList selectedId={selectedId} onSelect={setSelectedId} />
           {selectedId ? (
-            <ConversationPane key={selectedId} conversationId={selectedId} />
+            <ConversationPane key={selectedId} conversationId={selectedId} onOpenConversation={setSelectedId} />
           ) : (
             <div className="flex flex-1 flex-col items-center justify-center gap-2 text-ink-3">
               <MessageSquareIcon className="size-6" aria-hidden />
