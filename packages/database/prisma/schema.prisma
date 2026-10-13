@@ -161,6 +161,7 @@ model Channel {
   externalId  String        @map("external_id") // phone_number_id, id da conta IG, merchant id
   credentials Bytes // criptografado (AES-256-GCM)
   status      ChannelStatus
+  deletedAt   DateTime?     @map("deleted_at") @db.Timestamptz(3) // integração excluída: some do painel, o histórico fica
 
   tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   conversations Conversation[]

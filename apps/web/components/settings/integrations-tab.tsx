@@ -321,8 +321,9 @@ function IntegrationCard({ system, data, onOpen }: { system: System; data: Integ
           </p>
         )}
       </div>
-      <Button variant="outline" size="sm" className="text-ink-2" onClick={() => onOpen(active.length === 0)}>
-        {active.length > 0 ? "Gerenciar" : "Conectar"}
+      {/* Só contas desconectadas: o modal abre nelas (para reconectar ou excluir), não direto na nova conexão. */}
+      <Button variant="outline" size="sm" className="text-ink-2" onClick={() => onOpen(items.length === 0)}>
+        {items.length > 0 ? "Gerenciar" : "Conectar"}
       </Button>
     </section>
   );
@@ -392,19 +393,19 @@ function Catalog({ onClose, onPick }: { onClose: () => void; onPick: (type: Inte
   );
 }
 
-/** Modal de um sistema: as contas conectadas, a nova conexão (formulário ou janela do sistema) e a confirmação para desconectar. */
+/** Modal de um sistema: as contas conectadas, a nova conexão (formulário ou janela do sistema) e a confirmação para desconectar ou excluir. */
 function IntegrationPanel({ system, data, adding, onClose }: { system: System; data: IntegrationsDto; adding: boolean; onClose: () => void }) {
   const label = CHANNEL_LABEL[system.type];
   const items = data.integrations.filter((integration) => integration.type === system.type);
   const signup = system.type === "WHATSAPP" ? data.platform.whatsappSignup : null;
-  // "details": as contas; "form": nova integração por formulário; uma conta: a confirmação antes de desconectá-la.
-  const [view, setView] = useState<"details" | "form" | IntegrationDto>(
+  // "details": as contas; "form": nova integração por formulário; uma conta: a confirmação antes de desconectá-la ou excluí-la.
+  const [view, setView] = useState<"details" | "form" | { item: IntegrationDto; remove: boolean }>(
     adding && data.canEdit && system.type !== "INSTAGRAM" && !signup ? "form" : "details",
   );
   const tip = pendingOf(system.type, data.platform)?.text ?? system.tip;
   const addLabel = items.some((item) => item.status !== "DISCONNECTED") ? system.another : `Conectar o ${label}`;
   const canDisconnect = (item: IntegrationDto) => data.canEdit && item.status !== "DISCONNECTED";
-  // Uma conta só: "Desconectar" fica no rodapé, como no board; com várias, cada conta tem o seu.
+  // Uma conta só: "Desconectar" e "Excluir" ficam no rodapé, como no board; com várias, cada conta tem os seus.
   const only = items.length === 1 ? items[0] : undefined;
 
   let action: ReactNode;
@@ -420,7 +421,7 @@ function IntegrationPanel({ system, data, adding, onClose }: { system: System; d
         <div className="min-w-0">
           <DialogTitle className="text-[16px]">{system.title ?? label}</DialogTitle>
           <DialogDescription className="mt-0.5 truncate">
-            {view === "details" ? "Detalhes da conexão" : view === "form" ? "Nova integração" : `Desconectar ${view.name}?`}
+            {view === "details" ? "Detalhes da conexão" : view === "form" ? "Nova integração" : `${view.remove ? "Excluir" : "Desconectar"} ${view.item.name}?`}
           </DialogDescription>
         </div>
         <CloseButton onClick={onClose} />
@@ -429,7 +430,7 @@ function IntegrationPanel({ system, data, adding, onClose }: { system: System; d
       {view === "form" ? (
         <IntegrationForm system={system} tenantId={data.tenantId} onClose={() => setView("details")} />
       ) : view !== "details" ? (
-        <DisconnectConfirm tenantId={data.tenantId} item={view} onClose={() => setView("details")} />
+        <RemovalConfirm tenantId={data.tenantId} item={view.item} remove={view.remove} onClose={() => setView("details")} />
       ) : (
         <div className="max-h-[calc(100vh-11rem)] overflow-y-auto px-[26px] py-[22px]">
           {items.length === 0 && <p className="mb-4 leading-normal text-ink-2">{system.description}</p>}
@@ -437,10 +438,17 @@ function IntegrationPanel({ system, data, adding, onClose }: { system: System; d
             <div key={item.id} className="mb-4 border-surface-2 [&+&]:border-t [&+&]:pt-4">
               <div className="mb-5 flex items-center justify-between gap-3">
                 <StatusBadge badge={STATUS[item.status]} className="gap-1.5 px-3 py-1 text-[11px]" />
-                {!only && canDisconnect(item) && (
-                  <Button variant="destructive" size="xs" className="border-tomate-line bg-tomate-lt" onClick={() => setView(item)}>
-                    Desconectar
-                  </Button>
+                {!only && data.canEdit && (
+                  <div className="flex gap-2">
+                    {canDisconnect(item) && (
+                      <Button variant="destructive" size="xs" className="border-tomate-line bg-tomate-lt" onClick={() => setView({ item, remove: false })}>
+                        Desconectar
+                      </Button>
+                    )}
+                    <Button variant="destructive" size="xs" onClick={() => setView({ item, remove: true })}>
+                      Excluir
+                    </Button>
+                  </div>
                 )}
               </div>
               <dl className="grid grid-cols-2 gap-3">
@@ -463,10 +471,17 @@ function IntegrationPanel({ system, data, adding, onClose }: { system: System; d
           )}
           <div className="flex items-start justify-between gap-3">
             {action}
-            {only && canDisconnect(only) && (
-              <Button variant="destructive" className="border-tomate-line bg-tomate-lt font-bold" onClick={() => setView(only)}>
-                Desconectar
-              </Button>
+            {only && data.canEdit && (
+              <div className="flex shrink-0 gap-2">
+                {canDisconnect(only) && (
+                  <Button variant="destructive" className="border-tomate-line bg-tomate-lt font-bold" onClick={() => setView({ item: only, remove: false })}>
+                    Desconectar
+                  </Button>
+                )}
+                <Button variant="destructive" onClick={() => setView({ item: only, remove: true })}>
+                  Excluir
+                </Button>
+              </div>
             )}
           </div>
         </div>
@@ -581,36 +596,44 @@ function WhatsAppSignup({ tenantId, ids, label }: { tenantId: string; ids: { app
   );
 }
 
-/** Confirmação antes de desconectar: as mensagens e os pedidos da conta param de chegar. */
-function DisconnectConfirm({ tenantId, item, onClose }: { tenantId: string; item: IntegrationDto; onClose: () => void }) {
+/**
+ * Confirmação antes de desconectar ou excluir: as mensagens e os pedidos da conta param de chegar. Excluída, a
+ * integração também some desta tela e dos avisos da Inbox.
+ */
+function RemovalConfirm({ tenantId, item, remove, onClose }: { tenantId: string; item: IntegrationDto; remove: boolean; onClose: () => void }) {
   const { request } = useAuth();
   const queryClient = useQueryClient();
   const toast = useToast();
   const [failure, setFailure] = useState<string | null>(null);
 
-  async function disconnect() {
+  async function confirm() {
     setFailure(null);
     try {
-      await request(`/integrations/${tenantId}/${item.id}/disconnect`, { method: "POST" });
+      if (remove) await request(`/integrations/${tenantId}/${item.id}`, { method: "DELETE" });
+      else await request(`/integrations/${tenantId}/${item.id}/disconnect`, { method: "POST" });
       await queryClient.invalidateQueries({ queryKey: ["integrations", tenantId] });
       if (item.type === "IFOOD") void queryClient.invalidateQueries({ queryKey: IFOOD_WIDGET_KEY });
-      toast(`${item.name} desconectado`);
+      // O aviso de canal desconectado da Inbox some com a integração excluída.
+      if (remove) void queryClient.invalidateQueries({ queryKey: ["channels"] });
+      toast(remove ? `Integração com ${item.name} excluída` : `${item.name} desconectado`);
       onClose();
     } catch (error) {
-      setFailure(error instanceof ApiError ? error.message : "Não foi possível desconectar.");
+      setFailure(error instanceof ApiError ? error.message : remove ? "Não foi possível excluir." : "Não foi possível desconectar.");
     }
   }
 
   return (
     <div className="px-[26px] py-[22px]">
       <p className="mb-4 text-[13px] leading-relaxed text-ink-2">
-        As mensagens e os pedidos desta conta deixam de chegar, e as respostas pela Inbox não são mais enviadas por ela. As
-        conversas e os pedidos já recebidos continuam no Dish Desk. Para voltar, adicione a integração de novo.
+        {remove
+          ? "A integração é desconectada e sai desta tela e dos avisos da Inbox: as mensagens e os pedidos desta conta deixam de chegar, e as respostas pela Inbox não são mais enviadas por ela."
+          : "As mensagens e os pedidos desta conta deixam de chegar, e as respostas pela Inbox não são mais enviadas por ela."}{" "}
+        As conversas e os pedidos já recebidos continuam no Dish Desk. Para voltar, adicione a integração de novo.
       </p>
       {failure && <p role="alert" className="mb-3 text-[11.5px] text-tomate">{failure}</p>}
       <div className="flex gap-2">
-        <Button variant="destructive" onClick={disconnect}>
-          Desconectar
+        <Button variant="destructive" onClick={confirm}>
+          {remove ? "Excluir" : "Desconectar"}
         </Button>
         <Button variant="outline" onClick={onClose}>
           Cancelar

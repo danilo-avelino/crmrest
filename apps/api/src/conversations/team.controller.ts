@@ -46,6 +46,7 @@ export class TeamController {
   channels(@CurrentAuth() auth: RequestAuth): Promise<ChannelHealthDto[]> {
     return this.db.withTenants(auth.scope, (tx) =>
       tx.channel.findMany({
+        where: { deletedAt: null },
         select: { id: true, tenantId: true, type: true, name: true, status: true },
         orderBy: { name: "asc" },
       }),

@@ -1,5 +1,5 @@
 import { AddIntegrationRequest, type IntegrationDto, type IntegrationsDto, WhatsAppSignupRequest } from "@dishdesk/shared";
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Query, Redirect } from "@nestjs/common";
+import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Post, Query, Redirect } from "@nestjs/common";
 import { z } from "zod";
 import { CurrentAuth, Public, type RequestAuth } from "../auth/auth.decorators.js";
 import { ZodPipe } from "../common/zod.pipe.js";
@@ -47,6 +47,16 @@ export class IntegrationsController {
     @CurrentAuth() auth: RequestAuth,
   ): Promise<IntegrationDto> {
     return this.integrations.disconnect(auth, tenantId, channelId);
+  }
+
+  @Delete(":tenantId/:channelId")
+  @HttpCode(204)
+  remove(
+    @Param("tenantId", ParseUUIDPipe) tenantId: string,
+    @Param("channelId", ParseUUIDPipe) channelId: string,
+    @CurrentAuth() auth: RequestAuth,
+  ): Promise<void> {
+    return this.integrations.remove(auth, tenantId, channelId);
   }
 
   @Post(":tenantId/whatsapp/signup")

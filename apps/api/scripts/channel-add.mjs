@@ -51,7 +51,7 @@ try {
   const channel = await prisma.channel.upsert({
     where: { type_externalId: { type, externalId } },
     create: { tenantId: tenant.id, type, name, externalId, credentials, status: "CONNECTED" },
-    update: { name, credentials, status: "CONNECTED" },
+    update: { name, credentials, status: "CONNECTED", deletedAt: null },
   });
   console.log(`${existing ? "Atualizado" : "Cadastrado"}: ${channel.name} (${type} ${externalId}) em ${tenant.name}.`);
 } catch (error) {

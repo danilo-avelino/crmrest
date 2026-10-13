@@ -68,7 +68,7 @@ export class IntegrationsService {
     if (!auth.scope.tenantIds.includes(tenantId)) throw new ForbiddenException("Sem acesso a este restaurante.");
     const channels = await this.db.withTenants({ tenantIds: [tenantId], userId: auth.userId }, (tx) =>
       tx.channel.findMany({
-        where: { tenantId, type: { in: [...INTEGRATION_TYPES] } },
+        where: { tenantId, deletedAt: null, type: { in: [...INTEGRATION_TYPES] } },
         select: SELECT,
         orderBy: [{ type: "asc" }, { name: "asc" }],
       }),
@@ -177,19 +177,41 @@ export class IntegrationsService {
    * Desconecta uma conta ou loja: apaga a credencial e deixa de aceitar mensagens, pedidos e envios dela.
    * O canal continua existindo por causa do histórico (conversas e pedidos); conectar a mesma conta de novo o reativa.
    */
-  async disconnect(auth: RequestAuth, tenantId: string, channelId: string): Promise<IntegrationDto> {
+  disconnect(auth: RequestAuth, tenantId: string, channelId: string): Promise<IntegrationDto> {
+    return this.turnOff(auth, tenantId, channelId, {});
+  }
+
+  /**
+   * Exclui uma integração: além de desconectada, ela some de Configurações → Integrações e dos avisos da Inbox.
+   * O canal continua no banco, escondido, por causa do histórico e da trava do teste grátis repetido (app.claim_channel);
+   * conectar a mesma conta de novo o traz de volta.
+   */
+  async remove(auth: RequestAuth, tenantId: string, channelId: string): Promise<void> {
+    await this.turnOff(auth, tenantId, channelId, { deletedAt: new Date() });
+  }
+
+  private turnOff(auth: RequestAuth, tenantId: string, channelId: string, extra: { deletedAt?: Date }): Promise<IntegrationDto> {
     requireTenantAdmin(auth, tenantId);
     return this.db.withTenants({ tenantIds: [tenantId], userId: auth.userId }, async (tx) => {
-      const channel = await tx.channel.findFirst({ where: { id: channelId, tenantId, type: { in: [...INTEGRATION_TYPES] } }, select: { id: true } });
+      const channel = await tx.channel.findFirst({
+        where: { id: channelId, tenantId, deletedAt: null, type: { in: [...INTEGRATION_TYPES] } },
+        select: { id: true },
+      });
       if (!channel) throw new NotFoundException("Integração não encontrada.");
-      const data = { status: "DISCONNECTED" as const, credentials: encrypt(JSON.stringify({}), this.key) };
+      const data = { status: "DISCONNECTED" as const, credentials: encrypt(JSON.stringify({}), this.key), ...extra };
       return toDto(await tx.channel.update({ where: { id: channel.id }, data, select: SELECT }));
     });
   }
 
   private async save(tenantId: string, userId: string, verified: VerifiedChannel): Promise<IntegrationDto> {
     await this.claim(tenantId, userId, verified);
-    const data = { name: verified.name, credentials: encrypt(JSON.stringify(verified.secrets), this.key), status: "CONNECTED" as const };
+    // deletedAt: a conta de uma integração excluída volta para o painel, no mesmo canal.
+    const data = {
+      name: verified.name,
+      credentials: encrypt(JSON.stringify(verified.secrets), this.key),
+      status: "CONNECTED" as const,
+      deletedAt: null,
+    };
     try {
       return await this.db.withTenants({ tenantIds: [tenantId], userId }, async (tx) => {
         // A RLS só mostra os canais deste restaurante: uma conta de outro restaurante cai no índice único ao criar.

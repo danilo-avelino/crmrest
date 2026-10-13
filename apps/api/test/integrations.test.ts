@@ -311,6 +311,38 @@ describe("Integrações (Configurações)", () => {
     expect(graph.requests.length).toBe(before);
   });
 
+  describe("excluir", () => {
+    const remove = (channelId: string, token = adminToken) =>
+      request(app.getHttpServer()).delete(`/api/integrations/${fx.tenant.id}/${channelId}`).set("Authorization", `Bearer ${token}`);
+    const ids = async () => (await list(adminToken).expect(200)).body.integrations.map((i: { id: string }) => i.id);
+
+    it("só o admin exclui, e só contas do próprio restaurante", async () => {
+      await remove(fx.instagram.id, agentToken).expect(403);
+      await remove(other.instagram.id).expect(404);
+    });
+
+    it("desconecta e some do painel e dos avisos da Inbox; o canal fica no banco e conectar de novo o traz de volta", async () => {
+      const store = (await add({ type: "CARDAPIO_WEB", storeId: "888", apiKey: "chave-boa-da-loja" }).expect(201)).body;
+      await remove(store.id).expect(204);
+
+      expect(await ids()).not.toContain(store.id);
+      const health = await request(app.getHttpServer()).get("/api/channels").set("Authorization", `Bearer ${adminToken}`).expect(200);
+      expect(health.body.map((channel: { id: string }) => channel.id)).not.toContain(store.id);
+      const channel = await admin.channel.findUniqueOrThrow({ where: { id: store.id } });
+      expect(channel).toMatchObject({ status: "DISCONNECTED", externalId: "888", deletedAt: expect.any(Date) });
+      expect(JSON.parse(decrypt(channel.credentials, parseEncryptionKey(process.env.ENCRYPTION_KEY ?? "")))).toEqual({});
+
+      // Já excluída: não dá para excluir nem desconectar de novo.
+      await remove(store.id).expect(404);
+      await request(app.getHttpServer()).post(`/api/integrations/${fx.tenant.id}/${store.id}/disconnect`).set("Authorization", `Bearer ${adminToken}`).expect(404);
+
+      const again = await add({ type: "CARDAPIO_WEB", storeId: "888", apiKey: "chave-boa-da-loja" }).expect(201);
+      expect(again.body).toMatchObject({ id: store.id, status: "CONNECTED" });
+      expect(await ids()).toContain(store.id);
+      expect((await admin.channel.findUniqueOrThrow({ where: { id: store.id } })).deletedAt).toBeNull();
+    });
+  });
+
   // Por último: fx (quem conecta) e other (quem já usou a conta) viram restaurantes cadastrados pelo site.
   describe("teste grátis repetido", () => {
     const days = (count: number) => new Date(Date.now() + count * 24 * 60 * 60 * 1000);
