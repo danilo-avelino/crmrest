@@ -351,4 +351,44 @@ describe("Cardápio Web (pedidos por polling)", () => {
     );
     expect(texts.some((text) => text.includes("#51"))).toBe(false);
   });
+
+  it("cada etapa vista pelo polling entra na linha do tempo do pedido, com o horário da alteração", async () => {
+    const base = Date.now();
+    const at = (minutesAgo: number) => new Date(base - minutesAgo * 60_000);
+    const timeline = async (externalOrderId: string) =>
+      (await admin.orderEvent.findMany({ where: { order: { channelId, externalOrderId } }, orderBy: { occurredAt: "asc" } })).map((e) => [
+        e.code,
+        e.occurredAt.getTime(),
+      ]);
+    const order = { ...cwOrder(9005, 52), status: "pending_online_payment", created_at: at(40).toISOString(), updated_at: at(40).toISOString() };
+    cardapioWeb.state.orders["9005"] = order;
+    const sees = async (status: string, minutesAgo: number) => {
+      cardapioWeb.state.updated = [{ ...summary(order, status), updated_at: at(minutesAgo).toISOString() }];
+      await service.poll();
+    };
+    await sees("pending_online_payment", 40);
+    await sees("scheduled_confirmed", 39); // agendado: o preparo ainda não começou
+    await sees("confirmed", 38);
+    await sees("ready", 20);
+    await sees("ready", 19); // o pedido mudou de novo sem trocar de etapa: vale a primeira vez
+    await sees("released", 15);
+    await sees("closed", 5);
+    expect(await timeline("9005")).toEqual([
+      ["PLACED", at(40).getTime()],
+      ["CONFIRMED", at(38).getTime()],
+      ["READY_TO_PICKUP", at(20).getTime()],
+      ["DISPATCHED", at(15).getTime()],
+      ["CONCLUDED", at(5).getTime()],
+    ]);
+
+    // Pedido lido pela primeira vez já em outra etapa: entra com a hora em que foi feito e a etapa atual.
+    const late = { ...cwOrder(9006, 53), status: "released", created_at: at(30).toISOString(), updated_at: at(10).toISOString() };
+    cardapioWeb.state.orders["9006"] = late;
+    cardapioWeb.state.updated = [summary(late, "released")];
+    await service.poll();
+    expect(await timeline("9006")).toEqual([
+      ["PLACED", at(30).getTime()],
+      ["DISPATCHED", at(10).getTime()],
+    ]);
+  });
 });

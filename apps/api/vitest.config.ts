@@ -12,7 +12,7 @@ if (process.env.REDIS_URL) {
 }
 
 // Credenciais reais do iFood no .env não valem nos testes (eles usam uma API falsa e passam as próprias).
-for (const key of ["IFOOD_CLIENT_ID", "IFOOD_CLIENT_SECRET", "IFOOD_WIDGET_ID", "IFOOD_CHAT_BRIDGE"]) delete process.env[key];
+for (const key of ["IFOOD_CLIENT_ID", "IFOOD_CLIENT_SECRET", "IFOOD_WIDGET_ID", "IFOOD_CHAT_BRIDGE", "IFOOD_EXTENSION_URL"]) delete process.env[key];
 // O mesmo vale para o Cardápio Web de produção e o envio real: o banco é o mesmo do dev, com lojas e clientes reais.
 delete process.env.CARDAPIO_WEB_API_URL;
 process.env.CHANNELS_DRY_RUN = "true";

@@ -20,6 +20,7 @@ import { AnonymizeDialog, ExportDialog } from "@/components/clients/lgpd-dialogs
 import { CHANNEL_DOT, StatusBadge } from "@/components/inbox/bits";
 import { Cpf, Tags } from "@/components/inbox/client-panel";
 import { ORDER_STATUS } from "@/components/inbox/order-card";
+import { ItemOptions } from "@/components/orders/item-options";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -622,6 +623,7 @@ function OrdersTab({ contactId, total, now }: { contactId: string; total: number
                       <div key={index} className="flex justify-between border-b border-surface-2 px-3.5 py-2.5">
                         <span className="text-ink-2">
                           {item.quantity}× {item.name}
+                          <ItemOptions options={item.options} />
                         </span>
                         <span className="font-medium tabular-nums">{currency(Number(item.unitPrice) * item.quantity)}</span>
                       </div>

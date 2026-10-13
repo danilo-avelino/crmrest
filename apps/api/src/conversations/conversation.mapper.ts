@@ -49,7 +49,13 @@ export function toOrderDto(order: Order & { items: OrderItem[]; channel: { type:
     placedAt: order.placedAt.toISOString(),
     dispatchedAt: order.dispatchedAt?.toISOString() ?? null,
     deliveredAt: order.deliveredAt?.toISOString() ?? null,
-    items: order.items.map((item) => ({ name: item.name, quantity: item.quantity, unitPrice: item.unitPrice.toFixed(2), notes: item.notes })),
+    items: order.items.map((item) => ({
+      name: item.name,
+      quantity: item.quantity,
+      unitPrice: item.unitPrice.toFixed(2),
+      notes: item.notes,
+      options: item.options,
+    })),
   };
 }
 

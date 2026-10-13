@@ -6,6 +6,7 @@ import { useState } from "react";
 import { ChannelAlert } from "@/components/inbox/channel-alert";
 import { ConversationList } from "@/components/inbox/conversation-list";
 import { ConversationPane } from "@/components/inbox/conversation-pane";
+import { IfoodExtensionAlert } from "@/components/inbox/ifood-extension-alert";
 import { NavRail } from "@/components/inbox/nav-rail";
 import { useInboxRealtime } from "@/hooks/use-inbox-realtime";
 
@@ -40,6 +41,7 @@ export function InboxView() {
       <NavRail />
       <div className="flex min-w-0 flex-1 flex-col">
         <ChannelAlert />
+        <IfoodExtensionAlert />
         <div className="flex min-h-0 flex-1">
           <ConversationList selectedId={selectedId} onSelect={setSelectedId} />
           {selectedId ? (

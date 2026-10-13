@@ -1,7 +1,7 @@
 "use client";
 
 import type { IfoodChatOutboxItem, IfoodChatSyncResult } from "@dishdesk/shared";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
 import { INBOX_CHANGED_EVENT } from "@/hooks/use-inbox-realtime";
 import { type Bridge, type DriverStatus, IfoodChatDriver } from "@/lib/ifood-chat-driver";
@@ -20,10 +20,12 @@ const CLAIM_MS = 15_000;
 
 let sequence = 0;
 
+const widgetFrame = () => document.querySelector<HTMLIFrameElement>(`iframe[src^="${WIDGET_ORIGIN}"]`)?.contentWindow;
+
 /** Fala com a extensão do Chrome que roda dentro do iframe do widget (apps/extension). */
 const bridge: Bridge = (op, params = {}) =>
   new Promise((resolve, reject) => {
-    const target = document.querySelector<HTMLIFrameElement>(`iframe[src^="${WIDGET_ORIGIN}"]`)?.contentWindow;
+    const target = widgetFrame();
     if (!target) return reject(new Error("O widget do iFood ainda não carregou."));
     const id = ++sequence;
     function onMessage(event: MessageEvent<{ dishdesk?: string; id?: number; ok?: boolean; error?: string; html?: string[]; version?: string }>) {
@@ -52,6 +54,29 @@ function supported(version: string | undefined): boolean {
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
+// Falta da extensão neste navegador. Fica fora do componente: quem procura a extensão é o widget (em todas as telas) e
+// quem avisa é a Inbox.
+let missing = false;
+const watchers = new Set<() => void>();
+function setMissing(value: boolean) {
+  if (missing === value) return;
+  missing = value;
+  for (const watcher of watchers) watcher();
+}
+function watchMissing(watcher: () => void) {
+  watchers.add(watcher);
+  return () => void watchers.delete(watcher);
+}
+
+/** O chat do iFood está ligado e o widget carregou, mas a extensão do Chrome não respondeu: nada é copiado por este navegador. */
+export function useIfoodExtensionMissing(): boolean {
+  return useSyncExternalStore(
+    watchMissing,
+    () => missing,
+    () => false,
+  );
+}
+
 /**
  * O que o motor do chat faz com o widget: `driving` = opera (o widget fica invisível, aberto na aba Chat);
  * `unauthorized` = abriu o widget e ele pede a autorização da loja; `idle` = não mexe (o widget aparece como sempre).
@@ -60,8 +85,8 @@ export type IfoodChatMode = "idle" | "driving" | "unauthorized";
 
 /**
  * Chat do iFood na Inbox (trava IFOOD_CHAT_BRIDGE): com a extensão instalada neste Chrome, copia as conversas do widget
- * e digita nele as respostas escritas na Inbox. Sem a extensão, o widget aparece como sempre. Com a loja sem autorizar,
- * o motor espera: volta sozinho quando a autorização termina.
+ * e digita nele as respostas escritas na Inbox. Sem a extensão, o widget aparece como sempre e a Inbox avisa para
+ * instalar (useIfoodExtensionMissing). Com a loja sem autorizar, o motor espera: volta sozinho quando a autorização termina.
  */
 export function useIfoodChat(enabled: boolean): IfoodChatMode {
   const { request } = useAuth();
@@ -90,14 +115,22 @@ export function useIfoodChat(enabled: boolean): IfoodChatMode {
     void (async () => {
       // O que o widget mostrou sobre a autorização da loja; null = nada, o motor opera.
       let authorization: Exclude<DriverStatus, "working"> | null = null;
+      // Vezes seguidas em que o widget estava na página e a extensão não respondeu.
+      let misses = 0;
       while (!stopped) {
+        const loaded = Boolean(widgetFrame());
         const version = await bridge("ping").then((reply) => reply.version, () => undefined);
         if (stopped) return;
         if (!supported(version)) {
           setMode("idle");
-          await sleep(SEARCH_MS);
+          // Uma falha só pode ser o widget ainda carregando: confere de novo logo, e só então avisa que falta a extensão.
+          misses = loaded && version === undefined ? misses + 1 : 0;
+          if (misses >= 2) setMissing(true);
+          await sleep(misses === 1 ? STEP_MS : SEARCH_MS);
           continue;
         }
+        misses = 0;
+        setMissing(false);
         if (authorization) {
           // Convite (ou andamento) da autorização na tela: o motor só observa.
           const seen = await driver.authorization().catch(() => authorization);
@@ -134,6 +167,7 @@ export function useIfoodChat(enabled: boolean): IfoodChatMode {
 
     return () => {
       stopped = true;
+      setMissing(false);
       window.removeEventListener(INBOX_CHANGED_EVENT, wantClaim);
       clearInterval(fallback);
     };

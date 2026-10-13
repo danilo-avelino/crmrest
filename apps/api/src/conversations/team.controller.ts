@@ -57,10 +57,15 @@ export class TeamController {
   @Get("ifood-widget")
   async ifoodWidget(@CurrentAuth() auth: RequestAuth): Promise<IfoodWidgetDto> {
     const widgetId = this.env.IFOOD_WIDGET_ID ?? null;
-    if (!widgetId) return { widgetId, merchantIds: [], chat: false };
+    if (!widgetId) return { widgetId, merchantIds: [], chat: false, extensionUrl: null };
     const channels = await this.db.withTenants(auth.scope, (tx) =>
       tx.channel.findMany({ where: { type: "IFOOD", status: { not: "DISCONNECTED" } }, select: { externalId: true }, take: 10 }),
     );
-    return { widgetId, merchantIds: channels.map((channel) => channel.externalId), chat: this.env.IFOOD_CHAT_BRIDGE };
+    return {
+      widgetId,
+      merchantIds: channels.map((channel) => channel.externalId),
+      chat: this.env.IFOOD_CHAT_BRIDGE,
+      extensionUrl: this.env.IFOOD_EXTENSION_URL ?? null,
+    };
   }
 }

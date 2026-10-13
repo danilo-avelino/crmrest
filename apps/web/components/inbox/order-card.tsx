@@ -6,6 +6,7 @@ import { AlertCircleIcon } from "lucide-react";
 import { useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
 import { CHANNEL_DOT } from "@/components/inbox/bits";
+import { ItemOptions } from "@/components/orders/item-options";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/toast";
@@ -66,6 +67,7 @@ export function OrderCard({
           <div key={index} className="flex justify-between">
             <span>
               {item.quantity}× {item.name}
+              <ItemOptions options={item.options} />
             </span>
             <span className="text-ink-2 tabular-nums">{currency(Number(item.unitPrice) * item.quantity)}</span>
           </div>

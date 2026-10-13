@@ -10,6 +10,7 @@ import { IFOOD_CHAT_WAIT_MS, OutboundProcessor } from "../src/outbound/outbound.
 import { type OutboundJob, QUEUES } from "../src/queues/queues.module.js";
 import { accessTokenFor, admin, createAuthFixture, createChannelFixture, createTestApp, metaPayload, postMetaWebhook } from "./helpers.js";
 
+const EXTENSION_URL = "https://chromewebstore.google.com/detail/dish-desk/teste";
 const CLOCK = new Intl.DateTimeFormat("pt-BR", { timeStyle: "medium", timeZone: "America/Sao_Paulo" });
 const minutesAgo = (minutes: number) => new Date(Date.now() - minutes * 60_000);
 /** Mensagem como o widget mostra: só a hora. */
@@ -65,7 +66,7 @@ describe("Chat do iFood na Inbox (trava IFOOD_CHAT_BRIDGE ligada)", () => {
 
   beforeAll(async () => {
     [app, fx, other] = await Promise.all([
-      createTestApp({ IFOOD_WIDGET_ID: "widget-teste", IFOOD_CHAT_BRIDGE: "true" }),
+      createTestApp({ IFOOD_WIDGET_ID: "widget-teste", IFOOD_CHAT_BRIDGE: "true", IFOOD_EXTENSION_URL: EXTENSION_URL }),
       createChannelFixture(),
       createAuthFixture(),
     ]);
@@ -81,9 +82,9 @@ describe("Chat do iFood na Inbox (trava IFOOD_CHAT_BRIDGE ligada)", () => {
     await app?.close();
   });
 
-  it("o widget informa que o chat vai para a Inbox", async () => {
+  it("o widget informa que o chat vai para a Inbox e onde instalar a extensão", async () => {
     const { body } = await request(app.getHttpServer()).get("/api/ifood-widget").set("Authorization", `Bearer ${token}`).expect(200);
-    expect(body).toEqual({ widgetId: "widget-teste", merchantIds: [fx.ifood.externalId], chat: true });
+    expect(body).toEqual({ widgetId: "widget-teste", merchantIds: [fx.ifood.externalId], chat: true, extensionUrl: EXTENSION_URL });
   });
 
   const automatic = shown("OUTBOUND", "Recebemos o seu pedido!", minutesAgo(19));

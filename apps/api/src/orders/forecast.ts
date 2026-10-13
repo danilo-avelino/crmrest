@@ -28,7 +28,7 @@ export type Forecast = {
 
 type Timed = { placedAt: Date; events: { occurredAt: Date }[] };
 
-/** A contagem começa na confirmação; sem o evento (ex.: Cardápio Web), na hora do pedido. */
+/** A contagem começa na confirmação; sem o evento (ex.: pedido lido já em outra etapa), na hora do pedido. */
 function startOf(order: Timed): number {
   return (order.events[0]?.occurredAt ?? order.placedAt).getTime();
 }

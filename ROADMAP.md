@@ -201,10 +201,30 @@ O WhatsApp vem primeiro porque é o único canal que não depende de aprovação
   - se a contagem da fila vem ligada ou desligada para restaurantes novos.
 - Fora do escopo: o tempo de entrega (trajeto). A previsão é só de **saída** do restaurante.
 
-### Ordem sugerida (Fase 2)
-`E14 Canais → E17 Estados de erro → E15 Configurações → E13 Clientes/merge → E18 Tablet → E16 Super Admin`
+#### E30 — Assistente de configuração (primeiro acesso) · **M** · depende de: E14, E15
+- Como admin de um restaurante novo, quero um **assistente passo a passo** no primeiro acesso, que me ensine a configurar o sistema até a primeira mensagem chegar na Inbox.
+- **Regra obrigatória:** antes de cada integração, o assistente **pergunta se o restaurante vai usar aquele sistema** ("Você atende pelo WhatsApp?", "Você vende pelo iFood?"). Com "sim", abre o passo a passo daquela integração. Com "não" ou "agora não", pula para a próxima. Nenhuma integração é obrigatória.
+- Integrações, nesta ordem:
+  - **WhatsApp:** explica o cadastro na Meta exigido pela API oficial (conta do WhatsApp Business, verificação da empresa e um número dedicado, que não pode estar em uso no aplicativo do WhatsApp) e conecta o número pelo Embedded Signup (E14).
+  - **Instagram:** explica que a conta precisa ser Profissional e vinculada a uma Página, e conecta pelo login da Meta.
+  - **iFood:** conecta a loja (merchant) para os pedidos e ensina a instalar a extensão do Chrome que leva o chat do iFood para a Inbox.
+  - **Cardápio Web:** mostra onde gerar a chave no Portal (Configurações → Integrações → API) e onde colá-la.
+  - **Anota AI** *(pendente)*: entra no assistente quando a integração existir. Até lá, não aparece.
+- Como admin, quero que cada passo **confira a conexão** antes de avançar (a mesma conferência de Configurações → Integrações) e me diga o que corrigir quando falhar.
+- Como admin, quero, depois das integrações, ser guiado pelo resto da configuração: horário de funcionamento, personalidade do atendimento e mensagens automáticas, links para fazer pedido e convite dos atendentes.
+- Como admin, quero ver o progresso, **sair e continuar depois** de onde parei, e reabrir o assistente em Configurações (por exemplo, para ligar uma integração que pulei).
+- Como plataforma, quero que o assistente **reutilize** as telas e as validações de Configurações → Integrações (E14) e de Configurações (E15), sem duplicar formulários.
+- Ao concluir uma integração, oferecer a **importação dos contatos** daquele sistema, quando ele permitir (CLAUDE.md §9).
+- ⚠️ O assistente ainda não tem design. As telas precisam ser desenhadas antes da implementação.
+- A definir na implementação:
+  - se o assistente abre sozinho no primeiro login do admin ou só por um aviso na Inbox ("Termine a configuração");
+  - se o que depende de aprovação de terceiros (verificação da empresa na Meta, homologação do iFood) deixa o passo "em andamento" e avisa o admin quando sair;
+  - se os atendentes (`AGENT`) veem um tour curto da Inbox ou se o assistente é só do admin.
 
-Canais vem primeiro porque elimina o onboarding manual por script, que é o gargalo para o 2º restaurante. O Super Admin vem por último porque, com poucos tenants, o seed e o banco resolvem. O **E26 (previsão de saída)** entra logo depois que a integração com o iFood (E7) estiver concluída e homologada, independentemente da ordem acima.
+### Ordem sugerida (Fase 2)
+`E14 Canais → E17 Estados de erro → E15 Configurações → E30 Assistente de configuração → E13 Clientes/merge → E18 Tablet → E16 Super Admin`
+
+Canais vem primeiro porque elimina o onboarding manual por script, que é o gargalo para o 2º restaurante. O assistente de configuração (E30) vem logo depois de Configurações porque só guia o admin pelas telas do E14 e do E15. O Super Admin vem por último porque, com poucos tenants, o seed e o banco resolvem. O **E26 (previsão de saída)** entra logo depois que a integração com o iFood (E7) estiver concluída e homologada, independentemente da ordem acima.
 
 ---
 

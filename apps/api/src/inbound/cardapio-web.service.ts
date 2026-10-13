@@ -6,7 +6,13 @@ import { Inject, Injectable, Logger, type OnModuleInit } from "@nestjs/common";
 import * as Sentry from "@sentry/nestjs";
 import type { Job, Queue } from "bullmq";
 import { ENV, type Env } from "../config/env.js";
-import { CARDAPIO_WEB_STATUS, CardapioWebClient, type CardapioWebCustomer, type CardapioWebOrder } from "../connectors/cardapio-web.client.js";
+import {
+  CARDAPIO_WEB_EVENT,
+  CARDAPIO_WEB_STATUS,
+  CardapioWebClient,
+  type CardapioWebCustomer,
+  type CardapioWebOrder,
+} from "../connectors/cardapio-web.client.js";
 import { ConnectorsService } from "../connectors/connectors.service.js";
 import { DatabaseService } from "../core/database.service.js";
 import { OrderNoticeService } from "../orders/order-notice.service.js";
@@ -81,7 +87,7 @@ export class CardapioWebService implements OnModuleInit {
       if (hasIfood && summary.sales_channel === "ifood") continue;
       const status = CARDAPIO_WEB_STATUS[summary.status];
       if (!status) continue;
-      const updated = await this.updateStatus(channel, summary.id, status, new Date(summary.updated_at));
+      const updated = await this.updateStatus(channel, summary.id, status, CARDAPIO_WEB_EVENT[summary.status], new Date(summary.updated_at));
       if (!updated) await this.createOrder(channel, await this.client.order(apiKey, summary.id));
       else if (updated.changed && (status === "DISPATCHED" || status === "DELIVERED")) {
         await this.notices.statusChanged(channel.tenantId, updated.id, status);
@@ -163,11 +169,16 @@ export class CardapioWebService implements OnModuleInit {
     return true;
   }
 
-  /** Atualiza o status de um pedido já gravado; devolve null se o pedido ainda não existe e, se existe, se o status mudou. */
+  /**
+   * Atualiza o status de um pedido já gravado e registra a etapa na linha do tempo; devolve null se o pedido ainda não
+   * existe e, se existe, se o status mudou. A API não informa o horário de cada etapa: vale o da alteração (`at`) em
+   * que o polling viu o status pela primeira vez.
+   */
   private updateStatus(
     channel: ResolvedChannel,
     externalOrderId: string,
     status: OrderStatus,
+    stage: string | undefined,
     at: Date,
   ): Promise<{ id: string; changed: boolean } | null> {
     return this.db.withTenants({ tenantIds: [channel.tenantId] }, async (tx) => {
@@ -176,6 +187,12 @@ export class CardapioWebService implements OnModuleInit {
         select: { id: true, status: true, dispatchedAt: true, deliveredAt: true },
       });
       if (!order) return null;
+      if (stage) {
+        await tx.orderEvent.createMany({
+          data: { tenantId: channel.tenantId, orderId: order.id, externalEventId: stage, code: stage, occurredAt: at },
+          skipDuplicates: true,
+        });
+      }
       const changed = order.status !== status;
       if (changed) {
         await tx.order.update({
@@ -247,6 +264,7 @@ export class CardapioWebService implements OnModuleInit {
               notes: item.observation ?? null,
             })),
           },
+          events: { create: stagesOf(order).map((stage) => ({ tenantId: channel.tenantId, externalEventId: stage.code, ...stage })) },
         },
       });
     });
@@ -257,6 +275,15 @@ export class CardapioWebService implements OnModuleInit {
 function customerPhone(phone: string, ddi: string | null | undefined): string | null {
   const digits = phone.replace(/\D/g, "");
   return toE164(`+${ddi?.replace(/\D/g, "") || "55"}${digits}`) ?? toE164(digits);
+}
+
+/** Linha do tempo de um pedido lido pela primeira vez: quando foi feito e, se já passou disso, a etapa em que está. */
+function stagesOf(order: CardapioWebOrder): { code: string; occurredAt: Date }[] {
+  const current = CARDAPIO_WEB_EVENT[order.status];
+  return [
+    { code: "PLACED", occurredAt: new Date(order.created_at) },
+    ...(current && current !== "PLACED" ? [{ code: current, occurredAt: new Date(order.updated_at) }] : []),
+  ];
 }
 
 function cents(value: number): number {

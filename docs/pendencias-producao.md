@@ -56,15 +56,29 @@ Esta é a lista do que falta para o Dish Desk atender restaurantes de verdade. Q
     - [ ] Recarregar a extensão em `chrome://extensions` (seta circular no card; precisa mostrar 0.3.0) — você.
     - [ ] Teste de ponta a ponta com um pedido de teste aberto: uma mensagem escrita como cliente (app do iFood com o usuário de testes) e uma resposta pela Inbox. É o que confirma o lado dos balões e o campo de resposta do widget — você e Claude.
     - [ ] Decidir se o widget fica mesmo invisível com a trava ligada (hoje fica: Notificações e Tracking do widget somem neste computador).
-    - [ ] Distribuição para os restaurantes: publicar a extensão na Chrome Web Store (ícones, política de privacidade) e tirar `http://localhost:3000` das origens aceitas.
-  - [ ] **Uma loja sem permissão derruba o polling de todas.** O Dish Desk consulta todas as lojas iFood numa chamada só, e o iFood responde 403 para a chamada inteira se uma delas não pertence à credencial (aconteceu em 13/10 com a loja de teste antiga ainda conectada). Com clientes reais, um restaurante que revogar o app no iFood deixa todos sem pedidos. Isolar a loja recusada e seguir com as outras — Claude.
+    - [x] Aviso na Inbox quando o navegador não tem a extensão, com o botão "Instalar" (abre a página da extensão na Chrome Web Store) — Claude, 13/10. O botão só aparece com o endereço da página em `IFOOD_EXTENSION_URL`.
+    - [ ] Distribuição para os restaurantes: publicar a extensão na Chrome Web Store (ícones, política de privacidade) e tirar `http://localhost:3000` das origens aceitas. Depois de publicar, pôr o endereço da página em `IFOOD_EXTENSION_URL` na `api` da Railway.
+  - [x] **Uma loja sem permissão derrubava o polling de todas.** O iFood responde 403 para a consulta inteira se uma das lojas não autoriza o aplicativo. Agora, no 403, o Dish Desk consulta loja a loja: a recusada fica "Com erro" (sai do polling até o restaurante conectar de novo) e as outras seguem; se todas forem recusadas, o problema é da credencial e ninguém é marcado. Ao conectar uma loja, o Dish Desk confere no iFood se ela autorizou o aplicativo e recusa ID que não é o da loja — Claude, 13/10. Falta publicar.
   - [ ] Passar pela homologação. Conferido no Portal em 13/10: nenhuma homologação iniciada e nenhum ticket aberto. Para Order e Events o processo agora é automático (Portal → Homologação → Nova homologação, cerca de 10 minutos, uma tentativa a cada 4 horas, só o dono do app inicia): escolher o app e a loja de testes, testar a conexão e então confirmar, cancelar, despachar e concluir um pedido. O Dish Desk hoje só lê os eventos e os reconhece; [os critérios](https://developer.ifood.com.br/pt-BR/docs/food/guides/modules/order/homologation) pedem, pela API, confirmar o pedido (em até 8 minutos), cancelar com os motivos do iFood, avisar pedido pronto e despachar, além de mostrar pagamento, troco, cupom, observações e CPF/CNPJ.
     - [x] Confirmar, marcar como pronto, despachar e cancelar (com os motivos do iFood) pela aba Pedidos, no detalhe do pedido: um botão que muda com o status e o "Cancelar pedido" — Claude, 13/10. Conferido no painel local com o pedido de teste real #9414: confirmar, marcar como pronto e cancelar funcionaram no iFood; o "Despachar" só foi testado com iFood simulado (o endpoint em si já tinha sido usado por script no #3314).
     - [x] Mostrar no detalhe do pedido a forma de pagamento (bandeira, pago pelo app ou a cobrar, troco a levar), o cupom e quem paga, o código de coleta, o CPF/CNPJ da nota e as observações do pedido e dos itens — Claude, 13/10. Pagamento, código, documento e observação conferidos com o pedido real; troco e cupom só com iFood simulado (o pedido de teste não tem).
     - [x] Responder ao pedido de cancelamento do cliente (Plataforma de Negociação): aviso no pedido e na lista, com "Aceitar" e "Recusar" e o motivo; o desfecho entra na linha do tempo — Claude, 13/10. Só com iFood simulado: o ambiente de teste não gera negociação. Contraproposta (reembolso parcial, mais prazo) não foi feita.
-    - [ ] Publicar (commit e deploy) — você pede.
-    - [ ] Desligar `IFOOD_CHAT_BRIDGE` na Railway e iniciar a homologação — você inicia, Claude acompanha.
-  - [ ] Depois da homologação, trocar as credenciais de teste pelas do app "Dish Desk".
+    - [x] Publicar — commit `c860862`, CI verde, `api` e `web` no ar com o build novo em 13/10.
+    - [ ] Desligar `IFOOD_CHAT_BRIDGE` na `api` da Railway (Variables → ⋮ da variável → Edit → `false` → Deploy) — você: a trava do Claude Code não deixa o Claude editar variável na Railway.
+    - [ ] Parar a API local durante a homologação: ela usa a mesma credencial do iFood e consome os eventos que deveriam chegar à produção (em 13/10 a produção ficou com o #9414 em "Novo" porque a confirmação, o pronto e o cancelamento foram lidos pela API local) — Claude.
+    - [x] Fazer as cinco etapas da homologação pelo painel de produção, com as capturas de tela enviadas ao Portal — 13/10: conectividade; receber e confirmar (#9005, #6519, #4076 e #1824); cancelar o #4076; despachar o #6519; e o #6519 concluído.
+    - [x] Homologação finalizada e aprovada pelo iFood — 13/10.
+  - [ ] **Pôr o app homologado em produção** (trocar as credenciais de teste pelas do app "Dish Desk"), nesta ordem:
+    - [x] Publicar a proteção do polling (item acima) — 13/10.
+    - [x] Item com complementos: o preço da linha passa a ser o total do item (antes aparecia o preço base) e os complementos escolhidos ficam listados no pedido (aba Pedidos, card da conversa e cadastro do cliente) — Claude, 13/10. Vale para os pedidos novos do iFood; o Cardápio Web já gravava o preço certo, mas ainda não lista os complementos.
+    - [ ] `IFOOD_CHAT_BRIDGE` ligada em produção (decisão de 13/10): conferir o valor na `api` da Railway — você.
+    - [ ] Primeira loja real: Terra Querida Tapiocaria (decisão de 13/10, por ter volume menor).
+    - [ ] Copiar no Portal do Desenvolvedor (Meus aplicativos → Dish Desk) o `clientId` e o `clientSecret` de produção — você.
+    - [ ] Em Configurações → Integrações do Danilo Lanches, desconectar a loja de teste "iFood nova conta": ela não pertence à credencial de produção — você.
+    - [ ] Trocar `IFOOD_CLIENT_ID` e `IFOOD_CLIENT_SECRET` na `api` da Railway e fazer o Deploy; decidir se `IFOOD_CHAT_BRIDGE` volta a ficar ligada — você.
+    - [ ] O restaurante autoriza o aplicativo "Dish Desk" no Portal do Parceiro do iFood e só então conecta a loja em Configurações → Integrações, pelo ID da loja (o com letras e traços). Conferir o caminho exato no Portal do Parceiro com a primeira loja real — você e Claude.
+    - [ ] Conferir um pedido real de ponta a ponta na primeira loja (chegar, confirmar, pronto, despachar) — você e Claude.
+    - [ ] O `.env` local continua com a credencial de teste: a API local deixa de disputar eventos com a produção.
 
 ## 2. Cadastro pelo site, teste grátis e cobrança
 

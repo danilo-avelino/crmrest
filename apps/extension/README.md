@@ -41,6 +41,8 @@ Um erro volta como `{ ok: false, error }`.
 
 Com a trava ligada e a extensão 0.3.0 ou mais nova, o painel mantém o widget aberto na aba Chat e **invisível** (ele cobriria a tela). A cada 3 segundos lê a lista de conversas; quando a prévia ou a hora de uma muda, abre a conversa, manda as mensagens para a API e fecha. As respostas da Inbox são digitadas na conversa do pedido. Sem a extensão, com versão antiga ou com a loja sem autorizar o widget, o widget aparece como sempre e nada é copiado.
 
+Quando o widget carrega e a extensão não responde, a Inbox mostra um aviso. O botão **Instalar** do aviso abre a página da extensão na Chrome Web Store, que vem da variável `IFOOD_EXTENSION_URL` da `api`; sem a variável, o aviso sai sem o botão. A extensão só entra no widget quando a página carrega: depois de instalar, é preciso recarregar o painel (o aviso oferece o botão **Recarregar**). A permissão para o site do widget é dada na própria instalação; não há outro passo de autorização da extensão.
+
 ## Limites conhecidos
 
 - O widget precisa estar autorizado pela loja (Portal do Parceiro do iFood), uma vez por computador. A sessão cai depois de 7 dias sem uso.

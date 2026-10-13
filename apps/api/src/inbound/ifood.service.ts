@@ -5,7 +5,7 @@ import { InjectQueue, Processor } from "@nestjs/bullmq";
 import { Inject, Injectable, Logger, type OnModuleInit } from "@nestjs/common";
 import type { Queue } from "bullmq";
 import { ENV, type Env } from "../config/env.js";
-import { IFOOD_STATUS, IfoodClient, type IfoodEvent, type IfoodOrder } from "../connectors/ifood.client.js";
+import { IFOOD_STATUS, IfoodClient, IfoodError, type IfoodEvent, type IfoodOrder } from "../connectors/ifood.client.js";
 import { DatabaseService } from "../core/database.service.js";
 import { type NoticeStatus, OrderNoticeService } from "../orders/order-notice.service.js";
 import { JobProcessor } from "../queues/job-processor.js";
@@ -47,7 +47,7 @@ export class IfoodService implements OnModuleInit {
     const channels = new Map(valid.map((m) => [m.external_id, { id: m.id, tenantId: m.tenant_id, type: "IFOOD" as const }]));
 
     const processed: string[] = [];
-    for (const event of await this.client.poll([...channels.keys()])) {
+    for (const event of await this.pollEvents(channels)) {
       const channel = channels.get(event.merchantId);
       try {
         if (channel) await this.handle(channel, event);
@@ -58,6 +58,40 @@ export class IfoodService implements OnModuleInit {
       }
     }
     await this.client.acknowledge(processed);
+  }
+
+  /**
+   * Eventos de todas as lojas numa consulta só. O iFood recusa a consulta inteira (403) se uma das lojas não autoriza
+   * mais o aplicativo: nesse caso consulta loja a loja; a recusada fica "Com erro" (sai do polling até o restaurante
+   * conectar de novo) e as outras seguem. Se todas forem recusadas, o problema é da credencial: ninguém é marcado.
+   */
+  private async pollEvents(channels: Map<string, ResolvedChannel>): Promise<IfoodEvent[]> {
+    try {
+      return await this.client.poll([...channels.keys()]);
+    } catch (error) {
+      if (!(error instanceof IfoodError) || error.status !== 403) throw error;
+    }
+    const events: IfoodEvent[] = [];
+    const refused: ResolvedChannel[] = [];
+    for (const [merchantId, channel] of channels) {
+      try {
+        events.push(...(await this.client.poll([merchantId])));
+      } catch (error) {
+        if (!(error instanceof IfoodError) || error.status !== 403) throw error;
+        refused.push(channel);
+      }
+    }
+    if (refused.length === channels.size) {
+      this.logger.error("O iFood recusou (403) o polling de todas as lojas: conferir a credencial do aplicativo.");
+      return [];
+    }
+    for (const channel of refused) {
+      this.logger.warn(`Loja iFood do canal ${channel.id} não autoriza mais o aplicativo: marcada com erro.`);
+      await this.db.withTenants({ tenantIds: [channel.tenantId] }, (tx) =>
+        tx.channel.update({ where: { id: channel.id }, data: { status: "ERROR" } }),
+      );
+    }
+    return events;
   }
 
   /** Todo evento entra na linha do tempo do pedido; os de status também mudam o pedido (e o card na conversa). */
@@ -205,8 +239,14 @@ function itemsOf(order: IfoodOrder, tenantId: string) {
     tenantId,
     name: item.name,
     quantity: item.quantity,
-    unitPrice: item.unitPrice,
+    // O preço da linha inclui os complementos; sem ele (pedido antigo, payload incompleto) vale o preço base.
+    unitPrice: item.totalPrice != null && item.quantity > 0 ? Math.round((item.totalPrice / item.quantity) * 100) / 100 : item.unitPrice,
     notes: item.observations,
+    // Complementos na ordem do pedido; a personalização de um complemento vem logo abaixo dele.
+    options: (item.options ?? []).flatMap((option) => [
+      `${option.quantity}× ${option.name}`,
+      ...(option.customizations ?? []).map((custom) => `↳ ${custom.quantity}× ${custom.name}`),
+    ]),
   }));
 }
 

@@ -27,6 +27,7 @@ import { z } from "zod";
 import type { RequestAuth } from "../auth/auth.decorators.js";
 import { ENV, type Env } from "../config/env.js";
 import { CardapioWebClient } from "../connectors/cardapio-web.client.js";
+import { IfoodClient, IfoodError } from "../connectors/ifood.client.js";
 import { ConnectorsService } from "../connectors/connectors.service.js";
 import { DatabaseService } from "../core/database.service.js";
 import { type CardapioWebImportJob, QUEUES } from "../queues/queues.module.js";
@@ -53,6 +54,7 @@ export class IntegrationsService {
   private readonly logger = new Logger(IntegrationsService.name);
   private readonly key: Buffer;
   private readonly cardapioWeb: CardapioWebClient;
+  private readonly ifood: IfoodClient;
 
   constructor(
     private readonly db: DatabaseService,
@@ -62,6 +64,7 @@ export class IntegrationsService {
   ) {
     this.key = parseEncryptionKey(env.ENCRYPTION_KEY);
     this.cardapioWeb = new CardapioWebClient(env);
+    this.ifood = new IfoodClient(env);
   }
 
   async list(auth: RequestAuth, tenantId: string): Promise<IntegrationsDto> {
@@ -267,7 +270,16 @@ export class IntegrationsService {
           };
         }
         case "IFOOD":
-          // A credencial é da plataforma (IFOOD_CLIENT_ID/SECRET): a loja só precisa do merchant id.
+          // A credencial é da plataforma (IFOOD_CLIENT_ID/SECRET): a loja só precisa do merchant id e de ter autorizado
+          // o aplicativo no iFood (uma loja sem autorização faria o iFood recusar o polling).
+          if (this.ifood.configured) {
+            const authorized = await this.ifood.authorizes(body.merchantId).catch((error: unknown) => {
+              // 400: o que foi colado não é o ID da loja (UUID); o Portal do iFood também mostra um código numérico.
+              if (error instanceof IfoodError && error.status === 400) throw new Error("o ID da loja não é válido (use o ID com letras e traços)");
+              throw error;
+            });
+            if (!authorized) throw new Error("a loja ainda não autorizou o Dish Desk no Portal do Parceiro do iFood");
+          }
           return { type: body.type, externalId: body.merchantId, name: body.name || `iFood ${body.merchantId.slice(0, 8)}`, secrets: {} };
         case "CARDAPIO_WEB":
           // Testa a chave lendo os pedidos da última hora (quando a API do Cardápio Web está ligada neste servidor).

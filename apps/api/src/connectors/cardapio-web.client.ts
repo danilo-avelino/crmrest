@@ -21,6 +21,7 @@ export const CardapioWebOrder = z.looseObject({
   display_id: Id.nullish(),
   status: z.string(),
   created_at: z.string(),
+  updated_at: z.string(),
   fiscal_document: z.string().nullish(),
   customer: z
     .looseObject({ id: Id.nullish(), name: z.string().nullish(), phone: z.string().nullish(), ddi: z.string().nullish() })
@@ -77,6 +78,23 @@ export const CARDAPIO_WEB_STATUS: Record<string, OrderStatus> = {
   delivered: "DELIVERED",
   closed: "DELIVERED",
   canceled: "CANCELED",
+};
+
+/**
+ * Status do Cardápio Web → etapa na linha do tempo do pedido, com os códigos dos eventos do iFood. O agendado
+ * ("scheduled_confirmed") fica de fora: o preparo só começa quando ele vira "confirmed".
+ */
+export const CARDAPIO_WEB_EVENT: Record<string, string> = {
+  waiting_confirmation: "PLACED",
+  pending_payment: "PLACED",
+  pending_online_payment: "PLACED",
+  confirmed: "CONFIRMED",
+  ready: "READY_TO_PICKUP",
+  waiting_to_catch: "READY_TO_PICKUP",
+  released: "DISPATCHED",
+  delivered: "DELIVERED",
+  closed: "CONCLUDED",
+  canceled: "CANCELLED",
 };
 
 export class CardapioWebClient {

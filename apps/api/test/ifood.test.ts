@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { blindIndex, parseEncryptionKey } from "@dishdesk/database";
@@ -24,6 +25,8 @@ async function startMockIfood() {
     cancellations: [] as object[],
     disputes: [] as object[],
     rejectActions: false,
+    forbidden: new Set<string>(),
+    forbidAll: false,
   };
   const server = createServer(async (req, res) => {
     let raw = "";
@@ -38,7 +41,11 @@ async function startMockIfood() {
     }
     if (req.headers.authorization !== "Bearer token-ifood") return json(401);
     if (url === "/order/v1.0/events:polling") {
-      state.pollingMerchants.push(String(req.headers["x-polling-merchants"]));
+      const merchants = String(req.headers["x-polling-merchants"]).split(",");
+      state.pollingMerchants.push(merchants.join(","));
+      // Como o iFood: id fora do formato = 400; uma loja que não autoriza o aplicativo = 403 para a consulta inteira.
+      if (merchants.some((id) => !/^[0-9a-f-]{36}$/i.test(id))) return json(400);
+      if (state.forbidAll || merchants.some((id) => state.forbidden.has(id))) return json(403);
       const events = state.events.splice(0);
       return events.length ? json(200, events) : json(204);
     }
@@ -241,6 +248,38 @@ describe("iFood (pedidos por polling)", () => {
     expect(ifood.state.acked).toContain("ev-35");
   });
 
+  it("item com complementos: o preço da linha é o total do item e os complementos ficam listados", async () => {
+    ifood.state.orders["pedido-combo"] = {
+      ...ifoodOrder("pedido-combo", "5500", "cliente-combo"),
+      items: [
+        { name: "Refrigerante", quantity: 2, unitPrice: 6, totalPrice: 12, observations: "", options: [] },
+        {
+          name: "Combo da casa",
+          quantity: 1,
+          unitPrice: 5, // preço base; os complementos entram no total da linha
+          totalPrice: 16,
+          observations: "Sem cebola",
+          options: [
+            { name: "Bacon", quantity: 2, unitPrice: 2 },
+            { name: "Sanduíche", quantity: 1, unitPrice: 2, customizations: [{ name: "Pão australiano", quantity: 1, unitPrice: 1 }] },
+          ],
+        },
+      ],
+      total: { subTotal: 28, deliveryFee: 5, orderAmount: 33 },
+    };
+    ifood.state.events.push(event("ev-combo", "PLACED", "pedido-combo"));
+    await service.poll();
+    const order = await admin.order.findFirstOrThrow({
+      where: { tenantId: fx.tenant.id, externalOrderId: "pedido-combo" },
+      include: { items: { orderBy: { name: "asc" } } },
+    });
+    expect(order.items.map((i) => [i.name, i.quantity, i.unitPrice.toString(), i.notes, i.options])).toEqual([
+      ["Combo da casa", 1, "16", "Sem cebola", ["2× Bacon", "1× Sanduíche", "↳ 1× Pão australiano"]],
+      ["Refrigerante", 2, "6", "", []],
+    ]);
+    await admin.order.delete({ where: { id: order.id } }); // fora da contagem da aba Pedidos, logo abaixo
+  });
+
   it("aba Pedidos: lista os pedidos com a linha do tempo e o tempo de preparo (confirmado → pronto)", async () => {
     const token = await accessTokenFor(app, fx.user.email, fx.tenant.id);
     const { body } = await request(app.getHttpServer()).get("/api/orders?period=7d").set("Authorization", `Bearer ${token}`).expect(200);
@@ -265,7 +304,7 @@ describe("iFood (pedidos por polling)", () => {
   it("widget do iFood: id do widget e as lojas iFood do restaurante", async () => {
     const token = await accessTokenFor(app, fx.user.email, fx.tenant.id);
     const { body } = await request(app.getHttpServer()).get("/api/ifood-widget").set("Authorization", `Bearer ${token}`).expect(200);
-    expect(body).toEqual({ widgetId: "widget-teste", merchantIds: [fx.ifood.externalId], chat: false });
+    expect(body).toEqual({ widgetId: "widget-teste", merchantIds: [fx.ifood.externalId], chat: false, extensionUrl: null });
   });
 
   it("trava do chat desligada: as rotas do chat não existem e o iFood não aceita resposta pela Inbox", async () => {
@@ -321,6 +360,66 @@ describe("iFood (pedidos por polling)", () => {
     expect((await admin.order.findFirstOrThrow({ where: { tenantId: fx.tenant.id, externalOrderId: "pedido-4" } })).status).toBe("DELIVERED");
     const texts = (await admin.message.findMany({ where: { conversationId: conversation.id } })).map((m) => (m.content as { text?: string }).text);
     expect(texts.some((text) => text?.includes("#6020"))).toBe(false);
+  });
+
+  describe("loja que não autoriza o aplicativo", () => {
+    const channelStatus = async (id: string) => (await admin.channel.findUniqueOrThrow({ where: { id } })).status;
+
+    it("fica com erro e sai do polling; as outras lojas continuam recebendo", async () => {
+      const revoked = await admin.channel.create({
+        data: { tenantId: fx.tenant.id, type: "IFOOD", name: "iFood revogada", externalId: randomUUID(), credentials: Buffer.from("{}"), status: "CONNECTED" },
+      });
+      ifood.state.forbidden.add(revoked.externalId);
+      try {
+        ifood.state.orders["pedido-9"] = ifoodOrder("pedido-9", "7005", "cliente-pedido-9");
+        ifood.state.events.push(event("ev-pedido-9", "PLACED", "pedido-9"));
+        await service.poll();
+        expect(await channelStatus(revoked.id)).toBe("ERROR");
+        expect(await channelStatus(fx.ifood.id)).toBe("CONNECTED");
+        expect(await admin.order.count({ where: { tenantId: fx.tenant.id, externalOrderId: "pedido-9" } })).toBe(1);
+        expect(ifood.state.acked).toContain("ev-pedido-9");
+
+        await service.poll();
+        expect(ifood.state.pollingMerchants.at(-1)).toContain(fx.ifood.externalId);
+        expect(ifood.state.pollingMerchants.at(-1)).not.toContain(revoked.externalId);
+      } finally {
+        ifood.state.forbidden.clear();
+        await admin.channel.delete({ where: { id: revoked.id } });
+      }
+    });
+
+    it("todas recusadas: o problema é da credencial, nenhuma loja é marcada", async () => {
+      ifood.state.forbidAll = true;
+      try {
+        await service.poll();
+        expect(await channelStatus(fx.ifood.id)).toBe("CONNECTED");
+      } finally {
+        ifood.state.forbidAll = false;
+      }
+    });
+
+    it("conectar uma loja: só entra se o iFood confirma que ela autorizou o aplicativo", async () => {
+      await admin.tenantMember.updateMany({ where: { tenantId: fx.tenant.id, userId: fx.user.id }, data: { role: "ADMIN" } });
+      const token = await accessTokenFor(app, fx.user.email, fx.tenant.id);
+      const add = (merchantId: string) =>
+        request(app.getHttpServer()).post(`/api/integrations/${fx.tenant.id}`).set("Authorization", `Bearer ${token}`).send({ type: "IFOOD", merchantId });
+
+      const unauthorized = randomUUID();
+      ifood.state.forbidden.add(unauthorized);
+      try {
+        expect((await add(unauthorized).expect(422)).body.message).toBe(
+          "Não foi possível conectar o iFood: a loja ainda não autorizou o Dish Desk no Portal do Parceiro do iFood.",
+        );
+        expect((await add("4190562").expect(422)).body.message).toContain("o ID da loja não é válido");
+        expect(await admin.channel.count({ where: { tenantId: fx.tenant.id, type: "IFOOD" } })).toBe(1);
+
+        const authorized = randomUUID();
+        expect((await add(authorized).expect(201)).body).toMatchObject({ externalId: authorized, status: "CONNECTED" });
+        await admin.channel.deleteMany({ where: { tenantId: fx.tenant.id, externalId: authorized } });
+      } finally {
+        ifood.state.forbidden.clear();
+      }
+    });
   });
 
   describe("ações do pedido", () => {

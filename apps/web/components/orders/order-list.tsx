@@ -10,6 +10,7 @@ import { ORDER_TONE } from "@/components/clients/client-detail";
 import { CHANNEL_DOT, StatusBadge } from "@/components/inbox/bits";
 import { ORDER_STATUS } from "@/components/inbox/order-card";
 import { CustomerHistoryLine } from "@/components/orders/customer-history";
+import { ItemOptions } from "@/components/orders/item-options";
 import { OrderActions } from "@/components/orders/order-actions";
 import { Button } from "@/components/ui/button";
 import {
@@ -270,6 +271,7 @@ function OrderDetails({ order }: { order: OrderListItem }) {
           <div key={index} className="flex justify-between border-b border-surface-2 px-3.5 py-2.5">
             <span className="text-ink-2">
               {item.quantity}× {item.name}
+              <ItemOptions options={item.options} />
               {item.notes?.trim() && <span className="block text-[11px] text-ink-3">Obs.: {item.notes}</span>}
             </span>
             <span className="font-medium tabular-nums">{currency(Number(item.unitPrice) * item.quantity)}</span>

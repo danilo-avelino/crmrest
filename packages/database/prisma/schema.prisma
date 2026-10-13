@@ -425,8 +425,9 @@ model OrderItem {
   orderId   String  @map("order_id") @db.Uuid
   name      String
   quantity  Int
-  unitPrice Decimal @map("unit_price") @db.Decimal(10, 2)
+  unitPrice Decimal @map("unit_price") @db.Decimal(10, 2) // já com os complementos escolhidos
   notes     String?
+  options   String[] @default([]) // complementos escolhidos, como a equipe lê: "1× Bacon"
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   order  Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)

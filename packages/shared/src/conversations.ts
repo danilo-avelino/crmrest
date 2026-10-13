@@ -83,7 +83,8 @@ export type OrderDto = {
   placedAt: string;
   dispatchedAt: string | null;
   deliveredAt: string | null;
-  items: { name: string; quantity: number; unitPrice: string; notes: string | null }[];
+  /** `unitPrice` já inclui os complementos escolhidos (`options`, na ordem do pedido). */
+  items: { name: string; quantity: number; unitPrice: string; notes: string | null; options: string[] }[];
 };
 
 /**
@@ -163,8 +164,9 @@ export type ChannelHealthDto = { id: string; tenantId: string; type: ChannelType
 /**
  * Widget do iFood na Inbox: id do widget da plataforma e as lojas iFood do usuário (o iFood aceita até 10).
  * `chat`: o chat do widget é copiado para a Inbox pela extensão do Chrome (trava IFOOD_CHAT_BRIDGE da API).
+ * `extensionUrl`: página da extensão na Chrome Web Store, para o botão "Instalar" (null enquanto ela não for publicada).
  */
-export type IfoodWidgetDto = { widgetId: string | null; merchantIds: string[]; chat: boolean };
+export type IfoodWidgetDto = { widgetId: string | null; merchantIds: string[]; chat: boolean; extensionUrl: string | null };
 
 /** Conversa de um pedido como o widget do iFood mostra: o painel lê pela extensão e manda inteira, a cada mudança. */
 export const IfoodChatSync = z.object({

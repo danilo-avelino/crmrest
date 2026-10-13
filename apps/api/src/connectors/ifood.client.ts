@@ -15,6 +15,8 @@ export const IfoodEvent = z.looseObject({
 export type IfoodEvent = z.infer<typeof IfoodEvent>;
 
 const Money = z.coerce.number();
+/** Complemento de um item, ou personalização de um complemento. */
+const Choice = { name: z.string(), quantity: z.coerce.number().default(1) };
 
 export const IfoodOrder = z.looseObject({
   id: z.string(),
@@ -25,8 +27,18 @@ export const IfoodOrder = z.looseObject({
     name: z.string().optional(),
     documentNumber: z.string().optional(),
   }),
+  // unitPrice é o preço base; totalPrice é o da linha, com os complementos (options) e as personalizações deles.
   items: z
-    .array(z.looseObject({ name: z.string(), quantity: z.coerce.number(), unitPrice: Money, observations: z.string().optional() }))
+    .array(
+      z.looseObject({
+        name: z.string(),
+        quantity: z.coerce.number(),
+        unitPrice: Money,
+        totalPrice: Money.nullish(),
+        observations: z.string().nullish(),
+        options: z.array(z.looseObject({ ...Choice, customizations: z.array(z.looseObject(Choice)).nullish() })).nullish(),
+      }),
+    )
     .default([]),
   total: z.looseObject({ subTotal: Money, deliveryFee: Money.default(0), orderAmount: Money }),
   delivery: z
@@ -72,6 +84,16 @@ export const IFOOD_STATUS: Record<string, OrderStatus> = {
   CANCELLED: "CANCELED",
 };
 
+/** Resposta de erro da Merchant API, com o status HTTP (403: a loja não autoriza este aplicativo). */
+export class IfoodError extends Error {
+  constructor(
+    path: string,
+    readonly status: number,
+  ) {
+    super(`iFood ${path}: HTTP ${status}`);
+  }
+}
+
 export class IfoodClient {
   private token: { value: string; expiresAt: number } | null = null;
 
@@ -86,6 +108,17 @@ export class IfoodClient {
     const response = await this.call("/order/v1.0/events:polling", { headers: { "x-polling-merchants": merchantIds.join(",") } });
     if (response.status === 204) return [];
     return z.array(IfoodEvent).parse(await response.json());
+  }
+
+  /** A loja autoriza este aplicativo? O iFood responde 403 à consulta de eventos de uma loja que não o autorizou. */
+  async authorizes(merchantId: string): Promise<boolean> {
+    try {
+      await this.poll([merchantId]); // sem confirmar: os eventos continuam na fila para o polling
+      return true;
+    } catch (error) {
+      if (error instanceof IfoodError && error.status === 403) return false;
+      throw error;
+    }
   }
 
   async order(orderId: string): Promise<IfoodOrder> {
@@ -139,7 +172,7 @@ export class IfoodClient {
       signal: AbortSignal.timeout(15_000),
     });
     if (response.status === 401) this.token = null; // renova na próxima chamada
-    if (!response.ok) throw new Error(`iFood ${path}: HTTP ${response.status}`);
+    if (!response.ok) throw new IfoodError(path, response.status);
     return response;
   }
 
