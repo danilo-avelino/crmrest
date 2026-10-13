@@ -145,5 +145,35 @@ export type QuickReplyDto = { id: string; tenantId: string; shortcut: string; co
 
 /** Canal do restaurante como a equipe o vê (sem credenciais): para avisar quando ele precisa ser reconectado. */
 export type ChannelHealthDto = { id: string; tenantId: string; type: ChannelType; name: string; status: ChannelStatus };
-/** Widget do iFood na Inbox: id do widget da plataforma e as lojas iFood do usuário (o iFood aceita até 10). */
-export type IfoodWidgetDto = { widgetId: string | null; merchantIds: string[] };
+/**
+ * Widget do iFood na Inbox: id do widget da plataforma e as lojas iFood do usuário (o iFood aceita até 10).
+ * `chat`: o chat do widget é copiado para a Inbox pela extensão do Chrome (trava IFOOD_CHAT_BRIDGE da API).
+ */
+export type IfoodWidgetDto = { widgetId: string | null; merchantIds: string[]; chat: boolean };
+
+/** Conversa de um pedido como o widget do iFood mostra: o painel lê pela extensão e manda inteira, a cada mudança. */
+export const IfoodChatSync = z.object({
+  /** Número do pedido no cabeçalho da conversa ("#6530"), sem o "#". */
+  orderCode: z.string().regex(/^\d{1,10}$/),
+  messages: z
+    .array(
+      z.object({
+        direction: z.enum(["INBOUND", "OUTBOUND"]),
+        text: z.string().trim().min(1).max(4096),
+        /** Hora que o widget mostra na mensagem (o dia vem do pedido). */
+        time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/),
+      }),
+    )
+    .max(200),
+});
+export type IfoodChatSync = z.infer<typeof IfoodChatSync>;
+
+/** Resposta escrita na Inbox que o painel deve digitar no chat do pedido, no widget. */
+export type IfoodChatOutboxItem = { messageId: string; conversationId: string; orderCode: string; text: string };
+
+/** O que aconteceu com uma resposta da fila do chat do iFood. */
+export const IfoodChatSendResult = z.object({
+  status: z.enum(["SENT", "FAILED"]),
+  error: z.string().trim().min(1).max(300).optional(),
+});
+export type IfoodChatSendResult = z.infer<typeof IfoodChatSendResult>;

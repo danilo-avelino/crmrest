@@ -11,6 +11,8 @@ import { ContactsController } from "./contacts/contacts.controller.js";
 import { ContactsService } from "./contacts/contacts.service.js";
 import { ConversationsController } from "./conversations/conversations.controller.js";
 import { ConversationsService } from "./conversations/conversations.service.js";
+import { IfoodChatController } from "./conversations/ifood-chat.controller.js";
+import { IfoodChatService } from "./conversations/ifood-chat.service.js";
 import { TeamController } from "./conversations/team.controller.js";
 import { CardapioWebProcessor, CardapioWebService } from "./inbound/cardapio-web.service.js";
 import { IfoodProcessor, IfoodService } from "./inbound/ifood.service.js";
@@ -41,6 +43,7 @@ import { StripeWebhookController } from "./webhooks/stripe-webhook.controller.js
     ConversationsController,
     ContactsController,
     TeamController,
+    IfoodChatController,
     SettingsController,
     IntegrationsController,
     QuickRepliesController,
@@ -49,7 +52,7 @@ import { StripeWebhookController } from "./webhooks/stripe-webhook.controller.js
     OrdersController,
     PlatformController,
   ],
-  providers: [ConversationsService, ContactsService, SettingsService, IntegrationsService, ReportsService, OrdersService],
+  providers: [ConversationsService, IfoodChatService, ContactsService, SettingsService, IntegrationsService, ReportsService, OrdersService],
 })
 export class ApiRoleModule {}
 

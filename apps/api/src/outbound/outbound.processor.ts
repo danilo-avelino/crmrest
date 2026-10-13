@@ -13,6 +13,9 @@ import { RealtimeEmitter } from "../realtime/realtime.emitter.js";
 /** Uma mensagem espera as anteriores da mesma conversa só por este tempo: uma pendente esquecida não trava a conversa. */
 const ORDER_WAIT_MS = 60_000;
 
+/** Resposta do chat do iFood: tempo que um painel com a extensão tem para pegá-la e digitá-la no widget. */
+export const IFOOD_CHAT_WAIT_MS = 60_000;
+
 /** Worker outbound (§3.5): envia a mensagem pendente ao canal e registra o resultado. */
 @Processor(QUEUES.outbound, { concurrency: 5 })
 export class OutboundProcessor extends JobProcessor {
@@ -48,6 +51,21 @@ export class OutboundProcessor extends JobProcessor {
       return { message, earlierPending };
     });
     if (!message || message.status !== "PENDING") return; // já enviada (job repetido) ou removida
+    // Chat do iFood: quem envia é o painel, pela extensão (IfoodChatService). O job só espera e, sem envio, registra a falha.
+    if (message.channel.type === "IFOOD") {
+      if (token && Date.now() - job.timestamp < IFOOD_CHAT_WAIT_MS) {
+        await job.moveToDelayed(job.timestamp + IFOOD_CHAT_WAIT_MS, token);
+        throw new DelayedError();
+      }
+      await this.db.withTenants(scope, (tx) =>
+        tx.message.updateMany({
+          where: { id: messageId, status: "PENDING" },
+          data: { status: "FAILED", statusError: "Nenhum painel com a extensão do iFood aberta enviou a mensagem." },
+        }),
+      );
+      this.realtime.inboxChanged(tenantId, message.conversationId);
+      return;
+    }
     // Os envios são paralelos: mensagens seguidas da mesma conversa (ex.: duas automações) esperam as anteriores, para chegar em ordem.
     if (earlierPending > 0 && token) {
       await job.moveToDelayed(Date.now() + 500, token);

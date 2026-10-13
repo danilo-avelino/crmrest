@@ -32,6 +32,9 @@ const EnvSchema = z.object({
   IFOOD_API_URL: z.url().default("https://merchant-api.ifood.com.br"),
   // Widget do iFood (chat com o cliente na Inbox): id do widget cadastrado no Portal do Desenvolvedor. Sem ele, não aparece.
   IFOOD_WIDGET_ID: z.string().min(1).optional(),
+  // Trava do chat do iFood na Inbox: ligada, o painel copia o chat do widget (pela extensão do Chrome) e responde por ele.
+  // Desligada, o Dish Desk só mostra o widget oficial, sem ler nem escrever nele.
+  IFOOD_CHAT_BRIDGE: z.stringbool().default(false),
   // Cardápio Web: a chave de API é de cada loja (fica no canal); aqui só o endereço da API. Sem ele, o polling fica desligado.
   CARDAPIO_WEB_API_URL: z.url().optional(),
   // Stripe (assinatura depois do teste grátis). Sem a chave, o checkout e o webhook respondem 503; sem o segredo, o webhook também.

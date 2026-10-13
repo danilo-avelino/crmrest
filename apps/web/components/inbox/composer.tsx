@@ -5,6 +5,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ClockIcon, ImageIcon, MicIcon, PaperclipIcon, SendIcon, StickyNoteIcon } from "lucide-react";
 import { type KeyboardEvent, useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
+import { useIfoodWidget } from "@/components/ifood-widget";
 import { TemplatePicker } from "@/components/inbox/template-picker";
 import { Button } from "@/components/ui/button";
 import { usePendingAction } from "@/hooks/use-pending-action";
@@ -26,11 +27,14 @@ export function Composer({ conversation }: { conversation: ConversationListItem 
   const [highlight, setHighlight] = useState(0);
 
   const capabilities = CHANNEL_CAPABILITIES[conversation.channel.type];
+  // O iFood só aceita resposta com a trava do chat ligada: o painel digita a mensagem no widget, pela extensão.
+  const ifoodChat = useIfoodWidget().data?.chat === true;
+  const canSend = capabilities.send || (conversation.channel.type === "IFOOD" && ifoodChat);
   const windowOpen =
     !capabilities.window24h || (conversation.windowExpiresAt !== null && new Date(conversation.windowExpiresAt).getTime() > now);
   const blocked =
     mode === "reply" &&
-    (!capabilities.send
+    (!canSend
       ? // O nome do sistema, não o da integração (que pode ser "Loja Centro").
         `O ${CHANNEL_LABEL[conversation.channel.type]} não permite responder pelo Dish Desk. Use uma nota interna para registrar o atendimento.`
       : !windowOpen

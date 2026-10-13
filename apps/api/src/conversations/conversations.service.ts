@@ -1,4 +1,5 @@
 import { parseEncryptionKey, type Prisma, type TenantTx } from "@dishdesk/database";
+import type { ChannelType } from "@dishdesk/database/enums";
 import {
   CHANNEL_CAPABILITIES,
   type ConversationCounts,
@@ -42,6 +43,7 @@ const MESSAGES_LIMIT = 200;
 export class ConversationsService {
   private readonly logger = new Logger(ConversationsService.name);
   private readonly key: Buffer;
+  private readonly ifoodChat: boolean;
 
   constructor(
     private readonly db: DatabaseService,
@@ -52,6 +54,7 @@ export class ConversationsService {
     @Inject(ENV) env: Env,
   ) {
     this.key = parseEncryptionKey(env.ENCRYPTION_KEY);
+    this.ifoodChat = env.IFOOD_CHAT_BRIDGE;
   }
 
   async list(auth: RequestAuth, query: ConversationListQuery): Promise<ConversationPage> {
@@ -149,7 +152,7 @@ export class ConversationsService {
     const message = await this.db.withTenants(auth.scope, async (tx) => {
       const conversation = await this.requireConversation(tx, conversationId);
       const capabilities = CHANNEL_CAPABILITIES[conversation.channel.type];
-      if (!capabilities.send) throw new UnprocessableEntityException("Este canal não permite responder pelo Dish Desk.");
+      if (!this.canSend(conversation.channel.type)) throw new UnprocessableEntityException("Este canal não permite responder pelo Dish Desk.");
       if (capabilities.window24h && (!conversation.windowExpiresAt || conversation.windowExpiresAt < new Date())) {
         throw new UnprocessableEntityException("A janela de 24h para resposta livre terminou.");
       }
@@ -202,7 +205,7 @@ export class ConversationsService {
         throw new UnprocessableEntityException("Só mensagens que falharam podem ser reenviadas.");
       }
       const capabilities = CHANNEL_CAPABILITIES[conversation.channel.type];
-      if (!capabilities.send) throw new UnprocessableEntityException("Este canal não permite responder pelo Dish Desk.");
+      if (!this.canSend(conversation.channel.type)) throw new UnprocessableEntityException("Este canal não permite responder pelo Dish Desk.");
       // Template pode sair com a janela fechada; texto livre, não (§5.5).
       const windowClosed = !conversation.windowExpiresAt || conversation.windowExpiresAt < new Date();
       if (capabilities.window24h && windowClosed && !(current.content as MessageContent).template) {
@@ -210,7 +213,8 @@ export class ConversationsService {
       }
       return tx.message.update({
         where: { id: messageId },
-        data: { status: "PENDING", statusError: null },
+        // No chat do iFood, a marca do painel que pegou a mensagem sai junto: outro painel pode pegar o reenvio.
+        data: { status: "PENDING", statusError: null, ...(conversation.channel.type === "IFOOD" && { externalMessageId: null }) },
         include: { sentByUser: { select: { id: true, name: true } } },
       });
     });
@@ -330,6 +334,11 @@ export class ConversationsService {
     if (resolved) await this.automations.add("survey", { tenantId: conversation.tenantId, conversationId });
     this.realtime.inboxChanged(conversation.tenantId, conversationId);
     return toListItem(conversation, auth);
+  }
+
+  /** O canal aceita resposta pela Inbox? O iFood, só com a trava do chat ligada: quem envia é o painel, pela extensão. */
+  private canSend(type: ChannelType): boolean {
+    return CHANNEL_CAPABILITIES[type].send || (type === "IFOOD" && this.ifoodChat);
   }
 
   private async requireConversation(tx: TenantTx, id: string) {

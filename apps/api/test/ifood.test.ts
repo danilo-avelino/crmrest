@@ -241,7 +241,18 @@ describe("iFood (pedidos por polling)", () => {
   it("widget do iFood: id do widget e as lojas iFood do restaurante", async () => {
     const token = await accessTokenFor(app, fx.user.email, fx.tenant.id);
     const { body } = await request(app.getHttpServer()).get("/api/ifood-widget").set("Authorization", `Bearer ${token}`).expect(200);
-    expect(body).toEqual({ widgetId: "widget-teste", merchantIds: [fx.ifood.externalId] });
+    expect(body).toEqual({ widgetId: "widget-teste", merchantIds: [fx.ifood.externalId], chat: false });
+  });
+
+  it("trava do chat desligada: as rotas do chat não existem e o iFood não aceita resposta pela Inbox", async () => {
+    const token = await accessTokenFor(app, fx.user.email, fx.tenant.id);
+    const post = (path: string, body?: object) => request(app.getHttpServer()).post(`/api${path}`).set("Authorization", `Bearer ${token}`).send(body);
+    await post("/ifood-chat/sync", { orderCode: "4852", messages: [{ direction: "INBOUND", text: "Olá", time: "12:00:00" }] }).expect(404);
+    await post("/ifood-chat/outbox/claim").expect(404);
+    const order = await admin.order.findFirstOrThrow({ where: { tenantId: fx.tenant.id, externalOrderId: "pedido-1" } });
+    const chat = await admin.conversation.create({ data: { tenantId: fx.tenant.id, contactId: order.contactId, channelId: fx.ifood.id, status: "OPEN" } });
+    await post(`/conversations/${chat.id}/messages`, { text: "Olá" }).expect(422);
+    await admin.conversation.delete({ where: { id: chat.id } });
   });
 
   it("saiu para entrega com o cliente conversando pelo WhatsApp: avisa na conversa, uma vez só", async () => {

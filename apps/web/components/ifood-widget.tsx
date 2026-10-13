@@ -22,19 +22,25 @@ declare global {
 
 export const IFOOD_WIDGET_KEY = ["ifood-widget"] as const;
 
+/** Widget do iFood do usuário: as lojas e se o chat dele vai para a Inbox (trava IFOOD_CHAT_BRIDGE da API). */
+export function useIfoodWidget() {
+  const { session, request } = useAuth();
+  return useQuery({
+    queryKey: IFOOD_WIDGET_KEY,
+    queryFn: () => request<IfoodWidgetDto>("/ifood-widget"),
+    enabled: Boolean(session?.accessToken),
+    staleTime: Infinity,
+  });
+}
+
 /**
  * Widget oficial do iFood (chat com o cliente, notificações e status da loja), em todas as telas depois de escolher o
  * restaurante. Liga sozinho quando o restaurante integra a primeira loja iFood. O iFood não tem API de chat: as
  * mensagens ficam no widget, fora do histórico do Dish Desk.
  */
 export function IfoodWidget() {
-  const { session, request } = useAuth();
-  const config = useQuery({
-    queryKey: IFOOD_WIDGET_KEY,
-    queryFn: () => request<IfoodWidgetDto>("/ifood-widget"),
-    enabled: Boolean(session?.accessToken),
-    staleTime: Infinity,
-  });
+  const { session } = useAuth();
+  const config = useIfoodWidget();
   const [loaded, setLoaded] = useState(false);
   // Lojas com que o widget foi iniciado. Uma inicialização por página: iniciar de novo com outros parâmetros derruba a
   // autorização da loja no widget.
