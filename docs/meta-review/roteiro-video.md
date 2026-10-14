@@ -18,7 +18,7 @@ Antes de gravar: a conta do Instagram que vai aparecer no vídeo precisa ser **p
 1. Abra `https://www.dishdesk.com.br/login` e entre com o usuário de teste.
    - Legenda: *"Logging in to Dish Desk as restaurant staff."*
 2. Escolha o restaurante **Revisão Meta**.
-3. Vá em **Configurações → Integrações** e clique em **Adicionar integração com o Instagram**.
+3. Vá em **Configurações → Integrações**, clique em **Conectar** no card do Instagram e depois em **Conectar o Instagram**.
    - Legenda: *"Connecting the restaurant's Instagram professional account."*
 4. Mostre a tela de login/autorização do Instagram, com o nome **Dish Desk-IG** e as permissões, e clique em **Permitir**.
    - Legenda: *"Instagram Business Login: the restaurant authorizes Dish Desk."*
@@ -38,7 +38,7 @@ Antes de gravar: a conta do Instagram que vai aparecer no vídeo precisa ser **p
 Antes de gravar: tenha uma conta do WhatsApp Business de teste para conectar pelo cadastro incorporado e um celular com WhatsApp para mandar a mensagem.
 
 1. Entre no Dish Desk com o usuário de teste e escolha **Revisão Meta**.
-2. Vá em **Configurações → Integrações** e clique em **Adicionar integração com o WhatsApp**.
+2. Vá em **Configurações → Integrações**, clique em **Conectar** no card **WhatsApp Business API** e depois em **Conectar o WhatsApp**.
    - Legenda: *"Connecting the restaurant's WhatsApp Business account via Embedded Signup."*
 3. Mostre a janela do cadastro incorporado da Meta: escolha a conta comercial, a conta do WhatsApp Business e o número; conclua.
 4. De volta ao Dish Desk, mostre o card do WhatsApp com o **número conectado** (uso de `whatsapp_business_management`: ler os números e inscrever o app nos webhooks).
@@ -47,7 +47,7 @@ Antes de gravar: tenha uma conta do WhatsApp Business de teste para conectar pel
 6. No Dish Desk, abra a **Inbox**, abra a conversa e responda.
    - Legenda: *"Receiving and replying on WhatsApp — whatsapp_business_messaging."*
 7. Mostre a resposta chegando no WhatsApp do celular.
-8. Na conversa, abra o seletor de **modelos de mensagem** e mostre a lista de modelos aprovados (outro uso de `whatsapp_business_management`).
+8. Na conversa, clique no botão **Template** e mostre a lista de modelos aprovados (outro uso de `whatsapp_business_management`).
 
 ---
 
@@ -57,8 +57,9 @@ Antes de gravar: tenha uma conta do WhatsApp Business de teste para conectar pel
 |---|---|
 | Configurações | Settings |
 | Integrações | Integrations |
-| Adicionar integração com o Instagram | Add Instagram integration |
-| Adicionar integração com o WhatsApp | Add WhatsApp integration |
+| Conectar | Connect |
+| Conectar o Instagram | Connect Instagram |
+| Conectar o WhatsApp | Connect WhatsApp |
 | Inbox / Conversa | Inbox / Conversation |
 | Enviar | Send |
-| Modelos de mensagem | Message templates |
+| Template | Message template |

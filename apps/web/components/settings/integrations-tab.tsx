@@ -556,8 +556,10 @@ function InstagramLogin({ tenantId, enabled, label }: { tenantId: string; enable
 }
 
 /**
- * WhatsApp: abre o cadastro incorporado da Meta. Quem já usa o app WhatsApp Business escolhe conectar o app e
- * escaneia um QR code com o celular (Coexistência): o número continua funcionando no app.
+ * WhatsApp: o botão abre um modal do Dish Desk com o passo a passo; dele sai a janela do cadastro incorporado da
+ * Meta (a Meta não deixa essas páginas dentro de outro site, então a janela continua separada). Quem já usa o app
+ * WhatsApp Business escolhe conectar o app e escaneia um QR code com o celular (Coexistência): o número continua
+ * funcionando no app.
  */
 function WhatsAppSignup({ tenantId, ids, label }: { tenantId: string; ids: { appId: string; configId: string }; label: string }) {
   const { request } = useAuth();
@@ -565,6 +567,9 @@ function WhatsAppSignup({ tenantId, ids, label }: { tenantId: string; ids: { app
   const toast = useToast();
   const [sdk, setSdk] = useState<FacebookSdk | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
+  // "meta": a janela da Meta está aberta; "saving": a Meta respondeu e o Dish Desk está guardando a conexão.
+  const [step, setStep] = useState<"idle" | "meta" | "saving">("idle");
 
   // O SDK carrega antes do clique: a janela da Meta precisa abrir no próprio clique, senão o navegador a bloqueia.
   useEffect(() => {
@@ -574,24 +579,65 @@ function WhatsAppSignup({ tenantId, ids, label }: { tenantId: string; ids: { app
   async function connect() {
     if (!sdk) return;
     setFailure(null);
+    setStep("meta");
     try {
       const result = await runEmbeddedSignup(sdk, ids.configId);
       if (!result) return; // janela fechada
+      setStep("saving");
       await request(`/integrations/${tenantId}/whatsapp/signup`, { method: "POST", body: result });
       await queryClient.invalidateQueries({ queryKey: ["integrations", tenantId] });
+      setOpen(false);
       toast("WhatsApp conectado");
     } catch (error) {
       leaveIfBlocked(error, tenantId);
       setFailure(error instanceof Error ? error.message : "Não foi possível conectar o WhatsApp.");
+    } finally {
+      setStep("idle");
     }
   }
 
   return (
     <div>
-      <AddButton disabled={!sdk} onClick={connect}>
+      <AddButton disabled={!sdk} onClick={() => setOpen(true)}>
         {label}
       </AddButton>
-      {failure && <Failure>{failure}</Failure>}
+      {failure && !open && <Failure>{failure}</Failure>}
+      <Dialog open={open} onOpenChange={(next) => step === "idle" && setOpen(next)}>
+        <DialogContent className="w-[460px]">
+          <div className="flex items-center gap-3.5 border-b border-surface-2 px-[26px] py-[22px]">
+            <SystemIcon type="WHATSAPP" className="size-[46px] rounded-2xl text-[14px]" />
+            <div className="min-w-0">
+              <DialogTitle className="text-[16px]">Conectar o WhatsApp</DialogTitle>
+              <DialogDescription className="mt-0.5">Cadastro oficial da Meta</DialogDescription>
+            </div>
+            {step === "idle" && <CloseButton onClick={() => setOpen(false)} />}
+          </div>
+          <div className="px-[26px] py-[22px]">
+            <p className="mb-3 leading-normal text-ink-2">Ao continuar, abrimos uma janela da Meta, onde você faz o login e escolhe o número.</p>
+            <ol className="mb-4 list-decimal space-y-1.5 pl-5 leading-normal text-ink-2">
+              <li>Entre com o seu Facebook e escolha a conta da empresa.</li>
+              <li>Informe o número do restaurante.</li>
+              <li>Se o número já usa o app WhatsApp Business, escolha conectar o app e escaneie o QR code com o celular. O número continua funcionando no app.</li>
+              <li>Se o número não usa o app, a Meta manda um código por SMS ou ligação.</li>
+            </ol>
+            <p className="mb-[18px] flex items-start gap-[9px] rounded-xl border border-warning-line bg-warning-lt px-[13px] py-[11px] text-[11px] leading-[1.55] text-warning-ink">
+              <CircleAlertIcon className="mt-px size-3.5 shrink-0 text-warning" aria-hidden />
+              Para o QR code, deixe o app WhatsApp Business atualizado no celular e com o número em uso há alguns dias. Libere pop-ups para este site se o navegador bloquear a janela.
+            </p>
+            {step === "meta" && <p className="mb-3 text-[12px] text-ink-3">Aguardando você concluir na janela da Meta…</p>}
+            {step === "saving" && <p className="mb-3 text-[12px] text-ink-3">Guardando a conexão…</p>}
+            {failure && <Failure>{failure}</Failure>}
+            <div className="mt-3 flex justify-end gap-2">
+              <Button variant="ghost" disabled={step !== "idle"} onClick={() => setOpen(false)}>
+                Cancelar
+              </Button>
+              <Button variant="accent" disabled={!sdk} onClick={connect}>
+                Abrir a janela da Meta
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
