@@ -195,13 +195,17 @@ export class WhatsAppConnector implements ChannelConnector {
     return { name: [verifiedName, phone && `(${phone})`].filter(Boolean).join(" ") || `WhatsApp ${phoneNumberId}` };
   }
 
-  /** Cadastro incorporado: troca o código da janela da Meta pelo token da empresa, que não expira. */
+  /**
+   * Cadastro incorporado: troca o código da janela da Meta pelo token da empresa, que não expira. O código vem do SDK
+   * do JavaScript, que usa um endereço interno da Meta como redirect_uri: nesse caso a troca tem de mandar o
+   * redirect_uri vazio (omitido, a Meta recusa com "redirect_uri is identical to the one you used").
+   */
   async exchangeSignupCode(code: string): Promise<string> {
     if (this.env.CHANNELS_DRY_RUN) return `dry-run-token-${code.slice(0, 8)}`;
     const { META_APP_ID: appId, META_APP_SECRET: appSecret } = this.env;
     if (!appId || !appSecret) throw new Error("o cadastro do WhatsApp não está configurado neste servidor");
     const url = new URL(`${this.env.META_GRAPH_URL}/oauth/access_token`);
-    url.search = new URLSearchParams({ client_id: appId, client_secret: appSecret, code }).toString();
+    url.search = new URLSearchParams({ client_id: appId, client_secret: appSecret, code, redirect_uri: "" }).toString();
     const body = (await graph(fetch(url, { signal: AbortSignal.timeout(15_000) }))) as { access_token?: string };
     if (!body.access_token) throw new Error("Meta: a resposta não trouxe o token.");
     return body.access_token;

@@ -216,6 +216,8 @@ describe("Integrações (Configurações)", () => {
       const { body } = await signup({ code: "codigo-da-janela-meta", wabaId: "999000333", coexistence: true }).expect(201);
       expect(body).toMatchObject({ type: "WHATSAPP", externalId: "555000222", name: "Danilo Lanches (+55 86 99973-1647)" });
       expect(graph.requests.some((r) => r.path.startsWith("/oauth/access_token?") && r.path.includes("code=codigo-da-janela-meta"))).toBe(true);
+      // Código do SDK do JavaScript: a Meta exige o redirect_uri vazio na troca.
+      expect(graph.requests.some((r) => r.path.startsWith("/oauth/access_token?") && r.path.endsWith("&redirect_uri="))).toBe(true);
       expect(graph.requests.some((r) => r.path === "/555000222/register")).toBe(false);
       expect(graph.requests).toContainEqual(
         expect.objectContaining({ method: "POST", path: "/999000333/subscribed_apps", authorization: "Bearer token-da-empresa-123" }),
