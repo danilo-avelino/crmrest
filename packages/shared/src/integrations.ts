@@ -66,5 +66,14 @@ export const WhatsAppSignupRequest = z.object({
   phoneNumberId: digits("O ID do número tem só dígitos.").optional(),
   /** true: número que continua no app WhatsApp Business (Coexistência); false: número novo, a registrar na Cloud API. */
   coexistence: z.boolean().optional(),
+  /**
+   * O redirect_uri que o SDK da Meta usou ao abrir a janela (um endereço interno da Meta). A troca do código pelo token
+   * só é aceita com o mesmo valor; sem ele, a API manda vazio.
+   */
+  redirectUri: z
+    .string()
+    .max(2000)
+    .refine((value) => /^https:\/\/([a-z0-9-]+\.)*facebook\.com\//.test(value), "Endereço de retorno inválido.")
+    .optional(),
 });
 export type WhatsAppSignupRequest = z.infer<typeof WhatsAppSignupRequest>;

@@ -78,6 +78,9 @@ export class OrdersService {
         const confirmed = at("CONFIRMED");
         const ready = at("READY_TO_PICKUP");
         const ifood = order.channel.type === "IFOOD";
+        // Sem a trava, o Dish Desk só acompanha o pedido: nenhuma ação é oferecida.
+        const actions = ifood && this.env.IFOOD_ORDER_ACTIONS;
+        const dispute = ifood ? openDispute(order.events, now) : null;
         return {
           ...toOrderDto(order),
           tenant: order.tenant,
@@ -85,10 +88,10 @@ export class OrdersService {
           history: histories.get(order.contact.id)!,
           events: order.events.map((event) => ({ code: event.code, occurredAt: event.occurredAt.toISOString(), detail: eventDetail(event) })),
           preparationSeconds: confirmed && ready ? Math.round((ready.getTime() - confirmed.getTime()) / 1000) : null,
-          nextAction: nextOrderAction(order),
-          cancelable: ifood && CANCELABLE.has(order.status),
+          nextAction: actions ? nextOrderAction(order) : null,
+          cancelable: actions && CANCELABLE.has(order.status),
           platform: ifood ? platformInfo(order.raw) : null,
-          dispute: ifood ? openDispute(order.events, now) : null,
+          dispute: dispute && { ...dispute, answerable: actions },
         };
       }),
       total,
@@ -106,7 +109,10 @@ export class OrdersService {
     });
   }
 
-  /** Botão do pedido: informa ao iFood a próxima etapa. O status só muda quando o evento do iFood chega pelo polling. */
+  /**
+   * Botão do pedido: informa ao iFood a próxima etapa. O status só muda quando o evento do iFood chega pelo polling.
+   * Esta e as outras ações do pedido só existem com a trava IFOOD_ORDER_ACTIONS ligada.
+   */
   async advance(auth: RequestAuth, orderId: string): Promise<{ action: OrderAction }> {
     const order = await this.ifoodOrder(auth, orderId);
     const action = nextOrderAction(order);
@@ -162,6 +168,9 @@ export class OrdersService {
     if (!order) throw new NotFoundException("Pedido não encontrado.");
     if (order.channel.type !== "IFOOD" || !this.ifood.configured) {
       throw new UnprocessableEntityException("Este pedido não pode ser alterado pelo Dish Desk.");
+    }
+    if (!this.env.IFOOD_ORDER_ACTIONS) {
+      throw new UnprocessableEntityException("O Dish Desk só acompanha os pedidos do iFood: a ação é feita no sistema de pedidos da loja.");
     }
     return order;
   }

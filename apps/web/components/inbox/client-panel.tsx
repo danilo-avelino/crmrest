@@ -151,14 +151,10 @@ export function ClientPanel({
 
           {data.identities.length > 0 && (
             <Section title="Canais vinculados">
-              {data.identities.map((identity) => (
-                <div key={`${identity.channelType}-${identity.externalId}`} className="flex items-center gap-[7px]">
-                  <span className={cn("size-2 shrink-0 rounded-full", CHANNEL_DOT[identity.channelType])} />
-                  <span className="text-[12.5px]">
-                    {CHANNEL_LABEL[identity.channelType]}
-                    {identity.username && ` @${identity.username}`}
-                    {identity.channelType === "WHATSAPP" && ` ${formatPhone(phoneFromWhatsAppId(identity.externalId))}`}
-                  </span>
+              {linkedChannels(data.identities).map((channel) => (
+                <div key={channel.label} className="flex items-center gap-[7px]">
+                  <span className={cn("size-2 shrink-0 rounded-full", CHANNEL_DOT[channel.channelType])} />
+                  <span className="text-[12.5px]">{channel.label}</span>
                 </div>
               ))}
             </Section>
@@ -252,6 +248,18 @@ export function Tags({ tags, onChange }: { tags: string[]; onChange: (manual: Ma
 }
 
 /** CPF mascarado; o completo só sob demanda e com registro em auditoria (§8). */
+/** Canais vinculados como aparecem no painel, sem repetir: dois cadastros no mesmo canal com o mesmo texto viram uma linha só. */
+export function linkedChannels(identities: ContactDetail["identities"]) {
+  const channels = new Map<string, ContactDetail["identities"][number]["channelType"]>();
+  for (const identity of identities) {
+    let label = CHANNEL_LABEL[identity.channelType];
+    if (identity.username) label += ` @${identity.username}`;
+    if (identity.channelType === "WHATSAPP") label += ` ${formatPhone(phoneFromWhatsAppId(identity.externalId))}`;
+    channels.set(label, identity.channelType);
+  }
+  return [...channels].map(([label, channelType]) => ({ label, channelType }));
+}
+
 export function Cpf({ contactId, masked }: { contactId: string; masked: string }) {
   const { request } = useAuth();
   const [full, setFull] = useState<string | null>(null);

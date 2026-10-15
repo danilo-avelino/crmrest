@@ -95,7 +95,7 @@ export class IfoodError extends Error {
 }
 
 export class IfoodClient {
-  private token: { value: string; expiresAt: number } | null = null;
+  private token: { value: string; issuedAt: number; expiresAt: number } | null = null;
 
   constructor(private readonly env: Pick<Env, "IFOOD_API_URL" | "IFOOD_CLIENT_ID" | "IFOOD_CLIENT_SECRET">) {}
 
@@ -110,8 +110,20 @@ export class IfoodClient {
     return z.array(IfoodEvent).parse(await response.json());
   }
 
+  /**
+   * O token lista as lojas que autorizavam o aplicativo quando foi emitido: loja aprovada depois só entra num token
+   * novo. Descarta o token guardado, a não ser que tenha menos de 1 minuto (para não pedir outro a cada consulta), e
+   * diz se descartou.
+   */
+  forgetToken(): boolean {
+    if (!this.token || Date.now() - this.token.issuedAt < 60_000) return false;
+    this.token = null;
+    return true;
+  }
+
   /** A loja autoriza este aplicativo? O iFood responde 403 à consulta de eventos de uma loja que não o autorizou. */
   async authorizes(merchantId: string): Promise<boolean> {
+    this.forgetToken(); // a loja pode ter aprovado o acesso depois do token guardado
     try {
       await this.poll([merchantId]); // sem confirmar: os eventos continuam na fila para o polling
       return true;
@@ -191,7 +203,7 @@ export class IfoodClient {
     });
     if (!response.ok) throw new Error(`iFood autenticação: HTTP ${response.status}`);
     const body = z.object({ accessToken: z.string(), expiresIn: z.coerce.number() }).parse(await response.json());
-    this.token = { value: body.accessToken, expiresAt: Date.now() + body.expiresIn * 1000 };
+    this.token = { value: body.accessToken, issuedAt: Date.now(), expiresAt: Date.now() + body.expiresIn * 1000 };
     return body.accessToken;
   }
 }

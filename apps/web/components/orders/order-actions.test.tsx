@@ -27,6 +27,7 @@ const dispute = {
   expiresAt: "2026-10-13T21:09:00.000Z",
   timeoutAction: "ACCEPT_CANCELLATION",
   acceptReasons: ["CUSTOMER_REQUEST"],
+  answerable: true,
 };
 
 function show(patch: Partial<OrderListItem> = {}) {
@@ -122,6 +123,14 @@ describe("ações do pedido do iFood", () => {
     update({ status: "PREPARING", nextAction: "READY", dispute: null });
     expect(screen.queryByRole("status")).toBeNull();
     expect(screen.getByRole("button", { name: "Marcar como pronto" })).toBeTruthy();
+  });
+
+  it("Dish Desk só acompanhando: avisa do pedido do cliente, sem botões", () => {
+    show({ status: "PREPARING", nextAction: null, cancelable: false, dispute: { ...dispute, answerable: false } });
+    const notice = screen.getByRole("alert").textContent;
+    expect(notice).toContain("O cliente pediu o cancelamento do pedido: “Pedi errado”");
+    expect(notice).toContain("Responda no sistema de pedidos da loja até");
+    expect(screen.queryByRole("button")).toBeNull();
   });
 
   it("aceitar o pedido do cliente: só com um dos motivos que o iFood ofereceu", async () => {

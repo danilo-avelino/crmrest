@@ -6,7 +6,6 @@ import {
   type ConversationListItem,
   formatPhone,
   type OrderDto,
-  phoneFromWhatsAppId,
   toE164,
   type UpdateContactRequest,
 } from "@dishdesk/shared";
@@ -18,7 +17,7 @@ import { useAuth } from "@/components/auth/auth-provider";
 import { ClientAvatar, lastListHref, SectionLabel, useDuplicates, useIsAdmin } from "@/components/clients/bits";
 import { AnonymizeDialog, ExportDialog } from "@/components/clients/lgpd-dialogs";
 import { CHANNEL_DOT, StatusBadge } from "@/components/inbox/bits";
-import { Cpf, Tags } from "@/components/inbox/client-panel";
+import { Cpf, linkedChannels, Tags } from "@/components/inbox/client-panel";
 import { ORDER_STATUS } from "@/components/inbox/order-card";
 import { ItemOptions } from "@/components/orders/item-options";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -300,12 +299,10 @@ function Profile({ contact, onInformPhone }: { contact: ContactDetail; onInformP
       {contact.identities.length > 0 && (
         <ProfileSection title="Canais vinculados">
           <div className="flex flex-col gap-2">
-            {contact.identities.map((identity) => (
-              <div key={`${identity.channelType}-${identity.externalId}`} className="flex items-center gap-2 text-[12.5px]">
-                <span className={cn("size-2 shrink-0 rounded-full", CHANNEL_DOT[identity.channelType])} />
-                {CHANNEL_LABEL[identity.channelType]}
-                {identity.username && ` @${identity.username}`}
-                {identity.channelType === "WHATSAPP" && ` ${formatPhone(phoneFromWhatsAppId(identity.externalId))}`}
+            {linkedChannels(contact.identities).map((channel) => (
+              <div key={channel.label} className="flex items-center gap-2 text-[12.5px]">
+                <span className={cn("size-2 shrink-0 rounded-full", CHANNEL_DOT[channel.channelType])} />
+                {channel.label}
               </div>
             ))}
           </div>

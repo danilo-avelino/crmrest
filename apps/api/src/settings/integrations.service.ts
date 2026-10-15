@@ -153,7 +153,7 @@ export class IntegrationsService {
     let verified: VerifiedChannel;
     try {
       const whatsapp = this.connectors.whatsapp;
-      const accessToken = await whatsapp.exchangeSignupCode(body.code);
+      const accessToken = await whatsapp.exchangeSignupCode(body.code, body.redirectUri);
       const wabaId = body.wabaId ?? (await whatsapp.findSignupWaba(accessToken));
       const phoneNumberId = body.phoneNumberId ?? (await whatsapp.findPhoneNumber(wabaId, accessToken));
       // Só um número novo é registrado na Cloud API. Na Coexistência ele já funciona no app WhatsApp Business, e

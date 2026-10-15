@@ -68,6 +68,8 @@ export type OrderDispute = {
   timeoutAction: string | null;
   /** Motivos que o iFood aceita para a loja concordar (vazio: não pede motivo). */
   acceptReasons: string[];
+  /** Dá para responder pelo Dish Desk (false: ele só acompanha, a resposta é no sistema de pedidos da loja). */
+  answerable: boolean;
 };
 
 /** Motivos de decisão da Plataforma de Negociação do iFood; para recusar, a loja escolhe um deles. */
@@ -95,7 +97,7 @@ export type OrderListItem = OrderDto & {
   preparationSeconds: number | null;
   /** Pedidos do cliente em todas as fontes (inclui este). */
   history: CustomerHistory;
-  /** Próxima etapa que dá para informar à plataforma (null: nenhuma, ou a origem não aceita). */
+  /** Próxima etapa que dá para informar à plataforma (null: nenhuma, a origem não aceita, ou o Dish Desk só acompanha). */
   nextAction: OrderAction | null;
   /** Dá para pedir o cancelamento à plataforma (ela ainda decide pelos motivos que oferece). */
   cancelable: boolean;

@@ -7,6 +7,7 @@ import type { INestApplication } from "@nestjs/common";
 import type { Queue } from "bullmq";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { ENV } from "../src/config/env.js";
 import { IfoodService } from "../src/inbound/ifood.service.js";
 import { QUEUES } from "../src/queues/queues.module.js";
 import { accessTokenFor, admin, createChannelFixture, createTestApp } from "./helpers.js";
@@ -27,6 +28,7 @@ async function startMockIfood() {
     rejectActions: false,
     forbidden: new Set<string>(),
     forbidAll: false,
+    oldestValidToken: 0,
   };
   const server = createServer(async (req, res) => {
     let raw = "";
@@ -37,15 +39,17 @@ async function startMockIfood() {
 
     if (url === "/authentication/v1.0/oauth/token") {
       state.tokenRequests.push(raw);
-      return json(200, { accessToken: "token-ifood", type: "bearer", expiresIn: 21600 });
+      return json(200, { accessToken: `token-ifood-${state.tokenRequests.length}`, type: "bearer", expiresIn: 21600 });
     }
-    if (req.headers.authorization !== "Bearer token-ifood") return json(401);
+    const token = Number(/^Bearer token-ifood-(\d+)$/.exec(req.headers.authorization ?? "")?.[1]);
+    if (!token) return json(401);
     if (url === "/order/v1.0/events:polling") {
       const merchants = String(req.headers["x-polling-merchants"]).split(",");
       state.pollingMerchants.push(merchants.join(","));
       // Como o iFood: id fora do formato = 400; uma loja que não autoriza o aplicativo = 403 para a consulta inteira.
       if (merchants.some((id) => !/^[0-9a-f-]{36}$/i.test(id))) return json(400);
-      if (state.forbidAll || merchants.some((id) => state.forbidden.has(id))) return json(403);
+      // O token só vale para as lojas que autorizavam o aplicativo quando ele foi emitido.
+      if (state.forbidAll || token < state.oldestValidToken || merchants.some((id) => state.forbidden.has(id))) return json(403);
       const events = state.events.splice(0);
       return events.length ? json(200, events) : json(204);
     }
@@ -120,7 +124,13 @@ describe("iFood (pedidos por polling)", () => {
 
   beforeAll(async () => {
     ifood = await startMockIfood();
-    app = await createTestApp({ IFOOD_CLIENT_ID: "cliente", IFOOD_CLIENT_SECRET: "segredo", IFOOD_API_URL: ifood.url, IFOOD_WIDGET_ID: "widget-teste" });
+    app = await createTestApp({
+      IFOOD_CLIENT_ID: "cliente",
+      IFOOD_CLIENT_SECRET: "segredo",
+      IFOOD_API_URL: ifood.url,
+      IFOOD_WIDGET_ID: "widget-teste",
+      IFOOD_ORDER_ACTIONS: "true",
+    });
     // O teste chama o polling direto: sem o agendamento a cada 30s.
     await app.get<Queue>(getQueueToken(QUEUES.ifood)).removeJobScheduler("ifood-polling");
     service = app.get(IfoodService);
@@ -388,6 +398,23 @@ describe("iFood (pedidos por polling)", () => {
       }
     });
 
+    it("loja aprovada depois do token guardado: renova o token antes de culpar a loja", async () => {
+      // O token do polling é antigo e o iFood só aceita a consulta com um emitido depois da aprovação da loja.
+      const client = service.client as unknown as { token: { issuedAt: number } };
+      client.token.issuedAt -= 5 * 60_000;
+      ifood.state.oldestValidToken = ifood.state.tokenRequests.length + 1;
+      try {
+        ifood.state.orders["pedido-10"] = ifoodOrder("pedido-10", "7006", "cliente-pedido-10");
+        ifood.state.events.push(event("ev-pedido-10", "PLACED", "pedido-10"));
+        await service.poll();
+        expect(ifood.state.tokenRequests).toHaveLength(ifood.state.oldestValidToken);
+        expect(await channelStatus(fx.ifood.id)).toBe("CONNECTED");
+        expect(await admin.order.count({ where: { tenantId: fx.tenant.id, externalOrderId: "pedido-10" } })).toBe(1);
+      } finally {
+        ifood.state.oldestValidToken = 0;
+      }
+    });
+
     it("todas recusadas: o problema é da credencial, nenhuma loja é marcada", async () => {
       ifood.state.forbidAll = true;
       try {
@@ -580,6 +607,7 @@ describe("iFood (pedidos por polling)", () => {
         expiresAt: soon.toISOString(),
         timeoutAction: "ACCEPT_CANCELLATION",
         acceptReasons: ["CUSTOMER_REQUEST"],
+        answerable: true,
       });
 
       await post(order.id, "dispute", { accept: false }).expect(422); // recusa pede motivo
@@ -610,6 +638,36 @@ describe("iFood (pedidos por polling)", () => {
       );
       await service.poll();
       expect((await listed(order.id)).dispute).toBeNull();
+    });
+
+    it("trava desligada (padrão): o Dish Desk só acompanha, sem oferecer nem aceitar ações", async () => {
+      const env = app.get<{ IFOOD_ORDER_ACTIONS: boolean }>(ENV);
+      const waiting = await placed("pedido-11", "7007", "MERCHANT");
+      await arrives("pedido-11", "HANDSHAKE_DISPUTE", {
+        id: "disputa-11",
+        action: "CANCELLATION",
+        message: "Desisti",
+        expiresAt: new Date(Date.now() + 5 * 60_000).toISOString(),
+      });
+      env.IFOOD_ORDER_ACTIONS = false;
+      try {
+        const order = await listed(waiting.id);
+        expect(order).toMatchObject({ status: "PLACED", nextAction: null, cancelable: false });
+        // O pedido do cliente continua visível, só não dá para responder por aqui.
+        expect(order.dispute).toMatchObject({ id: "disputa-11", message: "Desisti", answerable: false });
+        expect(order.platform).not.toBeNull();
+
+        const actions = ifood.state.actions.length;
+        expect((await post(waiting.id, "advance").expect(422)).body.message).toContain("só acompanha os pedidos do iFood");
+        await post(waiting.id, "cancel", { code: "501" }).expect(422);
+        await post(waiting.id, "dispute", { accept: false, reason: "HIGH_STORE_DEMAND" }).expect(422);
+        await request(app.getHttpServer()).get(`/api/orders/${waiting.id}/cancellation-reasons`).set("Authorization", `Bearer ${token}`).expect(422);
+        expect(ifood.state.actions).toHaveLength(actions);
+        expect(ifood.state.disputes.some((answer) => (answer as { id: string }).id === "disputa-11")).toBe(false);
+      } finally {
+        env.IFOOD_ORDER_ACTIONS = true;
+      }
+      expect((await listed(waiting.id)).dispute).toMatchObject({ answerable: true });
     });
 
     it("o iFood recusa a etapa: o painel recebe o motivo, sem erro interno", async () => {

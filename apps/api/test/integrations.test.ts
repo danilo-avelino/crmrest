@@ -216,12 +216,23 @@ describe("Integrações (Configurações)", () => {
       const { body } = await signup({ code: "codigo-da-janela-meta", wabaId: "999000333", coexistence: true }).expect(201);
       expect(body).toMatchObject({ type: "WHATSAPP", externalId: "555000222", name: "Danilo Lanches (+55 86 99973-1647)" });
       expect(graph.requests.some((r) => r.path.startsWith("/oauth/access_token?") && r.path.includes("code=codigo-da-janela-meta"))).toBe(true);
-      // Código do SDK do JavaScript: a Meta exige o redirect_uri vazio na troca.
+      // Sem o redirect_uri da janela, a troca vai com ele vazio.
       expect(graph.requests.some((r) => r.path.startsWith("/oauth/access_token?") && r.path.endsWith("&redirect_uri="))).toBe(true);
       expect(graph.requests.some((r) => r.path === "/555000222/register")).toBe(false);
       expect(graph.requests).toContainEqual(
         expect.objectContaining({ method: "POST", path: "/999000333/subscribed_apps", authorization: "Bearer token-da-empresa-123" }),
       );
+    });
+
+    it("troca o código com o mesmo redirect_uri que o SDK usou na janela da Meta", async () => {
+      const redirectUri = "https://staticxx.facebook.com/x/connect/xd_arbiter/?version=46#cb=f1&origin=https%3A%2F%2Fwww.dishdesk.com.br";
+      await signup({ code: "codigo-com-redirect", wabaId: "999000333", coexistence: true, redirectUri }).expect(201);
+      const exchange = graph.requests.find((r) => r.path.startsWith("/oauth/access_token?") && r.path.includes("code=codigo-com-redirect"));
+      expect(new URLSearchParams(exchange?.path.split("?").slice(1).join("?")).get("redirect_uri")).toBe(redirectUri);
+    });
+
+    it("recusa redirect_uri que não é da Meta", async () => {
+      await signup({ code: "codigo-da-janela-meta", wabaId: "999000333", redirectUri: "https://exemplo.com/" }).expect(400);
     });
 
     it("número novo: registra na Cloud API com um PIN guardado cifrado", async () => {

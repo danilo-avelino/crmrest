@@ -62,14 +62,23 @@ export class IfoodService implements OnModuleInit {
 
   /**
    * Eventos de todas as lojas numa consulta só. O iFood recusa a consulta inteira (403) se uma das lojas não autoriza
-   * mais o aplicativo: nesse caso consulta loja a loja; a recusada fica "Com erro" (sai do polling até o restaurante
-   * conectar de novo) e as outras seguem. Se todas forem recusadas, o problema é da credencial: ninguém é marcado.
+   * mais o aplicativo: nesse caso, depois de tentar com um token novo, consulta loja a loja; a recusada fica "Com erro"
+   * (sai do polling até o restaurante conectar de novo) e as outras seguem. Se todas forem recusadas, o problema é da
+   * credencial: ninguém é marcado.
    */
   private async pollEvents(channels: Map<string, ResolvedChannel>): Promise<IfoodEvent[]> {
     try {
       return await this.client.poll([...channels.keys()]);
     } catch (error) {
       if (!(error instanceof IfoodError) || error.status !== 403) throw error;
+    }
+    // O token pode ser anterior à aprovação de uma loja recém-conectada: antes de culpar a loja, tenta com um novo.
+    if (this.client.forgetToken()) {
+      try {
+        return await this.client.poll([...channels.keys()]);
+      } catch (error) {
+        if (!(error instanceof IfoodError) || error.status !== 403) throw error;
+      }
     }
     const events: IfoodEvent[] = [];
     const refused: ResolvedChannel[] = [];

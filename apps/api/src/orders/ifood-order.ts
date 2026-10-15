@@ -77,7 +77,7 @@ const Settlement = z.looseObject({ disputeId: z.string(), status: z.string().opt
  * Plataforma de Negociação: a negociação mais recente (HANDSHAKE_DISPUTE) ainda sem desfecho (HANDSHAKE_SETTLEMENT) e
  * dentro do prazo. `events` em ordem de chegada.
  */
-export function openDispute(events: StoredEvent[], now: Date): OrderDispute | null {
+export function openDispute(events: StoredEvent[], now: Date): Omit<OrderDispute, "answerable"> | null {
   const settled = new Set(
     events.filter((event) => event.code === "HANDSHAKE_SETTLEMENT").map((event) => Settlement.safeParse(event.metadata).data?.disputeId),
   );

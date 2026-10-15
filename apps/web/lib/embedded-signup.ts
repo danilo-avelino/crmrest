@@ -44,7 +44,8 @@ export function loadFacebookSdk(appId: string): Promise<FacebookSdk> {
 export function runEmbeddedSignup(sdk: FacebookSdk, configId: string): Promise<WhatsAppSignupRequest | null> {
   return new Promise((resolve, reject) => {
     let code: string | undefined;
-    let session: Omit<WhatsAppSignupRequest, "code"> | undefined;
+    let session: Omit<WhatsAppSignupRequest, "code" | "redirectUri"> | undefined;
+    let redirectUri: string | undefined;
     let timer: ReturnType<typeof setTimeout> | undefined;
 
     const done = (finish: () => void) => {
@@ -54,7 +55,7 @@ export function runEmbeddedSignup(sdk: FacebookSdk, configId: string): Promise<W
     };
     const complete = () => {
       if (code && session) {
-        const result = { code, ...session };
+        const result = { code, ...session, redirectUri };
         done(() => resolve(result));
       }
     };
@@ -82,20 +83,36 @@ export function runEmbeddedSignup(sdk: FacebookSdk, configId: string): Promise<W
     }
 
     window.addEventListener("message", onMessage);
-    sdk.login(
-      (response) => {
-        code = response.authResponse?.code;
-        if (!code) return done(() => resolve(null));
-        complete();
-        // O código veio, mas a conta escolhida não (ex.: "continuar com as configurações anteriores"): a API descobre a conta pelo token.
-        if (!session) timer = setTimeout(() => done(() => resolve({ code: code as string })), 3_000);
-      },
-      {
-        config_id: configId,
-        response_type: "code",
-        override_default_response_type: true,
-        extras: { setup: {}, featureType: "whatsapp_business_app_onboarding", sessionInfoVersion: "3" },
-      },
-    );
+    // A troca do código só é aceita com o mesmo redirect_uri do pedido de login, que o SDK monta sozinho (um endereço
+    // interno da Meta): ele é lido da janela que o SDK abre, dentro desta mesma chamada.
+    const open = window.open;
+    window.open = (url, ...rest) => {
+      try {
+        const value = new URL(String(url)).searchParams.get("redirect_uri");
+        if (value && /^https:\/\/([a-z0-9-]+\.)*facebook\.com\//.test(value)) redirectUri = value;
+      } catch {
+        // não é a janela da Meta: a troca segue sem o redirect_uri
+      }
+      return open.call(window, url, ...rest);
+    };
+    try {
+      sdk.login(
+        (response) => {
+          code = response.authResponse?.code;
+          if (!code) return done(() => resolve(null));
+          complete();
+          // O código veio, mas a conta escolhida não (ex.: "continuar com as configurações anteriores"): a API descobre a conta pelo token.
+          if (!session) timer = setTimeout(() => done(() => resolve({ code: code as string, redirectUri })), 3_000);
+        },
+        {
+          config_id: configId,
+          response_type: "code",
+          override_default_response_type: true,
+          extras: { setup: {}, featureType: "whatsapp_business_app_onboarding", sessionInfoVersion: "3" },
+        },
+      );
+    } finally {
+      window.open = open;
+    }
   });
 }

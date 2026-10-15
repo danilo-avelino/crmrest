@@ -31,7 +31,8 @@ type ReasonPicker = {
 /**
  * O que a equipe informa ao iFood pela aba Pedidos: um botão só, que muda com o status; o cancelamento, com os motivos
  * do iFood; e a resposta ao pedido de cancelamento do cliente. O iFood só aceita o pedido de mudança: o resultado chega
- * pelo polling, então os botões dão lugar a um aviso até o pedido mudar.
+ * pelo polling, então os botões dão lugar a um aviso até o pedido mudar. Com a trava IFOOD_ORDER_ACTIONS desligada na
+ * API, o Dish Desk só acompanha: não há botões, e o pedido do cliente aparece como aviso.
  */
 export function OrderActions({ order }: { order: OrderListItem }) {
   const { request } = useAuth();
@@ -118,18 +119,25 @@ export function OrderActions({ order }: { order: OrderListItem }) {
             <span className="font-medium">{DISPUTE_TITLE[dispute.action] ?? "O cliente abriu uma negociação no iFood"}</span>
             {dispute.message && <>: “{dispute.message}”</>}
             <span className="text-ink-2">
-              {dispute.expiresAt && <> · Responda até {clock(dispute.expiresAt)}.</>}
+              {dispute.expiresAt && (
+                <>
+                  {" "}
+                  · {dispute.answerable ? "Responda" : "Responda no sistema de pedidos da loja"} até {clock(dispute.expiresAt)}.
+                </>
+              )}
               {dispute.timeoutAction && TIMEOUT_TEXT[dispute.timeoutAction] && <> {TIMEOUT_TEXT[dispute.timeoutAction]}</>}
             </span>
           </span>
-          <span className="flex shrink-0 gap-1.5">
-            <Button variant="ghost" size="xs" onClick={() => answer(false, dispute)}>
-              Recusar
-            </Button>
-            <Button variant="outline" size="xs" onClick={() => answer(true, dispute)}>
-              Aceitar
-            </Button>
-          </span>
+          {dispute.answerable && (
+            <span className="flex shrink-0 gap-1.5">
+              <Button variant="ghost" size="xs" onClick={() => answer(false, dispute)}>
+                Recusar
+              </Button>
+              <Button variant="outline" size="xs" onClick={() => answer(true, dispute)}>
+                Aceitar
+              </Button>
+            </span>
+          )}
         </div>
       )}
       <div className="flex items-center justify-end gap-1.5">
