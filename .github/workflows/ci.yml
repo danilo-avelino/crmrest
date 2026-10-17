@@ -8,23 +8,6 @@ on:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: public.ecr.aws/docker/library/postgres:18-alpine
-        env:
-          POSTGRES_USER: comanda
-          POSTGRES_PASSWORD: comanda
-          POSTGRES_DB: comanda
-        ports: ["5434:5432"]
-        options: >-
-          --health-cmd "pg_isready -U comanda -d comanda"
-          --health-interval 5s --health-timeout 5s --health-retries 10
-      redis:
-        image: public.ecr.aws/docker/library/redis:8-alpine
-        ports: ["6381:6379"]
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 5s --health-timeout 5s --health-retries 10
 
     # Valores só de CI (nada de produção aqui).
     env:
@@ -39,6 +22,35 @@ jobs:
 
     steps:
       - uses: actions/checkout@v5
+
+      # Postgres e Redis sobem aqui, e não em `services:`, porque lá um pull que falha derruba o CI (e a Railway pula o
+      # deploy): o Docker Hub deu 429 e o ECR público deu 429 e timeout. Tenta cada registro, com novas rodadas.
+      - name: Postgres e Redis
+        run: |
+          pull() {
+            for round in 1 2 3; do
+              for image in "mirror.gcr.io/library/$1" "public.ecr.aws/docker/library/$1" "docker.io/library/$1"; do
+                if timeout 120 docker pull -q "$image"; then docker tag "$image" "$1"; return 0; fi
+              done
+              sleep $((round * 15))
+            done
+            echo "::error::Não consegui baixar $1 de nenhum registro."
+            return 1
+          }
+          pull postgres:18-alpine
+          pull redis:8-alpine
+          docker run -d --name postgres -p 5434:5432 \
+            -e POSTGRES_USER=comanda -e POSTGRES_PASSWORD=comanda -e POSTGRES_DB=comanda postgres:18-alpine
+          docker run -d --name redis -p 6381:6379 redis:8-alpine
+          # -h 127.0.0.1: durante o initdb o Postgres só escuta no socket, então o TCP só responde quando ele está pronto.
+          for i in $(seq 60); do
+            if docker exec postgres pg_isready -h 127.0.0.1 -U comanda -d comanda && docker exec redis redis-cli ping; then exit 0; fi
+            sleep 1
+          done
+          echo "::error::Postgres ou Redis não ficaram prontos."
+          docker logs postgres; docker logs redis
+          exit 1
+
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v5
         with:
