@@ -16,218 +16,275 @@
 <header class="site-header">
   <div class="wrap">
     <a class="brand" href="./" aria-label="Dish Desk — início">
-      <span class="brand-mark"><svg viewBox="0 0 17 17" fill="none" aria-hidden="true"><rect x="3" y="4.5" width="11" height="1.5" rx=".75" fill="#F7F4EF"/><rect x="3" y="7.75" width="7.5" height="1.5" rx=".75" fill="#F7F4EF"/><rect x="3" y="11" width="5" height="1.5" rx=".75" fill="#fff" opacity=".5"/></svg></span>
+      <span class="brand-mark"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="3" y="4" width="10" height="1.5" rx=".75" fill="#F7F4EF"/><rect x="3" y="7.25" width="7" height="1.5" rx=".75" fill="#F7F4EF"/><rect x="3" y="10.5" width="4.5" height="1.5" rx=".75" fill="#C4341A"/></svg></span>
       <span class="brand-name">Dish Desk</span>
     </a>
-    <nav class="nav">
+    <nav class="nav" aria-label="Principal">
       <a class="link" href="#como-funciona">Como funciona</a>
-      <a class="link" href="#canais">Canais</a>
-      <a class="link" href="#contato">Contato</a>
-      <a class="btn btn-dark" href="/login">Entrar</a>
+      <a class="link" href="#clientes">Clientes</a>
+      <a class="link" href="#preco">Preço</a>
+      <a class="plain" href="/login">Entrar</a>
+      <a class="btn btn-accent" href="/cadastro">Testar grátis</a>
     </nav>
   </div>
 </header>
 
 <main>
-  <section class="hero" style="padding-bottom:88px;">
+  <section class="hero">
     <div class="wrap">
-      <div class="eyebrow">
-        <span class="dot dot-wa"></span><span class="dot dot-ig"></span><span class="dot dot-if"></span>
-        WhatsApp · Instagram · iFood
+      <h1>Atenda WhatsApp, Instagram e iFood sem trocar de tela.</h1>
+      <p class="lead">O Dish Desk junta as conversas do seu restaurante numa fila só e mostra, ao lado de cada uma, o pedido e o histórico do cliente.</p>
+      <div class="cta-row">
+        <a class="btn btn-accent" href="/cadastro">Testar grátis por 15 dias</a>
+        <a class="btn btn-ghost" href="https://wa.me/5586999731647?text=Ol%C3%A1!%20Quero%20conhecer%20o%20Dish%20Desk.">Falar no WhatsApp</a>
       </div>
-      <h1>Todo o atendimento do seu restaurante, <em>em uma caixa de entrada só.</em></h1>
-      <p class="lead">O Dish Desk junta as mensagens do WhatsApp, do Instagram e do iFood em um só lugar, com o histórico de pedidos de cada cliente ao lado da conversa.</p>
-      <div class="hero-cta">
-        <a class="btn btn-accent btn-lg" href="https://wa.me/5586999731647?text=Ol%C3%A1!%20Quero%20conhecer%20o%20Dish%20Desk.">Falar com a gente</a>
-        <a class="btn btn-ghost btn-lg" href="/cadastro">Testar grátis por 15 dias</a>
-      </div>
-      <div class="shot">
-        <img src="assets/inbox.webp" width="2560" height="1800" alt="Tela da caixa de entrada do Dish Desk: lista de conversas, conversa aberta com pedido do iFood e painel com dados do cliente">
+      <p class="fine">Não pede cartão. Depois do teste, R$ 99 por mês.</p>
+      <div class="hero-shot">
+        <img src="assets/inbox.webp" width="2560" height="1800" fetchpriority="high" alt="Caixa de entrada do Dish Desk: no WhatsApp, a Maria informa o número do pedido, a automação encontra o pedido 4853 do iFood e o cadastro dela é unido ao do pedido. Ao lado, o pedido com a saída prevista atrasada">
       </div>
     </div>
   </section>
 
-  <section id="como-funciona" style="padding-top:0;">
+  <section id="como-funciona" class="night">
     <div class="wrap">
-      <div class="section-head">
-        <div class="kicker">Como funciona</div>
-        <h2>Menos abas abertas, mais clientes respondidos.</h2>
-        <p>Feito para a rotina de quem atende no balcão, no delivery e no pico do jantar.</p>
-      </div>
-      <div class="features">
-        <div class="feature">
-          <div class="icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg></div>
-          <h3>Uma caixa de entrada</h3>
-          <p>Conversas de todos os canais numa fila só, com status de aberto, pendente e resolvido.</p>
-        </div>
-        <div class="feature">
-          <div class="icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg></div>
-          <h3>Pedido ao lado da conversa</h3>
-          <p>Itens, valores e status do pedido do iFood aparecem dentro do atendimento, sem trocar de tela.</p>
-        </div>
-        <div class="feature">
-          <div class="icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></div>
-          <h3>Equipe organizada</h3>
-          <p>Atribua conversas, deixe notas internas e veja quem está atendendo cada cliente.</p>
-        </div>
-      </div>
+      <h2 class="lp-h2">Acompanhe um pedido numa sexta à noite.</h2>
+      <p class="lp-intro">Da hora em que a Maria pede no iFood até a nota que ela dá no fim. O Dish Desk manda os avisos e a equipe entra quando precisa.</p>
+
+      <ol class="moments">
+        <li class="moment">
+          <p class="moment-time"><time datetime="18:52">18:52</time></p>
+          <div class="moment-text">
+            <h3>O pedido chega pelo iFood.</h3>
+            <p>A Maria pede uma lasanha. O pedido aparece no Dish Desk com itens, observações e a entrega prometida, já no cadastro dela.</p>
+          </div>
+          <div class="moment-frag" role="img" aria-label="Pedido do iFood 4853, em preparo: lasanha bolonhesa sem cebola, refrigerante e taxa de entrega, total de 67 reais e 40 centavos, entrega prometida até 19:30">
+            <div class="card">
+              <div class="card-head">
+                <span class="card-title"><span class="dot dot-if"></span>Pedido iFood #4853</span>
+                <span class="badge badge-amber">Em preparo</span>
+              </div>
+              <div class="card-lines">
+                <div class="row"><span>1× Lasanha Bolonhesa G</span><span>R$ 54,90</span></div>
+                <div class="obs">Obs.: sem cebola</div>
+                <div class="row"><span>1× Refrigerante lata 350 ml</span><span>R$ 7,50</span></div>
+                <div class="row"><span>Taxa de entrega</span><span>R$ 5,00</span></div>
+                <div class="row total"><span>Total</span><span>R$ 67,40</span></div>
+              </div>
+              <div class="card-foot">Feito às 18:52. Entrega prometida até 19:30.</div>
+            </div>
+          </div>
+        </li>
+
+        <li class="moment">
+          <p class="moment-time"><time datetime="19:41">19:41</time></p>
+          <div class="moment-text">
+            <h3>A Maria pergunta pelo pedido.</h3>
+            <p>Ela chama no WhatsApp. O menu pede o número, encontra o #4853 e, como passou do horário, já responde com a nova previsão de saída.</p>
+          </div>
+          <div class="moment-frag" role="img" aria-label="Conversa no WhatsApp: a Maria avisa que o pedido não chegou e a automação pede desculpas e informa a nova previsão de saída, 19:50">
+            <div class="chat">
+              <div class="bubble in">Boa noite! Meu pedido ainda não chegou. É o 4853.<span class="at">19:41</span></div>
+              <div class="bubble auto">
+                <span class="who">Automação</span>
+                <span class="line">Pedimos desculpas pela demora! 🙏 Seu pedido está levando mais tempo que o normal.</span>
+                <span class="line">Nova previsão de saída do restaurante: por volta das 19:50.</span>
+              </div>
+            </div>
+          </div>
+        </li>
+
+        <li class="moment">
+          <p class="moment-time"><time datetime="19:43">19:43</time></p>
+          <div class="moment-text">
+            <h3>A Ana assume a conversa.</h3>
+            <p>Ao lado da mensagem ela vê o pedido, quanto tempo passou e a saída prevista. Uma nota interna avisa a equipe, e a Maria não vê.</p>
+          </div>
+          <div class="moment-frag stack" role="img" aria-label="Painel do pedido 4853: 51 minutos desde o pedido, entrega prometida 19:30, saída prevista 19:50 e atrasado. Abaixo, nota interna da Ana: cozinha confirmou, sai em 5 minutos">
+            <div class="card card-pad">
+              <div class="row"><span class="label">Pedido da cliente</span><span class="badge badge-amber">Em preparo</span></div>
+              <div class="card-title" style="margin-top: 8px; font-size: 16px; font-variant-numeric: tabular-nums"><span class="dot dot-if"></span>iFood #4853<span style="margin-left: auto">R$ 67,40</span></div>
+              <dl class="facts">
+                <dt>Tempo desde o pedido</dt><dd class="strong">51 min</dd>
+                <dt>Entrega prometida</dt><dd>19:30</dd>
+                <dt>Saída prevista</dt><dd class="late">19:50, atrasado</dd>
+              </dl>
+              <span class="fake-btn" style="margin-top: 16px">Enviar previsão</span>
+            </div>
+            <div class="bubble note"><span class="who">Nota interna da Ana</span>Cozinha confirmou: sai em 5 minutos.</div>
+          </div>
+        </li>
+
+        <li class="moment">
+          <p class="moment-time"><time datetime="19:52">19:52</time></p>
+          <div class="moment-text">
+            <h3>O pedido sai para entrega.</h3>
+            <p>Quando o iFood marca o pedido como despachado, a Maria recebe o aviso no WhatsApp. Ninguém precisou digitar.</p>
+          </div>
+          <div class="moment-frag" role="img" aria-label="Aviso automático no WhatsApp: o pedido 4853 saiu para entrega às 19:52. A Maria responde obrigada">
+            <div class="chat">
+              <div class="bubble auto"><span class="who">Automação</span>🛵 Boa notícia! Seu pedido #4853 saiu para entrega às 19:52.</div>
+              <div class="bubble in">Obrigada!<span class="at">19:53</span></div>
+            </div>
+          </div>
+        </li>
+
+        <li class="moment">
+          <p class="moment-time"><time datetime="20:18">20:18</time></p>
+          <div class="moment-text">
+            <h3>Entregue, e com nota.</h3>
+            <p>O aviso de entrega também vai sozinho. Quando a Ana resolve a conversa, a Maria recebe a pesquisa de satisfação, e a nota entra no relatório da equipe.</p>
+          </div>
+          <div class="moment-frag" role="img" aria-label="Aviso automático de pedido entregue, a Ana resolve a conversa, a automação pede uma nota de 1 a 5 e a Maria responde 5">
+            <div class="chat">
+              <div class="bubble auto"><span class="who">Automação</span>✅ Seu pedido #4853 foi entregue! Bom apetite 😋</div>
+              <div class="event">Ana resolveu a conversa</div>
+              <div class="bubble auto"><span class="who">Automação</span>Qual nota você dá para nosso atendimento? Digite de 1 a 5</div>
+              <div class="bubble in">5<span class="at">20:24</span></div>
+            </div>
+          </div>
+        </li>
+      </ol>
     </div>
   </section>
 
-  <section id="pedidos" style="padding-top:0;">
-    <div class="wrap">
-      <div class="split even">
-        <div class="split-text">
-          <div class="section-head" style="margin-bottom:0;">
-            <div class="kicker">Pedidos</div>
-            <h2>O pedido do cliente aparece sozinho.</h2>
-            <p>Ao abrir a conversa, o Dish Desk já mostra qual pedido o cliente tem ativo no seu restaurante e se ele está no prazo ou atrasado.</p>
-          </div>
-          <ul class="checks">
-            <li><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3 8.5 6.5 12 13 4.5" stroke="#C4341A" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Pedido localizado pelo cadastro do cliente, sem trocar de tela</li>
-            <li><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3 8.5 6.5 12 13 4.5" stroke="#C4341A" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Itens, observações e valor ao lado da conversa</li>
-            <li><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3 8.5 6.5 12 13 4.5" stroke="#C4341A" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Previsão de saída e entrega prometida, com alerta de atraso</li>
-            <li><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3 8.5 6.5 12 13 4.5" stroke="#C4341A" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Avise o cliente da nova previsão direto da conversa</li>
-          </ul>
+  <section id="tom" class="lp-section" style="border-top: 0">
+    <div class="wrap duo">
+      <div class="duo-text">
+        <h2 class="lp-h2">Escolha como o restaurante fala com o cliente.</h2>
+        <p class="lp-intro">As mensagens automáticas saem no tom que você escolher, e dá para trocar quando quiser. Experimente os seis:</p>
+        <div class="tones" role="group" aria-label="Tom das mensagens">
+          <button type="button" class="tone" data-tone="cordial" aria-pressed="true">Cordial</button>
+          <button type="button" class="tone" data-tone="formal" aria-pressed="false">Formal</button>
+          <button type="button" class="tone" data-tone="jovial" aria-pressed="false">Jovial</button>
+          <button type="button" class="tone" data-tone="descontraido" aria-pressed="false">Descontraído</button>
+          <button type="button" class="tone" data-tone="acolhedor" aria-pressed="false">Acolhedor</button>
+          <button type="button" class="tone" data-tone="direto" aria-pressed="false">Direto</button>
         </div>
-        <div class="mock" role="img" aria-label="Conversa com a cliente Maria Oliveira e, abaixo, o pedido do iFood em preparo, com a barra de andamento em vermelho e a saída prevista marcada como atrasada">
-          <div class="mock-head">
-            <span class="mock-avatar">MO</span>
-            <div>
-              <strong>Maria Oliveira</strong>
-              <span class="sub"><span class="dot dot-wa"></span>WhatsApp</span>
-            </div>
-          </div>
-          <div class="mock-body">
-            <div class="bubble in">Oi! Meu pedido ainda não chegou, sabem me dizer onde está?</div>
-          </div>
-          <div class="order">
-            <div class="order-top">
-              <span class="order-label">Pedido do cliente</span>
-              <span class="order-status">Em preparo</span>
-            </div>
-            <div class="order-title"><span class="dot dot-if"></span>iFood #4853<span class="total">R$ 67,40</span></div>
-            <ul class="order-items">
-              <li>1× Lasanha Bolonhesa G<div class="obs">Obs.: sem cebola</div></li>
-              <li>1× Refrigerante Lata 350ml</li>
-            </ul>
-            <div class="order-bar">
-              <span class="fill" style="width:91%;"></span>
-              <span class="mark" style="left:74%;background:#2D7D46;"></span>
-              <span class="mark" style="left:100%;background:#B45309;"></span>
-            </div>
-            <dl class="order-rows">
-              <dt>Decorrido</dt><dd><strong>52 min</strong></dd>
-              <dt><span class="dot" style="background:#B45309;"></span>Saída prevista</dt><dd class="late">19:45 · atrasado</dd>
-              <dt><span class="dot" style="background:#2D7D46;"></span>Entrega prometida (iFood)</dt><dd>19:30</dd>
-            </dl>
-            <div class="order-actions"><span class="btn btn-ghost btn-sm">Enviar previsão</span></div>
-          </div>
-        </div>
+        <p class="tone-desc" id="tone-desc">Simpático e educado, com poucos emojis. É o padrão.</p>
       </div>
-    </div>
-  </section>
-
-  <section style="padding-top:0;">
-    <div class="wrap">
-      <div class="split reverse">
-        <div class="split-text">
-          <div class="section-head" style="margin-bottom:0;">
-            <div class="kicker">Clientes</div>
-            <h2>Conheça quem pede de você.</h2>
-            <p>Cada cliente vira um cadastro único, mesmo quando fala por canais diferentes.</p>
-          </div>
-          <ul class="checks">
-            <li><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3 8.5 6.5 12 13 4.5" stroke="#C4341A" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Histórico de pedidos e total gasto por cliente</li>
-            <li><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3 8.5 6.5 12 13 4.5" stroke="#C4341A" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Tags como VIP, recorrente ou sem glúten</li>
-            <li><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3 8.5 6.5 12 13 4.5" stroke="#C4341A" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Aviso de cadastros duplicados para juntar</li>
-            <li><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3 8.5 6.5 12 13 4.5" stroke="#C4341A" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Dados sensíveis protegidos, de acordo com a LGPD</li>
-          </ul>
+      <div class="duo-visual convo">
+        <div class="convo-head">
+          <span class="avatar" aria-hidden="true">MO</span>
+          <span>
+            <span class="convo-name">Maria Oliveira</span>
+            <span class="convo-channel"><span class="dot dot-wa"></span>WhatsApp</span>
+          </span>
         </div>
-        <div class="shot">
-          <img src="assets/clientes.webp" width="2160" height="1350" loading="lazy" alt="Tela de clientes do Dish Desk: tabela com nome, telefone, canais, bairro, pedidos e total gasto">
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <section id="automacao" style="padding-top:0;">
-    <div class="wrap">
-      <div class="split even">
-        <div class="split-text">
-          <div class="section-head" style="margin-bottom:0;">
-            <div class="kicker">Automação</div>
-            <h2>Ganhe tempo sem perder o atendimento humanizado.</h2>
-            <p>Automatize parte do seu atendimento e deixe a equipe livre para as conversas que precisam de gente.</p>
-          </div>
-          <ul class="checks">
-            <li><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3 8.5 6.5 12 13 4.5" stroke="#C4341A" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Menu inicial que direciona cada conversa</li>
-            <li><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3 8.5 6.5 12 13 4.5" stroke="#C4341A" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Avisos automáticos quando o pedido sai e quando é entregue</li>
-            <li><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3 8.5 6.5 12 13 4.5" stroke="#C4341A" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Mensagem de fora do horário e pesquisa de satisfação</li>
-            <li><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3 8.5 6.5 12 13 4.5" stroke="#C4341A" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Mensagens no tom do seu restaurante, do formal ao descontraído</li>
-            <li><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3 8.5 6.5 12 13 4.5" stroke="#C4341A" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Um atendente assume quando o assunto pede</li>
-          </ul>
-        </div>
-        <div class="mock" role="img" aria-label="Conversa em que a automação cumprimenta a cliente, mostra o menu de atendimento e passa a conversa para a atendente Ana">
-          <div class="mock-head">
-            <span class="mock-avatar">MO</span>
-            <div>
-              <strong>Maria Oliveira</strong>
-              <span class="sub"><span class="dot dot-wa"></span>WhatsApp</span>
-            </div>
-          </div>
-          <div class="mock-body">
-            <div class="bubble in">Boa noite!</div>
-            <div class="bubble auto"><span class="who">Automação · menu de atendimento</span>Olá, Maria! 👋 Em que podemos ajudar?
+        <div class="chat" aria-live="polite">
+          <div class="bubble in">Boa noite!</div>
+          <div class="bubble auto wide">
+            <span class="who">Menu inicial</span>
+            <span class="line pre" id="tone-menu">Olá, Maria! 👋 Em que podemos ajudar?
 1 - Falar sobre um pedido
 2 - Fazer um pedido
-3 - Outro assunto</div>
-            <div class="bubble in">3</div>
-            <div class="bubble auto"><span class="who">Automação</span>Certo! Um atendente já vai falar com você.</div>
-            <div class="mock-note">Ana assumiu a conversa</div>
-            <div class="bubble out">Oi, Maria! Aqui é a Ana. Como posso te ajudar?</div>
+3 - Outro assunto</span>
+          </div>
+          <div class="bubble auto wide">
+            <span class="who">Aviso de saída para entrega</span>
+            <span class="line" id="tone-dispatch">🛵 Boa notícia! Seu pedido #4853 saiu para entrega às 19:52.</span>
           </div>
         </div>
       </div>
     </div>
   </section>
 
-  <section id="canais" class="band">
-    <div class="wrap">
-      <div class="section-head">
-        <div class="kicker" style="color:#E8735E;">Canais</div>
-        <h2>Conecte os canais que você já usa.</h2>
-        <p>A conexão é feita nas configurações do sistema, em poucos minutos.</p>
+  <section id="clientes" class="lp-section">
+    <div class="wrap duo">
+      <div class="duo-text">
+        <h2 class="lp-h2">Cada cliente vira um cadastro só.</h2>
+        <p class="lp-intro">Quem pede no iFood e depois chama no WhatsApp continua sendo a mesma pessoa. O Dish Desk liga os canais pelo telefone, CPF ou e-mail e avisa quando encontra cadastros parecidos para juntar.</p>
+        <dl class="defs">
+          <div>
+            <dt>Histórico</dt>
+            <dd>Pedidos, total gasto e desde quando a pessoa compra com você.</dd>
+          </div>
+          <div>
+            <dt>Tags</dt>
+            <dd>O Dish Desk marca sozinho quem é VIP, recorrente, novo, sumido ou saiu insatisfeito da última avaliação.</dd>
+          </div>
+          <div>
+            <dt>LGPD</dt>
+            <dd>CPF mascarado na tela e criptografado no banco.</dd>
+          </div>
+        </dl>
       </div>
-      <div class="channels">
-        <div class="channel">
-          <div class="logo" style="background:#25D366;"><svg width="20" height="20" viewBox="0 0 24 24" fill="#fff"><path d="M17.47 14.38c-.3-.15-1.76-.87-2.03-.97-.27-.1-.47-.15-.67.15-.2.3-.77.97-.94 1.17-.17.2-.35.22-.64.07-.3-.15-1.26-.46-2.4-1.48-.89-.79-1.49-1.77-1.66-2.07-.17-.3-.02-.46.13-.61.13-.13.3-.35.45-.52.15-.17.2-.3.3-.5.1-.2.05-.37-.03-.52-.07-.15-.67-1.61-.92-2.21-.24-.58-.49-.5-.67-.51h-.57c-.2 0-.52.07-.79.37-.27.3-1.04 1.02-1.04 2.48 0 1.46 1.07 2.88 1.21 3.08.15.2 2.1 3.2 5.08 4.49.71.31 1.26.49 1.69.63.71.22 1.36.19 1.87.12.57-.09 1.76-.72 2.01-1.41.25-.69.25-1.29.17-1.41-.07-.12-.27-.2-.57-.35zM12.04 21.5h-.01a9.45 9.45 0 0 1-4.82-1.32l-.35-.21-3.58.94.96-3.49-.23-.36a9.43 9.43 0 0 1-1.45-5.03c0-5.22 4.25-9.47 9.48-9.47a9.4 9.4 0 0 1 6.7 2.78 9.4 9.4 0 0 1 2.77 6.7c0 5.23-4.25 9.46-9.47 9.46z"/></svg></div>
-          <div><strong>WhatsApp</strong><span>API oficial da Meta</span></div>
+      <div class="duo-visual profile" role="img" aria-label="Cadastro da Maria Oliveira: tags VIP e Recorrente, WhatsApp e iFood ligados, 12 pedidos, 847 reais gastos, os dois últimos pedidos e um aviso de possível cadastro duplicado no Instagram">
+        <div class="profile-top">
+          <span class="avatar avatar-lg">MO</span>
+          <div>
+            <p class="profile-name">Maria Oliveira</p>
+            <div class="tags"><span class="tag">VIP</span><span class="tag">Recorrente</span></div>
+          </div>
         </div>
-        <div class="channel">
-          <div class="logo" style="background:linear-gradient(135deg,#F58529,#DD2A7B 55%,#8134AF);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1" fill="#fff" stroke="none"/></svg></div>
-          <div><strong>Instagram</strong><span>Mensagens diretas</span></div>
+        <div class="profile-block">
+          <span class="label">Canais</span>
+          <div class="profile-line"><span class="dot dot-wa"></span>WhatsApp<span class="end soft">+55 11 97654-3210</span></div>
+          <div class="profile-line"><span class="dot dot-if"></span>iFood<span class="end soft">desde jan. de 2026</span></div>
         </div>
-        <div class="channel">
-          <div class="logo" style="background:#EA1D2C;">iF</div>
-          <div><strong>iFood</strong><span>Pedidos e status</span></div>
+        <div class="stats">
+          <div><strong>12</strong><span>pedidos</span></div>
+          <div><strong>R$ 847</strong><span>gastos</span></div>
+          <div><strong>9 meses</strong><span>como cliente</span></div>
         </div>
-        <div class="channel">
-          <div class="logo" style="background:#1F5C8C;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M8 9h8M8 13h8M8 17h5"/></svg></div>
-          <div><strong>Cardápio Web</strong><span>Pedidos do cardápio</span></div>
+        <div class="profile-block">
+          <span class="label">Últimos pedidos</span>
+          <div class="profile-line"><strong>#4853</strong><span class="soft">Hoje, 18:52</span><span class="end">R$ 67,40</span><span class="badge badge-green">Entregue</span></div>
+          <div class="profile-line"><strong>#4621</strong><span class="soft">Há 3 dias</span><span class="end">R$ 94,20</span><span class="badge badge-green">Entregue</span></div>
+        </div>
+        <div class="dup">
+          <p>Possível duplicado: Maria O., no Instagram, com nome parecido.</p>
+          <span class="fake-btn">Comparar</span>
         </div>
       </div>
     </div>
   </section>
 
-  <section id="contato" class="cta-final">
+  <section id="canais" class="lp-section">
     <div class="wrap">
-      <h2>Quer ver o Dish Desk no seu restaurante?</h2>
-      <p>Fale com a gente pelo WhatsApp ou por e-mail. Se já tem uma conta, é só entrar.</p>
-      <div class="hero-cta">
-        <a class="btn btn-accent btn-lg" href="https://wa.me/5586999731647?text=Ol%C3%A1!%20Quero%20conhecer%20o%20Dish%20Desk.">Fale com a gente</a>
-        <a class="btn btn-ghost btn-lg" href="mailto:dishdesk.crm@gmail.com">dishdesk.crm@gmail.com</a>
+      <h2 class="lp-h2">Funciona com os canais que você já usa.</h2>
+      <p class="lp-intro">Você mesmo conecta cada um em Configurações, na aba Integrações.</p>
+      <ul class="channel-list">
+        <li>
+          <span class="channel-name"><span class="dot dot-wa"></span>WhatsApp</span>
+          <p>Conversas pela API oficial da Meta, com respostas rápidas e modelos aprovados para falar com quem não escreve há mais de 24 horas.</p>
+        </li>
+        <li>
+          <span class="channel-name"><span class="dot dot-ig"></span>Instagram</span>
+          <p>Mensagens diretas da conta do restaurante, na mesma fila do WhatsApp.</p>
+        </li>
+        <li>
+          <span class="channel-name"><span class="dot dot-if"></span>iFood</span>
+          <p>Pedidos com itens, complementos, pagamento e status, ligados ao cadastro de quem pediu.</p>
+        </li>
+        <li>
+          <span class="channel-name"><span class="dot dot-cw"></span>Cardápio Web</span>
+          <p>Pedidos do seu cardápio digital, com a linha do tempo do preparo.</p>
+        </li>
+      </ul>
+    </div>
+  </section>
+
+  <section id="preco" class="lp-section">
+    <div class="wrap">
+      <h2 class="lp-h2">Dois jeitos de pagar, os mesmos recursos.</h2>
+      <p class="lp-intro">Os primeiros 15 dias são grátis e não pedem cartão. No fim do teste, você escolhe o plano.</p>
+      <div class="plans">
+        <div class="plan">
+          <h3>Mensal</h3>
+          <p class="price"><strong>R$ 99</strong><span>por mês</span></p>
+          <p class="plan-note">No cartão de crédito, com renovação automática.</p>
+        </div>
+        <div class="plan">
+          <h3>Anual</h3>
+          <p class="price"><strong>R$ 999</strong><span>por ano</span></p>
+          <p class="plan-note">Pagamento único. Sai por R$ 83,25 por mês.</p>
+        </div>
       </div>
+      <div class="cta-row" id="contato">
+        <a class="btn btn-accent" href="/cadastro">Testar grátis por 15 dias</a>
+        <a class="btn btn-ghost" href="https://wa.me/5586999731647?text=Ol%C3%A1!%20Quero%20conhecer%20o%20Dish%20Desk.">Falar no WhatsApp</a>
+      </div>
+      <p class="fine">Prefere e-mail? Escreva para <a href="mailto:dishdesk.crm@gmail.com" data-copy>dishdesk.crm@gmail.com</a>.</p>
     </div>
   </section>
 </main>
@@ -237,14 +294,14 @@
     <div class="footer-grid">
       <div>
         <a class="brand" href="./">
-          <span class="brand-mark"><svg viewBox="0 0 17 17" fill="none" aria-hidden="true"><rect x="3" y="4.5" width="11" height="1.5" rx=".75" fill="#F7F4EF"/><rect x="3" y="7.75" width="7.5" height="1.5" rx=".75" fill="#F7F4EF"/><rect x="3" y="11" width="5" height="1.5" rx=".75" fill="#fff" opacity=".5"/></svg></span>
+          <span class="brand-mark"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="3" y="4" width="10" height="1.5" rx=".75" fill="#F7F4EF"/><rect x="3" y="7.25" width="7" height="1.5" rx=".75" fill="#F7F4EF"/><rect x="3" y="10.5" width="4.5" height="1.5" rx=".75" fill="#C4341A"/></svg></span>
           <span class="brand-name">Dish Desk</span>
         </a>
-        <p class="tagline-company">Dish Desk é um produto da AVELINO GASTRONOMIA LTDA.</p>
+        <p class="tagline-company">Dish Desk é um produto da Avelino Gastronomia Ltda., de Teresina, Piauí.</p>
       </div>
       <div>
         <h4>Empresa</h4>
-        <p>AVELINO GASTRONOMIA LTDA</p>
+        <p>Avelino Gastronomia Ltda</p>
         <p>CNPJ 66.832.307/0001-67</p>
         <p>Rua Azar Chaib, 807, Santa Isabel<br>Teresina/PI, CEP 64053-290</p>
       </div>
@@ -259,7 +316,7 @@
       </div>
     </div>
     <div class="footer-bottom">
-      <span>© 2026 AVELINO GASTRONOMIA LTDA. Todos os direitos reservados.</span>
+      <span>© 2026 Avelino Gastronomia Ltda. Todos os direitos reservados.</span>
       <span>Teresina, Piauí</span>
     </div>
   </div>
@@ -271,13 +328,36 @@
     function onScroll() { h.classList.toggle('scrolled', window.scrollY > 8); }
     window.addEventListener('scroll', onScroll, { passive: true }); onScroll();
   })();
-  // Sem programa de e-mail configurado o mailto não abre nada: o clique também copia o endereço e avisa no botão.
-  document.querySelectorAll('a.btn[href^="mailto:"]').forEach(function (a) {
+
+  // Tom das mensagens: os mesmos textos de packages/shared/src/personalities.ts, com os dados da Maria.
+  (function () {
+    var MENU = '\n1 - Falar sobre um pedido\n2 - Fazer um pedido\n3 - Outro assunto';
+    var TONES = {
+      cordial: ['Simpático e educado, com poucos emojis. É o padrão.', 'Olá, Maria! 👋 Em que podemos ajudar?', '🛵 Boa notícia! Seu pedido #4853 saiu para entrega às 19:52.'],
+      formal: ['Respeitoso e sem emojis. Combina com restaurantes clássicos e alta gastronomia.', 'Olá, Maria. Agradecemos o seu contato. Como podemos ajudar?', 'Informamos que o seu pedido #4853 saiu para entrega às 19:52.'],
+      jovial: ['Animado, com exclamações e emojis. Bom para hamburguerias, açaí e público jovem.', 'Oiê, Maria! 🤩 Que bom te ver por aqui! Como podemos te ajudar hoje?', '🛵 Oba! Seu pedido #4853 saiu para entrega às 19:52! Já já chega aí!'],
+      descontraido: ['Informal, como um papo entre amigos: “e aí”, “beleza”, “fechou”.', 'E aí, Maria! Tudo certo? 😎 No que a gente pode te ajudar?', '🛵 Opa! Seu pedido #4853 saiu pra entrega às 19:52.'],
+      acolhedor: ['Caloroso e carinhoso, como um restaurante de família.', 'Olá, Maria! 🧡 Que alegria receber sua mensagem. Como podemos cuidar de você hoje?', '🛵 Que notícia boa! Seu pedido #4853 saiu para entrega às 19:52.'],
+      direto: ['Mensagens curtas e objetivas, sem emojis.', 'Olá, Maria. Como podemos ajudar?', 'Pedido #4853 saiu para entrega às 19:52.']
+    };
+    var buttons = document.querySelectorAll('.tone');
+    buttons.forEach(function (button) {
+      button.addEventListener('click', function () {
+        var tone = TONES[button.dataset.tone];
+        buttons.forEach(function (b) { b.setAttribute('aria-pressed', String(b === button)); });
+        document.getElementById('tone-desc').textContent = tone[0];
+        document.getElementById('tone-menu').textContent = tone[1] + MENU;
+        document.getElementById('tone-dispatch').textContent = tone[2];
+      });
+    });
+  })();
+
+  // Sem programa de e-mail configurado o mailto não abre nada: o clique também copia o endereço e avisa no link.
+  document.querySelectorAll('a[data-copy][href^="mailto:"]').forEach(function (a) {
     var label = a.textContent;
     a.addEventListener('click', function () {
       if (!navigator.clipboard) return;
       navigator.clipboard.writeText(a.href.slice(7).split('?')[0]).then(function () {
-        a.style.minWidth = a.offsetWidth + 'px';
         a.textContent = 'E-mail copiado';
         setTimeout(function () { a.textContent = label; }, 2000);
       });
