@@ -1,5 +1,7 @@
 # Como gravar os vídeos da análise da Meta
 
+> **Agora (outubro de 2026), grave só o Vídeo 1 (Instagram).** O portfólio Dish Desk está bloqueado no WhatsApp, então as duas permissões do WhatsApp saem deste envio e voltam numa análise futura, depois do recurso. Para mandar a DM no vídeo, use a conta @aglioneroteresina no instagram.com (ela já é testadora aceita do app).
+
 Faça **2 vídeos**, um do Instagram e um do WhatsApp. Cada vídeo vale para as duas permissões da sua plataforma:
 
 - **Instagram:** anexe o mesmo vídeo em `instagram_business_basic` e `instagram_business_manage_messages`.

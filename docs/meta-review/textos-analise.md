@@ -40,6 +40,20 @@ Peça **somente** estas quatro permissões. O Dish Desk não usa comentários do
 
 ---
 
+## Instruções para o avaliador — envio só do Instagram (outubro de 2026)
+
+Enquanto o portfólio Dish Desk estiver bloqueado no WhatsApp, o envio leva só `instagram_business_basic` e `instagram_business_manage_messages` (com o `public_profile`, que é automático). Use este texto no lugar do bloco seguinte:
+
+> 1. Open https://www.dishdesk.com.br/login and log in with the reviewer credentials below.
+> 2. Choose the restaurant "Revisão Meta". It contains only fictitious test data.
+> 3. Go to Configurações → Integrações, click "Conectar" on the Instagram card and then "Conectar o Instagram" (Instagram Business Login). Authorize with an Instagram professional account.
+> 4. Send a Direct message to the connected account from another Instagram account. It appears in Inbox in a few seconds; open the conversation, type a reply and press send. The reply arrives in the customer's Instagram Direct.
+>
+> Login: [e-mail do usuário de teste]
+> Password: [senha do usuário de teste]
+>
+> The interface is in Portuguese. Key labels: "Configurações" = Settings, "Integrações" = Integrations, "Conectar" = Connect, "Conectar o Instagram" = Connect Instagram, "Inbox" = Inbox, "Enviar" = Send.
+
 ## Instruções para o avaliador (campo "Testing instructions")
 
 > 1. Open https://www.dishdesk.com.br/login and log in with the reviewer credentials below.
