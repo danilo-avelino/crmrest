@@ -47,103 +47,64 @@
 
   <section id="como-funciona" class="night">
     <div class="wrap">
-      <h2 class="lp-h2">Acompanhe um pedido numa sexta à noite.</h2>
-      <p class="lp-intro">Da hora em que a Maria pede no iFood até a nota que ela dá no fim. O Dish Desk manda os avisos e a equipe entra quando precisa.</p>
+      <h2 class="lp-h2">Deixe a equipe livre para os problemas de verdade.</h2>
+      <p class="lp-intro">O Dish Desk resolve sozinho o que mais se repete no atendimento, como o “cadê meu pedido?”. Veja um pedido de sexta à noite do começo ao fim, sem ninguém da equipe digitar.</p>
 
-      <ol class="moments">
-        <li class="moment">
-          <p class="moment-time"><time datetime="18:52">18:52</time></p>
-          <div class="moment-text">
-            <h3>O pedido chega pelo iFood.</h3>
-            <p>A Maria pede uma lasanha. O pedido aparece no Dish Desk com itens, observações e a entrega prometida, já no cadastro dela.</p>
+      <div class="scene idle" data-scene>
+        <div class="scene-steps">
+          <ol class="scene-list">
+            <li><button type="button" class="scene-step on" aria-current="step"><span class="step-time">18:52</span><span class="step-body"><span class="step-title">O pedido chega pelo iFood.</span><span class="step-text">O pedido aparece no Dish Desk com itens, observações e a entrega prometida, já no cadastro da Maria.</span><span class="step-timer"></span></span></button></li>
+            <li><button type="button" class="scene-step"><span class="step-time">19:41</span><span class="step-body"><span class="step-title">A Maria pergunta pelo pedido.</span><span class="step-text">O Dish Desk identifica o pedido automaticamente e dá uma previsão baseada no tempo dos seus últimos pedidos.</span><span class="step-timer"></span></span></button></li>
+            <li><button type="button" class="scene-step"><span class="step-time">19:52</span><span class="step-body"><span class="step-title">O pedido sai para entrega.</span><span class="step-text">Como a Maria já entrou em contato, o Dish Desk continua avisando cada movimentação do pedido no WhatsApp.</span><span class="step-timer"></span></span></button></li>
+            <li><button type="button" class="scene-step"><span class="step-time">20:18</span><span class="step-body"><span class="step-title">Entregue e com avaliação.</span><span class="step-text">Depois do aviso de entrega, o Dish Desk pede uma avaliação do seu atendimento e pode enviar um NPS ao cliente.</span><span class="step-timer"></span></span></button></li>
+          </ol>
+          <button type="button" class="scene-play" data-play>
+            <span data-when="playing"><svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" aria-hidden="true"><rect x="3" y="2" width="3" height="10" rx="1"/><rect x="8" y="2" width="3" height="10" rx="1"/></svg>Pausar</span>
+            <span data-when="paused" hidden><svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" aria-hidden="true"><path d="M4 2.5v9a.5.5 0 0 0 .77.42l7-4.5a.5.5 0 0 0 0-.84l-7-4.5A.5.5 0 0 0 4 2.5Z"/></svg>Continuar</span>
+          </button>
+        </div>
+
+        <div class="scene-screen" role="img" aria-label="Pedido 4853 do iFood em preparo, no cadastro da Maria: VIP e recorrente, com iFood e WhatsApp vinculados, 12 pedidos e 847 reais gastos." data-screen>
+          <div class="screen-head">
+            <span class="avatar" aria-hidden="true">MO</span>
+            <span class="screen-who">
+              <span class="convo-name">Maria Oliveira</span>
+              <span class="convo-channel"><span class="dot dot-wa"></span>WhatsApp</span>
+            </span>
+            <span class="screen-clock">Sexta, <span data-clock>18:52</span></span>
           </div>
-          <div class="moment-frag" role="img" aria-label="Pedido do iFood 4853, em preparo: lasanha bolonhesa sem cebola, refrigerante e taxa de entrega, total de 67 reais e 40 centavos, entrega prometida até 19:30">
-            <div class="card">
-              <div class="card-head">
-                <span class="card-title"><span class="dot dot-if"></span>Pedido iFood #4853</span>
-                <span class="badge badge-amber">Em preparo</span>
-              </div>
-              <div class="card-lines">
-                <div class="row"><span>1× Lasanha Bolonhesa G</span><span>R$ 54,90</span></div>
-                <div class="obs">Obs.: sem cebola</div>
-                <div class="row"><span>1× Refrigerante lata 350 ml</span><span>R$ 7,50</span></div>
-                <div class="row"><span>Taxa de entrega</span><span>R$ 5,00</span></div>
-                <div class="row total"><span>Total</span><span>R$ 67,40</span></div>
-              </div>
-              <div class="card-foot">Feito às 18:52. Entrega prometida até 19:30.</div>
+          <div class="screen-order">
+            <div class="screen-order-top"><span class="dot dot-if"></span>iFood #4853<span class="screen-total">R$ 67,40</span><span class="badge badge-amber" data-status>Em preparo</span></div>
+            <p class="screen-items">1× Lasanha Bolonhesa G (sem cebola), 1× Refrigerante lata 350 ml</p>
+            <div class="screen-bar"><span class="bar-fill bar-0" data-bar></span></div>
+            <div class="screen-facts">
+              <div><span data-elapsed-label>Decorrido</span><strong data-elapsed>0 min</strong></div>
+              <div><span data-depart-label>Saída prevista</span><strong data-depart>19:29</strong></div>
+              <div><span>Entrega prometida</span><strong>19:30</strong></div>
             </div>
           </div>
-        </li>
-
-        <li class="moment">
-          <p class="moment-time"><time datetime="19:41">19:41</time></p>
-          <div class="moment-text">
-            <h3>A Maria pergunta pelo pedido.</h3>
-            <p>Ela chama no WhatsApp. O menu pede o número, encontra o #4853 e, como passou do horário, já responde com a nova previsão de saída.</p>
-          </div>
-          <div class="moment-frag" role="img" aria-label="Conversa no WhatsApp: a Maria avisa que o pedido não chegou e a automação pede desculpas e informa a nova previsão de saída, 19:50">
-            <div class="chat">
-              <div class="bubble in">Boa noite! Meu pedido ainda não chegou. É o 4853.<span class="at">19:41</span></div>
-              <div class="bubble auto">
-                <span class="who">Automação</span>
-                <span class="line">Pedimos desculpas pela demora! 🙏 Seu pedido está levando mais tempo que o normal.</span>
-                <span class="line">Nova previsão de saída do restaurante: por volta das 19:50.</span>
-              </div>
+          <div class="scene-chat">
+            <div class="scene-profile">
+              <div class="scene-profile-top"><span class="label">Cadastro da cliente</span><span class="tags"><span class="tag">VIP</span><span class="tag">Recorrente</span></span></div>
+              <div class="scene-profile-row"><span class="dot dot-wa"></span>WhatsApp<span class="end soft">+55 11 97654-3210</span></div>
+              <div class="scene-profile-row"><span class="dot dot-if"></span>iFood<span class="end soft">desde jan. de 2026</span></div>
+              <div class="scene-profile-row"><span class="soft">Entrega</span>Rua das Acácias, 847, ap. 42, Vila Madalena</div>
+              <div class="scene-stats"><div><strong>12</strong><span>pedidos</span></div><div><strong>R$ 847</strong><span>gastos</span></div><div><strong>9 meses</strong><span>como cliente</span></div></div>
+              <span class="label">Últimos pedidos</span>
+              <div class="scene-profile-row"><strong>#4853</strong><span class="soft">Hoje, 18:52</span><span class="end">R$ 67,40</span><span class="badge badge-amber" data-status-history>Em preparo</span></div>
+              <div class="scene-profile-row"><strong>#4621</strong><span class="soft">Há 3 dias</span><span class="end">R$ 94,20</span><span class="badge badge-green">Entregue</span></div>
             </div>
+            <div class="bubble in" data-at="1" hidden>Boa noite! Meu pedido ainda não chegou. É o 4853.<span class="at">19:41</span></div>
+            <div class="bubble auto" data-at="1" hidden><span class="who">Automação</span><span class="line">Pedimos desculpas pela demora! 🙏 Seu pedido está levando mais tempo que o normal.</span><span class="line">Nova previsão de saída do restaurante: por volta das 19:50.</span></div>
+            <div class="bubble auto" data-at="2" hidden><span class="who">Automação</span>🛵 Boa notícia! Seu pedido #4853 saiu para entrega às 19:52.</div>
+            <div class="bubble in" data-at="2" hidden>Obrigada!<span class="at">19:53</span></div>
+            <div class="bubble auto" data-at="3" hidden><span class="who">Automação</span>✅ Seu pedido #4853 foi entregue! Bom apetite 😋</div>
+            <div class="bubble auto" data-at="3" hidden><span class="who">Automação</span>Encerramos esta conversa por falta de interação. Se precisar de algo, é só mandar uma mensagem que retomamos de onde paramos.</div>
+            <div class="bubble auto" data-at="3" hidden><span class="who">Automação</span>Qual nota você dá para nosso atendimento? Digite de 1 a 5</div>
+            <div class="bubble in" data-at="3" hidden>5<span class="at">20:40</span></div>
           </div>
-        </li>
-
-        <li class="moment">
-          <p class="moment-time"><time datetime="19:43">19:43</time></p>
-          <div class="moment-text">
-            <h3>A Ana assume a conversa.</h3>
-            <p>Ao lado da mensagem ela vê o pedido, quanto tempo passou e a saída prevista. Uma nota interna avisa a equipe, e a Maria não vê.</p>
-          </div>
-          <div class="moment-frag stack" role="img" aria-label="Painel do pedido 4853: 51 minutos desde o pedido, entrega prometida 19:30, saída prevista 19:50 e atrasado. Abaixo, nota interna da Ana: cozinha confirmou, sai em 5 minutos">
-            <div class="card card-pad">
-              <div class="row"><span class="label">Pedido da cliente</span><span class="badge badge-amber">Em preparo</span></div>
-              <div class="card-title" style="margin-top: 8px; font-size: 16px; font-variant-numeric: tabular-nums"><span class="dot dot-if"></span>iFood #4853<span style="margin-left: auto">R$ 67,40</span></div>
-              <dl class="facts">
-                <dt>Tempo desde o pedido</dt><dd class="strong">51 min</dd>
-                <dt>Entrega prometida</dt><dd>19:30</dd>
-                <dt>Saída prevista</dt><dd class="late">19:50, atrasado</dd>
-              </dl>
-              <span class="fake-btn" style="margin-top: 16px">Enviar previsão</span>
-            </div>
-            <div class="bubble note"><span class="who">Nota interna da Ana</span>Cozinha confirmou: sai em 5 minutos.</div>
-          </div>
-        </li>
-
-        <li class="moment">
-          <p class="moment-time"><time datetime="19:52">19:52</time></p>
-          <div class="moment-text">
-            <h3>O pedido sai para entrega.</h3>
-            <p>Quando o iFood marca o pedido como despachado, a Maria recebe o aviso no WhatsApp. Ninguém precisou digitar.</p>
-          </div>
-          <div class="moment-frag" role="img" aria-label="Aviso automático no WhatsApp: o pedido 4853 saiu para entrega às 19:52. A Maria responde obrigada">
-            <div class="chat">
-              <div class="bubble auto"><span class="who">Automação</span>🛵 Boa notícia! Seu pedido #4853 saiu para entrega às 19:52.</div>
-              <div class="bubble in">Obrigada!<span class="at">19:53</span></div>
-            </div>
-          </div>
-        </li>
-
-        <li class="moment">
-          <p class="moment-time"><time datetime="20:18">20:18</time></p>
-          <div class="moment-text">
-            <h3>Entregue, e com nota.</h3>
-            <p>O aviso de entrega também vai sozinho. Quando a Ana resolve a conversa, a Maria recebe a pesquisa de satisfação, e a nota entra no relatório da equipe.</p>
-          </div>
-          <div class="moment-frag" role="img" aria-label="Aviso automático de pedido entregue, a Ana resolve a conversa, a automação pede uma nota de 1 a 5 e a Maria responde 5">
-            <div class="chat">
-              <div class="bubble auto"><span class="who">Automação</span>✅ Seu pedido #4853 foi entregue! Bom apetite 😋</div>
-              <div class="event">Ana resolveu a conversa</div>
-              <div class="bubble auto"><span class="who">Automação</span>Qual nota você dá para nosso atendimento? Digite de 1 a 5</div>
-              <div class="bubble in">5<span class="at">20:24</span></div>
-            </div>
-          </div>
-        </li>
-      </ol>
+        </div>
+      </div>
     </div>
   </section>
 
@@ -327,6 +288,132 @@
     var h = document.querySelector('.site-header');
     function onScroll() { h.classList.toggle('scrolled', window.scrollY > 8); }
     window.addEventListener('scroll', onScroll, { passive: true }); onScroll();
+  })();
+
+  // Um pedido do começo ao fim: a cena avança sozinha quando aparece na tela; dá para pausar e escolher o passo.
+  // Quem pede menos movimento no sistema vê a cena parada e avança pelos passos.
+  (function () {
+    var scene = document.querySelector('[data-scene]');
+    if (!scene) return;
+    var STEP_MS = 5500;
+    var ORDER = [
+      { status: 'Em preparo', badge: 'badge-amber', bar: 'bar-0', elapsedLabel: 'Decorrido', elapsed: '0 min', departLabel: 'Saída prevista', depart: '19:29', late: false },
+      { status: 'Em preparo', badge: 'badge-amber', bar: 'bar-late', elapsedLabel: 'Decorrido', elapsed: '49 min', departLabel: 'Saída prevista', depart: '19:50, atrasado', late: true },
+      { status: 'Saiu para entrega', badge: 'badge-gray', bar: 'bar-done', elapsedLabel: 'Saiu em', elapsed: '60 min', departLabel: 'Saída', depart: '19:52', late: false },
+      { status: 'Entregue', badge: 'badge-green', bar: 'bar-done', elapsedLabel: 'Saiu em', elapsed: '60 min', departLabel: 'Saída', depart: '19:52', late: false }
+    ];
+    var CLOCK = ['18:52', '19:41', '19:53', '20:40'];
+    var SCREEN = [
+      'Pedido 4853 do iFood em preparo, no cadastro da Maria: VIP e recorrente, com iFood e WhatsApp vinculados, 12 pedidos e 847 reais gastos.',
+      'A Maria avisa no WhatsApp que o pedido não chegou e a automação manda a nova previsão: 19:50, atrasado.',
+      'O pedido saiu às 19:52 e a Maria recebeu o aviso automático.',
+      'Pedido entregue: aviso automático, conversa encerrada pela automação, pesquisa de satisfação e a Maria dá nota 5.'
+    ];
+    var steps = scene.querySelectorAll('.scene-step');
+    var messages = scene.querySelectorAll('[data-at]');
+    var field = function (name) { return scene.querySelector('[data-' + name + ']'); };
+    var play = field('play');
+    var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    var current = 0;
+    var playing = !reduce;
+    var started = false;
+    var timer = null;
+    var startedAt = 0;
+    var remaining = STEP_MS;
+
+    function show(index) {
+      current = index;
+      steps.forEach(function (step, i) {
+        step.classList.remove('on');
+        step.removeAttribute('aria-current');
+        if (i === index) {
+          void step.offsetWidth; // reinicia a barrinha de tempo do passo
+          step.classList.add('on');
+          step.setAttribute('aria-current', 'step');
+        }
+      });
+      messages.forEach(function (message) {
+        var visible = Number(message.dataset.at) <= index;
+        if (visible && message.hidden) {
+          message.hidden = false;
+          message.classList.remove('msg');
+          void message.offsetWidth;
+          message.classList.add('msg');
+        } else if (!visible) {
+          message.hidden = true;
+        }
+      });
+      var order = ORDER[index];
+      ['status', 'status-history'].forEach(function (name) {
+        field(name).textContent = order.status;
+        field(name).className = 'badge ' + order.badge;
+      });
+      field('bar').className = 'bar-fill ' + order.bar;
+      field('elapsed-label').textContent = order.elapsedLabel;
+      field('elapsed').textContent = order.elapsed;
+      field('depart-label').textContent = order.departLabel;
+      field('depart').textContent = order.depart;
+      field('depart').classList.toggle('late', order.late);
+      field('clock').textContent = CLOCK[index];
+      field('screen').setAttribute('aria-label', SCREEN[index]);
+    }
+
+    function schedule(ms) {
+      clearTimeout(timer);
+      startedAt = Date.now();
+      remaining = ms;
+      timer = setTimeout(function () {
+        show((current + 1) % steps.length);
+        schedule(STEP_MS);
+      }, ms);
+    }
+
+    function setPlaying(value) {
+      playing = value;
+      scene.classList.toggle('paused', !playing);
+      play.querySelector('[data-when="playing"]').hidden = !playing;
+      play.querySelector('[data-when="paused"]').hidden = playing;
+    }
+
+    function start() {
+      if (started) return;
+      started = true;
+      scene.classList.remove('idle');
+      show(0);
+      if (playing) schedule(STEP_MS);
+    }
+
+    steps.forEach(function (step, i) {
+      step.addEventListener('click', function () {
+        if (!started) { started = true; scene.classList.remove('idle'); }
+        show(i);
+        if (playing) schedule(STEP_MS);
+        else remaining = STEP_MS;
+      });
+    });
+
+    play.addEventListener('click', function () {
+      if (!started) start();
+      if (playing) {
+        clearTimeout(timer);
+        remaining = Math.max(0, remaining - (Date.now() - startedAt));
+        setPlaying(false);
+      } else {
+        setPlaying(true);
+        schedule(remaining);
+      }
+    });
+
+    setPlaying(playing);
+    if (!playing) { started = true; scene.classList.remove('idle'); return; }
+    if (!('IntersectionObserver' in window)) { start(); return; }
+    var observer = new IntersectionObserver(function (entries) {
+      if (entries.some(function (entry) { return entry.isIntersecting; })) {
+        observer.disconnect();
+        start();
+      }
+    }, { threshold: 0.4 });
+    observer.observe(scene);
   })();
 
   // Tom das mensagens: os mesmos textos de packages/shared/src/personalities.ts, com os dados da Maria.
