@@ -59,9 +59,13 @@
             <li><button type="button" class="scene-step"><span class="step-time">20:18</span><span class="step-body"><span class="step-title">Entregue e com avaliação.</span><span class="step-text">Depois do aviso de entrega, o Dish Desk pede uma avaliação do seu atendimento e pode enviar um NPS ao cliente.</span><span class="step-timer"></span></span></button></li>
           </ol>
           <button type="button" class="scene-play" data-play>
-            <span data-when="playing"><svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" aria-hidden="true"><rect x="3" y="2" width="3" height="10" rx="1"/><rect x="8" y="2" width="3" height="10" rx="1"/></svg>Pausar</span>
-            <span data-when="paused" hidden><svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" aria-hidden="true"><path d="M4 2.5v9a.5.5 0 0 0 .77.42l7-4.5a.5.5 0 0 0 0-.84l-7-4.5A.5.5 0 0 0 4 2.5Z"/></svg>Continuar</span>
+            <span data-when="playing"><svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" aria-hidden="true"><rect x="3" y="2" width="3" height="10" rx="1"/><rect x="8" y="2" width="3" height="10" rx="1"/></svg><span class="play-label">Pausar</span></span>
+            <span data-when="paused" hidden><svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" aria-hidden="true"><path d="M4 2.5v9a.5.5 0 0 0 .77.42l7-4.5a.5.5 0 0 0 0-.84l-7-4.5A.5.5 0 0 0 4 2.5Z"/></svg><span class="play-label">Continuar</span></span>
           </button>
+        </div>
+
+        <div class="scene-caption" aria-hidden="true">
+          <span class="step-body"><span class="step-title" data-cap-title>O pedido chega pelo iFood.</span><span class="step-text" data-cap-text>O pedido aparece no Dish Desk com itens, observações e a entrega prometida, já no cadastro da Maria.</span></span>
         </div>
 
         <div class="scene-screen" role="img" aria-label="Pedido 4853 do iFood em preparo, no cadastro da Maria: VIP e recorrente, com iFood e WhatsApp vinculados, 12 pedidos e 847 reais gastos." data-screen>
@@ -88,7 +92,7 @@
               <div class="scene-profile-top"><span class="label">Cadastro da cliente</span><span class="tags"><span class="tag">VIP</span><span class="tag">Recorrente</span></span></div>
               <div class="scene-profile-row"><span class="dot dot-wa"></span>WhatsApp<span class="end soft">+55 11 97654-3210</span></div>
               <div class="scene-profile-row"><span class="dot dot-if"></span>iFood<span class="end soft">desde jan. de 2026</span></div>
-              <div class="scene-profile-row"><span class="soft">Entrega</span>Rua das Acácias, 847, ap. 42, Vila Madalena</div>
+              <div class="scene-profile-row addr"><span class="soft">Entrega</span>Rua das Acácias, 847, ap. 42, Vila Madalena</div>
               <div class="scene-stats"><div><strong>12</strong><span>pedidos</span></div><div><strong>R$ 847</strong><span>gastos</span></div><div><strong>9 meses</strong><span>como cliente</span></div></div>
               <span class="label">Últimos pedidos</span>
               <div class="scene-profile-row"><strong>#4853</strong><span class="soft">Hoje, 18:52</span><span class="end">R$ 67,40</span><span class="badge badge-amber" data-status-history>Em preparo</span></div>
@@ -102,47 +106,6 @@
             <div class="bubble auto" data-at="3" hidden><span class="who">Automação</span>Encerramos esta conversa por falta de interação. Se precisar de algo, é só mandar uma mensagem que retomamos de onde paramos.</div>
             <div class="bubble auto" data-at="3" hidden><span class="who">Automação</span>Qual nota você dá para nosso atendimento? Digite de 1 a 5</div>
             <div class="bubble in" data-at="3" hidden>5<span class="at">20:40</span></div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <section id="tom" class="lp-section" style="border-top: 0">
-    <div class="wrap duo">
-      <div class="duo-text">
-        <h2 class="lp-h2">Escolha como o restaurante fala com o cliente.</h2>
-        <p class="lp-intro">As mensagens automáticas saem no tom que você escolher, e dá para trocar quando quiser. Experimente os seis:</p>
-        <div class="tones" role="group" aria-label="Tom das mensagens">
-          <button type="button" class="tone" data-tone="cordial" aria-pressed="true">Cordial</button>
-          <button type="button" class="tone" data-tone="formal" aria-pressed="false">Formal</button>
-          <button type="button" class="tone" data-tone="jovial" aria-pressed="false">Jovial</button>
-          <button type="button" class="tone" data-tone="descontraido" aria-pressed="false">Descontraído</button>
-          <button type="button" class="tone" data-tone="acolhedor" aria-pressed="false">Acolhedor</button>
-          <button type="button" class="tone" data-tone="direto" aria-pressed="false">Direto</button>
-        </div>
-        <p class="tone-desc" id="tone-desc">Simpático e educado, com poucos emojis. É o padrão.</p>
-      </div>
-      <div class="duo-visual convo">
-        <div class="convo-head">
-          <span class="avatar" aria-hidden="true">MO</span>
-          <span>
-            <span class="convo-name">Maria Oliveira</span>
-            <span class="convo-channel"><span class="dot dot-wa"></span>WhatsApp</span>
-          </span>
-        </div>
-        <div class="chat" aria-live="polite">
-          <div class="bubble in">Boa noite!</div>
-          <div class="bubble auto wide">
-            <span class="who">Menu inicial</span>
-            <span class="line pre" id="tone-menu">Olá, Maria! 👋 Em que podemos ajudar?
-1 - Falar sobre um pedido
-2 - Fazer um pedido
-3 - Outro assunto</span>
-          </div>
-          <div class="bubble auto wide">
-            <span class="who">Aviso de saída para entrega</span>
-            <span class="line" id="tone-dispatch">🛵 Boa notícia! Seu pedido #4853 saiu para entrega às 19:52.</span>
           </div>
         </div>
       </div>
@@ -325,11 +288,15 @@
       current = index;
       steps.forEach(function (step, i) {
         step.classList.remove('on');
+        step.classList.toggle('done', i < index);
         step.removeAttribute('aria-current');
         if (i === index) {
           void step.offsetWidth; // reinicia a barrinha de tempo do passo
           step.classList.add('on');
           step.setAttribute('aria-current', 'step');
+          // Legenda do celular: o mesmo texto do passo, ao lado da tela.
+          field('cap-title').textContent = step.querySelector('.step-title').textContent;
+          field('cap-text').textContent = step.querySelector('.step-text').textContent;
         }
       });
       messages.forEach(function (message) {
@@ -414,29 +381,6 @@
       }
     }, { threshold: 0.4 });
     observer.observe(scene);
-  })();
-
-  // Tom das mensagens: os mesmos textos de packages/shared/src/personalities.ts, com os dados da Maria.
-  (function () {
-    var MENU = '\n1 - Falar sobre um pedido\n2 - Fazer um pedido\n3 - Outro assunto';
-    var TONES = {
-      cordial: ['Simpático e educado, com poucos emojis. É o padrão.', 'Olá, Maria! 👋 Em que podemos ajudar?', '🛵 Boa notícia! Seu pedido #4853 saiu para entrega às 19:52.'],
-      formal: ['Respeitoso e sem emojis. Combina com restaurantes clássicos e alta gastronomia.', 'Olá, Maria. Agradecemos o seu contato. Como podemos ajudar?', 'Informamos que o seu pedido #4853 saiu para entrega às 19:52.'],
-      jovial: ['Animado, com exclamações e emojis. Bom para hamburguerias, açaí e público jovem.', 'Oiê, Maria! 🤩 Que bom te ver por aqui! Como podemos te ajudar hoje?', '🛵 Oba! Seu pedido #4853 saiu para entrega às 19:52! Já já chega aí!'],
-      descontraido: ['Informal, como um papo entre amigos: “e aí”, “beleza”, “fechou”.', 'E aí, Maria! Tudo certo? 😎 No que a gente pode te ajudar?', '🛵 Opa! Seu pedido #4853 saiu pra entrega às 19:52.'],
-      acolhedor: ['Caloroso e carinhoso, como um restaurante de família.', 'Olá, Maria! 🧡 Que alegria receber sua mensagem. Como podemos cuidar de você hoje?', '🛵 Que notícia boa! Seu pedido #4853 saiu para entrega às 19:52.'],
-      direto: ['Mensagens curtas e objetivas, sem emojis.', 'Olá, Maria. Como podemos ajudar?', 'Pedido #4853 saiu para entrega às 19:52.']
-    };
-    var buttons = document.querySelectorAll('.tone');
-    buttons.forEach(function (button) {
-      button.addEventListener('click', function () {
-        var tone = TONES[button.dataset.tone];
-        buttons.forEach(function (b) { b.setAttribute('aria-pressed', String(b === button)); });
-        document.getElementById('tone-desc').textContent = tone[0];
-        document.getElementById('tone-menu').textContent = tone[1] + MENU;
-        document.getElementById('tone-dispatch').textContent = tone[2];
-      });
-    });
   })();
 
   // Sem programa de e-mail configurado o mailto não abre nada: o clique também copia o endereço e avisa no link.
