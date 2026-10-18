@@ -817,6 +817,9 @@ function IntegrationForm({ system, tenantId, ifoodLinkCode, onClose }: { system:
     }
   });
 
+  // iFood distribuído: remove o campo merchantId pois é descoberto automaticamente.
+  const displayedFields = ifoodLinkCode && system.type === "IFOOD" ? fields?.filter((f) => f.name !== "merchantId") : fields;
+
   return (
     <form
       noValidate
@@ -827,7 +830,7 @@ function IntegrationForm({ system, tenantId, ifoodLinkCode, onClose }: { system:
       }}
     >
       {ifoodLinkCode && <IfoodLinkCode tenantId={tenantId} code={linkCode} onCode={setLinkCode} />}
-      {fields?.map((field) => (
+      {displayedFields?.map((field) => (
         <div key={field.name} className="flex flex-col gap-1">
           <Label htmlFor={`${id}-${field.name}`}>{field.label}</Label>
           <Input

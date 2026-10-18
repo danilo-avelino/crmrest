@@ -15,6 +15,9 @@ export type IfoodStore = { id: string; tenantId: string };
 /** Código de vinculação para o painel: `state` leva, cifrado, o verificador que a troca pelo acesso exige. */
 export type IfoodLinkCode = { userCode: string; verificationUrl: string; expiresIn: number; state: string };
 
+/** Resultado da autorização: acesso da loja e seu ID (descoberto automaticamente pela API do iFood). */
+export type IfoodAuthorization = IfoodGrant & { merchantId: string };
+
 /**
  * Credencial do iFood. Centralizado: a da plataforma vale para todas as lojas. Distribuído (IFOOD_APP_TYPE): cada loja
  * autoriza o Dish Desk com um código de vinculação e tem o próprio acesso, renovado aqui antes de vencer.
@@ -64,15 +67,24 @@ export class IfoodAuthService {
     };
   }
 
-  /** Troca o código de autorização do Portal do Parceiro pelo acesso da loja. `state` veio de `linkCode`. */
-  async authorize(authorizationCode: string, state: string): Promise<IfoodGrant> {
+  /**
+   * Troca o código de autorização do Portal do Parceiro pelo acesso da loja. `state` veio de `linkCode`.
+   * Descobre automaticamente qual é o ID da loja a partir do token obtido.
+   */
+  async authorize(authorizationCode: string, state: string): Promise<IfoodAuthorization> {
     let verifier: string;
     try {
       verifier = decrypt(Buffer.from(state, "base64url"), this.key);
     } catch {
       throw new Error("o código de vinculação não é válido, gere um novo");
     }
-    return this.platform.grant({ authorizationCode, verifier });
+    const grant = await this.platform.grant({ authorizationCode, verifier });
+    // Descobre qual loja o token autoriza, usando o token para chamar a API do iFood.
+    const client = this.clientWith(grant);
+    const merchants = await client.merchants();
+    if (!merchants.length) throw new Error("o código de autorização não autoriza nenhuma loja");
+    if (merchants.length > 1) throw new Error("o código de autorização autoriza múltiplas lojas (esperado: uma)");
+    return { ...grant, merchantId: merchants[0]! };
   }
 
   /** O canal deixou de valer (desconectado, conectado de novo): esquece o acesso guardado em memória. */

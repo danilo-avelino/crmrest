@@ -106,6 +106,10 @@ export type IfoodUserCode = z.infer<typeof UserCode>;
 /** Acesso de uma loja no aplicativo distribuído (guardado cifrado no canal). */
 export type IfoodGrant = { accessToken: string; refreshToken: string; expiresAt: string };
 
+/** Resposta da API do iFood com a lista de lojas autorizadas. */
+const Merchants = z.array(z.object({ id: z.string() }).passthrough());
+export type IfoodMerchant = { id: string };
+
 export class IfoodClient {
   private token: { value: string; issuedAt: number; expiresAt: number } | null = null;
 
@@ -150,6 +154,26 @@ export class IfoodClient {
       if (error instanceof IfoodError && error.status === 403) return false;
       throw error;
     }
+  }
+
+  /** Lista as lojas que este token autoriza (aplicativo distribuído). Retorna um UUID por loja. */
+  async merchants(): Promise<string[]> {
+    // Tenta o endpoint padrão; se 404, tenta alternativas. Aplicativo distribuído: cada token enxerga uma loja só.
+    for (const path of ["/account/v1.0/merchants", "/merchant/v1.0/account", "/account/v1.0/account"]) {
+      try {
+        const response = await this.call(path);
+        if (response.status === 404) continue;
+        if (!response.ok) throw new IfoodError(path, response.status);
+        const body = (await response.json()) as Record<string, unknown> | unknown[];
+        // Se for um array: lista de merchants. Se for um object: merchants dentro de um campo.
+        const list = Array.isArray(body) ? body : (typeof body === "object" && body ? (body as Record<string, unknown>).merchants ?? (body as Record<string, unknown>).accounts ?? [body] : [body]);
+        return Merchants.parse(list).map((m) => m.id);
+      } catch (error) {
+        if (error instanceof IfoodError) continue; // tenta o próximo
+        throw error;
+      }
+    }
+    throw new Error("não foi possível descobrir qual loja o código de autorização autoriza (endpoint da API do iFood não encontrado)");
   }
 
   async order(orderId: string): Promise<IfoodOrder> {
