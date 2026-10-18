@@ -770,7 +770,7 @@ function IfoodLinkCode({ tenantId, code, onCode }: { tenantId: string; code: Ifo
   );
 }
 
-/** iFood distribuído: o código de autorização que o Portal do Parceiro mostra vem antes do ID da loja. */
+/** iFood distribuído: o código de autorização que o Portal do Parceiro mostra depois de "Autorizar". */
 const IFOOD_AUTHORIZATION_FIELD: Field = { name: "authorizationCode", label: "Código de autorização", placeholder: "Ex.: LHQX-ZZZZ" };
 
 /**
@@ -787,7 +787,8 @@ function IntegrationForm({ system, tenantId, ifoodLinkCode, onClose }: { system:
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [failure, setFailure] = useState<string | null>(null);
   const [linkCode, setLinkCode] = useState<IfoodLinkCodeDto | null>(null);
-  const fields = ifoodLinkCode ? [IFOOD_AUTHORIZATION_FIELD, ...(system.fields ?? [])] : system.fields;
+  // iFood distribuído: o código de autorização no lugar do ID da loja, que vem do próprio acesso.
+  const fields = ifoodLinkCode ? [IFOOD_AUTHORIZATION_FIELD, ...(system.fields ?? []).filter((field) => field.name !== "merchantId")] : system.fields;
 
   const [submit, saving] = usePendingAction(async () => {
     setFailure(null);
@@ -817,9 +818,6 @@ function IntegrationForm({ system, tenantId, ifoodLinkCode, onClose }: { system:
     }
   });
 
-  // iFood distribuído: remove o campo merchantId pois é descoberto automaticamente.
-  const displayedFields = ifoodLinkCode && system.type === "IFOOD" ? fields?.filter((f) => f.name !== "merchantId") : fields;
-
   return (
     <form
       noValidate
@@ -830,7 +828,7 @@ function IntegrationForm({ system, tenantId, ifoodLinkCode, onClose }: { system:
       }}
     >
       {ifoodLinkCode && <IfoodLinkCode tenantId={tenantId} code={linkCode} onCode={setLinkCode} />}
-      {displayedFields?.map((field) => (
+      {fields?.map((field) => (
         <div key={field.name} className="flex flex-col gap-1">
           <Label htmlFor={`${id}-${field.name}`}>{field.label}</Label>
           <Input
@@ -854,7 +852,7 @@ function IntegrationForm({ system, tenantId, ifoodLinkCode, onClose }: { system:
           )}
         </div>
       ))}
-      <p className="text-[11.5px] leading-normal text-ink-3">{system.help}</p>
+      {!ifoodLinkCode && <p className="text-[11.5px] leading-normal text-ink-3">{system.help}</p>}
       {failure && (
         <p role="alert" className="text-[11px] text-tomate">
           {failure}

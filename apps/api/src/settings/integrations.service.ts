@@ -287,40 +287,25 @@ export class IntegrationsService {
           };
         }
         case "IFOOD": {
-          // Centralizado: a credencial é da plataforma (IFOOD_CLIENT_ID/SECRET) e a loja só precisa ter autorizado o
-          // aplicativo no iFood. Distribuído: o código de autorização do Portal do Parceiro vira o acesso da loja e
-          // o ID é descoberto automaticamente (não precisa o usuário colar).
-          // Nos dois, a loja só entra se o iFood deixa consultar os pedidos dela (senão o polling seria recusado).
-          let secrets: Record<string, string> = {};
-          let merchantId = body.merchantId;
-          let client = this.ifood.platform;
+          // Distribuído: o código de autorização do Portal do Parceiro vira o acesso da loja, e a loja é a que esse
+          // acesso enxerga (o restaurante não informa o ID).
           if (this.ifood.configured && this.ifood.distributed) {
             if (!body.authorizationCode || !body.linkState) throw new Error("gere o código de vinculação e informe o código de autorização");
-            const auth = await this.ifood.authorize(body.authorizationCode, body.linkState).catch((error: unknown) => {
-              if (error instanceof IfoodError) throw new Error("o código de autorização não foi aceito (gere um novo código de vinculação)");
-              throw error;
-            });
-            secrets = auth;
-            merchantId = auth.merchantId; // descoberto automaticamente
-            client = this.ifood.clientWith(auth);
-          } else if (this.ifood.configured && !merchantId) {
-            throw new Error("informe o ID da loja");
+            const { grant, merchant } = await this.ifood.authorize(body.authorizationCode, body.linkState);
+            return { type: body.type, externalId: merchant.id, name: body.name || merchant.name || `iFood ${merchant.id.slice(0, 8)}`, secrets: grant };
           }
-          if (this.ifood.configured && merchantId) {
-            const authorized = await client.authorizes(merchantId).catch((error: unknown) => {
+          // Centralizado: a credencial é da plataforma (IFOOD_CLIENT_ID/SECRET) e a loja, pelo ID, só entra se autorizou o
+          // aplicativo no iFood (senão o polling seria recusado).
+          if (!body.merchantId) throw new Error("informe o ID da loja");
+          if (this.ifood.configured) {
+            const authorized = await this.ifood.platform.authorizes(body.merchantId).catch((error: unknown) => {
               // 400: o que foi colado não é o ID da loja (UUID); o Portal do iFood também mostra um código numérico.
               if (error instanceof IfoodError && error.status === 400) throw new Error("o ID da loja não é válido (use o ID com letras e traços)");
               throw error;
             });
-            if (!authorized) {
-              throw new Error(
-                this.ifood.distributed
-                  ? "a loja não foi encontrada (confira o código de autorização no Portal do Parceiro)"
-                  : "a loja ainda não autorizou o Dish Desk no Portal do Parceiro do iFood",
-              );
-            }
+            if (!authorized) throw new Error("a loja ainda não autorizou o Dish Desk no Portal do Parceiro do iFood");
           }
-          return { type: body.type, externalId: merchantId!, name: body.name || `iFood ${merchantId!.slice(0, 8)}`, secrets };
+          return { type: body.type, externalId: body.merchantId, name: body.name || `iFood ${body.merchantId.slice(0, 8)}`, secrets: {} };
         }
         case "CARDAPIO_WEB":
           // Testa a chave lendo os pedidos da última hora (quando a API do Cardápio Web está ligada neste servidor).
