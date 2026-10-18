@@ -1,12 +1,13 @@
 "use client";
 
-import { LoaderCircleIcon, MessageSquareIcon, WifiOffIcon } from "lucide-react";
+import { LoaderCircleIcon, WifiOffIcon } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { ChannelAlert } from "@/components/inbox/channel-alert";
 import { ConversationList } from "@/components/inbox/conversation-list";
 import { ConversationPane } from "@/components/inbox/conversation-pane";
 import { IfoodExtensionAlert } from "@/components/inbox/ifood-extension-alert";
+import { InboxHome } from "@/components/inbox/inbox-home";
 import { NavRail } from "@/components/inbox/nav-rail";
 import { useInboxRealtime } from "@/hooks/use-inbox-realtime";
 
@@ -47,10 +48,7 @@ export function InboxView() {
           {selectedId ? (
             <ConversationPane key={selectedId} conversationId={selectedId} onOpenConversation={setSelectedId} />
           ) : (
-            <div className="flex flex-1 flex-col items-center justify-center gap-2 text-ink-3">
-              <MessageSquareIcon className="size-6" aria-hidden />
-              <p>Selecione uma conversa para começar.</p>
-            </div>
+            <InboxHome />
           )}
         </div>
       </div>

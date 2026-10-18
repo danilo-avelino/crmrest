@@ -107,9 +107,9 @@ const SYSTEMS: {
 
 type System = (typeof SYSTEMS)[number];
 
-type Badge = { label: string; className: string; dot: string };
+export type Badge = { label: string; className: string; dot: string };
 
-const STATUS: Record<IntegrationDto["status"], Badge> = {
+export const STATUS: Record<IntegrationDto["status"], Badge> = {
   CONNECTED: { label: "Conectado", className: "bg-success-lt text-success-ink", dot: "bg-success" },
   ERROR: { label: "Com erro", className: "bg-tomate-lt text-tomate-ink", dot: "bg-tomate" },
   DISCONNECTED: { label: "Desconectado", className: "bg-surface-2 text-ink-3", dot: "bg-ink-3" },
@@ -145,7 +145,7 @@ const ICONS: Record<IntegrationType, { tile: string; glyph: ReactNode }> = {
   },
 };
 
-function SystemIcon({ type, className }: { type: IntegrationType; className: string }) {
+export function SystemIcon({ type, className }: { type: IntegrationType; className: string }) {
   return (
     <span aria-hidden className={cn("flex shrink-0 items-center justify-center text-white", ICONS[type].tile, className)}>
       {ICONS[type].glyph}
@@ -153,7 +153,7 @@ function SystemIcon({ type, className }: { type: IntegrationType; className: str
   );
 }
 
-function StatusBadge({ badge, className }: { badge: Badge; className?: string }) {
+export function StatusBadge({ badge, className }: { badge: Badge; className?: string }) {
   return (
     <span className={cn("inline-flex shrink-0 items-center gap-[5px] rounded-full px-2 py-0.5 text-[10px] font-bold tracking-[0.02em]", badge.className, className)}>
       <span className={cn("size-[5px] rounded-full", badge.dot)} aria-hidden />
@@ -199,9 +199,18 @@ export function IntegrationsTab() {
   const { request } = useAuth();
   const tenant = useSettingsTenant();
   // Volta do login do Instagram (?instagram=…): o modal do Instagram já abre, para mostrar o resultado.
+  // Atalhos da Inbox: ?conectar=IFOOD abre a nova conexão, ?gerenciar=IFOOD as contas, ?conectar=nova o painel "Adicionar integração".
   const params = useSearchParams();
-  const [modal, setModal] = useState(() => ({ type: "INSTAGRAM" as IntegrationType, adding: false, open: params.has("instagram") }));
-  const [catalog, setCatalog] = useState(false);
+  const shortcut = SYSTEMS.find((system) => system.type === (params.get("conectar") ?? params.get("gerenciar")))?.type;
+  const [modal, setModal] = useState(() =>
+    shortcut
+      ? { type: shortcut, adding: params.has("conectar"), open: true }
+      : { type: "INSTAGRAM" as IntegrationType, adding: false, open: params.has("instagram") },
+  );
+  const [catalog, setCatalog] = useState(params.get("conectar") === "nova");
+  useEffect(() => {
+    if (params.has("conectar") || params.has("gerenciar")) window.history.replaceState(null, "", window.location.pathname);
+  }, []);
   const integrations = useQuery({
     queryKey: ["integrations", tenant.id],
     queryFn: () => request<IntegrationsDto>(`/integrations?tenantId=${tenant.id}`),
