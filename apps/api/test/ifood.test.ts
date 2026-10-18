@@ -71,6 +71,10 @@ async function startMockIfood() {
     }
     const token = Number(/^Bearer token-ifood-(\d+)$/.exec(req.headers.authorization ?? "")?.[1]);
     if (!token) return json(401);
+    if (url === "/account/v1.0/merchants") {
+      const merchant = state.tokenMerchants.get(token);
+      return merchant ? json(200, [{ id: merchant }]) : json(200, []);
+    }
     if (url === "/order/v1.0/events:polling") {
       const merchants = String(req.headers["x-polling-merchants"]).split(",");
       state.pollingMerchants.push(merchants.join(","));
@@ -735,8 +739,8 @@ describe("iFood distribuído (cada loja autoriza com o código de vinculação)"
   const merchantId = randomUUID();
   const add = (body: object) =>
     request(app.getHttpServer()).post(`/api/integrations/${fx.tenant.id}`).set("Authorization", `Bearer ${token}`).send({ type: "IFOOD", ...body });
-  const storeChannel = () => admin.channel.findFirstOrThrow({ where: { tenantId: fx.tenant.id, type: "IFOOD", externalId: merchantId } });
-  const storedGrant = async () => JSON.parse(decrypt((await storeChannel()).credentials, key)) as { refreshToken: string; expiresAt: string };
+  const storeChannel = () => admin.channel.findFirstOrThrow({ where: { tenantId: fx.tenant.id, type: "IFOOD" } });
+  const storedGrant = async () => JSON.parse(decrypt((await storeChannel()).credentials, key)) as { accessToken: string; refreshToken: string; expiresAt: string };
   /** O acesso guardado já venceu (e some da memória): a próxima chamada ao iFood precisa renová-lo. */
   const expireGrant = async () => {
     const channel = await storeChannel();
@@ -786,14 +790,11 @@ describe("iFood distribuído (cada loja autoriza com o código de vinculação)"
     expect(code.state).not.toContain("verificador");
 
     ifood.state.authorizationCodes.set("LHQX-ZZZZ", merchantId);
-    expect((await add({ merchantId }).expect(422)).body.message).toContain("gere o código de vinculação");
-    expect((await add({ merchantId, authorizationCode: "ERRADO-00", linkState: code.state }).expect(422)).body.message).toContain("não foi aceito");
-    expect((await add({ merchantId, authorizationCode: "LHQX-ZZZZ", linkState: "adulterado" }).expect(422)).body.message).toContain("gere um novo");
-    expect((await add({ merchantId: randomUUID(), authorizationCode: "LHQX-ZZZZ", linkState: code.state }).expect(422)).body.message).toContain(
-      "a autorização não inclui esta loja",
-    );
+    expect((await add({ authorizationCode: "ERRADO-00", linkState: code.state }).expect(422)).body.message).toContain("não foi aceito");
+    expect((await add({ authorizationCode: "LHQX-ZZZZ", linkState: "adulterado" }).expect(422)).body.message).toContain("gere um novo");
 
-    const created = await add({ merchantId, authorizationCode: "LHQX-ZZZZ", linkState: code.state, name: "Loja distribuída" }).expect(201);
+    // Distribuído: não precisa fornecer merchantId, é descoberto automaticamente.
+    const created = await add({ authorizationCode: "LHQX-ZZZZ", linkState: code.state, name: "Loja distribuída" }).expect(201);
     expect(created.body).toMatchObject({ externalId: merchantId, name: "Loja distribuída", status: "CONNECTED" });
     expect((await storedGrant()).refreshToken).toMatch(/^refresh-\d+$/);
 
