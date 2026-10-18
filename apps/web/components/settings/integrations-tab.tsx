@@ -79,7 +79,7 @@ const SYSTEMS: {
     type: "IFOOD",
     group: "Marketplaces",
     summary: "Pedidos",
-    description: "Lojas do iFood. Os pedidos entram no cadastro do cliente e abrem conversas na Inbox.",
+    description: "Lojas do iFood. Os pedidos entram no cadastro do cliente.",
     account: "Loja conectada",
     idLabel: "ID da loja",
     another: "Adicionar outra loja",
