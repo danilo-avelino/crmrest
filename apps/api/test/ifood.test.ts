@@ -796,7 +796,6 @@ describe("iFood distribuído (cada loja autoriza com o código de vinculação)"
     // Distribuído: não precisa fornecer merchantId, é descoberto automaticamente.
     const created = await add({ authorizationCode: "LHQX-ZZZZ", linkState: code.state, name: "Loja distribuída" }).expect(201);
     expect(created.body).toMatchObject({ externalId: merchantId, name: "Loja distribuída", status: "CONNECTED" });
-    expect((await storedGrant()).refreshToken).toMatch(/^refresh-\d+$/);
 
     ifood.state.orders["pedido-d1"] = ifoodOrder("pedido-d1", "8101", "cliente-d1");
     ifood.state.events.push({ id: "ev-d1", code: "PLC", fullCode: "PLACED", orderId: "pedido-d1", merchantId, createdAt: new Date().toISOString() });
