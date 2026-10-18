@@ -812,8 +812,10 @@ describe("iFood distribuído (cada loja autoriza com o código de vinculação)"
     ifood.state.orders["pedido-d2"] = ifoodOrder("pedido-d2", "8102", "cliente-d2");
     ifood.state.events.push({ id: "ev-d2", code: "PLC", fullCode: "PLACED", orderId: "pedido-d2", merchantId, createdAt: new Date().toISOString() });
     await service.poll();
-    expect(ifood.state.tokenRequests.at(-1)).toContain("grantType=refresh_token");
-    expect(ifood.state.tokenRequests.at(-1)).toContain(`refreshToken=${before}`);
+    const lastTokenRequest = ifood.state.tokenRequests.at(-1);
+    expect(lastTokenRequest).toBeDefined();
+    expect(lastTokenRequest!).toContain("grantType=refresh_token");
+    expect(lastTokenRequest!).toContain(`refreshToken=${before}`);
     expect((await storedGrant()).refreshToken).not.toBe(before);
     expect(await admin.order.count({ where: { tenantId: fx.tenant.id, externalOrderId: "pedido-d2" } })).toBe(1);
     expect((await storeChannel()).status).toBe("CONNECTED");
