@@ -10,6 +10,8 @@ export const OrderListQuery = z.object({
   period: z.enum(REPORT_PERIODS).default("today"),
   status: z.enum(OrderStatusEnum).optional(),
   channel: z.enum(ChannelTypeEnum).optional(),
+  /** Só os pedidos em produção (ainda não saíram do restaurante), do mais antigo para o mais novo. */
+  production: z.stringbool().optional(),
   page: z.coerce.number().int().min(1).default(1),
 });
 export type OrderListQuery = z.infer<typeof OrderListQuery>;
@@ -95,6 +97,11 @@ export type OrderListItem = OrderDto & {
   events: { code: string; occurredAt: string; detail: string | null }[];
   /** Tempo de preparo: de confirmado a pronto (null se a loja não marcou as duas etapas). */
   preparationSeconds: number | null;
+  /**
+   * Em produção e atrasado: a previsão de saída (E26) passa da entrega prometida ou do tempo normal de saída; sem base
+   * para a previsão, a entrega prometida pela plataforma já passou.
+   */
+  late: boolean;
   /** Pedidos do cliente em todas as fontes (inclui este). */
   history: CustomerHistory;
   /** Próxima etapa que dá para informar à plataforma (null: nenhuma, a origem não aceita, ou o Dish Desk só acompanha). */

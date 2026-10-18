@@ -27,6 +27,8 @@ import { eventDetail, openDispute, platformInfo } from "./ifood-order.js";
 import { latestOrderOf } from "./latest-order.js";
 
 const PAGE_SIZE = 50;
+/** Ainda no restaurante (filtro "em produção" e o alerta de atraso). */
+const IN_PRODUCTION: OrderStatus[] = ["PLACED", "CONFIRMED", "PREPARING", "READY"];
 
 /** Aba Pedidos: todos os pedidos das integrações (iFood, Cardápio Web), sem abrir uma conversa para cada um. */
 @Injectable()
@@ -45,8 +47,10 @@ export class OrdersService {
       placedAt: { gte: periodStart(query.period, now) },
       ...(query.status && { status: query.status }),
       ...(query.channel && { channel: { type: query.channel } }),
+      ...(query.production && { status: { in: IN_PRODUCTION }, dispatchedAt: null }),
     };
-    const [rows, total, histories] = await this.db.withTenants(scopeFor(auth, query.tenantId), async (tx) => {
+    const sort = query.production ? "asc" : "desc";
+    const [rows, total, histories, late] = await this.db.withTenants(scopeFor(auth, query.tenantId), async (tx) => {
       const [rows, total] = await Promise.all([
         tx.order.findMany({
           where,
@@ -57,7 +61,7 @@ export class OrdersService {
             contact: { select: { id: true, name: true, phone: true, cpfHash: true, email: true } },
             events: { orderBy: { occurredAt: "asc" }, select: { code: true, occurredAt: true, metadata: true } },
           },
-          orderBy: [{ placedAt: "desc" }, { id: "desc" }],
+          orderBy: [{ placedAt: sort }, { id: sort }],
           skip: (query.page - 1) * PAGE_SIZE,
           take: PAGE_SIZE,
         }),
@@ -68,7 +72,15 @@ export class OrdersService {
       for (const { contact } of rows) {
         if (!histories.has(contact.id)) histories.set(contact.id, await customerHistory(tx, contact));
       }
-      return [rows, total, histories] as const;
+      // Atraso só dos que ainda estão no restaurante; sem base para a previsão, vale a entrega prometida.
+      const late = new Set<string>();
+      for (const order of rows) {
+        if (order.dispatchedAt || !IN_PRODUCTION.includes(order.status)) continue;
+        const forecast = await forecastOrder(tx, order.id, now);
+        const promised = promisedAt(order.raw);
+        if (forecast ? forecast.late : promised !== null && promised < now) late.add(order.id);
+      }
+      return [rows, total, histories, late] as const;
     });
     return {
       items: rows.map((order) => {
@@ -86,6 +98,7 @@ export class OrdersService {
           history: histories.get(order.contact.id)!,
           events: order.events.map((event) => ({ code: event.code, occurredAt: event.occurredAt.toISOString(), detail: eventDetail(event) })),
           preparationSeconds: confirmed && ready ? Math.round((ready.getTime() - confirmed.getTime()) / 1000) : null,
+          late: late.has(order.id),
           nextAction: actions ? nextOrderAction(order) : null,
           cancelable: actions && CANCELABLE.has(order.status),
           platform: ifood ? platformInfo(order.raw) : null,

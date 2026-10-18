@@ -258,8 +258,8 @@ export function OrderList() {
   );
 }
 
-/** Itens e linha do tempo do pedido (como a plataforma informou). */
-function OrderDetails({ order }: { order: OrderListItem }) {
+/** Itens e linha do tempo do pedido (como a plataforma informou). Também no modal dos pedidos em produção da Inbox. */
+export function OrderDetails({ order }: { order: OrderListItem }) {
   const timeline = order.events.filter((event) => EVENT_LABEL[event.code]);
   return (
     <div className="grid grid-cols-2 gap-3">

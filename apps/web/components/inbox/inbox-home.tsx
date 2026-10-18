@@ -1,16 +1,27 @@
 "use client";
 
-import { CHANNEL_LABEL, type ChannelHealthDto, INTEGRATION_TYPES, type IntegrationType, type OrderPage } from "@dishdesk/shared";
+import {
+  CHANNEL_LABEL,
+  type ChannelHealthDto,
+  INTEGRATION_TYPES,
+  type IntegrationType,
+  type OrderListItem,
+  type OrderPage,
+} from "@dishdesk/shared";
 import { useQuery } from "@tanstack/react-query";
-import { LoaderCircleIcon, MessageSquareIcon, PlusIcon } from "lucide-react";
+import { AlertTriangleIcon, LoaderCircleIcon, MessageSquareIcon, PlusIcon } from "lucide-react";
 import Link from "next/link";
+import { useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
 import { ORDER_TONE } from "@/components/clients/client-detail";
 import { ChannelDot, StatusBadge } from "@/components/inbox/bits";
 import { ORDER_STATUS } from "@/components/inbox/order-card";
+import { OrderDetails } from "@/components/orders/order-list";
 import { type Badge, STATUS, StatusBadge as IntegrationBadge, SystemIcon } from "@/components/settings/integrations-tab";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { clock, count, currency } from "@/lib/format";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import { useNow } from "@/hooks/use-now";
+import { ago, clock, count, currency } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 /** Sempre na lista, conectados ou não; os demais sistemas só aparecem depois de conectados. */
@@ -123,29 +134,36 @@ function IntegrationRow({ type, channels, admin }: { type: IntegrationType; chan
   );
 }
 
-/** Barra lateral com os pedidos de hoje (a mesma consulta da aba Pedidos, que tem os detalhes e as ações). */
+/**
+ * Barra lateral com os pedidos de hoje ainda em produção, do mais antigo para o mais novo, com o alerta de atraso. O
+ * clique abre o pedido num modal com os detalhes e as ações da aba Pedidos.
+ */
 function TodayOrders() {
   const { request, session } = useAuth();
   const master = session?.context?.mode === "master";
-  const params = new URLSearchParams({ period: "today", page: "1" });
+  const now = useNow(60_000);
+  const [selected, setSelected] = useState<OrderListItem | null>(null);
+  const params = new URLSearchParams({ period: "today", production: "true", page: "1" });
   const orders = useQuery({
     queryKey: ["orders", params.toString()],
     queryFn: () => request<OrderPage>(`/orders?${params}`),
     refetchInterval: 30_000, // os pedidos chegam pelo polling das integrações
   });
   const data = orders.data;
-  // Soma só com todos os pedidos do dia na página (até 50).
-  const sum = data && data.total <= data.items.length ? data.items.filter((order) => order.status !== "CANCELED").reduce((total, order) => total + Number(order.total), 0) : null;
+  const late = data?.items.filter((order) => order.late).length ?? 0;
+  // O modal acompanha a lista; o pedido que sai da produção (ex.: despachado) continua aberto como estava.
+  const open = selected && (data?.items.find((order) => order.id === selected.id) ?? selected);
 
   return (
     <aside aria-labelledby="inbox-pedidos-hoje" className="flex w-[344px] shrink-0 flex-col border-l border-rule bg-surface">
       <div className="flex shrink-0 items-start justify-between gap-3 border-b border-rule px-4 pt-4 pb-3.5">
         <div>
           <h2 id="inbox-pedidos-hoje" className="font-heading text-[16px] font-bold tracking-[-0.3px]">
-            Pedidos de hoje
+            Em produção
           </h2>
           <p className="mt-0.5 text-xs text-ink-3 tabular-nums">
-            {data ? `${count(data.total)} ${data.total === 1 ? "pedido" : "pedidos"}${sum !== null && sum > 0 ? ` · ${currency(sum)}` : ""}` : " "}
+            {data ? `${count(data.total)} ${data.total === 1 ? "pedido" : "pedidos"}` : " "}
+            {late > 0 && <span className="font-medium text-tomate"> · {late === 1 ? "1 atrasado" : `${count(late)} atrasados`}</span>}
           </p>
         </div>
         <Link href="/pedidos" className={cn(buttonVariants({ variant: "outline", size: "xs" }), "text-ink-2")}>
@@ -168,35 +186,80 @@ function TodayOrders() {
           </div>
         ) : data!.items.length === 0 ? (
           <p className="px-4 py-8 text-center leading-normal text-ink-3">
-            Nenhum pedido hoje.
+            Nenhum pedido em produção.
             <br />
             Os pedidos do iFood e do Cardápio Web aparecem aqui assim que chegam.
           </p>
         ) : (
           <ul>
             {data!.items.map((order) => (
-              <li key={order.id} className="border-b border-rule-soft px-4 py-2.5">
-                <div className="flex items-center gap-2">
-                  <ChannelDot type={order.channelType} className="size-2" />
-                  <span className="font-medium tabular-nums">#{order.displayCode ?? order.id.slice(0, 6)}</span>
-                  <Link href={`/clientes/${order.contact.id}`} className="min-w-0 flex-1 truncate text-ink-2 hover:text-tomate hover:underline">
-                    {order.contact.name ?? "Cliente sem nome"}
-                  </Link>
-                  <span className="text-[11px] text-ink-3 tabular-nums">{clock(order.placedAt)}</span>
-                </div>
-                <div className="mt-1 flex items-center justify-between gap-2 pl-4">
-                  <span className="truncate text-xs text-ink-3 tabular-nums">
-                    {currency(order.total)}
-                    {master && ` · ${order.tenant.name}`}
-                  </span>
-                  <StatusBadge tone={ORDER_TONE[order.status]}>{ORDER_STATUS[order.status].label}</StatusBadge>
-                </div>
-                {order.dispute && <p className="mt-0.5 pl-4 text-[11px] text-warning">Cliente pediu cancelamento</p>}
+              <li key={order.id} className="border-b border-rule-soft">
+                <button
+                  type="button"
+                  onClick={() => setSelected(order)}
+                  className={cn(
+                    "w-full border-l-[3px] px-4 py-2.5 pl-[13px] text-left",
+                    order.late ? "border-tomate bg-tomate-lt hover:bg-tomate-lt/70" : "border-transparent hover:bg-paper",
+                  )}
+                >
+                  <div className="flex items-center gap-2">
+                    <ChannelDot type={order.channelType} className="size-2" />
+                    <span className="font-medium tabular-nums">#{order.displayCode ?? order.id.slice(0, 6)}</span>
+                    <span className="min-w-0 flex-1 truncate text-ink-2">{order.contact.name ?? "Cliente sem nome"}</span>
+                    <span className={cn("text-[11px] tabular-nums", order.late ? "font-medium text-tomate" : "text-ink-3")}>
+                      {clock(order.placedAt)} · {ago(order.placedAt, now)}
+                    </span>
+                  </div>
+                  <div className="mt-1 flex items-center justify-between gap-2 pl-4">
+                    <span className="truncate text-xs text-ink-3 tabular-nums">
+                      {currency(order.total)}
+                      {master && ` · ${order.tenant.name}`}
+                    </span>
+                    <span className="flex shrink-0 items-center gap-1">
+                      {order.late && (
+                        <StatusBadge tone="open">
+                          <AlertTriangleIcon className="mr-0.5 size-2.5" aria-hidden />
+                          Atrasado
+                        </StatusBadge>
+                      )}
+                      <StatusBadge tone={ORDER_TONE[order.status]}>{ORDER_STATUS[order.status].label}</StatusBadge>
+                    </span>
+                  </div>
+                  {order.dispute && <p className="mt-0.5 pl-4 text-[11px] text-warning">Cliente pediu cancelamento</p>}
+                </button>
               </li>
             ))}
           </ul>
         )}
       </div>
+
+      <Dialog open={open !== null} onOpenChange={(next) => !next && setSelected(null)}>
+        <DialogContent className="flex max-h-[calc(100vh-4rem)] w-[680px] flex-col">
+          {open && (
+            <>
+              <div className="shrink-0 border-b border-rule px-6 py-5">
+                <div className="mb-1 flex items-center gap-2">
+                  <DialogTitle>
+                    Pedido {CHANNEL_LABEL[open.channelType]} #{open.displayCode ?? open.id.slice(0, 6)}
+                  </DialogTitle>
+                  {open.late && <StatusBadge tone="open">Atrasado</StatusBadge>}
+                  <StatusBadge tone={ORDER_TONE[open.status]}>{ORDER_STATUS[open.status].label}</StatusBadge>
+                </div>
+                <DialogDescription className="tabular-nums">
+                  <Link href={`/clientes/${open.contact.id}`} className="text-ink-2 hover:text-tomate hover:underline">
+                    {open.contact.name ?? "Cliente sem nome"}
+                  </Link>
+                  {` · feito às ${clock(open.placedAt)} (${ago(open.placedAt, now)}) · ${currency(open.total)}`}
+                  {master && ` · ${open.tenant.name}`}
+                </DialogDescription>
+              </div>
+              <div className="overflow-y-auto bg-paper px-6 py-4">
+                <OrderDetails order={open} />
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
     </aside>
   );
 }

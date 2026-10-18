@@ -155,4 +155,20 @@ describe("previsão de saída do pedido (E26)", () => {
       .expect(200);
     expect(none.body).toEqual({ current: null });
   });
+
+  it("barra da Inbox: só os pedidos em produção, do mais antigo para o mais novo, com o alerta de atraso", async () => {
+    const onTime = await order(1); // dentro do tempo normal de saída
+    const late = await order(45); // passou do tempo normal, sem entrega prometida
+
+    const { body } = await request(app.getHttpServer())
+      .get("/api/orders?period=7d&production=true")
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    const items = body.items as { id: string; status: string; placedAt: string; late: boolean }[];
+    expect(items.every((item) => ["PLACED", "CONFIRMED", "PREPARING", "READY"].includes(item.status))).toBe(true);
+    const placed = items.map((item) => Date.parse(item.placedAt));
+    expect(placed).toEqual([...placed].sort((a, b) => a - b));
+    expect(items.find((item) => item.id === late.id)?.late).toBe(true);
+    expect(items.find((item) => item.id === onTime.id)?.late).toBe(false);
+  });
 });
