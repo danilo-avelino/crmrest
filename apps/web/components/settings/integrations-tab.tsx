@@ -9,9 +9,9 @@ import {
   type IntegrationType,
 } from "@dishdesk/shared";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronRightIcon, CircleAlertIcon, PlusIcon, SearchIcon, XIcon } from "lucide-react";
+import { CheckIcon, ChevronRightIcon, CircleAlertIcon, CopyIcon, PlusIcon, SearchIcon, XIcon } from "lucide-react";
 import { useSearchParams } from "next/navigation";
-import { type ReactNode, useEffect, useId, useState } from "react";
+import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
 import { IFOOD_WIDGET_KEY } from "@/components/ifood-widget";
 import { SettingsTenantPicker, TabLoading, useSettingsTenant } from "@/components/settings/settings-shell";
@@ -705,15 +705,19 @@ function RemovalConfirm({ tenantId, item, remove, onClose }: { tenantId: string;
 }
 
 /**
- * iFood distribuído, primeiro passo: gera o código de vinculação e leva ao Portal do Parceiro, onde o responsável pela
- * loja confere o código, clica em "Autorizar" e recebe o código de autorização que vai no formulário.
+ * iFood distribuído, primeiro passo: o código de vinculação já vem gerado ao abrir o formulário e leva ao Portal do
+ * Parceiro, onde o responsável pela loja confere o código, clica em "Autorizar" e recebe o código de autorização.
  */
 function IfoodLinkCode({ tenantId, code, onCode }: { tenantId: string; code: IfoodLinkCodeDto | null; onCode: (code: IfoodLinkCodeDto) => void }) {
   const { request } = useAuth();
   const [failure, setFailure] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  // Um código só ao abrir, mesmo com o efeito rodando duas vezes no modo de desenvolvimento.
+  const requested = useRef(false);
 
   async function generate() {
     setFailure(null);
+    setCopied(false);
     try {
       onCode(await request<IfoodLinkCodeDto>(`/integrations/${tenantId}/ifood/link-code`, { method: "POST" }));
     } catch (error) {
@@ -721,15 +725,31 @@ function IfoodLinkCode({ tenantId, code, onCode }: { tenantId: string; code: Ifo
     }
   }
 
+  useEffect(() => {
+    if (requested.current) return;
+    requested.current = true;
+    void generate();
+  });
+
+  async function copy(userCode: string) {
+    await navigator.clipboard.writeText(userCode);
+    setCopied(true);
+  }
+
   return (
     <div className="rounded-[10px] bg-paper px-[15px] py-[13px]">
       <p className="mb-2 text-[11.5px] leading-normal text-ink-2">
-        Gere o código e abra o Portal do Parceiro com o login do responsável pela loja. Confira o código, clique em <b>Autorizar</b> e copie o
-        código de autorização para o campo abaixo.
+        Abra o Portal do Parceiro com o login do responsável pela loja e confira este código. Clique em <b>Autorizar</b> e copie o código de
+        autorização para o campo abaixo.
       </p>
       {code ? (
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-          <span className="font-heading text-[22px] font-bold tracking-[1px] tabular-nums">{code.userCode}</span>
+          <span className="flex items-center gap-1">
+            <span className="font-heading text-[22px] font-bold tracking-[1px] tabular-nums">{code.userCode}</span>
+            <Button type="button" variant="ghost" size="icon-xs" className="text-ink-3" aria-label="Copiar o código" onClick={() => copy(code.userCode)}>
+              {copied ? <CheckIcon /> : <CopyIcon />}
+            </Button>
+          </span>
           <a href={code.verificationUrl} target="_blank" rel="noreferrer" className="text-[12px] font-medium text-tomate hover:underline">
             Abrir o Portal do Parceiro
           </a>
@@ -738,10 +758,12 @@ function IfoodLinkCode({ tenantId, code, onCode }: { tenantId: string; code: Ifo
           </Button>
           <p className="w-full text-[11px] text-ink-3">O código vale por {Math.round(code.expiresIn / 60)} minutos.</p>
         </div>
-      ) : (
+      ) : failure ? (
         <Button type="button" variant="outline" size="sm" onClick={generate}>
-          Gerar código de vinculação
+          Tentar de novo
         </Button>
+      ) : (
+        <p className="text-[12px] text-ink-3">Gerando o código…</p>
       )}
       {failure && <Failure>{failure}</Failure>}
     </div>
@@ -770,7 +792,7 @@ function IntegrationForm({ system, tenantId, ifoodLinkCode, onClose }: { system:
   const [submit, saving] = usePendingAction(async () => {
     setFailure(null);
     if (ifoodLinkCode && !linkCode) {
-      setFailure("Gere o código de vinculação e autorize o Dish Desk no Portal do Parceiro primeiro.");
+      setFailure("Espere o código de vinculação e autorize o Dish Desk no Portal do Parceiro primeiro.");
       return;
     }
     // Campos em branco (o nome opcional) ficam de fora.
