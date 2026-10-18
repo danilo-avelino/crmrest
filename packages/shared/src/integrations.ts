@@ -21,6 +21,8 @@ export type IntegrationsDto = {
   /** Credenciais da plataforma: sem elas, as lojas ficam cadastradas, mas os pedidos não chegam. */
   platform: {
     ifood: boolean;
+    /** Aplicativo distribuído no iFood: cada loja autoriza o Dish Desk com um código de vinculação. */
+    ifoodLinkCode: boolean;
     cardapioWeb: boolean;
     /** Login do Instagram: sem o app do Instagram configurado no servidor, o botão fica desligado. */
     instagramLogin: boolean;
@@ -46,6 +48,9 @@ export const AddIntegrationRequest = z.discriminatedUnion("type", [
     type: z.literal("IFOOD"),
     merchantId: z.string().trim().min(3, "Informe o ID da loja.").max(100, "ID longo demais."),
     name,
+    // Aplicativo distribuído: o código que o Portal do Parceiro mostra depois de "Autorizar" e o `state` do código de vinculação.
+    authorizationCode: z.string().trim().min(4, "Código de autorização inválido.").max(100, "Código de autorização inválido.").optional(),
+    linkState: z.string().max(2000).optional(),
   }),
   z.object({
     type: z.literal("CARDAPIO_WEB"),
@@ -55,6 +60,12 @@ export const AddIntegrationRequest = z.discriminatedUnion("type", [
   }),
 ]);
 export type AddIntegrationRequest = z.infer<typeof AddIntegrationRequest>;
+
+/**
+ * Código de vinculação do iFood (aplicativo distribuído): o responsável pela loja abre `verificationUrl` no Portal do
+ * Parceiro, confere o código e autoriza. `state` volta com o código de autorização ao conectar.
+ */
+export type IfoodLinkCodeDto = { userCode: string; verificationUrl: string; expiresIn: number; state: string };
 
 /**
  * Fim do cadastro incorporado do WhatsApp: o código da janela da Meta e o que ela contou da conta escolhida.

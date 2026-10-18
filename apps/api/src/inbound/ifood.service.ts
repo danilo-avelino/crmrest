@@ -2,10 +2,10 @@ import type { Prisma } from "@dishdesk/database";
 import type { OrderStatus } from "@dishdesk/database/enums";
 import { isValidCpf } from "@dishdesk/shared";
 import { InjectQueue, Processor } from "@nestjs/bullmq";
-import { Inject, Injectable, Logger, type OnModuleInit } from "@nestjs/common";
+import { Injectable, Logger, type OnModuleInit } from "@nestjs/common";
 import type { Queue } from "bullmq";
-import { ENV, type Env } from "../config/env.js";
-import { IFOOD_STATUS, IfoodClient, IfoodError, type IfoodEvent, type IfoodOrder } from "../connectors/ifood.client.js";
+import { IfoodAuthService } from "../connectors/ifood-auth.service.js";
+import { IFOOD_STATUS, type IfoodClient, IfoodError, type IfoodEvent, type IfoodOrder } from "../connectors/ifood.client.js";
 import { DatabaseService } from "../core/database.service.js";
 import { type NoticeStatus, OrderNoticeService } from "../orders/order-notice.service.js";
 import { JobProcessor } from "../queues/job-processor.js";
@@ -25,10 +25,10 @@ export class IfoodService implements OnModuleInit {
     private readonly inbound: InboundService,
     private readonly realtime: RealtimeEmitter,
     private readonly notices: OrderNoticeService,
+    private readonly auth: IfoodAuthService,
     @InjectQueue(QUEUES.ifood) private readonly queue: Queue,
-    @Inject(ENV) env: Env,
   ) {
-    this.client = new IfoodClient(env);
+    this.client = auth.platform;
   }
 
   async onModuleInit(): Promise<void> {
@@ -46,18 +46,46 @@ export class IfoodService implements OnModuleInit {
     if (!valid.length) return;
     const channels = new Map(valid.map((m) => [m.external_id, { id: m.id, tenantId: m.tenant_id, type: "IFOOD" as const }]));
 
+    if (!this.auth.distributed) {
+      await this.process(this.client, channels, await this.pollEvents(channels));
+      return;
+    }
+    // Distribuído: cada loja tem o próprio acesso, então a consulta é loja a loja.
+    for (const [merchantId, channel] of channels) {
+      const client = this.auth.clientFor(channel);
+      try {
+        await this.process(client, channels, await client.poll([merchantId]));
+      } catch (error) {
+        // 401/403: a loja revogou o acesso (ou ele não renova mais). Outros erros: tenta de novo no próximo polling.
+        if (error instanceof IfoodError && (error.status === 401 || error.status === 403)) await this.refuse(channel);
+        else this.logger.warn(`Polling da loja iFood do canal ${channel.id} falhou: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+  }
+
+  /** Trata os eventos e confirma ao iFood os processados (com a mesma credencial que os buscou). */
+  private async process(client: IfoodClient, channels: Map<string, ResolvedChannel>, events: IfoodEvent[]): Promise<void> {
     const processed: string[] = [];
-    for (const event of await this.pollEvents(channels)) {
+    for (const event of events) {
       const channel = channels.get(event.merchantId);
       try {
-        if (channel) await this.handle(channel, event);
+        if (channel) await this.handle(client, channel, event);
         processed.push(event.id); // loja desconhecida também é confirmada, para não voltar sempre
       } catch (error) {
         // Sem confirmação o evento volta no próximo polling.
         this.logger.warn(`Evento ${event.id} do iFood não processado: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
-    await this.client.acknowledge(processed);
+    await client.acknowledge(processed);
+  }
+
+  /** A loja não autoriza mais o aplicativo: fica "Com erro" e sai do polling até o restaurante conectar de novo. */
+  private async refuse(channel: ResolvedChannel): Promise<void> {
+    this.logger.warn(`Loja iFood do canal ${channel.id} não autoriza mais o aplicativo: marcada com erro.`);
+    await this.db.withTenants({ tenantIds: [channel.tenantId] }, (tx) =>
+      tx.channel.update({ where: { id: channel.id }, data: { status: "ERROR" } }),
+    );
+    this.auth.forget(channel.id);
   }
 
   /**
@@ -94,21 +122,16 @@ export class IfoodService implements OnModuleInit {
       this.logger.error("O iFood recusou (403) o polling de todas as lojas: conferir a credencial do aplicativo.");
       return [];
     }
-    for (const channel of refused) {
-      this.logger.warn(`Loja iFood do canal ${channel.id} não autoriza mais o aplicativo: marcada com erro.`);
-      await this.db.withTenants({ tenantIds: [channel.tenantId] }, (tx) =>
-        tx.channel.update({ where: { id: channel.id }, data: { status: "ERROR" } }),
-      );
-    }
+    for (const channel of refused) await this.refuse(channel);
     return events;
   }
 
   /** Todo evento entra na linha do tempo do pedido; os de status também mudam o pedido (e o card na conversa). */
-  private async handle(channel: ResolvedChannel, event: IfoodEvent): Promise<void> {
+  private async handle(client: IfoodClient, channel: ResolvedChannel, event: IfoodEvent): Promise<void> {
     // Garante o pedido mesmo que o evento PLACED tenha se perdido.
-    await this.ensureOrder(channel, event.orderId);
+    await this.ensureOrder(client, channel, event.orderId);
     // O cliente mudou itens depois de confirmar: busca o pedido de novo (itens e total).
-    const patched = event.fullCode === "ORDER_PATCHED" && (await this.refreshOrder(channel, event.orderId));
+    const patched = event.fullCode === "ORDER_PATCHED" && (await this.refreshOrder(client, channel, event.orderId));
 
     const status = IFOOD_STATUS[event.fullCode];
     const at = new Date(event.createdAt);
@@ -152,8 +175,8 @@ export class IfoodService implements OnModuleInit {
   }
 
   /** Itens e totais atualizados pelo iFood (ORDER_PATCHED). Devolve true se o pedido existia. */
-  private async refreshOrder(channel: ResolvedChannel, orderId: string): Promise<boolean> {
-    const order = await this.client.order(orderId);
+  private async refreshOrder(client: IfoodClient, channel: ResolvedChannel, orderId: string): Promise<boolean> {
+    const order = await client.order(orderId);
     return this.db.withTenants({ tenantIds: [channel.tenantId] }, async (tx) => {
       const current = await tx.order.findUnique({
         where: { channelId_externalOrderId: { channelId: channel.id, externalOrderId: orderId } },
@@ -179,13 +202,13 @@ export class IfoodService implements OnModuleInit {
    * Pedido novo: cliente (com CPF da nota e endereço) e pedido, que aparece na aba Pedidos. O iFood não deixa responder
    * pelo Dish Desk, então o pedido não abre conversa; o atendimento acha o pedido pelo cadastro (WhatsApp, Instagram).
    */
-  private async ensureOrder(channel: ResolvedChannel, orderId: string): Promise<void> {
+  private async ensureOrder(client: IfoodClient, channel: ResolvedChannel, orderId: string): Promise<void> {
     const exists = await this.db.withTenants({ tenantIds: [channel.tenantId] }, (tx) =>
       tx.order.findUnique({ where: { channelId_externalOrderId: { channelId: channel.id, externalOrderId: orderId } }, select: { id: true } }),
     );
     if (exists) return;
 
-    const order = await this.client.order(orderId);
+    const order = await client.order(orderId);
     const at = new Date(order.createdAt);
     const cpf = order.customer.documentNumber?.replace(/\D/g, "");
     const address = order.delivery?.deliveryAddress;

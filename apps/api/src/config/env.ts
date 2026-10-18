@@ -26,9 +26,12 @@ const EnvSchema = z.object({
   META_EMBEDDED_SIGNUP_CONFIG_ID: z.string().min(1).optional(),
   META_GRAPH_URL: z.url().default("https://graph.facebook.com/v24.0"),
   INSTAGRAM_GRAPH_URL: z.url().default("https://graph.instagram.com/v24.0"),
-  // iFood (modelo centralizado: uma credencial da plataforma para todas as lojas). Sem ela, o polling fica desligado.
+  // iFood: credencial do aplicativo. Sem ela, o polling fica desligado.
   IFOOD_CLIENT_ID: z.string().min(1).optional(),
   IFOOD_CLIENT_SECRET: z.string().min(1).optional(),
+  // Tipo do aplicativo no iFood. "centralized": a credencial vale para todas as lojas que autorizaram o app no Portal.
+  // "distributed": cada loja autoriza pelo código de vinculação (Configurações → Integrações) e tem o próprio acesso.
+  IFOOD_APP_TYPE: z.enum(["centralized", "distributed"]).default("centralized"),
   IFOOD_API_URL: z.url().default("https://merchant-api.ifood.com.br"),
   // Widget do iFood (chat com o cliente na Inbox): id do widget cadastrado no Portal do Desenvolvedor. Sem ele, não aparece.
   IFOOD_WIDGET_ID: z.string().min(1).optional(),

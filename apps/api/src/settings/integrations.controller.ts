@@ -1,4 +1,4 @@
-import { AddIntegrationRequest, type IntegrationDto, type IntegrationsDto, WhatsAppSignupRequest } from "@dishdesk/shared";
+import { AddIntegrationRequest, type IfoodLinkCodeDto, type IntegrationDto, type IntegrationsDto, WhatsAppSignupRequest } from "@dishdesk/shared";
 import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Post, Query, Redirect } from "@nestjs/common";
 import { z } from "zod";
 import { CurrentAuth, Public, type RequestAuth } from "../auth/auth.decorators.js";
@@ -24,6 +24,12 @@ export class IntegrationsController {
     @CurrentAuth() auth: RequestAuth,
   ): Promise<IntegrationDto> {
     return this.integrations.add(auth, tenantId, body);
+  }
+
+  /** iFood distribuído: código de vinculação para o responsável pela loja autorizar o Dish Desk. */
+  @Post(":tenantId/ifood/link-code")
+  ifoodLinkCode(@Param("tenantId", ParseUUIDPipe) tenantId: string, @CurrentAuth() auth: RequestAuth): Promise<IfoodLinkCodeDto> {
+    return this.integrations.ifoodLinkCode(auth, tenantId);
   }
 
   /** Endereço da tela de login do Instagram, para o painel abrir. */

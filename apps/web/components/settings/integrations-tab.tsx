@@ -3,6 +3,7 @@
 import {
   AddIntegrationRequest,
   CHANNEL_LABEL,
+  type IfoodLinkCodeDto,
   type IntegrationDto,
   type IntegrationsDto,
   type IntegrationType,
@@ -437,7 +438,12 @@ function IntegrationPanel({ system, data, adding, onClose }: { system: System; d
       </div>
 
       {view === "form" ? (
-        <IntegrationForm system={system} tenantId={data.tenantId} onClose={() => setView("details")} />
+        <IntegrationForm
+          system={system}
+          tenantId={data.tenantId}
+          ifoodLinkCode={system.type === "IFOOD" && data.platform.ifoodLinkCode}
+          onClose={() => setView("details")}
+        />
       ) : view !== "details" ? (
         <RemovalConfirm tenantId={data.tenantId} item={view.item} remove={view.remove} onClose={() => setView("details")} />
       ) : (
@@ -698,8 +704,58 @@ function RemovalConfirm({ tenantId, item, remove, onClose }: { tenantId: string;
   );
 }
 
-/** Formulário de uma nova integração: a API confere a credencial no sistema antes de salvar. */
-function IntegrationForm({ system, tenantId, onClose }: { system: System; tenantId: string; onClose: () => void }) {
+/**
+ * iFood distribuído, primeiro passo: gera o código de vinculação e leva ao Portal do Parceiro, onde o responsável pela
+ * loja confere o código, clica em "Autorizar" e recebe o código de autorização que vai no formulário.
+ */
+function IfoodLinkCode({ tenantId, code, onCode }: { tenantId: string; code: IfoodLinkCodeDto | null; onCode: (code: IfoodLinkCodeDto) => void }) {
+  const { request } = useAuth();
+  const [failure, setFailure] = useState<string | null>(null);
+
+  async function generate() {
+    setFailure(null);
+    try {
+      onCode(await request<IfoodLinkCodeDto>(`/integrations/${tenantId}/ifood/link-code`, { method: "POST" }));
+    } catch (error) {
+      setFailure(error instanceof ApiError ? error.message : "Não foi possível gerar o código.");
+    }
+  }
+
+  return (
+    <div className="rounded-[10px] bg-paper px-[15px] py-[13px]">
+      <p className="mb-2 text-[11.5px] leading-normal text-ink-2">
+        Gere o código e abra o Portal do Parceiro com o login do responsável pela loja. Confira o código, clique em <b>Autorizar</b> e copie o
+        código de autorização para o campo abaixo.
+      </p>
+      {code ? (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <span className="font-heading text-[22px] font-bold tracking-[1px] tabular-nums">{code.userCode}</span>
+          <a href={code.verificationUrl} target="_blank" rel="noreferrer" className="text-[12px] font-medium text-tomate hover:underline">
+            Abrir o Portal do Parceiro
+          </a>
+          <Button type="button" variant="ghost" size="xs" className="ml-auto text-ink-3" onClick={generate}>
+            Gerar outro
+          </Button>
+          <p className="w-full text-[11px] text-ink-3">O código vale por {Math.round(code.expiresIn / 60)} minutos.</p>
+        </div>
+      ) : (
+        <Button type="button" variant="outline" size="sm" onClick={generate}>
+          Gerar código de vinculação
+        </Button>
+      )}
+      {failure && <Failure>{failure}</Failure>}
+    </div>
+  );
+}
+
+/** iFood distribuído: o código de autorização que o Portal do Parceiro mostra vem antes do ID da loja. */
+const IFOOD_AUTHORIZATION_FIELD: Field = { name: "authorizationCode", label: "Código de autorização", placeholder: "Ex.: LHQX-ZZZZ" };
+
+/**
+ * Formulário de uma nova integração: a API confere a credencial no sistema antes de salvar. iFood distribuído
+ * (`ifoodLinkCode`): antes dos campos, o código de vinculação que o responsável pela loja autoriza no Portal do Parceiro.
+ */
+function IntegrationForm({ system, tenantId, ifoodLinkCode, onClose }: { system: System; tenantId: string; ifoodLinkCode: boolean; onClose: () => void }) {
   const { request } = useAuth();
   const queryClient = useQueryClient();
   const toast = useToast();
@@ -708,11 +764,17 @@ function IntegrationForm({ system, tenantId, onClose }: { system: System; tenant
   const [values, setValues] = useState<Record<string, string>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [failure, setFailure] = useState<string | null>(null);
+  const [linkCode, setLinkCode] = useState<IfoodLinkCodeDto | null>(null);
+  const fields = ifoodLinkCode ? [IFOOD_AUTHORIZATION_FIELD, ...(system.fields ?? [])] : system.fields;
 
   const [submit, saving] = usePendingAction(async () => {
     setFailure(null);
+    if (ifoodLinkCode && !linkCode) {
+      setFailure("Gere o código de vinculação e autorize o Dish Desk no Portal do Parceiro primeiro.");
+      return;
+    }
     // Campos em branco (o nome opcional) ficam de fora.
-    const filled = Object.fromEntries(Object.entries(values).filter(([, value]) => value.trim()));
+    const filled = Object.fromEntries(Object.entries({ ...values, ...(linkCode && { linkState: linkCode.state }) }).filter(([, value]) => value.trim()));
     const parsed = AddIntegrationRequest.safeParse({ type: system.type, ...filled });
     if (!parsed.success) {
       const next: Record<string, string> = {};
@@ -742,7 +804,8 @@ function IntegrationForm({ system, tenantId, onClose }: { system: System; tenant
         submit();
       }}
     >
-      {system.fields?.map((field) => (
+      {ifoodLinkCode && <IfoodLinkCode tenantId={tenantId} code={linkCode} onCode={setLinkCode} />}
+      {fields?.map((field) => (
         <div key={field.name} className="flex flex-col gap-1">
           <Label htmlFor={`${id}-${field.name}`}>{field.label}</Label>
           <Input

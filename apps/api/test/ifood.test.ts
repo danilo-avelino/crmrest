@@ -1,13 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
-import { blindIndex, parseEncryptionKey } from "@dishdesk/database";
+import { blindIndex, decrypt, encrypt, parseEncryptionKey } from "@dishdesk/database";
 import { getQueueToken } from "@nestjs/bullmq";
 import type { INestApplication } from "@nestjs/common";
 import type { Queue } from "bullmq";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { ENV } from "../src/config/env.js";
+import { IfoodAuthService } from "../src/connectors/ifood-auth.service.js";
 import { IfoodService } from "../src/inbound/ifood.service.js";
 import { QUEUES } from "../src/queues/queues.module.js";
 import { accessTokenFor, admin, createChannelFixture, createTestApp } from "./helpers.js";
@@ -29,6 +30,11 @@ async function startMockIfood() {
     forbidden: new Set<string>(),
     forbidAll: false,
     oldestValidToken: 0,
+    // Aplicativo distribuído: código de autorização → loja autorizada; token → a única loja que ele enxerga.
+    authorizationCodes: new Map<string, string>(),
+    tokenMerchants: new Map<number, string>(),
+    revokedRefreshTokens: new Set<string>(),
+    grantExpiresIn: 21600,
   };
   const server = createServer(async (req, res) => {
     let raw = "";
@@ -37,9 +43,31 @@ async function startMockIfood() {
     const json = (status: number, body?: unknown) =>
       res.writeHead(status, { "Content-Type": "application/json" }).end(body === undefined ? undefined : JSON.stringify(body));
 
+    if (url === "/authentication/v1.0/oauth/userCode") {
+      return json(200, {
+        userCode: "ABCD-EFGH",
+        authorizationCodeVerifier: "verificador-do-codigo",
+        verificationUrl: "https://portal.ifood.com.br/apps/code",
+        verificationUrlComplete: "https://portal.ifood.com.br/apps/code?c=ABCD-EFGH",
+        expiresIn: 600,
+      });
+    }
     if (url === "/authentication/v1.0/oauth/token") {
       state.tokenRequests.push(raw);
-      return json(200, { accessToken: `token-ifood-${state.tokenRequests.length}`, type: "bearer", expiresIn: 21600 });
+      const form = new URLSearchParams(raw);
+      const issued = state.tokenRequests.length;
+      if (form.get("grantType") === "client_credentials") {
+        return json(200, { accessToken: `token-ifood-${issued}`, type: "bearer", expiresIn: 21600 });
+      }
+      // Distribuído: o código (com o verificador do userCode) ou o refreshToken viram o acesso de uma loja.
+      const refresh = form.get("refreshToken") ?? "";
+      const merchant =
+        form.get("grantType") === "authorization_code"
+          ? form.get("authorizationCodeVerifier") === "verificador-do-codigo" && state.authorizationCodes.get(form.get("authorizationCode") ?? "")
+          : !state.revokedRefreshTokens.has(refresh) && state.tokenMerchants.get(Number(/^refresh-(\d+)$/.exec(refresh)?.[1]));
+      if (!merchant) return json(401, { error: { code: "Unauthorized" } });
+      state.tokenMerchants.set(issued, merchant);
+      return json(200, { accessToken: `token-ifood-${issued}`, refreshToken: `refresh-${issued}`, type: "bearer", expiresIn: state.grantExpiresIn });
     }
     const token = Number(/^Bearer token-ifood-(\d+)$/.exec(req.headers.authorization ?? "")?.[1]);
     if (!token) return json(401);
@@ -50,6 +78,9 @@ async function startMockIfood() {
       if (merchants.some((id) => !/^[0-9a-f-]{36}$/i.test(id))) return json(400);
       // O token só vale para as lojas que autorizavam o aplicativo quando ele foi emitido.
       if (state.forbidAll || token < state.oldestValidToken || merchants.some((id) => state.forbidden.has(id))) return json(403);
+      // Token de uma loja (distribuído): só os pedidos dela.
+      const only = state.tokenMerchants.get(token);
+      if (only && merchants.some((id) => id !== only)) return json(403);
       const events = state.events.splice(0);
       return events.length ? json(200, events) : json(204);
     }
@@ -691,5 +722,109 @@ describe("iFood (pedidos por polling)", () => {
         await other.cleanup();
       }
     });
+  });
+});
+
+describe("iFood distribuído (cada loja autoriza com o código de vinculação)", () => {
+  let app: INestApplication;
+  let fx: Awaited<ReturnType<typeof createChannelFixture>>;
+  let ifood: Awaited<ReturnType<typeof startMockIfood>>;
+  let service: IfoodService;
+  let token: string;
+  let key: Buffer;
+  const merchantId = randomUUID();
+  const add = (body: object) =>
+    request(app.getHttpServer()).post(`/api/integrations/${fx.tenant.id}`).set("Authorization", `Bearer ${token}`).send({ type: "IFOOD", ...body });
+  const storeChannel = () => admin.channel.findFirstOrThrow({ where: { tenantId: fx.tenant.id, type: "IFOOD", externalId: merchantId } });
+  const storedGrant = async () => JSON.parse(decrypt((await storeChannel()).credentials, key)) as { refreshToken: string; expiresAt: string };
+  /** O acesso guardado já venceu (e some da memória): a próxima chamada ao iFood precisa renová-lo. */
+  const expireGrant = async () => {
+    const channel = await storeChannel();
+    const grant = { ...(await storedGrant()), expiresAt: new Date(Date.now() - 1000).toISOString() };
+    await admin.channel.update({ where: { id: channel.id }, data: { credentials: encrypt(JSON.stringify(grant), key) } });
+    app.get(IfoodAuthService).forget(channel.id);
+  };
+
+  beforeAll(async () => {
+    ifood = await startMockIfood();
+    app = await createTestApp({
+      IFOOD_CLIENT_ID: "cliente",
+      IFOOD_CLIENT_SECRET: "segredo",
+      IFOOD_API_URL: ifood.url,
+      IFOOD_APP_TYPE: "distributed",
+    });
+    await app.get<Queue>(getQueueToken(QUEUES.ifood)).removeJobScheduler("ifood-polling");
+    service = app.get(IfoodService);
+    key = parseEncryptionKey(app.get<{ ENCRYPTION_KEY: string }>(ENV).ENCRYPTION_KEY);
+    fx = await createChannelFixture();
+    await admin.tenantMember.updateMany({ where: { tenantId: fx.tenant.id, userId: fx.user.id }, data: { role: "ADMIN" } });
+    token = await accessTokenFor(app, fx.user.email, fx.tenant.id);
+  });
+
+  afterAll(async () => {
+    await fx?.cleanup();
+    await app?.close();
+    await ifood?.close();
+  });
+
+  it("loja conectada antes do distribuído (sem acesso próprio): fica com erro, para conectar de novo", async () => {
+    await service.poll();
+    expect((await admin.channel.findUniqueOrThrow({ where: { id: fx.ifood.id } })).status).toBe("ERROR");
+    expect(ifood.state.pollingMerchants).toEqual([]);
+  });
+
+  it("conectar: gera o código, troca o código de autorização pelo acesso da loja e recebe os pedidos com ele", async () => {
+    const { body: list } = await request(app.getHttpServer()).get(`/api/integrations?tenantId=${fx.tenant.id}`).set("Authorization", `Bearer ${token}`).expect(200);
+    expect(list.platform).toMatchObject({ ifood: true, ifoodLinkCode: true });
+
+    const { body: code } = await request(app.getHttpServer())
+      .post(`/api/integrations/${fx.tenant.id}/ifood/link-code`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(201);
+    expect(code).toMatchObject({ userCode: "ABCD-EFGH", verificationUrl: "https://portal.ifood.com.br/apps/code?c=ABCD-EFGH", expiresIn: 600 });
+    // O verificador vai cifrado para o painel.
+    expect(code.state).not.toContain("verificador");
+
+    ifood.state.authorizationCodes.set("LHQX-ZZZZ", merchantId);
+    expect((await add({ merchantId }).expect(422)).body.message).toContain("gere o código de vinculação");
+    expect((await add({ merchantId, authorizationCode: "ERRADO-00", linkState: code.state }).expect(422)).body.message).toContain("não foi aceito");
+    expect((await add({ merchantId, authorizationCode: "LHQX-ZZZZ", linkState: "adulterado" }).expect(422)).body.message).toContain("gere um novo");
+    expect((await add({ merchantId: randomUUID(), authorizationCode: "LHQX-ZZZZ", linkState: code.state }).expect(422)).body.message).toContain(
+      "a autorização não inclui esta loja",
+    );
+
+    const created = await add({ merchantId, authorizationCode: "LHQX-ZZZZ", linkState: code.state, name: "Loja distribuída" }).expect(201);
+    expect(created.body).toMatchObject({ externalId: merchantId, name: "Loja distribuída", status: "CONNECTED" });
+    expect((await storedGrant()).refreshToken).toMatch(/^refresh-\d+$/);
+
+    ifood.state.orders["pedido-d1"] = ifoodOrder("pedido-d1", "8101", "cliente-d1");
+    ifood.state.events.push({ id: "ev-d1", code: "PLC", fullCode: "PLACED", orderId: "pedido-d1", merchantId, createdAt: new Date().toISOString() });
+    await service.poll();
+    expect(ifood.state.pollingMerchants.at(-1)).toBe(merchantId);
+    expect(ifood.state.acked).toContain("ev-d1");
+    expect(await admin.order.count({ where: { channelId: created.body.id, externalOrderId: "pedido-d1" } })).toBe(1);
+  });
+
+  it("acesso vencido: renova com o refreshToken e guarda o novo", async () => {
+    const before = (await storedGrant()).refreshToken;
+    await expireGrant();
+    ifood.state.orders["pedido-d2"] = ifoodOrder("pedido-d2", "8102", "cliente-d2");
+    ifood.state.events.push({ id: "ev-d2", code: "PLC", fullCode: "PLACED", orderId: "pedido-d2", merchantId, createdAt: new Date().toISOString() });
+    await service.poll();
+    expect(ifood.state.tokenRequests.at(-1)).toContain("grantType=refresh_token");
+    expect(ifood.state.tokenRequests.at(-1)).toContain(`refreshToken=${before}`);
+    expect((await storedGrant()).refreshToken).not.toBe(before);
+    expect(await admin.order.count({ where: { tenantId: fx.tenant.id, externalOrderId: "pedido-d2" } })).toBe(1);
+    expect((await storeChannel()).status).toBe("CONNECTED");
+  });
+
+  it("a loja revoga o acesso: fica com erro e sai do polling", async () => {
+    ifood.state.revokedRefreshTokens.add((await storedGrant()).refreshToken);
+    await expireGrant();
+    await service.poll();
+    expect((await storeChannel()).status).toBe("ERROR");
+    const polls = ifood.state.pollingMerchants.length;
+    await service.poll();
+    expect(ifood.state.pollingMerchants).toHaveLength(polls);
   });
 });

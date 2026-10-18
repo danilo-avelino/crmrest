@@ -14,7 +14,7 @@ import {
 import { Inject, Injectable, Logger, NotFoundException, UnprocessableEntityException } from "@nestjs/common";
 import type { RequestAuth } from "../auth/auth.decorators.js";
 import { ENV, type Env } from "../config/env.js";
-import { IfoodClient } from "../connectors/ifood.client.js";
+import { IfoodAuthService } from "../connectors/ifood-auth.service.js";
 import { toOrderDto } from "../conversations/conversation.mapper.js";
 import { scopeFor } from "../conversations/conversations.service.js";
 import { openIfoodConversation } from "../conversations/ifood-conversation.js";
@@ -32,15 +32,13 @@ const PAGE_SIZE = 50;
 @Injectable()
 export class OrdersService {
   private readonly logger = new Logger(OrdersService.name);
-  private readonly ifood: IfoodClient;
 
   constructor(
     private readonly db: DatabaseService,
     private readonly realtime: RealtimeEmitter,
+    private readonly ifood: IfoodAuthService,
     @Inject(ENV) private readonly env: Env,
-  ) {
-    this.ifood = new IfoodClient(env);
-  }
+  ) {}
 
   async list(auth: RequestAuth, query: OrderListQuery, now = new Date()): Promise<OrderPage> {
     const where: Prisma.OrderWhereInput = {
@@ -117,24 +115,24 @@ export class OrdersService {
     const order = await this.ifoodOrder(auth, orderId);
     const action = nextOrderAction(order);
     if (!action) throw new UnprocessableEntityException("Não há etapa para informar neste pedido.");
-    await this.askIfood(() => this.ifood.advance(order.externalOrderId, IFOOD_STEP[action]));
+    await this.askIfood(() => order.client.advance(order.externalOrderId, IFOOD_STEP[action]));
     return { action };
   }
 
   /** Motivos que o iFood aceita para cancelar o pedido agora (lista vazia: não dá para cancelar). */
   async cancellationReasons(auth: RequestAuth, orderId: string): Promise<{ reasons: OrderCancellationReason[] }> {
     const order = await this.ifoodOrder(auth, orderId);
-    const reasons = await this.askIfood(() => this.ifood.cancellationReasons(order.externalOrderId));
+    const reasons = await this.askIfood(() => order.client.cancellationReasons(order.externalOrderId));
     return { reasons };
   }
 
   /** Pede o cancelamento ao iFood com um dos motivos que ele ofereceu; o pedido vira cancelado quando o evento chega. */
   async cancel(auth: RequestAuth, orderId: string, code: string): Promise<void> {
     const order = await this.ifoodOrder(auth, orderId);
-    const reasons = await this.askIfood(() => this.ifood.cancellationReasons(order.externalOrderId));
+    const reasons = await this.askIfood(() => order.client.cancellationReasons(order.externalOrderId));
     const reason = reasons.find((item) => item.code === code);
     if (!reason) throw new UnprocessableEntityException("O iFood não aceita este motivo para o pedido. Escolha outro.");
-    await this.askIfood(() => this.ifood.requestCancellation(order.externalOrderId, reason));
+    await this.askIfood(() => order.client.requestCancellation(order.externalOrderId, reason));
   }
 
   /**
@@ -149,7 +147,7 @@ export class OrdersService {
       throw new UnprocessableEntityException("Escolha um dos motivos que o iFood aceita.");
     }
     if (!answer.accept && !answer.reason) throw new UnprocessableEntityException("Escolha o motivo da recusa.");
-    await this.askIfood(() => this.ifood.answerDispute(dispute.id, answer.accept ? "accept" : "reject", answer.reason));
+    await this.askIfood(() => order.client.answerDispute(dispute.id, answer.accept ? "accept" : "reject", answer.reason));
   }
 
   private async ifoodOrder(auth: RequestAuth, orderId: string) {
@@ -160,7 +158,7 @@ export class OrdersService {
           externalOrderId: true,
           status: true,
           raw: true,
-          channel: { select: { type: true } },
+          channel: { select: { id: true, tenantId: true, type: true } },
           events: { orderBy: { occurredAt: "asc" }, select: { code: true, metadata: true } },
         },
       }),
@@ -172,7 +170,7 @@ export class OrdersService {
     if (!this.env.IFOOD_ORDER_ACTIONS) {
       throw new UnprocessableEntityException("O Dish Desk só acompanha os pedidos do iFood: a ação é feita no sistema de pedidos da loja.");
     }
-    return order;
+    return { ...order, client: this.ifood.clientFor(order.channel) };
   }
 
   private async askIfood<T>(call: () => Promise<T>): Promise<T> {

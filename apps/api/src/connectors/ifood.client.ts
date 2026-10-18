@@ -94,10 +94,29 @@ export class IfoodError extends Error {
   }
 }
 
+/** Código de vinculação do aplicativo distribuído: o responsável pela loja o confirma no Portal do Parceiro. */
+const UserCode = z.object({
+  userCode: z.string(),
+  authorizationCodeVerifier: z.string(),
+  verificationUrlComplete: z.string(),
+  expiresIn: z.coerce.number(),
+});
+export type IfoodUserCode = z.infer<typeof UserCode>;
+
+/** Acesso de uma loja no aplicativo distribuído (guardado cifrado no canal). */
+export type IfoodGrant = { accessToken: string; refreshToken: string; expiresAt: string };
+
 export class IfoodClient {
   private token: { value: string; issuedAt: number; expiresAt: number } | null = null;
 
-  constructor(private readonly env: Pick<Env, "IFOOD_API_URL" | "IFOOD_CLIENT_ID" | "IFOOD_CLIENT_SECRET">) {}
+  /**
+   * `bearer`: token de uma loja (aplicativo distribuído). Sem ele, vale a credencial da plataforma (client credentials,
+   * aplicativo centralizado).
+   */
+  constructor(
+    private readonly env: Pick<Env, "IFOOD_API_URL" | "IFOOD_CLIENT_ID" | "IFOOD_CLIENT_SECRET">,
+    private readonly bearer?: () => Promise<string>,
+  ) {}
 
   get configured(): boolean {
     return Boolean(this.env.IFOOD_CLIENT_ID && this.env.IFOOD_CLIENT_SECRET);
@@ -180,7 +199,7 @@ export class IfoodClient {
   private async call(path: string, init: Omit<RequestInit, "headers"> & { headers?: Record<string, string> } = {}): Promise<Response> {
     const response = await fetch(`${this.env.IFOOD_API_URL}${path}`, {
       ...init,
-      headers: { ...init.headers, Authorization: `Bearer ${await this.accessToken()}` },
+      headers: { ...init.headers, Authorization: `Bearer ${await (this.bearer ?? (() => this.accessToken()))()}` },
       signal: AbortSignal.timeout(15_000),
     });
     if (response.status === 401) this.token = null; // renova na próxima chamada
@@ -205,5 +224,44 @@ export class IfoodClient {
     const body = z.object({ accessToken: z.string(), expiresIn: z.coerce.number() }).parse(await response.json());
     this.token = { value: body.accessToken, issuedAt: Date.now(), expiresAt: Date.now() + body.expiresIn * 1000 };
     return body.accessToken;
+  }
+
+  /** Aplicativo distribuído: código para o responsável pela loja autorizar o Dish Desk (vale `expiresIn` segundos). */
+  async userCode(): Promise<IfoodUserCode> {
+    const response = await this.authRequest("userCode", { clientId: this.env.IFOOD_CLIENT_ID ?? "" });
+    return UserCode.parse(await response.json());
+  }
+
+  /**
+   * Aplicativo distribuído: troca o código de autorização (que o Portal do Parceiro mostra depois de "Autorizar") pelo
+   * acesso da loja, ou renova um acesso com o refreshToken.
+   */
+  async grant(from: { authorizationCode: string; verifier: string } | { refreshToken: string }): Promise<IfoodGrant> {
+    const params: Record<string, string> =
+      "refreshToken" in from
+        ? { grantType: "refresh_token", refreshToken: from.refreshToken }
+        : { grantType: "authorization_code", authorizationCode: from.authorizationCode, authorizationCodeVerifier: from.verifier };
+    const response = await this.authRequest("token", {
+      ...params,
+      clientId: this.env.IFOOD_CLIENT_ID ?? "",
+      clientSecret: this.env.IFOOD_CLIENT_SECRET ?? "",
+    });
+    const body = z
+      .object({ accessToken: z.string(), refreshToken: z.string().optional(), expiresIn: z.coerce.number() })
+      .parse(await response.json());
+    const refreshToken = body.refreshToken ?? ("refreshToken" in from ? from.refreshToken : "");
+    return { accessToken: body.accessToken, refreshToken, expiresAt: new Date(Date.now() + body.expiresIn * 1000).toISOString() };
+  }
+
+  private async authRequest(endpoint: "userCode" | "token", params: Record<string, string>): Promise<Response> {
+    const path = `/authentication/v1.0/oauth/${endpoint}`;
+    const response = await fetch(`${this.env.IFOOD_API_URL}${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams(params),
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok) throw new IfoodError(path, response.status);
+    return response;
   }
 }

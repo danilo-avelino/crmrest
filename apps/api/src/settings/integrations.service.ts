@@ -27,8 +27,9 @@ import { z } from "zod";
 import type { RequestAuth } from "../auth/auth.decorators.js";
 import { ENV, type Env } from "../config/env.js";
 import { CardapioWebClient } from "../connectors/cardapio-web.client.js";
-import { IfoodClient, IfoodError } from "../connectors/ifood.client.js";
+import { IfoodError } from "../connectors/ifood.client.js";
 import { ConnectorsService } from "../connectors/connectors.service.js";
+import { IfoodAuthService, type IfoodLinkCode } from "../connectors/ifood-auth.service.js";
 import { DatabaseService } from "../core/database.service.js";
 import { type CardapioWebImportJob, QUEUES } from "../queues/queues.module.js";
 import { isTenantAdmin, requireTenantAdmin } from "./tenant-admin.js";
@@ -54,17 +55,16 @@ export class IntegrationsService {
   private readonly logger = new Logger(IntegrationsService.name);
   private readonly key: Buffer;
   private readonly cardapioWeb: CardapioWebClient;
-  private readonly ifood: IfoodClient;
 
   constructor(
     private readonly db: DatabaseService,
     private readonly connectors: ConnectorsService,
+    private readonly ifood: IfoodAuthService,
     @InjectQueue(QUEUES.cardapioWeb) private readonly cardapioWebQueue: Queue,
     @Inject(ENV) private readonly env: Env,
   ) {
     this.key = parseEncryptionKey(env.ENCRYPTION_KEY);
     this.cardapioWeb = new CardapioWebClient(env);
-    this.ifood = new IfoodClient(env);
   }
 
   async list(auth: RequestAuth, tenantId: string): Promise<IntegrationsDto> {
@@ -81,6 +81,7 @@ export class IntegrationsService {
       canEdit: isTenantAdmin(auth, tenantId),
       platform: {
         ifood: Boolean(this.env.IFOOD_CLIENT_ID && this.env.IFOOD_CLIENT_SECRET),
+        ifoodLinkCode: this.ifood.configured && this.ifood.distributed,
         cardapioWeb: this.cardapioWeb.configured,
         instagramLogin: Boolean(this.env.INSTAGRAM_APP_ID && this.env.INSTAGRAM_APP_SECRET),
         whatsappSignup:
@@ -104,6 +105,20 @@ export class IntegrationsService {
       await this.cardapioWebQueue.add("import-customers", job);
     }
     return saved;
+  }
+
+  /** iFood distribuído: código de vinculação para o responsável pela loja autorizar o Dish Desk no Portal do Parceiro. */
+  async ifoodLinkCode(auth: RequestAuth, tenantId: string): Promise<IfoodLinkCode> {
+    requireTenantAdmin(auth, tenantId);
+    if (!this.ifood.configured || !this.ifood.distributed) {
+      throw new UnprocessableEntityException("O código de vinculação do iFood não está configurado neste servidor.");
+    }
+    try {
+      return await this.ifood.linkCode();
+    } catch (error) {
+      this.logger.warn(`Código de vinculação do iFood não gerado: ${error instanceof Error ? error.message : String(error)}`);
+      throw new UnprocessableEntityException("O iFood não gerou o código agora. Tente de novo em instantes.");
+    }
   }
 
   /** Endereço da tela de login do Instagram; o `state` assinado diz, na volta, para qual restaurante é a conta. */
@@ -222,6 +237,8 @@ export class IntegrationsService {
         const saved = existing
           ? await tx.channel.update({ where: { id: existing.id }, data, select: SELECT })
           : await tx.channel.create({ data: { tenantId, type: verified.type, externalId: verified.externalId, ...data }, select: SELECT });
+        // Loja do iFood conectada de novo: o acesso antigo guardado em memória não vale mais.
+        if (verified.type === "IFOOD") this.ifood.forget(saved.id);
         return toDto(saved);
       });
     } catch (error) {
@@ -269,18 +286,37 @@ export class IntegrationsService {
             secrets: { accessToken: body.accessToken, tokenUpdatedAt },
           };
         }
-        case "IFOOD":
-          // A credencial é da plataforma (IFOOD_CLIENT_ID/SECRET): a loja só precisa do merchant id e de ter autorizado
-          // o aplicativo no iFood (uma loja sem autorização faria o iFood recusar o polling).
+        case "IFOOD": {
+          // Centralizado: a credencial é da plataforma (IFOOD_CLIENT_ID/SECRET) e a loja só precisa ter autorizado o
+          // aplicativo no iFood. Distribuído: o código de autorização do Portal do Parceiro vira o acesso da loja.
+          // Nos dois, a loja só entra se o iFood deixa consultar os pedidos dela (senão o polling seria recusado).
+          let secrets: Record<string, string> = {};
+          let client = this.ifood.platform;
+          if (this.ifood.configured && this.ifood.distributed) {
+            if (!body.authorizationCode || !body.linkState) throw new Error("gere o código de vinculação e informe o código de autorização");
+            const grant = await this.ifood.authorize(body.authorizationCode, body.linkState).catch((error: unknown) => {
+              if (error instanceof IfoodError) throw new Error("o código de autorização não foi aceito (gere um novo código de vinculação)");
+              throw error;
+            });
+            secrets = grant;
+            client = this.ifood.clientWith(grant);
+          }
           if (this.ifood.configured) {
-            const authorized = await this.ifood.authorizes(body.merchantId).catch((error: unknown) => {
+            const authorized = await client.authorizes(body.merchantId).catch((error: unknown) => {
               // 400: o que foi colado não é o ID da loja (UUID); o Portal do iFood também mostra um código numérico.
               if (error instanceof IfoodError && error.status === 400) throw new Error("o ID da loja não é válido (use o ID com letras e traços)");
               throw error;
             });
-            if (!authorized) throw new Error("a loja ainda não autorizou o Dish Desk no Portal do Parceiro do iFood");
+            if (!authorized) {
+              throw new Error(
+                this.ifood.distributed
+                  ? "a autorização não inclui esta loja (confira o ID e quem autorizou no Portal do Parceiro)"
+                  : "a loja ainda não autorizou o Dish Desk no Portal do Parceiro do iFood",
+              );
+            }
           }
-          return { type: body.type, externalId: body.merchantId, name: body.name || `iFood ${body.merchantId.slice(0, 8)}`, secrets: {} };
+          return { type: body.type, externalId: body.merchantId, name: body.name || `iFood ${body.merchantId.slice(0, 8)}`, secrets };
+        }
         case "CARDAPIO_WEB":
           // Testa a chave lendo os pedidos da última hora (quando a API do Cardápio Web está ligada neste servidor).
           if (this.cardapioWeb.configured) await this.cardapioWeb.updatedOrders(body.apiKey, new Date(Date.now() - 60 * 60_000));
