@@ -46,7 +46,8 @@ export const AddIntegrationRequest = z.discriminatedUnion("type", [
   z.object({ type: z.literal("INSTAGRAM"), accessToken: secret("Token inválido.") }),
   z.object({
     type: z.literal("IFOOD"),
-    merchantId: z.string().trim().min(3, "Informe o ID da loja.").max(100, "ID longo demais."),
+    // Centralizado: obrigatório. Distribuído: descoberto automaticamente, mas pode ser fornecido para retrocompatibilidade.
+    merchantId: z.string().trim().min(3, "Informe o ID da loja.").max(100, "ID longo demais.").optional(),
     name,
     // Aplicativo distribuído: o código que o Portal do Parceiro mostra depois de "Autorizar" e o `state` do código de vinculação.
     authorizationCode: z.string().trim().min(4, "Código de autorização inválido.").max(100, "Código de autorização inválido.").optional(),

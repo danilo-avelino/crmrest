@@ -303,8 +303,10 @@ export class IntegrationsService {
             secrets = auth;
             merchantId = auth.merchantId; // descoberto automaticamente
             client = this.ifood.clientWith(auth);
+          } else if (this.ifood.configured && !merchantId) {
+            throw new Error("informe o ID da loja");
           }
-          if (this.ifood.configured) {
+          if (this.ifood.configured && merchantId) {
             const authorized = await client.authorizes(merchantId).catch((error: unknown) => {
               // 400: o que foi colado não é o ID da loja (UUID); o Portal do iFood também mostra um código numérico.
               if (error instanceof IfoodError && error.status === 400) throw new Error("o ID da loja não é válido (use o ID com letras e traços)");
@@ -318,7 +320,7 @@ export class IntegrationsService {
               );
             }
           }
-          return { type: body.type, externalId: merchantId, name: body.name || `iFood ${merchantId.slice(0, 8)}`, secrets };
+          return { type: body.type, externalId: merchantId!, name: body.name || `iFood ${merchantId!.slice(0, 8)}`, secrets };
         }
         case "CARDAPIO_WEB":
           // Testa a chave lendo os pedidos da última hora (quando a API do Cardápio Web está ligada neste servidor).
