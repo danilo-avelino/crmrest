@@ -95,8 +95,12 @@ export type OrderListItem = OrderDto & {
   contact: { id: string; name: string | null };
   /** Linha do tempo informada pela plataforma (iFood): código do evento, quando aconteceu e o motivo, se houver. */
   events: { code: string; occurredAt: string; detail: string | null }[];
-  /** Tempo de preparo: de confirmado a pronto (null se a loja não marcou as duas etapas). */
+  /** Tempo de preparo: de confirmado a pronto, ou à saída se a loja não marcou pronto (null sem essas etapas). */
   preparationSeconds: number | null;
+  /** A loja passou de confirmado para "saiu" sem marcar pronto (mudança manual): o preparo foi contado até a saída. */
+  readySkipped: boolean;
+  /** Retirada na loja: não há saída para entrega. */
+  takeout: boolean;
   /**
    * Em produção e atrasado: a previsão de saída (E26) passa da entrega prometida ou do tempo normal de saída; sem base
    * para a previsão, a entrega prometida pela plataforma já passou.

@@ -216,8 +216,21 @@ export function OrderList() {
                       <Td className="text-ink-2">{dayTime(order.placedAt, now)}</Td>
                       <Td align="right" className="text-ink-2">
                         {order.preparationSeconds === null ? "—" : responseTime(order.preparationSeconds)}
+                        {order.readySkipped && (
+                          <div className="text-[11px] text-ink-3" title="A loja não marcou o pedido como pronto: o preparo foi contado até a saída.">
+                            interação manual
+                          </div>
+                        )}
                       </Td>
-                      <Td className="text-ink-2">{order.dispatchedAt ? clock(order.dispatchedAt) : "—"}</Td>
+                      <Td className="text-ink-2">
+                        {order.takeout ? (
+                          <StatusBadge tone="neutral">Retirada</StatusBadge>
+                        ) : order.dispatchedAt ? (
+                          clock(order.dispatchedAt)
+                        ) : (
+                          "—"
+                        )}
+                      </Td>
                       <Td align="right">{currency(order.total)}</Td>
                       <Td>
                         <StatusBadge tone={ORDER_TONE[order.status]}>{ORDER_STATUS[order.status].label}</StatusBadge>

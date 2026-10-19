@@ -72,6 +72,7 @@ const BADGE = {
   pending: "border-warning-line bg-warning-lt text-warning-ink",
   resolved: "border-success-line bg-success-lt text-success-ink",
   open: "border-tomate-line bg-tomate-lt text-tomate-ink",
+  neutral: "border-rule bg-surface-2 text-ink-2",
 } as const;
 
 /** Selo pequeno de status da lista ("Pendente", "Resolvida", "⚠"). */

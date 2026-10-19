@@ -92,6 +92,7 @@ export const PlatformOrder = z.looseObject({
   // O iFood manda `extraInfo: null` quando não há observação: os campos aceitam null, senão o pedido inteiro não é lido.
   extraInfo: z.string().nullish(),
   orderType: z.string().nullish(),
+  order_type: z.string().nullish(), // Cardápio Web
   delivery: z
     .looseObject({ deliveryDateTime: z.string().nullish(), observations: z.string().nullish(), deliveredBy: z.string().nullish() })
     .nullish(),
@@ -103,6 +104,12 @@ export function promisedAt(raw: unknown): Date | null {
   const order = PlatformOrder.safeParse(raw).data;
   const value = order?.delivery?.deliveryDateTime ?? order?.takeout?.takeoutDateTime;
   return value && !Number.isNaN(Date.parse(value)) ? new Date(value) : null;
+}
+
+/** O cliente busca o pedido na loja (iFood "TAKEOUT", Cardápio Web "takeout"): não há saída para entrega. */
+export function isTakeout(raw: unknown): boolean {
+  const order = PlatformOrder.safeParse(raw).data;
+  return (order?.orderType ?? order?.order_type)?.toUpperCase() === "TAKEOUT";
 }
 
 const CLOCK = new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" });

@@ -4,11 +4,12 @@ import { encrypt, parseEncryptionKey } from "@dishdesk/database";
 import { getQueueToken } from "@nestjs/bullmq";
 import type { INestApplication } from "@nestjs/common";
 import type { Queue } from "bullmq";
+import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { CardapioWebService } from "../src/inbound/cardapio-web.service.js";
 import type { CardapioWebImportJob } from "../src/queues/queues.module.js";
 import { QUEUES } from "../src/queues/queues.module.js";
-import { admin, createChannelFixture, createTestApp, drainQueues, metaPayload, postMetaWebhook, startMockGraph } from "./helpers.js";
+import { accessTokenFor, admin, createChannelFixture, createTestApp, drainQueues, metaPayload, postMetaWebhook, startMockGraph } from "./helpers.js";
 
 /** API de parceiros falsa: pedidos alterados (polling), detalhes do pedido e base de clientes, com a chave da loja. */
 async function startMockCardapioWeb() {
@@ -390,5 +391,31 @@ describe("Cardápio Web (pedidos por polling)", () => {
       ["PLACED", at(30).getTime()],
       ["DISPATCHED", at(10).getTime()],
     ]);
+  });
+
+  it("aba Pedidos: entrega que vai de confirmado direto para saiu conta o preparo até a saída", async () => {
+    const base = Date.now();
+    const at = (minutesAgo: number) => new Date(base - minutesAgo * 60_000);
+    const order = { ...cwOrder(9007, 54), created_at: at(40).toISOString(), updated_at: at(40).toISOString() };
+    cardapioWeb.state.orders["9007"] = order;
+    for (const [status, minutesAgo] of [["confirmed", 40], ["released", 12]] as const) {
+      cardapioWeb.state.updated = [{ ...summary(order, status), updated_at: at(minutesAgo).toISOString() }];
+      await service.poll();
+    }
+    const takeout = { ...cwOrder(9008, 55), order_type: "takeout" };
+    cardapioWeb.state.orders["9008"] = takeout;
+    cardapioWeb.state.updated = [summary(takeout, "ready")];
+    await service.poll();
+    const token = await accessTokenFor(app, fx.user.email, fx.tenant.id);
+    const { body } = await request(app.getHttpServer()).get("/api/orders?period=7d").set("Authorization", `Bearer ${token}`).expect(200);
+    const preparation = (code: string) => {
+      const order = body.items.find((o: { displayCode: string }) => o.displayCode === code);
+      return [order.preparationSeconds, order.readySkipped];
+    };
+    expect(preparation("54")).toEqual([28 * 60, true]); // confirmado aos 40, saiu aos 12 sem marcar pronto
+    expect(preparation("52")).toEqual([18 * 60, false]); // marcou pronto: vale o pronto, não a saída
+    expect(preparation("53")).toEqual([null, false]); // lido já na saída: sem o confirmado
+    const takeoutOf = (code: string) => body.items.find((o: { displayCode: string }) => o.displayCode === code).takeout;
+    expect([takeoutOf("55"), takeoutOf("54")]).toEqual([true, false]);
   });
 });

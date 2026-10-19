@@ -21,7 +21,7 @@ import { openIfoodConversation } from "../conversations/ifood-conversation.js";
 import { DatabaseService } from "../core/database.service.js";
 import { RealtimeEmitter } from "../realtime/realtime.emitter.js";
 import { periodStart } from "../reports/reports.service.js";
-import { forecastOrder, orderUpdateMessage, PlatformOrder, promisedAt, STALE_MS } from "./forecast.js";
+import { forecastOrder, isTakeout, orderUpdateMessage, PlatformOrder, promisedAt, STALE_MS } from "./forecast.js";
 import { customerHistory } from "./customer-history.js";
 import { eventDetail, openDispute, platformInfo } from "./ifood-order.js";
 import { latestOrderOf } from "./latest-order.js";
@@ -86,7 +86,9 @@ export class OrdersService {
       items: rows.map((order) => {
         const at = (code: string) => order.events.find((event) => event.code === code)?.occurredAt;
         const confirmed = at("CONFIRMED");
-        const ready = at("READY_TO_PICKUP");
+        // Na entrega, a loja costuma ir de confirmado direto para "saiu" (sem marcar pronto): a saída fecha o preparo.
+        const marked = at("READY_TO_PICKUP");
+        const ready = marked ?? order.dispatchedAt;
         const ifood = order.channel.type === "IFOOD";
         // Sem a trava, o Dish Desk só acompanha o pedido: nenhuma ação é oferecida.
         const actions = ifood && this.env.IFOOD_ORDER_ACTIONS;
@@ -98,6 +100,8 @@ export class OrdersService {
           history: histories.get(order.contact.id)!,
           events: order.events.map((event) => ({ code: event.code, occurredAt: event.occurredAt.toISOString(), detail: eventDetail(event) })),
           preparationSeconds: confirmed && ready ? Math.round((ready.getTime() - confirmed.getTime()) / 1000) : null,
+          readySkipped: Boolean(confirmed && !marked && order.dispatchedAt),
+          takeout: isTakeout(order.raw),
           late: late.has(order.id),
           nextAction: actions ? nextOrderAction(order) : null,
           cancelable: actions && CANCELABLE.has(order.status),
