@@ -2,7 +2,7 @@ import type { OrderStatus } from "@dishdesk/database/enums";
 import { z } from "zod";
 import type { Env } from "../config/env.js";
 
-// Merchant API do iFood: autenticação, polling de eventos, detalhes do pedido, confirmação (ack) e as etapas que a loja informa.
+// Merchant API do iFood: autenticação, polling de eventos, detalhes do pedido, confirmação (ack), as etapas que a loja informa e as avaliações.
 
 export const IfoodEvent = z.looseObject({
   id: z.string(),
@@ -83,6 +83,31 @@ export const IFOOD_STATUS: Record<string, OrderStatus> = {
   CONCLUDED: "DELIVERED",
   CANCELLED: "CANCELED",
 };
+
+/** Avaliação da Review API (v2). Os campos variam entre a lista e o detalhe: quase tudo é opcional. */
+export const IfoodReview = z.looseObject({
+  id: z.string(),
+  status: z.string().nullish(),
+  visibility: z.string().nullish(),
+  score: z.coerce.number(),
+  comment: z.string().nullish(),
+  customerName: z.string().nullish(),
+  createdAt: z.string(),
+  replies: z.array(z.looseObject({ text: z.string(), from: z.string().nullish(), createdAt: z.string().nullish() })).nullish(),
+  order: z.looseObject({ id: z.string().nullish(), shortId: z.string().nullish() }).nullish(),
+  questions: z.array(z.looseObject({ title: z.string().nullish(), answers: z.array(z.looseObject({ title: z.string() })).nullish() })).nullish(),
+});
+export type IfoodReview = z.infer<typeof IfoodReview>;
+const ReviewPage = z.looseObject({ pageCount: z.coerce.number().nullish(), reviews: z.array(IfoodReview).default([]) });
+/** Nota da loja: `score` é a média das avaliações válidas (últimos 3 meses, públicas). */
+const ReviewSummary = z.looseObject({
+  score: z.coerce.number().nullish(),
+  totalReviewsCount: z.coerce.number().default(0),
+  validReviewsCount: z.coerce.number().default(0),
+});
+export type IfoodReviewSummary = z.infer<typeof ReviewSummary>;
+/** Páginas de 50 (o máximo do iFood): até 500 avaliações por loja e consulta. */
+const REVIEW_PAGES = 10;
 
 /** Resposta de erro da Merchant API, com o status HTTP (403: a loja não autoriza este aplicativo). */
 export class IfoodError extends Error {
@@ -206,7 +231,35 @@ export class IfoodClient {
     });
   }
 
-  private async call(path: string, init: Omit<RequestInit, "headers"> & { headers?: Record<string, string> } = {}): Promise<Response> {
+  /** Avaliações da loja feitas a partir de `from`, das mais recentes às mais antigas como o iFood devolve. */
+  async reviews(merchantId: string, from: Date, to: Date): Promise<IfoodReview[]> {
+    const reviews: IfoodReview[] = [];
+    for (let page = 1; page <= REVIEW_PAGES; page++) {
+      const query = new URLSearchParams({ page: String(page), pageSize: "50", addCount: "true", dateFrom: from.toISOString(), dateTo: to.toISOString() });
+      const response = await this.call(`/review/v2.0/merchants/${merchantId}/reviews?${query.toString()}`);
+      if (response.status === 204) break;
+      const body = ReviewPage.parse(await response.json());
+      reviews.push(...body.reviews);
+      if (body.reviews.length < 50 || page >= (body.pageCount ?? page)) break;
+    }
+    return reviews;
+  }
+
+  async reviewSummary(merchantId: string): Promise<IfoodReviewSummary> {
+    const response = await this.call(`/review/v2.0/merchants/${merchantId}/summary`);
+    return ReviewSummary.parse(await response.json());
+  }
+
+  /** Resposta da loja (10 a 300 caracteres). 409/422: a avaliação não aceita mais resposta; 422 também é texto recusado. */
+  async answerReview(merchantId: string, reviewId: string, text: string): Promise<void> {
+    await this.call(`/review/v2.0/merchants/${merchantId}/reviews/${reviewId}/answers`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    });
+  }
+
+  private async call(path: string, init:Omit<RequestInit, "headers"> & { headers?: Record<string, string> } = {}): Promise<Response> {
     const response = await fetch(`${this.env.IFOOD_API_URL}${path}`, {
       ...init,
       headers: { ...init.headers, Authorization: `Bearer ${await (this.bearer ?? (() => this.accessToken()))()}` },

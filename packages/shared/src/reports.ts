@@ -1,6 +1,50 @@
+import { z } from "zod";
+
 /** Período do relatório de avaliações: hoje (Brasília), últimos 7 ou 30 dias. */
 export const REPORT_PERIODS = ["today", "7d", "30d"] as const;
 export type ReportPeriod = (typeof REPORT_PERIODS)[number];
+
+/** Avaliações do iFood: últimos 7, 30 ou 90 dias (o iFood só conta na nota os últimos 3 meses). */
+export const IFOOD_REVIEW_PERIODS = ["7d", "30d", "90d"] as const;
+export type IfoodReviewPeriod = (typeof IFOOD_REVIEW_PERIODS)[number];
+
+/**
+ * Uma avaliação do iFood. `status`: CREATED (processando), NOT_REPLIED (nota abaixo de 5 com comentário, aguarda a
+ * resposta da loja por 5 dias), REPLIED (respondida; o cliente pode mudar a nota) ou PUBLISHED. Sem comentário ou com
+ * nota 5, ela já nasce publicada e não aceita resposta.
+ */
+export type IfoodReviewDto = {
+  id: string;
+  /** Canal (loja do iFood) da avaliação: a resposta vai por ele. */
+  storeId: string;
+  storeName: string;
+  score: number;
+  comment: string | null;
+  customerName: string | null;
+  createdAt: string;
+  status: string;
+  /** PRIVATE: só a loja e o cliente veem, e não conta na nota. */
+  visibility: string | null;
+  orderCode: string | null;
+  /** Respostas do questionário ("Entrega", "Sabor"...). */
+  answers: string[];
+  replies: { text: string; from: string | null; createdAt: string | null }[];
+  /** Aguardando resposta: até quando a loja pode responder (5 dias depois da avaliação). */
+  replyBy: string | null;
+};
+
+export type IfoodReviewsDto = {
+  /** Nota de cada loja no iFood (média das avaliações válidas dos últimos 3 meses). */
+  stores: { id: string; name: string; score: number | null; validReviews: number; totalReviews: number }[];
+  /** Lojas que o iFood não deixou consultar: `forbidden` = acesso às avaliações ainda não liberado para o Dish Desk. */
+  unavailable: { id: string; name: string; reason: "forbidden" | "error" }[];
+  /** Mais recentes primeiro. */
+  reviews: IfoodReviewDto[];
+};
+
+/** O iFood aceita respostas de 10 a 300 caracteres. */
+export const IfoodReviewAnswerRequest = z.object({ text: z.string().trim().min(10).max(300) });
+export type IfoodReviewAnswerRequest = z.infer<typeof IfoodReviewAnswerRequest>;
 
 /** Números de um atendente (ou de toda a equipe, no resumo). */
 export type AgentMetrics = {

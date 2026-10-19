@@ -26,6 +26,7 @@ import { OrdersService } from "./orders/orders.service.js";
 import { OutboundProcessor } from "./outbound/outbound.processor.js";
 import { PlatformController } from "./platform/platform.controller.js";
 import { RealtimeGateway } from "./realtime/realtime.gateway.js";
+import { IfoodReviewsService } from "./reports/ifood-reviews.service.js";
 import { ReportsController } from "./reports/reports.controller.js";
 import { ReportsService } from "./reports/reports.service.js";
 import { IntegrationsController } from "./settings/integrations.controller.js";
@@ -54,7 +55,7 @@ import { StripeWebhookController } from "./webhooks/stripe-webhook.controller.js
     OrdersController,
     PlatformController,
   ],
-  providers: [ConversationsService, IfoodChatService, ContactsService, SettingsService, IntegrationsService, ReportsService, OrdersService],
+  providers: [ConversationsService, IfoodChatService, ContactsService, SettingsService, IntegrationsService, ReportsService, IfoodReviewsService, OrdersService],
 })
 export class ApiRoleModule {}
 
