@@ -27,7 +27,7 @@ import { z } from "zod";
 import type { RequestAuth } from "../auth/auth.decorators.js";
 import { ENV, type Env } from "../config/env.js";
 import { CardapioWebClient } from "../connectors/cardapio-web.client.js";
-import { IfoodError, type IfoodGrant } from "../connectors/ifood.client.js";
+import { IfoodError, type IfoodGrant, type IfoodMerchant } from "../connectors/ifood.client.js";
 import { ConnectorsService } from "../connectors/connectors.service.js";
 import { IfoodAuthService, type IfoodLinkCode } from "../connectors/ifood-auth.service.js";
 import { DatabaseService } from "../core/database.service.js";
@@ -287,19 +287,22 @@ export class IntegrationsService {
           };
         }
         case "IFOOD": {
-          // Centralizado: a credencial é da plataforma (IFOOD_CLIENT_ID/SECRET). Distribuído: o código de autorização do
-          // Portal do Parceiro vira o acesso da loja. O ID da loja vem do restaurante nos dois: perguntar ao iFood quais
-          // lojas o acesso enxerga exige o módulo Merchant, que o aplicativo não tem.
-          if (!body.merchantId) throw new Error("informe o ID da loja");
+          // Centralizado: a credencial é da plataforma (IFOOD_CLIENT_ID/SECRET) e o restaurante informa o ID da loja.
+          // Distribuído: o código de autorização do Portal do Parceiro vira o acesso da loja, e a loja é a que esse acesso
+          // enxerga; o ID só é pedido quando o iFood não diz qual é.
           let grant: IfoodGrant | null = null;
+          let merchant: IfoodMerchant | null = body.merchantId ? { id: body.merchantId } : null;
           if (this.ifood.configured && this.ifood.distributed) {
             if (!body.authorizationCode || !body.linkState) throw new Error("gere o código de vinculação e informe o código de autorização");
             grant = await this.ifood.authorize(body.authorizationCode, body.linkState);
+            merchant ??= await this.ifood.merchantOf(grant);
+            if (!merchant) throw new Error("o iFood não disse qual loja foi autorizada: gere um novo código, autorize de novo e informe também o ID da loja");
           }
+          if (!merchant) throw new Error("informe o ID da loja");
           // A loja só entra se o acesso a enxerga (senão o polling seria recusado).
           if (this.ifood.configured) {
             const client = grant ? this.ifood.clientWith(grant) : this.ifood.platform;
-            const authorized = await client.authorizes(body.merchantId).catch((error: unknown) => {
+            const authorized = await client.authorizes(merchant.id).catch((error: unknown) => {
               // 400: o que foi colado não é o ID da loja (UUID); o Portal do iFood também mostra um código numérico.
               if (error instanceof IfoodError && error.status === 400) throw new Error("o ID da loja não é válido (use o ID com letras e traços)");
               throw error;
@@ -312,7 +315,7 @@ export class IntegrationsService {
               );
             }
           }
-          return { type: body.type, externalId: body.merchantId, name: body.name || `iFood ${body.merchantId.slice(0, 8)}`, secrets: grant ?? {} };
+          return { type: body.type, externalId: merchant.id, name: body.name || merchant.name || `iFood ${merchant.id.slice(0, 8)}`, secrets: grant ?? {} };
         }
         case "CARDAPIO_WEB":
           // Testa a chave lendo os pedidos da última hora (quando a API do Cardápio Web está ligada neste servidor).

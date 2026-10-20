@@ -35,6 +35,8 @@ async function startMockIfood() {
     tokenMerchants: new Map<number, string>(),
     revokedRefreshTokens: new Set<string>(),
     grantExpiresIn: 21600,
+    // Aplicativo sem o módulo Merchant (como o do Dish Desk): a lista de lojas do acesso é recusada.
+    noMerchantModule: false,
   };
   const server = createServer(async (req, res) => {
     let raw = "";
@@ -71,8 +73,12 @@ async function startMockIfood() {
     }
     const token = Number(/^Bearer token-ifood-(\d+)$/.exec(req.headers.authorization ?? "")?.[1]);
     if (!token) return json(401);
-    // Sem o módulo Merchant, como o aplicativo do Dish Desk: a lista de lojas do acesso é recusada.
-    if (url === "/merchant/v1.0/merchants") return json(403);
+    if (url === "/merchant/v1.0/merchants") {
+      if (state.noMerchantModule) return json(403);
+      // Token de uma loja (distribuído): só ela.
+      const merchant = state.tokenMerchants.get(token);
+      return json(200, merchant ? [{ id: merchant, name: "Loja do iFood", corporateName: "Loja LTDA" }] : []);
+    }
     if (url === "/order/v1.0/events:polling") {
       const merchants = String(req.headers["x-polling-merchants"]).split(",");
       state.pollingMerchants.push(merchants.join(","));
@@ -788,19 +794,20 @@ describe("iFood distribuído (cada loja autoriza com o código de vinculação)"
     expect(code.state).not.toContain("verificador");
 
     ifood.state.authorizationCodes.set("LHQX-ZZZZ", merchantId);
-    ifood.state.authorizationCodes.set("OUTR-AL0J", merchantId);
-    // O ID da loja é conferido antes de gastar o código de autorização.
-    expect((await add({ authorizationCode: "LHQX-ZZZZ", linkState: code.state }).expect(422)).body.message).toContain("informe o ID da loja");
-    expect((await add({ merchantId }).expect(422)).body.message).toContain("gere o código de vinculação");
-    expect((await add({ merchantId, authorizationCode: "ERRADO-00", linkState: code.state }).expect(422)).body.message).toContain("não foi aceito");
-    expect((await add({ merchantId, authorizationCode: "LHQX-ZZZZ", linkState: "adulterado" }).expect(422)).body.message).toContain("gere um novo");
-    // ID de outra loja: o acesso não a enxerga.
-    const other = "0e7d2f4a-1b3c-4d5e-8f90-a1b2c3d4e5f6";
-    expect((await add({ merchantId: other, authorizationCode: "OUTR-AL0J", linkState: code.state }).expect(422)).body.message).toContain(
+    expect((await add({}).expect(422)).body.message).toContain("gere o código de vinculação");
+    expect((await add({ authorizationCode: "ERRADO-00", linkState: code.state }).expect(422)).body.message).toContain("não foi aceito");
+    expect((await add({ authorizationCode: "LHQX-ZZZZ", linkState: "adulterado" }).expect(422)).body.message).toContain("gere um novo");
+
+    // Sem o módulo Merchant o iFood não diz qual é a loja: o ID passa a ser pedido, e o de outra loja é recusado.
+    ifood.state.noMerchantModule = true;
+    expect((await add({ authorizationCode: "LHQX-ZZZZ", linkState: code.state }).expect(422)).body.message).toContain("informe também o ID da loja");
+    expect((await add({ merchantId: randomUUID(), authorizationCode: "LHQX-ZZZZ", linkState: code.state }).expect(422)).body.message).toContain(
       "a autorização não inclui essa loja",
     );
+    ifood.state.noMerchantModule = false;
 
-    const created = await add({ merchantId, name: "Loja do iFood", authorizationCode: "LHQX-ZZZZ", linkState: code.state }).expect(201);
+    // Sem o ID da loja: ela é a que o acesso enxerga, com o nome que o iFood dá.
+    const created = await add({ authorizationCode: "LHQX-ZZZZ", linkState: code.state }).expect(201);
     expect(created.body).toMatchObject({ externalId: merchantId, name: "Loja do iFood", status: "CONNECTED" });
     expect((await storedGrant()).refreshToken).toMatch(/^refresh-\d+$/);
 

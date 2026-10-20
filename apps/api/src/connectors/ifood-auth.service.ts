@@ -1,10 +1,10 @@
 import { decrypt, encrypt, parseEncryptionKey } from "@dishdesk/database";
-import { Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable, Logger } from "@nestjs/common";
 import { z } from "zod";
 import { ENV, type Env } from "../config/env.js";
 import { DatabaseService } from "../core/database.service.js";
 import { ConnectorsService } from "./connectors.service.js";
-import { IfoodClient, IfoodError, type IfoodGrant } from "./ifood.client.js";
+import { IfoodClient, IfoodError, type IfoodGrant, type IfoodMerchant } from "./ifood.client.js";
 
 /** Acesso de uma loja (aplicativo distribuído), como fica cifrado no canal. */
 const StoredGrant = z.looseObject({ accessToken: z.string(), refreshToken: z.string(), expiresAt: z.iso.datetime() });
@@ -21,6 +21,7 @@ export type IfoodLinkCode = { userCode: string; verificationUrl: string; expires
  */
 @Injectable()
 export class IfoodAuthService {
+  private readonly logger = new Logger(IfoodAuthService.name);
   /** Credencial da plataforma: chamadas do centralizado e a autorização das lojas no distribuído. */
   readonly platform: IfoodClient;
   readonly distributed: boolean;
@@ -78,6 +79,28 @@ export class IfoodAuthService {
     });
   }
 
+  /**
+   * Loja que um acesso recém-obtido enxerga, para o restaurante não precisar informar o ID: pela lista de lojas (exige
+   * o módulo Merchant) ou pela claim `merchant_scope` do token ("<id>:<módulo>"), quando vem. null quando nenhuma das
+   * duas aponta uma loja só (o motivo fica no log).
+   */
+  async merchantOf(grant: IfoodGrant): Promise<IfoodMerchant | null> {
+    let listed: string;
+    try {
+      const merchants = await this.clientWith(grant).merchants();
+      if (merchants.length === 1 && merchants[0]) return merchants[0];
+      listed = `${merchants.length} lojas`;
+    } catch (error) {
+      listed = error instanceof Error ? error.message : String(error);
+    }
+    const claims = tokenClaims(grant.accessToken);
+    const scoped = new Set(z.array(z.string()).catch([]).parse(claims?.merchant_scope).map((scope) => scope.split(":")[0] ?? ""));
+    const [id] = scoped;
+    if (scoped.size === 1 && id) return { id };
+    this.logger.warn(`iFood: loja do acesso não identificada (lista de lojas: ${listed}; claims do token: ${Object.keys(claims ?? {}).join(", ") || "nenhuma"})`);
+    return null;
+  }
+
   /** O canal deixou de valer (desconectado, conectado de novo): esquece o acesso guardado em memória. */
   forget(channelId: string): void {
     this.grants.delete(channelId);
@@ -113,5 +136,14 @@ export class IfoodAuthService {
     );
     this.grants.set(store.id, grant);
     return grant;
+  }
+}
+
+/** Claims do token do iFood (JWT), sem conferir a assinatura: servem só para achar a loja do acesso. */
+function tokenClaims(token: string): Record<string, unknown> | null {
+  try {
+    return z.record(z.string(), z.unknown()).parse(JSON.parse(Buffer.from(token.split(".")[1] ?? "", "base64url").toString()));
+  } catch {
+    return null;
   }
 }

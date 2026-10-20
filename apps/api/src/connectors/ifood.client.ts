@@ -131,6 +131,10 @@ export type IfoodUserCode = z.infer<typeof UserCode>;
 /** Acesso de uma loja no aplicativo distribuído (guardado cifrado no canal). */
 export type IfoodGrant = { accessToken: string; refreshToken: string; expiresAt: string };
 
+/** Loja que o token enxerga (`GET /merchant/v1.0/merchants`). */
+const Merchant = z.looseObject({ id: z.string(), name: z.string().optional() });
+export type IfoodMerchant = z.infer<typeof Merchant>;
+
 export class IfoodClient {
   private token: { value: string; issuedAt: number; expiresAt: number } | null = null;
 
@@ -175,6 +179,12 @@ export class IfoodClient {
       if (error instanceof IfoodError && error.status === 403) return false;
       throw error;
     }
+  }
+
+  /** Lojas que este token enxerga (exige o módulo Merchant). No distribuído, as que o responsável autorizou. */
+  async merchants(): Promise<IfoodMerchant[]> {
+    const response = await this.call("/merchant/v1.0/merchants");
+    return z.array(Merchant).parse(await response.json());
   }
 
   async order(orderId: string): Promise<IfoodOrder> {

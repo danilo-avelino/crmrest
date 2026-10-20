@@ -787,8 +787,12 @@ function IntegrationForm({ system, tenantId, ifoodLinkCode, onClose }: { system:
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [failure, setFailure] = useState<string | null>(null);
   const [linkCode, setLinkCode] = useState<IfoodLinkCodeDto | null>(null);
-  // iFood distribuído: o código de autorização antes do ID da loja.
-  const fields = ifoodLinkCode ? [IFOOD_AUTHORIZATION_FIELD, ...(system.fields ?? [])] : system.fields;
+  // iFood distribuído: o código de autorização no lugar do ID da loja, que vem do próprio acesso; o ID só aparece
+  // quando o iFood não disse qual loja foi autorizada.
+  const [askMerchant, setAskMerchant] = useState(false);
+  const fields = ifoodLinkCode
+    ? [IFOOD_AUTHORIZATION_FIELD, ...(system.fields ?? []).filter((field) => askMerchant || field.name !== "merchantId")]
+    : system.fields;
 
   const [submit, saving] = usePendingAction(async () => {
     setFailure(null);
@@ -815,6 +819,7 @@ function IntegrationForm({ system, tenantId, ifoodLinkCode, onClose }: { system:
     } catch (error) {
       leaveIfBlocked(error, tenantId);
       setFailure(error instanceof ApiError ? error.message : "Não foi possível conectar.");
+      if (error instanceof ApiError && error.message.includes("ID da loja")) setAskMerchant(true);
     }
   });
 
@@ -852,7 +857,7 @@ function IntegrationForm({ system, tenantId, ifoodLinkCode, onClose }: { system:
           )}
         </div>
       ))}
-      <p className="text-[11.5px] leading-normal text-ink-3">{system.help}</p>
+      {(!ifoodLinkCode || askMerchant) && <p className="text-[11.5px] leading-normal text-ink-3">{system.help}</p>}
       {failure && (
         <p role="alert" className="text-[11px] text-tomate">
           {failure}
