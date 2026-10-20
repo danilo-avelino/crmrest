@@ -318,10 +318,34 @@ Vale para os três épicos:
   - o que fazer com conversas sem reação do cliente (ex.: cliente que parou de responder);
   - se a conversa reaberta é avaliada de novo.
 
+#### E31 — Agente de implantação e suporte na extensão do Chrome · **G** · depende de: E30, extensão do Chrome ([apps/extension](apps/extension/README.md))
+- Como parceiro (restaurante), quero que a **extensão do Chrome do Dish Desk** tenha uma IA que **controla o meu navegador** e faz comigo a implantação do sistema, parecida com o Claude no Chrome: ela lê a tela, clica, preenche e navega entre as páginas.
+- Como parceiro, quero que essa mesma IA seja o **suporte do Dish Desk**: tiro dúvidas sobre o sistema e peço ajuda quando algo não funciona (canal desconectado, mensagem que não chegou, configuração errada). Ela investiga na minha tela e no Dish Desk e corrige comigo, com as mesmas regras da implantação.
+- Como parceiro, quero que a IA **transfira para o suporte humano** quando não resolver, quando eu pedir ou quando o problema for de cobrança ou de conta, e que a pessoa do suporte receba o histórico da conversa e das ações, sem eu repetir a história.
+- Como parceiro, quero pedir em linguagem natural ("conecta o meu WhatsApp", "liga o iFood") e ver a IA executar o passo a passo do assistente de configuração (E30), inclusive nos **painéis de fora** do Dish Desk, onde não temos API: Meta Business (conta do WhatsApp Business, verificação, Página do Instagram), Portal do Parceiro iFood e Portal do Cardápio Web (gerar a chave e colar no Dish Desk).
+- Como parceiro, quero acompanhar cada ação na tela, **pausar ou parar a IA a qualquer momento** e assumir o controle.
+- **Regra obrigatória:** a IA **pede a minha confirmação** antes de qualquer ação que não dá para desfazer ou que fala em nome do restaurante (aceitar termos, enviar documentos, publicar, pagar, apagar). Ela **nunca digita senha, código de verificação nem dados de cartão**: nesses pontos, para e pede que eu faça.
+- Como parceiro, quero que a IA só aja nos sites da implantação (lista fechada de domínios) e peça permissão antes de abrir outro.
+- Como plataforma, quero registrar o que a IA fez em cada implantação e em cada atendimento de suporte (passos, onde parou, onde falhou), para o suporte humano continuar de onde ela parou e para melhorar o assistente.
+- Como plataforma, quero que a IA de suporte só afirme o que está na documentação do Dish Desk e nos dados do restaurante. Sem a informação, ela transfere (mesma regra do E27).
+- Como plataforma, quero que cada integração conferida pela IA passe pela mesma conferência de Configurações → Integrações (E14) antes de dar o passo como concluído.
+- A IA também oferece a **importação dos contatos** de cada sistema conectado, quando ele permitir (CLAUDE.md §9).
+- As capturas de tela e o conteúdo das páginas vão para o provedor de LLM e podem ter dados do restaurante e dos clientes: entra na política de privacidade e no registro de uso por tenant (LGPD), como os outros épicos desta fase.
+- ⚠️ O painel da IA na extensão ainda não tem design. A tela precisa ser desenhada antes da implementação.
+- A definir na implementação:
+  - o modelo e o tipo de controle (uso de computador com capturas de tela, leitura da árvore da página ou os dois);
+  - se a extensão de implantação é a mesma do chat do iFood ou uma separada (permissões diferentes na Chrome Web Store);
+  - o que fazer quando o painel de terceiros muda de layout e a IA se perde (transferir para o suporte humano?);
+  - se o agente é gratuito na implantação ou entra na cobrança da IA;
+  - onde fica o suporte humano que recebe as transferências (a própria Inbox do Dish Desk, como um tenant interno, ou outra ferramenta) e o horário de atendimento dele;
+  - se o suporte também fica disponível fora da extensão (no Dish Desk web, para quem não usa Chrome).
+
 ### Ordem sugerida (Fase 4)
 `E29 Avaliação → E28 Revisão por IA → E27 Atendimento 100% com IA`
 
 A avaliação vem primeiro porque não envia nada ao cliente (o risco é o menor) e porque cria a medida que vai dizer se os outros dois funcionam. A revisão vem em seguida porque mantém o atendente no controle. O atendimento 100% com IA fica por último: é o de maior risco e só deve ser ligado quando a nota do E29 mostrar que a IA atende tão bem quanto a equipe.
+
+O **E31 (agente de implantação e suporte)** não depende dos outros três e pode correr em paralelo, assim que o assistente de configuração (E30) estiver pronto.
 
 Decidir antes: a IA entra no plano ou é um módulo pago como o Campanhas (`TenantModule`, E19)?
 

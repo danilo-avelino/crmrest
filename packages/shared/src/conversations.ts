@@ -115,8 +115,15 @@ export type ConversationListItem = {
 };
 
 export type ConversationPage = { items: ConversationListItem[]; nextCursor: string | null };
-/** Conversas por status e quantas estão chamando um atendente (alarme da Inbox); `awaitingQuiet` = quantas delas chamam sem urgência. */
-export type ConversationCounts = Record<ConversationStatus, number> & { awaitingAgent: number; awaitingQuiet: number };
+/**
+ * Conversas por status e quantas estão chamando um atendente (alarme da Inbox); `awaitingQuiet` = quantas delas chamam sem urgência.
+ * `urgentSince` = desde quando espera o chamado urgente mais antigo (o alarme só fica forte depois de alguns minutos).
+ */
+export type ConversationCounts = Record<ConversationStatus, number> & {
+  awaitingAgent: number;
+  awaitingQuiet: number;
+  urgentSince: string | null;
+};
 export type ConversationMessages = { messages: MessageDto[]; orders: Record<string, OrderDto> };
 
 export const ConversationListQuery = z.object({

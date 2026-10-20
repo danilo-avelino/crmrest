@@ -342,7 +342,7 @@ function IntegrationCard({ system, data, onOpen }: { system: System; data: Integ
   );
 }
 
-function CloseButton({ onClick }: { onClick: () => void }) {
+export function CloseButton({ onClick }: { onClick: () => void }) {
   return (
     <Button variant="ghost" size="icon-sm" aria-label="Fechar" className="ml-auto rounded-xl bg-paper text-ink-3" onClick={onClick}>
       <XIcon aria-hidden />

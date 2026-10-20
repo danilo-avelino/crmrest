@@ -4,16 +4,33 @@ import { useEffect, useState } from "react";
 
 /** O chamado: com urgência (alarme agudo) ou sem (dois bipes graves, bem espaçados). */
 type AlarmKind = "urgent" | "quiet";
+/** O som que toca: o urgente começa no tom normal e só vira alarme depois de `ESCALATE_MS` sem resposta. */
+type Sound = "urgent" | "normal" | "quiet";
 
-const REPEAT_MS: Record<AlarmKind, number> = { urgent: 1_500, quiet: 30_000 };
+const REPEAT_MS: Record<Sound, number> = { urgent: 1_500, normal: 5_000, quiet: 30_000 };
+const ESCALATE_MS = 5 * 60_000;
 
 /**
- * Aviso de "chamando o atendente", repetido enquanto `ringing`. Com urgência: dois tons agudos alternados, sem parar.
+ * Aviso de "chamando o atendente", repetido enquanto `ringing`. Com urgência: dois bipes no tom normal a cada
+ * poucos segundos e, passados 5 minutos de `since` sem resposta, dois tons agudos alternados, sem parar.
  * Sem urgência (entregador com outro assunto): dois bipes graves e baixos a cada meio minuto, para não incomodar.
  * O navegador só libera o som depois de um clique na página; até lá, `blocked` avisa a tela.
  */
-export function useAgentAlarm(ringing: boolean, kind: AlarmKind = "urgent"): { blocked: boolean } {
+export function useAgentAlarm(ringing: boolean, kind: AlarmKind = "urgent", since: string | null = null): { blocked: boolean } {
   const [blocked, setBlocked] = useState(false);
+  const [escalated, setEscalated] = useState(false);
+
+  useEffect(() => {
+    // Sem `since`, ou com o prazo já vencido, escala logo.
+    const wait = since ? Math.max(0, Date.parse(since) + ESCALATE_MS - Date.now()) : 0;
+    const timer = setTimeout(() => setEscalated(true), wait);
+    return () => {
+      clearTimeout(timer);
+      setEscalated(false);
+    };
+  }, [since]);
+
+  const sound: Sound = kind === "quiet" ? "quiet" : escalated ? "urgent" : "normal";
 
   useEffect(() => {
     if (!ringing) return;
@@ -30,12 +47,13 @@ export function useAgentAlarm(ringing: boolean, kind: AlarmKind = "urgent"): { b
         return;
       }
       setBlocked(false);
-      if (kind === "quiet") for (const delay of [0, 0.32]) tone(audio, 523, audio.currentTime + delay, 0.2, "sine", 0.18);
+      if (sound === "quiet") for (const delay of [0, 0.32]) tone(audio, 523, audio.currentTime + delay, 0.2, "sine", 0.18);
+      else if (sound === "normal") for (const delay of [0, 0.3]) tone(audio, 880, audio.currentTime + delay, 0.18, "sine", 0.15);
       else for (let i = 0; i < 6; i++) tone(audio, i % 2 === 0 ? 988 : 740, audio.currentTime + i * 0.17, 0.15);
     };
     const unlock = () => void audio.resume().then(ring);
     const first = setTimeout(ring, 0);
-    const timer = setInterval(ring, REPEAT_MS[kind]);
+    const timer = setInterval(ring, REPEAT_MS[sound]);
     document.addEventListener("pointerdown", unlock);
     document.addEventListener("keydown", unlock);
     return () => {
@@ -46,7 +64,7 @@ export function useAgentAlarm(ringing: boolean, kind: AlarmKind = "urgent"): { b
       setBlocked(false);
       void audio.close();
     };
-  }, [ringing, kind]);
+  }, [ringing, sound]);
 
   return { blocked };
 }

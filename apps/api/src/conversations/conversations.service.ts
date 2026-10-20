@@ -75,14 +75,20 @@ export class ConversationsService {
 
   async counts(auth: RequestAuth, tenantId?: string): Promise<ConversationCounts> {
     const calling = { awaitingAgentSince: { not: null }, status: { not: "RESOLVED" } } satisfies Prisma.ConversationWhereInput;
-    const [groups, awaitingAgent, awaitingQuiet] = await this.db.withTenants(scopeFor(auth, tenantId), (tx) =>
+    const [groups, awaitingAgent, awaitingQuiet, oldestUrgent] = await this.db.withTenants(scopeFor(auth, tenantId), (tx) =>
       Promise.all([
         tx.conversation.groupBy({ by: ["status"], _count: { _all: true } }),
         tx.conversation.count({ where: calling }),
         tx.conversation.count({ where: { ...calling, awaitingAgentQuiet: true } }),
+        tx.conversation.findFirst({
+          where: { ...calling, awaitingAgentQuiet: false },
+          orderBy: { awaitingAgentSince: "asc" },
+          select: { awaitingAgentSince: true },
+        }),
       ]),
     );
-    const counts: ConversationCounts = { OPEN: 0, PENDING: 0, RESOLVED: 0, awaitingAgent, awaitingQuiet };
+    const urgentSince = oldestUrgent?.awaitingAgentSince?.toISOString() ?? null;
+    const counts: ConversationCounts = { OPEN: 0, PENDING: 0, RESOLVED: 0, awaitingAgent, awaitingQuiet, urgentSince };
     for (const group of groups) counts[group.status] = group._count._all;
     return counts;
   }

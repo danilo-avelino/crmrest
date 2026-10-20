@@ -452,7 +452,10 @@ describe("menu de atendimento, busca do pedido e pesquisa de satisfação", () =
     expect(flags.indexOf(false)).toBeGreaterThan(0); // todas as que chamam vêm antes das demais
     expect(flags.slice(flags.indexOf(false))).not.toContain(true);
     expect(body.items.find((c: { id: string }) => c.id === id).awaitingAgentSince).toEqual(expect.any(String));
-    expect((await api("/conversations/counts")).body.awaitingAgent).toBe(flags.filter(Boolean).length);
+    const counts = (await api("/conversations/counts")).body;
+    expect(counts.awaitingAgent).toBe(flags.filter(Boolean).length);
+    // o chamado urgente mais antigo marca quando o alarme fica forte
+    expect(Date.parse(counts.urgentSince)).toBeLessThanOrEqual(Date.parse(body.items.find((c: { id: string }) => c.id === id).awaitingAgentSince));
 
     await request(app.getHttpServer())
       .patch(`/api/conversations/${id}`)

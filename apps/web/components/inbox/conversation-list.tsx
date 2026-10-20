@@ -71,7 +71,7 @@ export function ConversationList({
   // Chamado sem urgência (entregador com outro assunto) tem o próprio som, discreto, sem o alarme.
   const quiet = allCounts.data?.awaitingQuiet ?? 0;
   const calling = (allCounts.data?.awaitingAgent ?? 0) - quiet;
-  const alarm = useAgentAlarm(calling > 0);
+  const alarm = useAgentAlarm(calling > 0, "urgent", allCounts.data?.urgentSince ?? null);
   const quietAlarm = useAgentAlarm(quiet > 0, "quiet");
 
   const items = conversations.data?.pages.flatMap((page) => page.items) ?? [];

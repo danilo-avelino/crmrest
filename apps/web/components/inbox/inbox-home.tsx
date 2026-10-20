@@ -17,7 +17,13 @@ import { ORDER_TONE } from "@/components/clients/client-detail";
 import { ChannelDot, StatusBadge } from "@/components/inbox/bits";
 import { ORDER_STATUS } from "@/components/inbox/order-card";
 import { OrderDetails } from "@/components/orders/order-list";
-import { type Badge, STATUS, StatusBadge as IntegrationBadge, SystemIcon } from "@/components/settings/integrations-tab";
+import {
+  type Badge,
+  CloseButton,
+  STATUS,
+  StatusBadge as IntegrationBadge,
+  SystemIcon,
+} from "@/components/settings/integrations-tab";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { useNow } from "@/hooks/use-now";
@@ -244,6 +250,7 @@ function TodayOrders() {
                   </DialogTitle>
                   {open.late && <StatusBadge tone="open">Atrasado</StatusBadge>}
                   <StatusBadge tone={ORDER_TONE[open.status]}>{ORDER_STATUS[open.status].label}</StatusBadge>
+                  <CloseButton onClick={() => setSelected(null)} />
                 </div>
                 <DialogDescription className="tabular-nums">
                   <Link href={`/clientes/${open.contact.id}`} className="text-ink-2 hover:text-tomate hover:underline">
