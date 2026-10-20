@@ -68,6 +68,28 @@ export type AddIntegrationRequest = z.infer<typeof AddIntegrationRequest>;
  */
 export type IfoodLinkCodeDto = { userCode: string; verificationUrl: string; expiresIn: number; state: string };
 
+/** Loja do iFood que veio na autorização. `connected`: já está no Dish Desk (aqui ou em outro restaurante). */
+export type IfoodStoreDto = { id: string; name: string | null; connected: boolean };
+
+/**
+ * Resposta de "adicionar integração". iFood distribuído com mais de uma loja na autorização: em vez de conectar, devolve
+ * as lojas para o restaurante escolher; `selection` (o acesso, cifrado) volta junto com a escolha.
+ */
+export type AddIntegrationResponse = IntegrationDto | { ifoodStores: IfoodStoreDto[]; selection: string };
+
+/** Lojas do iFood escolhidas entre as que vieram na autorização, cada uma com o nome que o restaurante deu. */
+export const IfoodStoresRequest = z.object({
+  selection: z.string().min(10).max(20_000),
+  stores: z
+    .array(z.object({ id: z.string().trim().min(3).max(100), name }))
+    .min(1, "Escolha pelo menos uma loja.")
+    .max(50),
+});
+export type IfoodStoresRequest = z.infer<typeof IfoodStoresRequest>;
+
+/** Lojas escolhidas: as conectadas e as recusadas, com o motivo. */
+export type IfoodStoresResultDto = { connected: IntegrationDto[]; failed: { id: string; message: string }[] };
+
 /**
  * Fim do cadastro incorporado do WhatsApp: o código da janela da Meta e o que ela contou da conta escolhida.
  * A Meta nem sempre conta (ex.: "continuar com as configurações anteriores"): sem a conta ou o número, a API descobre.

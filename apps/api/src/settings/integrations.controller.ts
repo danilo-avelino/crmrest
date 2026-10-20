@@ -1,4 +1,13 @@
-import { AddIntegrationRequest, type IfoodLinkCodeDto, type IntegrationDto, type IntegrationsDto, WhatsAppSignupRequest } from "@dishdesk/shared";
+import {
+  AddIntegrationRequest,
+  type AddIntegrationResponse,
+  type IfoodLinkCodeDto,
+  IfoodStoresRequest,
+  type IfoodStoresResultDto,
+  type IntegrationDto,
+  type IntegrationsDto,
+  WhatsAppSignupRequest,
+} from "@dishdesk/shared";
 import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Post, Query, Redirect } from "@nestjs/common";
 import { z } from "zod";
 import { CurrentAuth, Public, type RequestAuth } from "../auth/auth.decorators.js";
@@ -22,8 +31,18 @@ export class IntegrationsController {
     @Param("tenantId", ParseUUIDPipe) tenantId: string,
     @Body(new ZodPipe(AddIntegrationRequest)) body: AddIntegrationRequest,
     @CurrentAuth() auth: RequestAuth,
-  ): Promise<IntegrationDto> {
+  ): Promise<AddIntegrationResponse> {
     return this.integrations.add(auth, tenantId, body);
+  }
+
+  /** iFood distribuído: conecta as lojas escolhidas entre as que vieram na autorização. */
+  @Post(":tenantId/ifood/stores")
+  addIfoodStores(
+    @Param("tenantId", ParseUUIDPipe) tenantId: string,
+    @Body(new ZodPipe(IfoodStoresRequest)) body: IfoodStoresRequest,
+    @CurrentAuth() auth: RequestAuth,
+  ): Promise<IfoodStoresResultDto> {
+    return this.integrations.addIfoodStores(auth, tenantId, body);
   }
 
   /** iFood distribuído: código de vinculação para o responsável pela loja autorizar o Dish Desk. */

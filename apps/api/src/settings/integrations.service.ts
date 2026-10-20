@@ -1,8 +1,11 @@
 import { createHmac, randomInt, timingSafeEqual } from "node:crypto";
-import { encrypt, parseEncryptionKey } from "@dishdesk/database";
+import { decrypt, encrypt, parseEncryptionKey } from "@dishdesk/database";
 import {
   type AddIntegrationRequest,
+  type AddIntegrationResponse,
   CHANNEL_LABEL,
+  type IfoodStoresRequest,
+  type IfoodStoresResultDto,
   INTEGRATION_TYPES,
   type IntegrationDto,
   type IntegrationsDto,
@@ -38,6 +41,24 @@ import { isTenantAdmin, requireTenantAdmin } from "./tenant-admin.js";
 type VerifiedChannel = { type: IntegrationType; externalId: string; name: string; secrets: Record<string, string> };
 
 const SELECT = { id: true, type: true, name: true, externalId: true, status: true } as const;
+
+/** Autorização do iFood com mais de uma loja: em vez de conectar, `add` devolve as lojas para o restaurante escolher. */
+class IfoodStoreChoice {
+  constructor(
+    readonly grant: IfoodGrant,
+    readonly stores: (IfoodMerchant & { connected: boolean })[],
+  ) {}
+}
+
+/** O que a escolha de lojas do iFood carrega, cifrado, entre a autorização e a escolha. */
+const IfoodSelection = z.object({
+  tenantId: z.uuid(),
+  grant: z.object({ accessToken: z.string(), refreshToken: z.string(), expiresAt: z.string() }),
+  stores: z.array(z.object({ id: z.string(), name: z.string().nullable() })),
+  exp: z.number(),
+});
+type IfoodSelection = z.infer<typeof IfoodSelection>;
+const SELECTION_TTL_MS = 10 * 60_000;
 
 /** O que o `state` do login do Instagram carrega: quem pediu, para qual restaurante e até quando vale. */
 const LoginState = z.object({ tenantId: z.uuid(), userId: z.uuid(), exp: z.number() });
@@ -97,14 +118,51 @@ export class IntegrationsService {
    * Confere a credencial e cadastra a integração; a mesma conta já conectada aqui só tem a credencial atualizada.
    * Loja do Cardápio Web conectada: a base de clientes dela é importada em segundo plano.
    */
-  async add(auth: RequestAuth, tenantId: string, body: AddIntegrationRequest): Promise<IntegrationDto> {
+  async add(auth: RequestAuth, tenantId: string, body: AddIntegrationRequest): Promise<AddIntegrationResponse> {
     requireTenantAdmin(auth, tenantId);
-    const saved = await this.save(tenantId, auth.userId, await this.verify(body));
+    let verified: VerifiedChannel;
+    try {
+      verified = await this.verify(body);
+    } catch (error) {
+      // iFood com várias lojas na autorização: o restaurante escolhe quais conectar (addIfoodStores).
+      if (error instanceof IfoodStoreChoice) {
+        return { ifoodStores: error.stores.map(({ id, name, connected }) => ({ id, name: name ?? null, connected })), selection: this.sealSelection(tenantId, error) };
+      }
+      throw error;
+    }
+    const saved = await this.save(tenantId, auth.userId, verified);
     if (saved.type === "CARDAPIO_WEB" && this.cardapioWeb.configured) {
       const job: CardapioWebImportJob = { tenantId, channelId: saved.id, page: 1, imported: 0 };
       await this.cardapioWebQueue.add("import-customers", job);
     }
     return saved;
+  }
+
+  /**
+   * iFood distribuído: conecta as lojas escolhidas entre as que vieram na autorização, todas com o mesmo acesso. Uma
+   * loja recusada (já em outro restaurante, fora da autorização) não impede as outras.
+   */
+  async addIfoodStores(auth: RequestAuth, tenantId: string, body: IfoodStoresRequest): Promise<IfoodStoresResultDto> {
+    requireTenantAdmin(auth, tenantId);
+    const selection = this.openSelection(tenantId, body.selection);
+    if (!selection) throw new UnprocessableEntityException("A escolha das lojas expirou. Gere um novo código e autorize de novo.");
+    const client = this.ifood.clientWith(selection.grant);
+    const result: IfoodStoresResultDto = { connected: [], failed: [] };
+    for (const { id, name } of body.stores) {
+      try {
+        const store = selection.stores.find((candidate) => candidate.id === id);
+        // A loja só entra se o acesso a enxerga (senão o polling seria recusado).
+        if (!store || !(await client.authorizes(id))) throw new UnprocessableEntityException("A autorização não inclui essa loja.");
+        const verified = { type: "IFOOD" as const, externalId: id, name: name || store.name || `iFood ${id.slice(0, 8)}`, secrets: selection.grant };
+        result.connected.push(await this.save(tenantId, auth.userId, verified));
+      } catch (error) {
+        // Teste grátis repetido: o restaurante acabou de ser bloqueado, e a tela de pagamento explica o motivo.
+        if (error instanceof HttpException && error.getStatus() === HttpStatus.PAYMENT_REQUIRED) throw error;
+        const reason = error instanceof Error ? error.message : String(error);
+        result.failed.push({ id, message: error instanceof HttpException ? reason : `Não foi possível conectar: ${reason.replace(/\.$/, "")}.` });
+      }
+    }
+    return result;
   }
 
   /** iFood distribuído: código de vinculação para o responsável pela loja autorizar o Dish Desk no Portal do Parceiro. */
@@ -288,14 +346,20 @@ export class IntegrationsService {
         }
         case "IFOOD": {
           // Centralizado: a credencial é da plataforma (IFOOD_CLIENT_ID/SECRET) e o restaurante informa o ID da loja.
-          // Distribuído: o código de autorização do Portal do Parceiro vira o acesso da loja, e a loja é a que esse acesso
-          // enxerga; o ID só é pedido quando o iFood não diz qual é.
+          // Distribuído: o código de autorização do Portal do Parceiro vira o acesso, e a loja é a que esse acesso enxerga.
+          // Com mais de uma loja ainda fora do Dish Desk, o restaurante escolhe quais conectar (IfoodStoreChoice). O ID só é
+          // pedido quando o iFood não diz qual é.
           let grant: IfoodGrant | null = null;
           let merchant: IfoodMerchant | null = body.merchantId ? { id: body.merchantId } : null;
           if (this.ifood.configured && this.ifood.distributed) {
             if (!body.authorizationCode || !body.linkState) throw new Error("gere o código de vinculação e informe o código de autorização");
             grant = await this.ifood.authorize(body.authorizationCode, body.linkState);
-            merchant ??= await this.ifood.merchantOf(grant);
+            if (!merchant) {
+              const stores = await this.ifood.storesOf(grant);
+              const open = stores.filter((store) => !store.connected);
+              merchant = (stores.length === 1 ? stores[0] : open.length === 1 ? open[0] : undefined) ?? null;
+              if (!merchant && stores.length) throw new IfoodStoreChoice(grant, stores);
+            }
             if (!merchant) throw new Error("o iFood não disse qual loja foi autorizada: gere um novo código, autorize de novo e informe também o ID da loja");
           }
           if (!merchant) throw new Error("informe o ID da loja");
@@ -323,9 +387,31 @@ export class IntegrationsService {
           return { type: body.type, externalId: body.storeId, name: body.name || `Loja ${body.storeId}`, secrets: { accessToken: body.apiKey } };
       }
     } catch (error) {
+      if (error instanceof IfoodStoreChoice) throw error;
       const reason = error instanceof Error ? error.message : String(error);
       const detail = /HTTP 40[13]/.test(reason) ? "a credencial não foi aceita" : reason.replace(/\.$/, "");
       throw new UnprocessableEntityException(`Não foi possível conectar o ${CHANNEL_LABEL[body.type]}: ${detail}.`);
+    }
+  }
+
+  /** O acesso e as lojas da autorização, cifrados para o painel devolver com a escolha (vale por 10 minutos). */
+  private sealSelection(tenantId: string, choice: IfoodStoreChoice): string {
+    const data: IfoodSelection = {
+      tenantId,
+      grant: choice.grant,
+      stores: choice.stores.map(({ id, name }) => ({ id, name: name ?? null })),
+      exp: Date.now() + SELECTION_TTL_MS,
+    };
+    return Buffer.from(encrypt(JSON.stringify(data), this.key)).toString("base64url");
+  }
+
+  /** A escolha de lojas que veio do painel; null se adulterada, vencida ou de outro restaurante. */
+  private openSelection(tenantId: string, selection: string): IfoodSelection | null {
+    try {
+      const data = IfoodSelection.parse(JSON.parse(decrypt(Buffer.from(selection, "base64url"), this.key)));
+      return data.tenantId === tenantId && data.exp > Date.now() ? data : null;
+    } catch {
+      return null;
     }
   }
 

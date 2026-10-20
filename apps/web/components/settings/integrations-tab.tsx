@@ -2,8 +2,11 @@
 
 import {
   AddIntegrationRequest,
+  type AddIntegrationResponse,
   CHANNEL_LABEL,
   type IfoodLinkCodeDto,
+  type IfoodStoreDto,
+  type IfoodStoresResultDto,
   type IntegrationDto,
   type IntegrationsDto,
   type IntegrationType,
@@ -790,6 +793,8 @@ function IntegrationForm({ system, tenantId, ifoodLinkCode, onClose }: { system:
   // iFood distribuído: o código de autorização no lugar do ID da loja, que vem do próprio acesso; o ID só aparece
   // quando o iFood não disse qual loja foi autorizada.
   const [askMerchant, setAskMerchant] = useState(false);
+  // iFood: a autorização trouxe mais de uma loja; o restaurante escolhe quais conectar.
+  const [choice, setChoice] = useState<{ stores: IfoodStoreDto[]; selection: string } | null>(null);
   const fields = ifoodLinkCode
     ? [IFOOD_AUTHORIZATION_FIELD, ...(system.fields ?? []).filter((field) => askMerchant || field.name !== "merchantId")]
     : system.fields;
@@ -810,7 +815,11 @@ function IntegrationForm({ system, tenantId, ifoodLinkCode, onClose }: { system:
       return;
     }
     try {
-      await request(`/integrations/${tenantId}`, { method: "POST", body: parsed.data });
+      const result = await request<AddIntegrationResponse>(`/integrations/${tenantId}`, { method: "POST", body: parsed.data });
+      if ("ifoodStores" in result) {
+        setChoice({ stores: result.ifoodStores, selection: result.selection });
+        return;
+      }
       await queryClient.invalidateQueries({ queryKey: ["integrations", tenantId] });
       // Loja iFood nova: o widget do iFood já liga, sem recarregar a página.
       if (system.type === "IFOOD") void queryClient.invalidateQueries({ queryKey: IFOOD_WIDGET_KEY });
@@ -822,6 +831,8 @@ function IntegrationForm({ system, tenantId, ifoodLinkCode, onClose }: { system:
       if (error instanceof ApiError && error.message.includes("ID da loja")) setAskMerchant(true);
     }
   });
+
+  if (choice) return <IfoodStoreChoice tenantId={tenantId} stores={choice.stores} selection={choice.selection} onClose={onClose} />;
 
   return (
     <form
@@ -869,6 +880,130 @@ function IntegrationForm({ system, tenantId, ifoodLinkCode, onClose }: { system:
         </Button>
         <Button type="submit" size="sm" loading={saving}>
           Conectar
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+/**
+ * iFood: a autorização de quem responde por várias lojas traz todas elas. O restaurante marca quais conectar (todas as
+ * que ainda não estão no Dish Desk vêm marcadas) e pode dar um nome a cada uma; a API não conta o nome sem o módulo
+ * Merchant. Loja recusada fica na lista com o motivo; as outras são conectadas.
+ */
+function IfoodStoreChoice({ tenantId, stores, selection, onClose }: { tenantId: string; stores: IfoodStoreDto[]; selection: string; onClose: () => void }) {
+  const { request } = useAuth();
+  const queryClient = useQueryClient();
+  const toast = useToast();
+  const id = useId();
+  const [connected, setConnected] = useState(() => new Set(stores.filter((store) => store.connected).map((store) => store.id)));
+  const [checked, setChecked] = useState(() => new Set(stores.filter((store) => !store.connected).map((store) => store.id)));
+  const [names, setNames] = useState<Record<string, string>>({});
+  const [failed, setFailed] = useState<Record<string, string>>({});
+  const [failure, setFailure] = useState<string | null>(null);
+  const chosen = stores.filter((store) => checked.has(store.id) && !connected.has(store.id));
+
+  const [submit, saving] = usePendingAction(async () => {
+    setFailure(null);
+    if (!chosen.length) {
+      setFailure("Marque pelo menos uma loja.");
+      return;
+    }
+    try {
+      const body = {
+        selection,
+        stores: chosen.map((store) => {
+          const name = names[store.id]?.trim();
+          return { id: store.id, ...(name && { name }) };
+        }),
+      };
+      const result = await request<IfoodStoresResultDto>(`/integrations/${tenantId}/ifood/stores`, { method: "POST", body });
+      if (result.connected.length) {
+        await queryClient.invalidateQueries({ queryKey: ["integrations", tenantId] });
+        void queryClient.invalidateQueries({ queryKey: IFOOD_WIDGET_KEY });
+        toast(result.connected.length === 1 ? "Loja do iFood conectada" : `${result.connected.length} lojas do iFood conectadas`);
+      }
+      if (!result.failed.length) {
+        onClose();
+        return;
+      }
+      setConnected((current) => new Set([...current, ...result.connected.map((store) => store.externalId)]));
+      setFailed(Object.fromEntries(result.failed.map((store) => [store.id, store.message])));
+    } catch (error) {
+      leaveIfBlocked(error, tenantId);
+      setFailure(error instanceof ApiError ? error.message : "Não foi possível conectar.");
+    }
+  });
+
+  return (
+    <form
+      noValidate
+      className="flex flex-col gap-2.5 px-[26px] py-[22px]"
+      onSubmit={(event) => {
+        event.preventDefault();
+        submit();
+      }}
+    >
+      <p className="leading-normal text-ink-2">A autorização do iFood trouxe {stores.length} lojas. Marque as que vão ser conectadas a este restaurante.</p>
+      <ul className="flex max-h-[min(360px,calc(100vh-20rem))] flex-col gap-2 overflow-y-auto">
+        {stores.map((store) => {
+          const done = connected.has(store.id);
+          const on = checked.has(store.id) && !done;
+          return (
+            <li key={store.id} className="rounded-lg border border-rule px-3 py-2.5">
+              <label className="flex items-center gap-2.5">
+                <input
+                  type="checkbox"
+                  checked={on || done}
+                  disabled={done || saving}
+                  onChange={(event) =>
+                    setChecked((current) => {
+                      const next = new Set(current);
+                      if (event.target.checked) next.add(store.id);
+                      else next.delete(store.id);
+                      return next;
+                    })
+                  }
+                  className="size-4 shrink-0 accent-ink"
+                />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[13px] font-medium">{store.name ?? "Loja do iFood"}</span>
+                  <span className="block truncate text-[11px] text-ink-3 tabular-nums">{store.id}</span>
+                </span>
+                {done && <span className="shrink-0 text-[11px] text-ink-3">Já conectada</span>}
+              </label>
+              {on && (
+                <Input
+                  id={`${id}-${store.id}`}
+                  aria-label={`Nome da loja ${store.id}`}
+                  className="mt-2"
+                  autoComplete="off"
+                  placeholder={store.name ? `Nome (opcional): ${store.name}` : "Nome (opcional), ex.: Loja Centro"}
+                  maxLength={60}
+                  value={names[store.id] ?? ""}
+                  onChange={(event) => setNames((current) => ({ ...current, [store.id]: event.target.value }))}
+                />
+              )}
+              {failed[store.id] && !done && (
+                <p role="alert" className="mt-1.5 text-[11px] text-tomate">
+                  {failed[store.id]}
+                </p>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+      {failure && (
+        <p role="alert" className="text-[11px] text-tomate">
+          {failure}
+        </p>
+      )}
+      <div className="flex items-center justify-end gap-2">
+        <Button type="button" variant="ghost" size="sm" onClick={onClose}>
+          {Object.keys(failed).length ? "Fechar" : "Cancelar"}
+        </Button>
+        <Button type="submit" size="sm" loading={saving} disabled={!chosen.length}>
+          {chosen.length === 1 ? "Conectar 1 loja" : `Conectar ${chosen.length} lojas`}
         </Button>
       </div>
     </form>

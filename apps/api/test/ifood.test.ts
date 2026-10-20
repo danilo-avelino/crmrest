@@ -30,9 +30,10 @@ async function startMockIfood() {
     forbidden: new Set<string>(),
     forbidAll: false,
     oldestValidToken: 0,
-    // Aplicativo distribuído: código de autorização → loja autorizada; token → a única loja que ele enxerga.
-    authorizationCodes: new Map<string, string>(),
-    tokenMerchants: new Map<number, string>(),
+    // Aplicativo distribuído: código de autorização → lojas autorizadas (quem responde por várias autoriza todas);
+    // token → as lojas que ele enxerga, também na claim merchant_scope.
+    authorizationCodes: new Map<string, string[]>(),
+    tokenMerchants: new Map<number, string[]>(),
     revokedRefreshTokens: new Set<string>(),
     grantExpiresIn: 21600,
     // Aplicativo sem o módulo Merchant (como o do Dish Desk): a lista de lojas do acesso é recusada.
@@ -63,21 +64,22 @@ async function startMockIfood() {
       }
       // Distribuído: o código (com o verificador do userCode) ou o refreshToken viram o acesso de uma loja.
       const refresh = form.get("refreshToken") ?? "";
-      const merchant =
+      const stores =
         form.get("grantType") === "authorization_code"
           ? form.get("authorizationCodeVerifier") === "verificador-do-codigo" && state.authorizationCodes.get(form.get("authorizationCode") ?? "")
           : !state.revokedRefreshTokens.has(refresh) && state.tokenMerchants.get(Number(/^refresh-(\d+)$/.exec(refresh)?.[1]));
-      if (!merchant) return json(401, { error: { code: "Unauthorized" } });
-      state.tokenMerchants.set(issued, merchant);
-      return json(200, { accessToken: `token-ifood-${issued}`, refreshToken: `refresh-${issued}`, type: "bearer", expiresIn: state.grantExpiresIn });
+      if (!stores) return json(401, { error: { code: "Unauthorized" } });
+      state.tokenMerchants.set(issued, stores);
+      const claims = Buffer.from(JSON.stringify({ merchant_scoped: true, merchant_scope: stores.flatMap((id) => [`${id}:order`, `${id}:events`]) }));
+      const accessToken = `token-ifood-${issued}.${claims.toString("base64url")}.assinatura`;
+      return json(200, { accessToken, refreshToken: `refresh-${issued}`, type: "bearer", expiresIn: state.grantExpiresIn });
     }
-    const token = Number(/^Bearer token-ifood-(\d+)$/.exec(req.headers.authorization ?? "")?.[1]);
+    const token = Number(/^Bearer token-ifood-(\d+)(?:\.|$)/.exec(req.headers.authorization ?? "")?.[1]);
     if (!token) return json(401);
     if (url === "/merchant/v1.0/merchants") {
       if (state.noMerchantModule) return json(403);
-      // Token de uma loja (distribuído): só ela.
-      const merchant = state.tokenMerchants.get(token);
-      return json(200, merchant ? [{ id: merchant, name: "Loja do iFood", corporateName: "Loja LTDA" }] : []);
+      // Token de lojas (distribuído): só elas.
+      return json(200, (state.tokenMerchants.get(token) ?? []).map((id) => ({ id, name: "Loja do iFood", corporateName: "Loja LTDA" })));
     }
     if (url === "/order/v1.0/events:polling") {
       const merchants = String(req.headers["x-polling-merchants"]).split(",");
@@ -86,9 +88,9 @@ async function startMockIfood() {
       if (merchants.some((id) => !/^[0-9a-f-]{36}$/i.test(id))) return json(400);
       // O token só vale para as lojas que autorizavam o aplicativo quando ele foi emitido.
       if (state.forbidAll || token < state.oldestValidToken || merchants.some((id) => state.forbidden.has(id))) return json(403);
-      // Token de uma loja (distribuído): só os pedidos dela.
+      // Token de lojas (distribuído): só os pedidos delas.
       const only = state.tokenMerchants.get(token);
-      if (only && merchants.some((id) => id !== only)) return json(403);
+      if (only && merchants.some((id) => !only.includes(id))) return json(403);
       const events = state.events.splice(0);
       return events.length ? json(200, events) : json(204);
     }
@@ -793,15 +795,23 @@ describe("iFood distribuído (cada loja autoriza com o código de vinculação)"
     // O verificador vai cifrado para o painel.
     expect(code.state).not.toContain("verificador");
 
-    ifood.state.authorizationCodes.set("LHQX-ZZZZ", merchantId);
+    ifood.state.authorizationCodes.set("LHQX-ZZZZ", [merchantId]);
+    ifood.state.authorizationCodes.set("DUAS-LOJA", [merchantId, randomUUID()]);
     expect((await add({}).expect(422)).body.message).toContain("gere o código de vinculação");
     expect((await add({ authorizationCode: "ERRADO-00", linkState: code.state }).expect(422)).body.message).toContain("não foi aceito");
     expect((await add({ authorizationCode: "LHQX-ZZZZ", linkState: "adulterado" }).expect(422)).body.message).toContain("gere um novo");
 
-    // Sem o módulo Merchant o iFood não diz qual é a loja: o ID passa a ser pedido, e o de outra loja é recusado.
+    // Sem o módulo Merchant e com duas lojas no acesso, nenhuma conectada: o restaurante escolhe (nada é conectado ainda).
     ifood.state.noMerchantModule = true;
-    expect((await add({ authorizationCode: "LHQX-ZZZZ", linkState: code.state }).expect(422)).body.message).toContain("informe também o ID da loja");
-    expect((await add({ merchantId: randomUUID(), authorizationCode: "LHQX-ZZZZ", linkState: code.state }).expect(422)).body.message).toContain(
+    const { body: choice } = await add({ authorizationCode: "DUAS-LOJA", linkState: code.state }).expect(201);
+    expect(choice.ifoodStores).toEqual([
+      { id: merchantId, name: null, connected: false },
+      { id: expect.any(String), name: null, connected: false },
+    ]);
+    expect(choice.selection).not.toContain("token-ifood");
+    expect(await admin.channel.count({ where: { tenantId: fx.tenant.id, type: "IFOOD", externalId: merchantId } })).toBe(0);
+    // ID informado que não está na autorização: recusado.
+    expect((await add({ merchantId: randomUUID(), authorizationCode: "DUAS-LOJA", linkState: code.state }).expect(422)).body.message).toContain(
       "a autorização não inclui essa loja",
     );
     ifood.state.noMerchantModule = false;
@@ -817,6 +827,76 @@ describe("iFood distribuído (cada loja autoriza com o código de vinculação)"
     expect(ifood.state.pollingMerchants.at(-1)).toBe(merchantId);
     expect(ifood.state.acked).toContain("ev-d1");
     expect(await admin.order.count({ where: { channelId: created.body.id, externalOrderId: "pedido-d1" } })).toBe(1);
+  });
+
+  it("segunda loja do mesmo responsável, sem o módulo Merchant: o acesso traz as duas e vale a que falta conectar", async () => {
+    const second = randomUUID();
+    ifood.state.authorizationCodes.set("SEGU-NDAL", [merchantId, second]);
+    ifood.state.noMerchantModule = true;
+    try {
+      const { body: code } = await request(app.getHttpServer())
+        .post(`/api/integrations/${fx.tenant.id}/ifood/link-code`)
+        .set("Authorization", `Bearer ${token}`)
+        .expect(201);
+      const created = await add({ authorizationCode: "SEGU-NDAL", linkState: code.state }).expect(201);
+      expect(created.body).toMatchObject({ externalId: second, name: `iFood ${second.slice(0, 8)}`, status: "CONNECTED" });
+      // Fora dos testes seguintes, que contam as consultas da primeira loja.
+      await admin.channel.update({ where: { id: created.body.id }, data: { status: "DISCONNECTED" } });
+    } finally {
+      ifood.state.noMerchantModule = false;
+    }
+  });
+
+  it("várias lojas na autorização: conecta as escolhidas, com o mesmo acesso renovado uma vez para todas", async () => {
+    const [centro, shopping, fora] = [randomUUID(), randomUUID(), randomUUID()];
+    ifood.state.authorizationCodes.set("TRES-LOJA", [centro, shopping, randomUUID()]);
+    ifood.state.noMerchantModule = true;
+    const ids: string[] = [];
+    try {
+      const { body: code } = await request(app.getHttpServer())
+        .post(`/api/integrations/${fx.tenant.id}/ifood/link-code`)
+        .set("Authorization", `Bearer ${token}`)
+        .expect(201);
+      const { body: choice } = await add({ authorizationCode: "TRES-LOJA", linkState: code.state }).expect(201);
+      expect(choice.ifoodStores).toHaveLength(3);
+      const choose = (body: object) =>
+        request(app.getHttpServer()).post(`/api/integrations/${fx.tenant.id}/ifood/stores`).set("Authorization", `Bearer ${token}`).send(body);
+
+      // Escolha adulterada ou de outro restaurante: recusada.
+      expect((await choose({ selection: `${choice.selection}x`, stores: [{ id: centro }] }).expect(422)).body.message).toContain("expirou");
+
+      // Loja fora da autorização fica de fora, com o motivo; as outras entram, com o nome dado ou o padrão.
+      const { body: result } = await choose({ selection: choice.selection, stores: [{ id: centro, name: "Centro" }, { id: shopping }, { id: fora }] }).expect(201);
+      expect(result.connected.map((store: { externalId: string; name: string }) => [store.externalId, store.name])).toEqual([
+        [centro, "Centro"],
+        [shopping, `iFood ${shopping.slice(0, 8)}`],
+      ]);
+      expect(result.failed).toEqual([{ id: fora, message: "A autorização não inclui essa loja." }]);
+      ids.push(...result.connected.map((store: { id: string }) => store.id));
+
+      // As duas vencem juntas: uma renovação só, gravada nas duas.
+      const grantOf = async (id: string) =>
+        JSON.parse(decrypt((await admin.channel.findUniqueOrThrow({ where: { id } })).credentials, key)) as { refreshToken: string; expiresAt: string };
+      const before = await grantOf(ids[0]!);
+      for (const id of ids) {
+        await admin.channel.update({
+          where: { id },
+          data: { credentials: encrypt(JSON.stringify({ ...before, expiresAt: new Date(Date.now() - 1000).toISOString() }), key) },
+        });
+        app.get(IfoodAuthService).forget(id);
+      }
+      const refreshes = () => ifood.state.tokenRequests.filter((raw) => raw.includes("grantType=refresh_token")).length;
+      const startedAt = refreshes();
+      await service.poll();
+      expect(refreshes() - startedAt).toBe(1);
+      const [first, second] = [await grantOf(ids[0]!), await grantOf(ids[1]!)];
+      expect(first.refreshToken).not.toBe(before.refreshToken);
+      expect(second.refreshToken).toBe(first.refreshToken);
+    } finally {
+      ifood.state.noMerchantModule = false;
+      // Fora dos testes seguintes, que contam as consultas da primeira loja.
+      await admin.channel.updateMany({ where: { id: { in: ids } }, data: { status: "DISCONNECTED" } });
+    }
   });
 
   it("acesso vencido: renova com o refreshToken e guarda o novo", async () => {

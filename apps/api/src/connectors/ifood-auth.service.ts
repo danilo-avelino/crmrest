@@ -26,7 +26,10 @@ export class IfoodAuthService {
   readonly platform: IfoodClient;
   readonly distributed: boolean;
   private readonly key: Buffer;
-  /** Acessos já lidos do banco, por canal; a renovação em andamento é dividida por quem pedir ao mesmo tempo. */
+  /**
+   * Acessos já lidos do banco, por canal. A renovação em andamento, por refreshToken, é dividida por quem pedir ao mesmo
+   * tempo, inclusive as lojas conectadas pela mesma autorização.
+   */
   private readonly grants = new Map<string, IfoodGrant>();
   private readonly refreshing = new Map<string, Promise<IfoodGrant>>();
 
@@ -80,25 +83,30 @@ export class IfoodAuthService {
   }
 
   /**
-   * Loja que um acesso recém-obtido enxerga, para o restaurante não precisar informar o ID: pela lista de lojas (exige
-   * o módulo Merchant) ou pela claim `merchant_scope` do token ("<id>:<módulo>"), quando vem. null quando nenhuma das
-   * duas aponta uma loja só (o motivo fica no log).
+   * Lojas que um acesso recém-obtido enxerga, para o restaurante não precisar informar o ID: pela lista de lojas (exige
+   * o módulo Merchant) ou pela claim `merchant_scope` do token ("<id>:<módulo>"). O acesso de quem responde por várias
+   * lojas traz todas elas; `connected` marca as que já estão no Dish Desk. Vazio quando nada diz (o motivo fica no log).
    */
-  async merchantOf(grant: IfoodGrant): Promise<IfoodMerchant | null> {
+  async storesOf(grant: IfoodGrant): Promise<(IfoodMerchant & { connected: boolean })[]> {
     let listed: string;
+    let stores: IfoodMerchant[] = [];
     try {
-      const merchants = await this.clientWith(grant).merchants();
-      if (merchants.length === 1 && merchants[0]) return merchants[0];
-      listed = `${merchants.length} lojas`;
+      stores = await this.clientWith(grant).merchants();
+      listed = `${stores.length} lojas`;
     } catch (error) {
       listed = error instanceof Error ? error.message : String(error);
     }
     const claims = tokenClaims(grant.accessToken);
-    const scoped = new Set(z.array(z.string()).catch([]).parse(claims?.merchant_scope).map((scope) => scope.split(":")[0] ?? ""));
-    const [id] = scoped;
-    if (scoped.size === 1 && id) return { id };
-    this.logger.warn(`iFood: loja do acesso não identificada (lista de lojas: ${listed}; claims do token: ${Object.keys(claims ?? {}).join(", ") || "nenhuma"})`);
-    return null;
+    if (!stores.length) {
+      const scoped = new Set(z.array(z.string()).catch([]).parse(claims?.merchant_scope).map((scope) => scope.split(":")[0] ?? ""));
+      stores = [...scoped].filter(Boolean).map((id) => ({ id }));
+    }
+    if (!stores.length) {
+      this.logger.warn(`iFood: loja do acesso não identificada (lista de lojas: ${listed}; claims do token: ${Object.keys(claims ?? {}).join(", ") || "nenhuma"})`);
+      return [];
+    }
+    const connected = await this.db.client.$queryRaw<{ external_id: string }[]>`SELECT external_id FROM app.ifood_merchants()`;
+    return stores.map((store) => ({ ...store, connected: connected.some((other) => other.external_id === store.id) }));
   }
 
   /** O canal deixou de valer (desconectado, conectado de novo): esquece o acesso guardado em memória. */
@@ -121,20 +129,28 @@ export class IfoodAuthService {
     }
     if (new Date(grant.expiresAt).getTime() > Date.now() + 60_000) return grant;
 
-    let pending = this.refreshing.get(store.id);
+    const { refreshToken } = grant;
+    let pending = this.refreshing.get(refreshToken);
     if (!pending) {
-      pending = this.refresh(store, grant.refreshToken).finally(() => this.refreshing.delete(store.id));
-      this.refreshing.set(store.id, pending);
+      pending = this.refresh(store, refreshToken).finally(() => this.refreshing.delete(refreshToken));
+      this.refreshing.set(refreshToken, pending);
     }
     return pending;
   }
 
+  /** Renova o acesso e o grava em todas as lojas do restaurante que o dividem (conectadas pela mesma autorização). */
   private async refresh(store: IfoodStore, refreshToken: string): Promise<IfoodGrant> {
     const grant = await this.platform.grant({ refreshToken });
-    await this.db.withTenants({ tenantIds: [store.tenantId] }, (tx) =>
-      tx.channel.update({ where: { id: store.id }, data: { credentials: this.connectors.seal(grant) } }),
-    );
-    this.grants.set(store.id, grant);
+    await this.db.withTenants({ tenantIds: [store.tenantId] }, async (tx) => {
+      const channels = await tx.channel.findMany({ where: { tenantId: store.tenantId, type: "IFOOD" }, select: { id: true, credentials: true } });
+      const sharing = channels.filter(
+        (channel) => channel.id === store.id || StoredGrant.safeParse(JSON.parse(decrypt(channel.credentials, this.key))).data?.refreshToken === refreshToken,
+      );
+      for (const channel of sharing) {
+        await tx.channel.update({ where: { id: channel.id }, data: { credentials: this.connectors.seal(grant) } });
+        this.grants.set(channel.id, grant);
+      }
+    });
     return grant;
   }
 }
