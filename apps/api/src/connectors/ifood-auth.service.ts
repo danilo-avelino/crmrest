@@ -4,7 +4,7 @@ import { z } from "zod";
 import { ENV, type Env } from "../config/env.js";
 import { DatabaseService } from "../core/database.service.js";
 import { ConnectorsService } from "./connectors.service.js";
-import { IfoodClient, IfoodError, type IfoodGrant, type IfoodMerchant } from "./ifood.client.js";
+import { IfoodClient, IfoodError, type IfoodGrant } from "./ifood.client.js";
 
 /** Acesso de uma loja (aplicativo distribuído), como fica cifrado no canal. */
 const StoredGrant = z.looseObject({ accessToken: z.string(), refreshToken: z.string(), expiresAt: z.iso.datetime() });
@@ -14,9 +14,6 @@ export type IfoodStore = { id: string; tenantId: string };
 
 /** Código de vinculação para o painel: `state` leva, cifrado, o verificador que a troca pelo acesso exige. */
 export type IfoodLinkCode = { userCode: string; verificationUrl: string; expiresIn: number; state: string };
-
-/** Loja autorizada pelo código de vinculação e o acesso dela. */
-export type IfoodAuthorization = { grant: IfoodGrant; merchant: IfoodMerchant };
 
 /**
  * Credencial do iFood. Centralizado: a da plataforma vale para todas as lojas. Distribuído (IFOOD_APP_TYPE): cada loja
@@ -67,26 +64,18 @@ export class IfoodAuthService {
     };
   }
 
-  /**
-   * Troca o código de autorização do Portal do Parceiro pelo acesso da loja. `state` veio de `linkCode`. A loja é a
-   * que o acesso enxerga: o restaurante não precisa informar o ID.
-   */
-  async authorize(authorizationCode: string, state: string): Promise<IfoodAuthorization> {
+  /** Troca o código de autorização do Portal do Parceiro pelo acesso da loja. `state` veio de `linkCode`. */
+  async authorize(authorizationCode: string, state: string): Promise<IfoodGrant> {
     let verifier: string;
     try {
       verifier = decrypt(Buffer.from(state, "base64url"), this.key);
     } catch {
       throw new Error("o código de vinculação não é válido, gere um novo");
     }
-    const grant = await this.platform.grant({ authorizationCode, verifier }).catch((error: unknown) => {
+    return this.platform.grant({ authorizationCode, verifier }).catch((error: unknown) => {
       if (error instanceof IfoodError) throw new Error("o código de autorização não foi aceito (gere um novo código de vinculação)");
       throw error;
     });
-    const merchants = await this.clientWith(grant).merchants();
-    const [merchant] = merchants;
-    if (!merchant) throw new Error("a autorização não inclui nenhuma loja (confira quem autorizou no Portal do Parceiro)");
-    if (merchants.length > 1) throw new Error("a autorização inclui mais de uma loja: autorize uma loja por vez no Portal do Parceiro");
-    return { grant, merchant };
   }
 
   /** O canal deixou de valer (desconectado, conectado de novo): esquece o acesso guardado em memória. */
