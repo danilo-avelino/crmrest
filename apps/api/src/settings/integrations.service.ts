@@ -291,10 +291,15 @@ export class IntegrationsService {
     try {
       return await this.db.withTenants({ tenantIds: [tenantId], userId }, async (tx) => {
         // A RLS só mostra os canais deste restaurante: uma conta de outro restaurante cai no índice único ao criar.
-        const existing = await tx.channel.findFirst({ where: { type: verified.type, externalId: verified.externalId }, select: { id: true } });
+        const existing = await tx.channel.findFirst({
+          where: { type: verified.type, externalId: verified.externalId },
+          select: { id: true, status: true, deletedAt: true },
+        });
+        // Conectada agora (nova, ou de volta depois de desconectada ou com erro): o que veio antes não aciona automações.
+        const connectedAt = !existing || existing.status !== "CONNECTED" || existing.deletedAt ? new Date() : undefined;
         const saved = existing
-          ? await tx.channel.update({ where: { id: existing.id }, data, select: SELECT })
-          : await tx.channel.create({ data: { tenantId, type: verified.type, externalId: verified.externalId, ...data }, select: SELECT });
+          ? await tx.channel.update({ where: { id: existing.id }, data: { ...data, connectedAt }, select: SELECT })
+          : await tx.channel.create({ data: { tenantId, type: verified.type, externalId: verified.externalId, ...data, connectedAt }, select: SELECT });
         // Loja do iFood conectada de novo: o acesso antigo guardado em memória não vale mais.
         if (verified.type === "IFOOD") this.ifood.forget(saved.id);
         return toDto(saved);
@@ -358,6 +363,12 @@ export class IntegrationsService {
               const stores = await this.ifood.storesOf(grant);
               const open = stores.filter((store) => !store.connected);
               merchant = (stores.length === 1 ? stores[0] : open.length === 1 ? open[0] : undefined) ?? null;
+              if (!merchant && stores.length && !open.length) {
+                throw new Error(
+                  "a autorização só trouxe lojas que já estão conectadas. Para outra loja, confira no Portal do Parceiro se ela está " +
+                    "selecionada ao autorizar e se o seu perfil nela é Dono ou Administrador",
+                );
+              }
               if (!merchant && stores.length) throw new IfoodStoreChoice(grant, stores);
             }
             if (!merchant) throw new Error("o iFood não disse qual loja foi autorizada: gere um novo código, autorize de novo e informe também o ID da loja");

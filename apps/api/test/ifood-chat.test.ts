@@ -261,6 +261,32 @@ describe("Chat do iFood na Inbox (trava IFOOD_CHAT_BRIDGE ligada)", () => {
     expect((await timeline(silent.id)).filter((m) => (m.content as { automation?: string }).automation)).toEqual([]);
   });
 
+  it("loja recém-conectada: o histórico do chat e os pedidos de antes da conexão entram sem nenhuma mensagem automática", async () => {
+    await admin.channel.update({ where: { id: fx.ifood.id }, data: { connectedAt: minutesAgo(5) } });
+    try {
+      // Pedido e mensagem do cliente de antes da conexão (dentro da janela em que a automação responderia).
+      const before = await ifoodOrder("6580", "Elisa Rocha", minutesAgo(40));
+      await post("/ifood-chat/sync", { orderCode: "6580", messages: [shown("INBOUND", "Esqueci de pedir guardanapo", minutesAgo(30))] }).expect(200);
+      await settle();
+      const chat = await admin.conversation.findFirstOrThrow({ where: { contactId: before.contactId, channelId: fx.ifood.id } });
+      expect(chat).toMatchObject({ unreadCount: 1, awaitingAgentSince: null, automationState: {} });
+      // As movimentações desse pedido chegam depois da conexão, mas o pedido é de antes: sem aviso.
+      await app.get(OrderNoticeService).statusChanged(fx.tenant.id, before.id, "DISPATCHED");
+      expect((await timeline(chat.id)).filter((m) => (m.content as { automation?: string }).automation)).toEqual([]);
+
+      // O cliente escreve de novo depois da conexão: aí sim a automação atende.
+      await post("/ifood-chat/sync", {
+        orderCode: "6580",
+        messages: [shown("INBOUND", "Esqueci de pedir guardanapo", minutesAgo(30)), shown("INBOUND", "Alguém aí?", new Date())],
+      }).expect(200);
+      await settle();
+      expect((await admin.conversation.findUniqueOrThrow({ where: { id: chat.id } })).awaitingAgentSince).not.toBeNull();
+      await typeOutbox();
+    } finally {
+      await admin.channel.update({ where: { id: fx.ifood.id }, data: { connectedAt: null } });
+    }
+  });
+
   it("telefone informado que já é de outro cadastro: os dois viram um, com os canais e os pedidos de ambos", async () => {
     const tenantId = fx.tenant.id;
     const known = await admin.contact.create({

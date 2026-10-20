@@ -6,14 +6,18 @@ vi.mock("@/components/auth/auth-provider", () => ({ useAuth: () => ({ request: v
 
 const WIDGET_ORIGIN = "https://embeddables.ifood.com.br";
 
-/** Põe o iframe do widget na página. Com `version`, a extensão responde ao ping; sem ela, ninguém responde. */
-function widget(version?: string) {
+/**
+ * Põe o iframe do widget na página. Com `version`, a extensão responde: ao ping, à leitura (com o HTML de `page`) e aos
+ * cliques; sem ela, ninguém responde.
+ */
+function widget(version?: string, page: () => string = () => "") {
   const iframe = document.createElement("iframe");
   iframe.src = `${WIDGET_ORIGIN}/widget`;
   document.body.append(iframe);
   vi.spyOn(iframe.contentWindow!, "postMessage").mockImplementation((message: { id: number; op: string }) => {
-    if (!version || message.op !== "ping") return;
-    window.dispatchEvent(new MessageEvent("message", { origin: WIDGET_ORIGIN, data: { dishdesk: "ifood-bridge", id: message.id, ok: true, version } }));
+    if (!version) return;
+    const reply = message.op === "ping" ? { version } : message.op === "html" ? { html: [page()] } : {};
+    window.dispatchEvent(new MessageEvent("message", { origin: WIDGET_ORIGIN, data: { dishdesk: "ifood-bridge", id: message.id, ok: true, ...reply } }));
   });
 }
 
@@ -55,5 +59,29 @@ describe("falta da extensão do iFood", () => {
     const missing = setup();
     await pass(60_000);
     expect(missing()).toBe(false);
+  });
+});
+
+describe("autorização da loja no widget", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => {
+    cleanup();
+    document.body.replaceChildren();
+    vi.useRealTimers();
+  });
+
+  it("o convite some depois da autorização pelo código (sem \"autorização em andamento\"): o motor volta sozinho", async () => {
+    let page = "<div><p>Para ver as conversas, autorize o widget no Portal do Parceiro.</p></div>";
+    widget("0.3.0", () => page);
+    const { result } = renderHook(() => useIfoodChat(true));
+    await pass(4_000);
+    expect(result.current).toBe("unauthorized");
+
+    // Autorizado no Portal: o widget volta com as abas.
+    page = '<div><button id="HOME">Home</button><button id="CHAT">Chat</button><div class="chats-tabs"></div></div>';
+    await pass(4_000);
+    expect(result.current).toBe("idle");
+    await pass(61_000);
+    expect(result.current).toBe("driving");
   });
 });

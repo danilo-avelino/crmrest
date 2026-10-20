@@ -29,15 +29,26 @@ export class OrderNoticeService {
   /**
    * O pedido acabou de sair para entrega ou de ser entregue: avisa na conversa aberta ou pendente mais recente do
    * cliente, achada pelo cadastro como no painel do pedido (o próprio, ou outro com o mesmo telefone, CPF ou e-mail).
-   * Sem conversa em andamento, ou com a janela de 24h fechada, não avisa. Pedido do iFood em que o cliente escreveu
+   * Sem conversa em andamento, com a janela de 24h fechada, ou com o pedido feito antes de a loja ser conectada, não
+   * avisa. Pedido do iFood em que o cliente escreveu
    * no chat (conversa ainda em andamento): toda movimentação, inclusive "ficou pronto", vai também para o chat dele.
    */
   async statusChanged(tenantId: string, orderId: string, status: NoticeStatus, now = new Date()): Promise<void> {
     const sent = await this.db.withTenants({ tenantIds: [tenantId] }, async (tx) => {
       const order = await tx.order.findUniqueOrThrow({
         where: { id: orderId },
-        select: { displayCode: true, externalOrderId: true, dispatchedAt: true, channelId: true, channel: { select: { type: true } }, contact: true },
+        select: {
+          displayCode: true,
+          externalOrderId: true,
+          dispatchedAt: true,
+          placedAt: true,
+          channelId: true,
+          channel: { select: { type: true, connectedAt: true } },
+          contact: true,
+        },
       });
+      // Pedido feito antes de a loja ser conectada (o iFood ainda entrega as últimas horas ao conectar): sem aviso.
+      if (order.channel.connectedAt && order.placedAt < order.channel.connectedAt) return [];
       const { id, phone, cpfHash, email } = order.contact;
       const conversations = await tx.conversation.findMany({
         where: {

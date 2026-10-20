@@ -17,6 +17,8 @@ const STEP_MS = 3_000;
 const SEARCH_MS = 15_000;
 /** As respostas da Inbox são buscadas a cada aviso do realtime e, por garantia, neste intervalo. */
 const CLAIM_MS = 15_000;
+/** O convite de autorização sumiu: espera este tempo antes de o motor voltar a abrir o widget. */
+const INVITE_RETRY_MS = 60_000;
 
 let sequence = 0;
 
@@ -86,7 +88,8 @@ export type IfoodChatMode = "idle" | "driving" | "unauthorized";
 /**
  * Chat do iFood na Inbox (trava IFOOD_CHAT_BRIDGE): com a extensão instalada neste Chrome, copia as conversas do widget
  * e digita nele as respostas escritas na Inbox. Sem a extensão, o widget aparece como sempre e a Inbox avisa para
- * instalar (useIfoodExtensionMissing). Com a loja sem autorizar, o motor espera: volta sozinho quando a autorização termina.
+ * instalar (useIfoodExtensionMissing). Com a loja sem autorizar, o motor espera: volta sozinho quando a autorização termina
+ * (ou um minuto depois de o convite sumir, porque a autorização pelo código nem sempre mostra que está em andamento).
  */
 export function useIfoodChat(enabled: boolean): IfoodChatMode {
   const { request } = useAuth();
@@ -141,11 +144,15 @@ export function useIfoodChat(enabled: boolean): IfoodChatMode {
             await sleep(STEP_MS);
             continue;
           }
-          if (authorization === "unauthorized") {
-            setMode("idle");
-            return; // a loja fechou o convite sem autorizar: o motor volta quando a página recarregar
-          }
+          const invite = authorization === "unauthorized";
           authorization = null; // a autorização terminou: o motor segue
+          if (invite) {
+            // O convite sumiu sem passar por "autorização em andamento" (a autorização pelo código nem sempre mostra): pode
+            // ter terminado, ou a loja fechou o convite. O motor volta depois de um tempo, sem reabrir o convite em seguida.
+            setMode("idle");
+            await sleep(INVITE_RETRY_MS);
+            continue;
+          }
         }
         setMode("driving");
         const take: boolean = claim;

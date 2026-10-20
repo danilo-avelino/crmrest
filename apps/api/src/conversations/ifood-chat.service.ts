@@ -63,7 +63,16 @@ export class IfoodChatService {
       const order = await tx.order.findFirst({
         where: { displayCode: body.orderCode, channel: { type: "IFOOD" } },
         orderBy: { placedAt: "desc" },
-        select: { id: true, tenantId: true, contactId: true, channelId: true, conversationId: true, externalOrderId: true, placedAt: true },
+        select: {
+          id: true,
+          tenantId: true,
+          contactId: true,
+          channelId: true,
+          conversationId: true,
+          externalOrderId: true,
+          placedAt: true,
+          channel: { select: { connectedAt: true } },
+        },
       });
       if (!order) return null;
       const entries = transcript(order, body.messages);
@@ -109,9 +118,15 @@ export class IfoodChatService {
         },
       });
       const result = { tenantId: order.tenantId, conversationId: conversation.id };
-      // As automações só entram se a conversa termina numa mensagem recente do cliente (a loja ainda não respondeu).
+      // As automações só entram se a conversa termina numa mensagem recente do cliente (a loja ainda não respondeu),
+      // escrita depois de a loja ser conectada: o histórico que o widget mostra ao conectar não recebe resposta automática.
       const newest = fresh.at(-1)!;
-      const waiting = newest === entries.at(-1) && newest.direction === "INBOUND" && now.getTime() - newest.at.getTime() <= ATTEND_WITHIN_MS;
+      const { connectedAt } = order.channel;
+      const waiting =
+        newest === entries.at(-1) &&
+        newest.direction === "INBOUND" &&
+        now.getTime() - newest.at.getTime() <= ATTEND_WITHIN_MS &&
+        (!connectedAt || newest.at >= connectedAt);
       if (!waiting) return result;
       const inbound = fresh.filter((entry) => entry.direction === "INBOUND");
       // Como nos outros canais: conversa nova, resolvida ou sem interação há INACTIVITY_CLOSE_MS começa um atendimento.

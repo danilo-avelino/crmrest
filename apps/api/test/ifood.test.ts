@@ -840,6 +840,15 @@ describe("iFood distribuído (cada loja autoriza com o código de vinculação)"
         .expect(201);
       const created = await add({ authorizationCode: "SEGU-NDAL", linkState: code.state }).expect(201);
       expect(created.body).toMatchObject({ externalId: second, name: `iFood ${second.slice(0, 8)}`, status: "CONNECTED" });
+
+      // Autorização de novo com as mesmas duas lojas, já conectadas: nada a escolher, e o motivo aparece.
+      const { body: again } = await request(app.getHttpServer())
+        .post(`/api/integrations/${fx.tenant.id}/ifood/link-code`)
+        .set("Authorization", `Bearer ${token}`)
+        .expect(201);
+      expect((await add({ authorizationCode: "SEGU-NDAL", linkState: again.state }).expect(422)).body.message).toContain(
+        "só trouxe lojas que já estão conectadas",
+      );
       // Fora dos testes seguintes, que contam as consultas da primeira loja.
       await admin.channel.update({ where: { id: created.body.id }, data: { status: "DISCONNECTED" } });
     } finally {

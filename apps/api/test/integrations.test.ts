@@ -282,17 +282,25 @@ describe("Integrações (Configurações)", () => {
       expect(JSON.parse(decrypt(channel.credentials, parseEncryptionKey(process.env.ENCRYPTION_KEY ?? "")))).toEqual({});
       expect(await resolve("WHATSAPP", fx.whatsapp.externalId)).toHaveLength(0);
 
-      // A mesma loja adicionada de novo volta a ficar conectada, no mesmo canal (o histórico continua ligado a ele).
+      // A mesma loja adicionada de novo volta a ficar conectada, no mesmo canal (o histórico continua ligado a ele), e
+      // com a hora da nova conexão (o que veio antes não aciona automações).
       await disconnect(fx.ifood.id).expect(201);
+      const reconnectedFrom = new Date();
       const again = await add({ type: "IFOOD", merchantId: fx.ifood.externalId }).expect(201);
       expect(again.body).toMatchObject({ id: fx.ifood.id, status: "CONNECTED" });
+      expect((await admin.channel.findUniqueOrThrow({ where: { id: fx.ifood.id } })).connectedAt!.getTime()).toBeGreaterThanOrEqual(reconnectedFrom.getTime());
     });
   });
 
   it("várias lojas do iFood; adicionar a mesma loja de novo só atualiza", async () => {
     await add({ type: "IFOOD", merchantId: "loja-centro-1", name: "Centro" }).expect(201);
     await add({ type: "IFOOD", merchantId: "loja-shopping-2", name: "Shopping" }).expect(201);
+    const centro = () => admin.channel.findFirstOrThrow({ where: { type: "IFOOD", externalId: "loja-centro-1" } });
+    const { connectedAt } = await centro();
+    expect(connectedAt).not.toBeNull();
     await add({ type: "IFOOD", merchantId: "loja-centro-1", name: "Centro (reformada)" }).expect(201);
+    // Já conectada: atualizar não muda a hora da conexão.
+    expect((await centro()).connectedAt).toEqual(connectedAt);
     const { body } = await list(adminToken).expect(200);
     const ifood = body.integrations.filter((i: { type: string }) => i.type === "IFOOD").map((i: { name: string }) => i.name);
     expect(ifood).toHaveLength(3); // a da fixture + Centro + Shopping
