@@ -103,6 +103,23 @@ describe("motor do chat do iFood", () => {
     ]);
   });
 
+  it("aviso do iFood para a loja no meio da conversa fica fora da cópia; mensagem do cliente que cita o iFood, não", async () => {
+    const nag = "<span>iFood</span><span>Sua loja demora pra responder...</span>";
+    const widget = fakeWidget([
+      order([
+        { side: "store", text: "Seu pedido acaba de ser entregue!", time: "22:25:00" },
+        { side: "customer", text: nag, time: "22:25:10" },
+        { side: "customer", text: "iFood não atualizou o pedido", time: "22:26:00" },
+      ]),
+    ]);
+    const { api, calls } = fakeApi();
+    await steps(new IfoodChatDriver(widget.bridge, api, instant), 3);
+    expect(calls.synced[0]!.messages).toEqual([
+      { direction: "OUTBOUND", text: "Seu pedido acaba de ser entregue!", time: "22:25:00" },
+      { direction: "INBOUND", text: "iFood não atualizou o pedido", time: "22:26:00" },
+    ]);
+  });
+
   it("só abre a conversa de novo quando a lista mostra mensagem nova", async () => {
     const chat = order([{ side: "customer", text: "Olá", time: "10:00:00" }]);
     const widget = fakeWidget([chat]);

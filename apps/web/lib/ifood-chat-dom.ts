@@ -98,13 +98,24 @@ function readBubbles(region: Element): WidgetBubble[] {
     const whole = (bubble.textContent ?? "").trim();
     const body = whole.endsWith(text(clock)) ? whole.slice(0, -text(clock).length).trim() : whole;
     const box = rect(bubble);
-    if (!body) continue;
+    if (!body || fromIfood(bubble, body)) continue;
     const left = frame && box ? box.x - frame.x : 0;
     const right = frame && box ? frame.x + frame.width - (box.x + box.width) : 0;
     const direction = Math.abs(left - right) < SIDE_GAP_PX ? null : left > right ? "OUTBOUND" : "INBOUND";
     bubbles.push({ direction, text: body, time: text(clock) });
   }
   return bubbles;
+}
+
+/**
+ * Aviso do próprio iFood para a loja no meio da conversa ("Sua loja demora pra responder..."): o balão abre com o rótulo
+ * "iFood" num texto à parte, do lado do cliente. Não é mensagem dele e fica fora da cópia (senão chamaria a equipe).
+ */
+function fromIfood(bubble: Element, body: string): boolean {
+  const walker = bubble.ownerDocument.createTreeWalker(bubble, NodeFilter.SHOW_TEXT);
+  let first = "";
+  while (!first && walker.nextNode()) first = (walker.currentNode.textContent ?? "").trim();
+  return first === "iFood" && body !== "iFood";
 }
 
 function text(element: Element): string {
