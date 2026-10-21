@@ -169,6 +169,27 @@ describe("Chat do iFood na Inbox (trava IFOOD_CHAT_BRIDGE ligada)", () => {
     expect(await admin.conversation.count({ where: { tenantId: fx.tenant.id, channelId: fx.ifood.id, contactId: order.contactId } })).toBe(1);
   });
 
+  it("usuário de vários restaurantes: o widget recebe as mesmas lojas em qualquer contexto, e a ponte grava no restaurante do pedido", async () => {
+    const store = (tenantId: string, status: "CONNECTED" | "ERROR" | "DISCONNECTED") =>
+      admin.channel.create({ data: { tenantId, type: "IFOOD", name: "iFood", externalId: randomUUID(), credentials: Buffer.from("x"), status } });
+    const [a, b] = await Promise.all([store(other.a.id, "CONNECTED"), store(other.b.id, "ERROR")]);
+    await Promise.all([store(other.b.id, "DISCONNECTED"), store(other.c.id, "CONNECTED")]); // fora: desconectada e restaurante sem acesso
+    const expected = [a.externalId, b.externalId].sort();
+    const tokens = await Promise.all([other.a.id, other.b.id, "master"].map((context) => accessTokenFor(app, other.user.email, context)));
+    for (const bearer of tokens) {
+      const { body } = await request(app.getHttpServer()).get("/api/ifood-widget").set("Authorization", `Bearer ${bearer}`).expect(200);
+      expect(body.merchantIds).toEqual(expected);
+    }
+
+    // Conversa de um pedido do restaurante B lida com o painel no restaurante A (antiga: sem automações no meio do teste).
+    const contact = await admin.contact.create({ data: { tenantId: other.b.id, name: "Cliente B" } });
+    await admin.order.create({
+      data: { tenantId: other.b.id, contactId: contact.id, channelId: b.id, externalOrderId: randomUUID(), displayCode: "7001", status: "CONFIRMED", subtotal: 10, deliveryFee: 0, total: 10, placedAt: minutesAgo(200), raw: {} },
+    });
+    expect((await post("/ifood-chat/sync", { orderCode: "7001", messages: [shown("INBOUND", "Cadê meu pedido?", minutesAgo(180))] }, tokens[0]).expect(200)).body).toEqual({ found: true });
+    expect(await admin.message.count({ where: { tenantId: other.b.id, content: { path: ["text"], equals: "Cadê meu pedido?" } } })).toBe(1);
+  });
+
   it("resposta pela Inbox: fica pendente, um painel só a pega, e a conversa lida do widget confirma sem duplicar", async () => {
     const chat = await conversation();
     const { body: sent } = await post(`/conversations/${chat.id}/messages`, { text: "Pode sim, sem cebola e sem picles." }).expect(201);

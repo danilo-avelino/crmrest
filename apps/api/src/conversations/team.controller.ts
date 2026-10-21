@@ -5,6 +5,7 @@ import { ZodPipe } from "../common/zod.pipe.js";
 import { ENV, type Env } from "../config/env.js";
 import { DatabaseService } from "../core/database.service.js";
 import { scopeFor } from "./conversations.service.js";
+import { ifoodWidgetScope } from "./ifood-widget-scope.js";
 
 /** Dados de apoio da Inbox: quem pode receber conversas, as respostas rápidas e a saúde dos canais. */
 @Controller()
@@ -53,13 +54,22 @@ export class TeamController {
     );
   }
 
-  /** Widget do iFood (chat com o cliente do iFood): o id do widget e as lojas iFood conectadas do usuário. */
+  /**
+   * Widget do iFood (chat com o cliente do iFood): o id do widget e as lojas iFood conectadas do usuário, de todos os
+   * restaurantes dele (ifoodWidgetScope), sempre na mesma ordem: a mesma lista a cada login mantém a autorização do widget.
+   */
   @Get("ifood-widget")
   async ifoodWidget(@CurrentAuth() auth: RequestAuth): Promise<IfoodWidgetDto> {
     const widgetId = this.env.IFOOD_WIDGET_ID ?? null;
     if (!widgetId) return { widgetId, merchantIds: [], chat: false, extensionUrl: null };
-    const channels = await this.db.withTenants(auth.scope, (tx) =>
-      tx.channel.findMany({ where: { type: "IFOOD", status: { not: "DISCONNECTED" } }, select: { externalId: true }, take: 10 }),
+    const scope = await ifoodWidgetScope(this.db, auth);
+    const channels = await this.db.withTenants(scope, (tx) =>
+      tx.channel.findMany({
+        where: { type: "IFOOD", status: { not: "DISCONNECTED" } },
+        select: { externalId: true },
+        orderBy: { externalId: "asc" },
+        take: 10, // limite do widget
+      }),
     );
     return {
       widgetId,

@@ -43,8 +43,8 @@ export function IfoodWidget() {
   const { session } = useAuth();
   const config = useIfoodWidget();
   const [loaded, setLoaded] = useState(false);
-  // Lojas com que o widget foi iniciado. Uma inicialização por página: iniciar de novo com outros parâmetros derruba a
-  // autorização da loja no widget.
+  // Lojas com que o widget foi iniciado. Uma inicialização por página: o widget apaga a autorização da loja quando as
+  // lojas do init mudam, por isso a API manda as de todos os restaurantes do usuário, as mesmas em qualquer contexto.
   const initialized = useRef<string | null>(null);
   // O widget está na tela com as lojas do usuário atual.
   const [shown, setShown] = useState(false);
@@ -58,7 +58,7 @@ export function IfoodWidget() {
       initialized.current = key;
       void widget.init({ widgetId: data.widgetId, merchantIds: data.merchantIds, autoShow: false });
     }
-    // Lojas diferentes das iniciadas (saiu, trocou de restaurante ou mudou as lojas): esconde até recarregar a página,
+    // Lojas diferentes das iniciadas (saiu, entrou outro usuário ou mudou as lojas): esconde até recarregar a página,
     // para nunca mostrar o chat de outra loja.
     void widget.ready.then(() => {
       const current = key !== null && key === initialized.current;

@@ -17,6 +17,7 @@ import { DatabaseService } from "../core/database.service.js";
 import { type AutomationJob, QUEUES } from "../queues/queues.module.js";
 import { RealtimeEmitter } from "../realtime/realtime.emitter.js";
 import { openIfoodConversation } from "./ifood-conversation.js";
+import { ifoodWidgetScope } from "./ifood-widget-scope.js";
 
 /**
  * Marca de uma resposta que um painel pegou para digitar no widget. Fica em externalMessageId até a conversa lida do
@@ -41,7 +42,8 @@ type Synced = { tenantId: string; conversationId: string; ifood?: NonNullable<Au
 /**
  * Chat do iFood na Inbox. O iFood não tem API de chat: o painel lê a conversa de cada pedido no widget, pela extensão do
  * Chrome, e manda para cá; as respostas escritas na Inbox ficam pendentes até um painel digitá-las no widget.
- * Tudo depende da trava IFOOD_CHAT_BRIDGE: desligada, as rotas não existem.
+ * Tudo depende da trava IFOOD_CHAT_BRIDGE: desligada, as rotas não existem. O widget mostra as lojas de todos os
+ * restaurantes do usuário (ifoodWidgetScope), então a ponte também trabalha em todos eles, qualquer que seja o contexto.
  */
 @Injectable()
 export class IfoodChatService {
@@ -59,7 +61,8 @@ export class IfoodChatService {
    */
   async sync(auth: RequestAuth, body: IfoodChatSync, now = new Date()): Promise<IfoodChatSyncResult> {
     this.requireEnabled();
-    const changed = await this.db.withTenants(auth.scope, async (tx): Promise<Synced | { conversationId?: undefined } | null> => {
+    const scope = await ifoodWidgetScope(this.db, auth);
+    const changed = await this.db.withTenants(scope, async (tx): Promise<Synced | { conversationId?: undefined } | null> => {
       const order = await tx.order.findFirst({
         where: { displayCode: body.orderCode, channel: { type: "IFOOD" } },
         orderBy: { placedAt: "desc" },
@@ -151,7 +154,7 @@ export class IfoodChatService {
   /** Respostas pendentes das conversas do iFood. Cada uma vai para um painel só, que a digita no chat do pedido. */
   async claim(auth: RequestAuth): Promise<IfoodChatOutboxItem[]> {
     this.requireEnabled();
-    const { items, failed } = await this.db.withTenants(auth.scope, async (tx) => {
+    const { items, failed } = await this.db.withTenants(await ifoodWidgetScope(this.db, auth), async (tx) => {
       const pending = await tx.message.findMany({
         where: { direction: "OUTBOUND", status: "PENDING", externalMessageId: null, channel: { type: "IFOOD" } },
         orderBy: { createdAt: "asc" },
@@ -194,7 +197,7 @@ export class IfoodChatService {
   /** O painel conta se conseguiu digitar a resposta no widget. */
   async result(auth: RequestAuth, messageId: string, body: IfoodChatSendResult): Promise<void> {
     this.requireEnabled();
-    const message = await this.db.withTenants(auth.scope, async (tx) => {
+    const message = await this.db.withTenants(await ifoodWidgetScope(this.db, auth), async (tx) => {
       // Já enviada: a conversa lida do widget confirmou antes. A que falhou por demora ainda pode ter saído.
       const message = await tx.message.findFirst({
         where: { id: messageId, direction: "OUTBOUND", status: { in: ["PENDING", "FAILED"] }, channel: { type: "IFOOD" } },
