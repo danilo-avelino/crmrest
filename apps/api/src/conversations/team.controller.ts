@@ -44,14 +44,15 @@ export class TeamController {
 
   /** Status dos canais (sem credenciais), para o aviso de canal que precisa ser reconectado. */
   @Get("channels")
-  channels(@CurrentAuth() auth: RequestAuth): Promise<ChannelHealthDto[]> {
-    return this.db.withTenants(auth.scope, (tx) =>
+  async channels(@CurrentAuth() auth: RequestAuth): Promise<ChannelHealthDto[]> {
+    const channels = await this.db.withTenants(auth.scope, (tx) =>
       tx.channel.findMany({
         where: { deletedAt: null },
-        select: { id: true, tenantId: true, type: true, name: true, status: true },
+        select: { id: true, tenantId: true, type: true, name: true, status: true, tokenExpiresAt: true },
         orderBy: { name: "asc" },
       }),
     );
+    return channels.map((channel) => ({ ...channel, tokenExpiresAt: channel.tokenExpiresAt?.toISOString() ?? null }));
   }
 
   /**

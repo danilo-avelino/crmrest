@@ -1,6 +1,6 @@
 # Pendências para produção — Dish Desk
 
-Atualizado em 20 de outubro de 2026.
+Atualizado em 21 de outubro de 2026.
 
 Esta é a lista do que falta para o Dish Desk atender restaurantes de verdade. Quando um item for concluído, marque `[x]` e troque a data acima.
 
@@ -109,7 +109,9 @@ Pagamento pendente (Claude, 11/10): a renovação do mensal tem 1 dia de folga; 
 
 ## 3. Riscos no código
 
-- [ ] **Token do WhatsApp sem renovação.** O cadastro incorporado usa o modelo "token de 60 dias", e o código só renova os tokens do Instagram. Um número conectado pela tela pode parar em cerca de 60 dias. Falta confirmar com um número real e resolver, com o token permanente de Tech Provider ou com um job de renovação — Claude.
+- [ ] **Token do WhatsApp sem renovação.** O cadastro incorporado usa o modelo "token de 60 dias".
+  - [x] Job diário (4h) que confere o token na Meta (`debug_token`): recusado, o canal fica "Com erro"; permanente, nada muda; de 60 dias, grava o vencimento e renova com `fb_exchange_token` + `set_token_expires_in_60_days` quando tem mais de 7 dias. Integrações e a Inbox avisam "vence em N dias" a partir de 10 dias do fim (WhatsApp e Instagram) — Claude, 21/10. Testado com a Meta simulada.
+  - [ ] Conferir com um número real conectado pela tela se a Meta aceita a renovação desse token (a documentação descreve o `fb_exchange_token` para tokens de usuário do sistema) — você e Claude.
 - [ ] **Mídia recebida.** Desde 11/10 a conversa mostra a imagem e toca o áudio (vídeo e documento têm "Baixar"), buscando o arquivo na Meta cada vez que a conversa é aberta. Nada é guardado: quando a Meta apaga o arquivo (no WhatsApp, a documentação fala em 7 dias para o id que chega no webhook), a conversa mostra "não está mais disponível".
   - [ ] Conferir em produção com uma imagem e um áudio reais do WhatsApp e do Instagram (o teste automático usa uma Meta simulada).
   - [ ] Guardar o arquivo na chegada, para o histórico não se perder. Depende de você escolher o armazenamento (S3, R2, Supabase Storage…).

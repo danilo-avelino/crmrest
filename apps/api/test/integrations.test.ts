@@ -29,6 +29,9 @@ async function startMockCardapioWeb() {
   };
 }
 
+/** Vencimento (em segundos, como a Meta responde) do token do cadastro incorporado: daqui a 60 dias. */
+const SIGNUP_TOKEN_EXPIRES_AT = Math.floor(Date.now() / 1000) + 60 * 24 * 60 * 60;
+
 describe("Integrações (Configurações)", () => {
   let app: INestApplication;
   let graph: Awaited<ReturnType<typeof startMockGraph>>;
@@ -70,8 +73,13 @@ describe("Integrações (Configurações)", () => {
       // Número que já estava na Cloud API com outro PIN: a Meta recusa o registro.
       if (req.method === "POST" && req.path === "/555000222/register") return { status: 400, body: { error: { message: "PIN incorreto" } } };
       // Sem a conta na mensagem da janela: a conta liberada vem nas permissões do token.
+      // O token do cadastro incorporado vence em 60 dias (configuração da Meta); o colado à mão não vence.
       if (req.method === "GET" && req.path.startsWith("/debug_token?")) {
-        return { status: 200, body: { data: { granular_scopes: [{ scope: "whatsapp_business_management", target_ids: ["999000333"] }] } } };
+        const expires = req.path.includes("input_token=token-da-empresa-123") ? { expires_at: SIGNUP_TOKEN_EXPIRES_AT } : {};
+        return {
+          status: 200,
+          body: { data: { is_valid: true, ...expires, granular_scopes: [{ scope: "whatsapp_business_management", target_ids: ["999000333"] }] } },
+        };
       }
       return { status: 404, body: { error: { message: "Não encontrado" } } };
     });
@@ -141,6 +149,7 @@ describe("Integrações (Configurações)", () => {
       externalId: "555000111",
       status: "CONNECTED",
       servedTenantIds: [],
+      tokenExpiresAt: null, // a Meta não informou vencimento: token permanente
     });
     expect(graph.requests).toContainEqual(
       expect.objectContaining({ method: "POST", path: "/999000222/subscribed_apps", authorization: "Bearer token-do-system-user-123" }),
@@ -223,6 +232,8 @@ describe("Integrações (Configurações)", () => {
     it("Coexistência: acha o número da conta, não registra de novo e inscreve a conta nos webhooks", async () => {
       const { body } = await signup({ code: "codigo-da-janela-meta", wabaId: "999000333", coexistence: true }).expect(201);
       expect(body).toMatchObject({ type: "WHATSAPP", externalId: "555000222", name: "Danilo Lanches (+55 86 99973-1647)" });
+      // O vencimento do token, para o painel avisar antes de o número parar.
+      expect(body.tokenExpiresAt).toBe(new Date(SIGNUP_TOKEN_EXPIRES_AT * 1000).toISOString());
       expect(graph.requests.some((r) => r.path.startsWith("/oauth/access_token?") && r.path.includes("code=codigo-da-janela-meta"))).toBe(true);
       // Sem o redirect_uri da janela, a troca vai com ele vazio.
       expect(graph.requests.some((r) => r.path.startsWith("/oauth/access_token?") && r.path.endsWith("&redirect_uri="))).toBe(true);

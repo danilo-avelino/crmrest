@@ -39,9 +39,19 @@ import { type CardapioWebImportJob, QUEUES } from "../queues/queues.module.js";
 import { isTenantAdmin, requireTenantAdmin } from "./tenant-admin.js";
 
 /** O que vai para o canal depois de a credencial ser conferida no sistema de origem. */
-type VerifiedChannel = { type: IntegrationType; externalId: string; name: string; secrets: Record<string, string> };
+type VerifiedChannel = {
+  type: IntegrationType;
+  externalId: string;
+  name: string;
+  secrets: Record<string, string>;
+  /** Vencimento do token (WhatsApp e Instagram); sem ele, não vence ou não deu para conferir. */
+  tokenExpiresAt?: Date | null;
+};
 
-const SELECT = { id: true, type: true, name: true, externalId: true, status: true, servedTenantIds: true } as const;
+const SELECT = { id: true, type: true, name: true, externalId: true, status: true, servedTenantIds: true, tokenExpiresAt: true } as const;
+
+/** Tokens de longa duração do Instagram valem 60 dias (o job semanal os renova). */
+const INSTAGRAM_TOKEN_LIFETIME_MS = 60 * 24 * 60 * 60 * 1000;
 
 /** Autorização do iFood com mais de uma loja: em vez de conectar, `add` devolve as lojas para o restaurante escolher. */
 class IfoodStoreChoice {
@@ -277,7 +287,7 @@ export class IntegrationsService {
       }
       const { name } = await whatsapp.connectNumber(phoneNumberId, wabaId, accessToken);
       const secrets = { accessToken, wabaId, tokenUpdatedAt: new Date().toISOString(), ...(pin && { pin }) };
-      verified = { type: "WHATSAPP", externalId: phoneNumberId, name, secrets };
+      verified = { type: "WHATSAPP", externalId: phoneNumberId, name, secrets, tokenExpiresAt: await this.whatsappTokenExpiry(accessToken) };
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
       throw new UnprocessableEntityException(`Não foi possível conectar o WhatsApp: ${reason.replace(/\.$/, "")}.`);
@@ -336,6 +346,7 @@ export class IntegrationsService {
       credentials: encrypt(JSON.stringify(verified.secrets), this.key),
       status: "CONNECTED" as const,
       deletedAt: null,
+      tokenExpiresAt: verified.tokenExpiresAt ?? null,
     };
     try {
       return await this.db.withTenants({ tenantIds: [tenantId], userId }, async (tx) => {
@@ -387,7 +398,13 @@ export class IntegrationsService {
       switch (body.type) {
         case "WHATSAPP": {
           const { name } = await this.connectors.whatsapp.connectNumber(body.phoneNumberId, body.wabaId, body.accessToken);
-          return { type: body.type, externalId: body.phoneNumberId, name, secrets: { accessToken: body.accessToken, wabaId: body.wabaId, tokenUpdatedAt } };
+          return {
+            type: body.type,
+            externalId: body.phoneNumberId,
+            name,
+            secrets: { accessToken: body.accessToken, wabaId: body.wabaId, tokenUpdatedAt },
+            tokenExpiresAt: await this.whatsappTokenExpiry(body.accessToken),
+          };
         }
         case "INSTAGRAM": {
           const { accountId, username } = await this.connectors.instagram.connectAccount(body.accessToken);
@@ -396,6 +413,8 @@ export class IntegrationsService {
             externalId: accountId,
             name: username ? `@${username}` : `Instagram ${accountId}`,
             secrets: { accessToken: body.accessToken, tokenUpdatedAt },
+            // O token acabou de sair do login; a primeira renovação corrige a data se ele for mais antigo (colado à mão).
+            tokenExpiresAt: new Date(Date.now() + INSTAGRAM_TOKEN_LIFETIME_MS),
           };
         }
         case "IFOOD": {
@@ -454,6 +473,16 @@ export class IntegrationsService {
     }
   }
 
+  /** Vencimento do token do WhatsApp; se a Meta não responder, a conexão segue e o job diário confere depois. */
+  private async whatsappTokenExpiry(accessToken: string): Promise<Date | null> {
+    try {
+      return (await this.connectors.whatsapp.tokenStatus(accessToken))?.expiresAt ?? null;
+    } catch (error) {
+      this.logger.warn(`Validade do token do WhatsApp não conferida: ${error instanceof Error ? error.message : String(error)}`);
+      return null;
+    }
+  }
+
   /** O acesso e as lojas da autorização, cifrados para o painel devolver com a escolha (vale por 10 minutos). */
   private sealSelection(tenantId: string, choice: IfoodStoreChoice): string {
     const data: IfoodSelection = {
@@ -509,6 +538,7 @@ function toDto(channel: {
   externalId: string;
   status: IntegrationDto["status"];
   servedTenantIds: string[];
+  tokenExpiresAt: Date | null;
 }): IntegrationDto {
-  return { ...channel, type: channel.type as IntegrationType };
+  return { ...channel, type: channel.type as IntegrationType, tokenExpiresAt: channel.tokenExpiresAt?.toISOString() ?? null };
 }

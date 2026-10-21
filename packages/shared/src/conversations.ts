@@ -170,8 +170,18 @@ export type MemberDto = { id: string; name: string; tenantId: string; role: Tena
 
 export type QuickReplyDto = { id: string; tenantId: string; shortcut: string; content: string };
 
-/** Canal do restaurante como a equipe o vê (sem credenciais): para avisar quando ele precisa ser reconectado. */
-export type ChannelHealthDto = { id: string; tenantId: string; type: ChannelType; name: string; status: ChannelStatus };
+/**
+ * Canal do restaurante como a equipe o vê (sem credenciais): para avisar quando ele precisa ser reconectado ou quando
+ * o token está para vencer (tokenExpiresAt em ISO; null = não vence ou não conferido).
+ */
+export type ChannelHealthDto = {
+  id: string;
+  tenantId: string;
+  type: ChannelType;
+  name: string;
+  status: ChannelStatus;
+  tokenExpiresAt: string | null;
+};
 /**
  * Widget do iFood na Inbox: id do widget da plataforma e as lojas iFood do usuário (o iFood aceita até 10).
  * `chat`: o chat do widget é copiado para a Inbox pela extensão do Chrome (trava IFOOD_CHAT_BRIDGE da API).

@@ -7,7 +7,7 @@ import { InactivityService } from "./automations/inactivity.service.js";
 import { PhoneCollectionService } from "./automations/phone-collection.service.js";
 import { SurveyService } from "./automations/survey.service.js";
 import { TriageService } from "./automations/triage.service.js";
-import { InstagramTokensProcessor, InstagramTokensService } from "./channels/instagram-tokens.service.js";
+import { ChannelTokensProcessor, ChannelTokensService } from "./channels/channel-tokens.service.js";
 import { ContactTagsService } from "./contacts/contact-tags.service.js";
 import { ContactsController } from "./contacts/contacts.controller.js";
 import { ContactsService } from "./contacts/contacts.service.js";
@@ -86,8 +86,8 @@ export class RealtimeRoleModule {}
     CardapioWebService,
     CardapioWebProcessor,
     OrderNoticeService,
-    InstagramTokensService,
-    InstagramTokensProcessor,
+    ChannelTokensService,
+    ChannelTokensProcessor,
   ],
 })
 export class WorkerRoleModule {}

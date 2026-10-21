@@ -196,7 +196,8 @@ export class WhatsAppConnector implements ChannelConnector {
   }
 
   /**
-   * Cadastro incorporado: troca o código da janela da Meta pelo token da empresa, que não expira. A Meta só aceita a
+   * Cadastro incorporado: troca o código da janela da Meta pelo token da empresa. Ele vence em 60 dias ou não vence,
+   * conforme a configuração do cadastro na Meta (tokenStatus diz qual). A Meta só aceita a
    * troca com o mesmo redirect_uri do pedido de login, que o SDK do JavaScript monta (um endereço interno da Meta) e o
    * painel repassa; sem ele, vai vazio.
    */
@@ -222,6 +223,39 @@ export class WhatsAppConnector implements ChannelConnector {
     const waba = body.data?.granular_scopes?.find((s) => s.scope === "whatsapp_business_management")?.target_ids?.[0];
     if (!waba) throw new Error("a Meta não informou a conta do WhatsApp escolhida");
     return waba;
+  }
+
+  /**
+   * Validade do token pela Meta (debug_token). expiresAt null = não vence (token permanente). Em simulação ou sem o app
+   * configurado neste servidor não há como conferir: devolve null.
+   */
+  async tokenStatus(accessToken: string): Promise<{ valid: boolean; expiresAt: Date | null } | null> {
+    if (this.env.CHANNELS_DRY_RUN || !this.env.META_APP_ID || !this.env.META_APP_SECRET) return null;
+    const url = new URL(`${this.env.META_GRAPH_URL}/debug_token`);
+    url.search = new URLSearchParams({ input_token: accessToken, access_token: `${this.env.META_APP_ID}|${this.env.META_APP_SECRET}` }).toString();
+    const body = (await graph(fetch(url, { signal: AbortSignal.timeout(15_000) }))) as { data?: { is_valid?: boolean; expires_at?: number } };
+    const expiresAt = body.data?.expires_at ? new Date(body.data.expires_at * 1000) : null;
+    return { valid: body.data?.is_valid !== false, expiresAt };
+  }
+
+  /**
+   * Token de 60 dias renovado por mais 60; o antigo continua valendo até vencer. Nunca chamar com um token permanente:
+   * a renovação o transformaria num token que vence.
+   */
+  async refreshToken(accessToken: string): Promise<{ accessToken: string; expiresAt: Date | null }> {
+    const { META_APP_ID: appId, META_APP_SECRET: appSecret } = this.env;
+    if (!appId || !appSecret) throw new Error("o app da Meta não está configurado neste servidor");
+    const url = new URL(`${this.env.META_GRAPH_URL}/oauth/access_token`);
+    url.search = new URLSearchParams({
+      grant_type: "fb_exchange_token",
+      client_id: appId,
+      client_secret: appSecret,
+      set_token_expires_in_60_days: "true",
+      fb_exchange_token: accessToken,
+    }).toString();
+    const body = (await graph(fetch(url, { signal: AbortSignal.timeout(15_000) }))) as { access_token?: string; expires_in?: number };
+    if (!body.access_token) throw new Error("Meta: a resposta não trouxe o token.");
+    return { accessToken: body.access_token, expiresAt: body.expires_in ? new Date(Date.now() + body.expires_in * 1000) : null };
   }
 
   /** O número da conta (WABA): na Coexistência a janela da Meta pode não dizer qual foi conectado. */

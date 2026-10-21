@@ -17,7 +17,24 @@ export type IntegrationDto = {
    * neles também). Vazio nos marketplaces e quando a conta atende só o próprio restaurante.
    */
   servedTenantIds: string[];
+  /** WhatsApp e Instagram: quando o token vence (ISO); null = não vence ou ainda não conferido. */
+  tokenExpiresAt: string | null;
 };
+
+/** A partir de quantos dias antes do vencimento do token o painel avisa para reconectar. */
+export const TOKEN_EXPIRY_WARNING_DAYS = 10;
+
+/** Dias inteiros até o token vencer, só quando já está na hora de avisar (null fora do aviso; 0 = vence hoje ou venceu). */
+export function tokenExpiryWarning(tokenExpiresAt: string | null, now = Date.now()): number | null {
+  if (!tokenExpiresAt) return null;
+  const days = Math.max(0, Math.floor((Date.parse(tokenExpiresAt) - now) / (24 * 60 * 60 * 1000)));
+  return days <= TOKEN_EXPIRY_WARNING_DAYS ? days : null;
+}
+
+/** "Vence hoje", "Vence amanhã" ou "Vence em N dias", a partir do resultado de tokenExpiryWarning. */
+export function tokenExpiryLabel(days: number): string {
+  return days === 0 ? "Vence hoje" : days === 1 ? "Vence amanhã" : `Vence em ${days} dias`;
+}
 
 export type IntegrationsDto = {
   tenantId: string;

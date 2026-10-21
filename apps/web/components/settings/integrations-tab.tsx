@@ -12,6 +12,8 @@ import {
   type IntegrationType,
   RenameIntegrationRequest,
   SERVING_TYPES,
+  tokenExpiryLabel,
+  tokenExpiryWarning,
 } from "@dishdesk/shared";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckIcon, ChevronRightIcon, CircleAlertIcon, CopyIcon, PencilIcon, PlusIcon, SearchIcon, XIcon } from "lucide-react";
@@ -159,6 +161,11 @@ export function SystemIcon({ type, className }: { type: IntegrationType; classNa
   );
 }
 
+/** Dias até o token da conta vencer, quando já é hora de avisar; null para conta desconectada ou com erro. */
+function expiryOf(item: IntegrationDto): number | null {
+  return item.status === "CONNECTED" ? tokenExpiryWarning(item.tokenExpiresAt) : null;
+}
+
 export function StatusBadge({ badge, className }: { badge: Badge; className?: string }) {
   return (
     <span className={cn("inline-flex shrink-0 items-center gap-[5px] rounded-full px-2 py-0.5 text-[10px] font-bold tracking-[0.02em]", badge.className, className)}>
@@ -291,14 +298,17 @@ function IntegrationCard({ system, data, onOpen }: { system: System; data: Integ
   const items = data.integrations.filter((integration) => integration.type === system.type);
   const active = items.filter((item) => item.status !== "DISCONNECTED");
   const pending = pendingOf(system.type, data.platform);
-  // Situação do sistema: credencial pendente, alguma conta com erro, conectado ou sem nenhuma conta.
+  const expiries = active.map(expiryOf).filter((days) => days !== null);
+  // Situação do sistema: credencial pendente, alguma conta com erro, token perto de vencer, conectado ou sem nenhuma conta.
   const badge: Badge = pending
     ? { label: pending.badge, className: "bg-warning-lt text-warning-ink", dot: "bg-warning" }
     : active.some((item) => item.status === "ERROR")
       ? STATUS.ERROR
-      : active.length > 0
-        ? STATUS.CONNECTED
-        : { ...STATUS.DISCONNECTED, label: "Não conectado" };
+      : expiries.length > 0
+        ? { label: tokenExpiryLabel(Math.min(...expiries)), className: "bg-warning-lt text-warning-ink", dot: "bg-warning" }
+        : active.length > 0
+          ? STATUS.CONNECTED
+          : { ...STATUS.DISCONNECTED, label: "Não conectado" };
 
   return (
     <section
@@ -501,6 +511,15 @@ function IntegrationPanel({ system, data, adding, onClose }: { system: System; d
                   <dd className="text-[12px] font-semibold break-all tabular-nums">{item.externalId}</dd>
                 </div>
               </dl>
+              {expiryOf(item) !== null && (
+                <p className="mt-3 flex items-start gap-[9px] rounded-xl border border-warning-line bg-warning-lt px-[13px] py-[11px] text-[11px] leading-[1.55] text-warning-ink">
+                  <CircleAlertIcon className="mt-px size-3.5 shrink-0 text-warning" aria-hidden />
+                  O acesso a esta conta {tokenExpiryLabel(expiryOf(item)!).toLowerCase()}, e a renovação automática não funcionou.{" "}
+                  {data.canEdit
+                    ? "Conecte a mesma conta de novo para não parar de receber mensagens."
+                    : "Avise um administrador do restaurante para conectar a conta de novo."}
+                </p>
+              )}
               {canServe && (
                 <div className="mt-3 rounded-[10px] bg-paper px-[15px] py-[13px]">
                   <ServedTenants data={data} item={item} />
