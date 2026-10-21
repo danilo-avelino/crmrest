@@ -1,6 +1,6 @@
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useIfoodChat, useIfoodExtensionMissing } from "./use-ifood-chat";
+import { connectIfoodChat, useIfoodChat, useIfoodChatState, useIfoodExtensionMissing } from "./use-ifood-chat";
 
 vi.mock("@/components/auth/auth-provider", () => ({ useAuth: () => ({ request: vi.fn().mockRejectedValue(new Error("sem API")) }) }));
 
@@ -14,7 +14,7 @@ function widget(version?: string, page: () => string = () => "") {
   const iframe = document.createElement("iframe");
   iframe.src = `${WIDGET_ORIGIN}/widget`;
   document.body.append(iframe);
-  vi.spyOn(iframe.contentWindow!, "postMessage").mockImplementation((message: { id: number; op: string }) => {
+  return vi.spyOn(iframe.contentWindow!, "postMessage").mockImplementation((message: { id: number; op: string }) => {
     if (!version) return;
     const reply = message.op === "ping" ? { version } : message.op === "html" ? { html: [page()] } : {};
     window.dispatchEvent(new MessageEvent("message", { origin: WIDGET_ORIGIN, data: { dishdesk: "ifood-bridge", id: message.id, ok: true, ...reply } }));
@@ -83,5 +83,63 @@ describe("autorização da loja no widget", () => {
     expect(result.current).toBe("idle");
     await pass(61_000);
     expect(result.current).toBe("driving");
+  });
+});
+
+describe("situação do chat do iFood", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => {
+    cleanup();
+    document.body.replaceChildren();
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  const INVITE =
+    '<div><p>Ops! Você precisa autorizar o widget</p><a href="https://portal.ifood.com.br/apps/code?c=ABCD-EFGH" target="_blank"><button>Ir para o Portal do Parceiro</button></a><button>Já tenho o código</button></div>';
+  const PANEL = '<div><button id="HOME">Home</button><button id="CHAT">Chat</button><div class="chats-tabs"></div></div>';
+
+  function setupState() {
+    const { result } = renderHook(() => {
+      useIfoodChat(true);
+      return useIfoodChatState();
+    });
+    return () => result.current;
+  }
+
+  it("conectado quando o widget mostra as abas", async () => {
+    widget("0.3.0", () => PANEL);
+    const state = setupState();
+    await pass(4_000);
+    expect(state().status).toBe("connected");
+  });
+
+  it("desconectado com o convite: Conectar abre o Portal pelo painel e passa o widget para a espera da autorização", async () => {
+    let page = INVITE;
+    const postMessage = widget("0.3.0", () => page);
+    const open = vi.spyOn(window, "open").mockReturnValue(null);
+    const state = setupState();
+    await pass(4_000);
+    expect(state()).toEqual({ status: "unauthorized", invite: { url: "https://portal.ifood.com.br/apps/code?c=ABCD-EFGH", skip: 1 } });
+
+    await act(() => connectIfoodChat());
+    expect(open).toHaveBeenCalledWith("https://portal.ifood.com.br/apps/code?c=ABCD-EFGH", "_blank", "noopener");
+    expect(postMessage).toHaveBeenCalledWith(expect.objectContaining({ op: "click", selector: "button", index: 1 }), WIDGET_ORIGIN);
+
+    page = "<div><span>Autorização em andamento</span><span>Não feche esta janela.</span></div>";
+    await pass(3_500);
+    expect(state()).toEqual({ status: "authorizing", invite: null });
+  });
+
+  it("desligado quando o motor para", async () => {
+    widget("0.3.0", () => PANEL);
+    const { result, rerender } = renderHook(({ enabled }) => {
+      useIfoodChat(enabled);
+      return useIfoodChatState();
+    }, { initialProps: { enabled: true } });
+    await pass(4_000);
+    expect(result.current.status).toBe("connected");
+    rerender({ enabled: false });
+    expect(result.current.status).toBe("off");
   });
 });

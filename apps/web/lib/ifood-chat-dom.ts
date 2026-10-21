@@ -33,6 +33,12 @@ export type WidgetDrawer = {
   send: string | null;
 };
 
+/**
+ * Convite da autorização: `url` é o link "Ir para o Portal do Parceiro" e `skip` a posição, entre os `button` do widget,
+ * do "Já tenho o código", que passa o widget para a espera da autorização.
+ */
+export type WidgetInvite = { url: string; skip: number };
+
 export type WidgetState = {
   /** O widget está aberto (dá para ver as abas). */
   panel: boolean;
@@ -42,6 +48,8 @@ export type WidgetState = {
    * para ir ao Portal do Parceiro; `authorizing` = a autorização está sendo dada lá.
    */
   authorization: "unauthorized" | "authorizing" | null;
+  /** O convite está na tela com o endereço do Portal do Parceiro (com o código do widget). */
+  invite: WidgetInvite | null;
   chats: WidgetChat[];
   drawers: WidgetDrawer[];
 };
@@ -65,7 +73,10 @@ export function readWidget(html: string): WidgetState {
   });
   const words = document.body.textContent ?? "";
   const authorization = panel ? null : /autorização em andamento/i.test(words) ? "authorizing" : /portal do parceiro/i.test(words) ? "unauthorized" : null;
-  return { panel, chatTab, authorization, chats, drawers };
+  const url = [...document.querySelectorAll("a[href]")].find((link) => /portal do parceiro/i.test(text(link)))?.getAttribute("href");
+  const skip = [...document.querySelectorAll("button")].findIndex((button) => /já tenho o código/i.test(text(button)));
+  const invite = authorization === "unauthorized" && url && skip >= 0 ? { url, skip } : null;
+  return { panel, chatTab, authorization, invite, chats, drawers };
 }
 
 function readDrawer(region: Element): WidgetDrawer | null {

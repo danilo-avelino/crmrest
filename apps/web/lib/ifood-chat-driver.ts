@@ -39,6 +39,8 @@ export class IfoodChatDriver {
   private readonly retryAt = new Map<string, number>();
   private readonly tries = new Map<string, number>();
   private readonly outbox: IfoodChatOutboxItem[] = [];
+  /** O widget na última leitura (null: ainda não leu). */
+  seen: WidgetState | null = null;
 
   constructor(
     private readonly bridge: Bridge,
@@ -73,7 +75,8 @@ export class IfoodChatDriver {
 
   private async read(): Promise<WidgetState> {
     const { html } = await this.bridge("html", { selector: "body", geometry: true });
-    return readWidget(html?.[0] ?? "");
+    this.seen = readWidget(html?.[0] ?? "");
+    return this.seen;
   }
 
   private async click(selector: string, index?: number): Promise<DriverStatus> {

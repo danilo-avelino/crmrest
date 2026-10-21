@@ -21,6 +21,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
 import { ORDER_TONE } from "@/components/clients/client-detail";
+import { useIfoodWidget } from "@/components/ifood-widget";
 import { ChannelDot, StatusBadge } from "@/components/inbox/bits";
 import { ORDER_STATUS } from "@/components/inbox/order-card";
 import { OrderDetails } from "@/components/orders/order-list";
@@ -33,6 +34,7 @@ import {
 } from "@/components/settings/integrations-tab";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import { connectIfoodChat, type IfoodChatStatus, useIfoodChatState } from "@/hooks/use-ifood-chat";
 import { useNow } from "@/hooks/use-now";
 import { ago, clock, count, currency } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -75,6 +77,7 @@ function Integrations() {
     refetchInterval: 60_000,
   });
   const admin = (session?.context?.tenants ?? []).some((tenant) => tenant.role === "ADMIN");
+  const widget = useIfoodWidget();
 
   if (!channels.data) {
     return (
@@ -96,6 +99,7 @@ function Integrations() {
         {types.map((type) => (
           <IntegrationRow key={type} type={type} channels={list.filter((channel) => channel.type === type)} admin={admin} />
         ))}
+        {widget.data?.chat && widget.data.merchantIds.length > 0 && <IfoodChatRow storeUrl={widget.data.extensionUrl} />}
       </ul>
       {admin ? (
         <Link
@@ -140,6 +144,65 @@ function IntegrationRow({ type, channels, admin }: { type: IntegrationType; chan
         <Link href={`/configuracoes/integracoes${action.href}`} className={cn(buttonVariants({ variant: "outline", size: "sm" }), "text-ink-2")}>
           {action.label}
         </Link>
+      )}
+    </li>
+  );
+}
+
+const CHECKING: Badge = { label: "Verificando", className: "bg-surface-2 text-ink-3", dot: "bg-ink-3" };
+const CHAT_BADGE: Record<IfoodChatStatus, Badge> = {
+  off: CHECKING,
+  checking: CHECKING,
+  missing: { ...STATUS.ERROR, label: "Desconectado" },
+  unauthorized: { ...STATUS.ERROR, label: "Desconectado" },
+  authorizing: { label: "Autorizando", className: "bg-warning-lt text-warning-ink", dot: "bg-warning" },
+  connected: STATUS.CONNECTED,
+};
+const CHAT_TEXT: Record<IfoodChatStatus, string> = {
+  off: "Procurando o widget do iFood…",
+  checking: "Procurando o widget do iFood e a extensão do Chrome…",
+  missing: "Falta a extensão do Dish Desk neste Chrome. Depois de instalar, recarregue a página.",
+  unauthorized: "A loja ainda não autorizou o widget do iFood neste computador.",
+  authorizing: "Termine a autorização no Portal do Parceiro: o chat conecta sozinho.",
+  connected: "As conversas do iFood chegam à Inbox por este computador.",
+};
+
+/**
+ * Chat do iFood (trava IFOOD_CHAT_BRIDGE), que depende deste navegador: a extensão do Chrome e a autorização do widget
+ * pela loja. "Conectar" abre o Portal do Parceiro pelo convite do widget; "Instalar", a página da extensão.
+ */
+function IfoodChatRow({ storeUrl }: { storeUrl?: string | null }) {
+  const { status, invite } = useIfoodChatState();
+  const action =
+    status === "missing" && storeUrl
+      ? {
+          label: "Instalar",
+          run: () => {
+            window.open(storeUrl, "_blank", "noopener");
+            // Segura o botão por um instante: um duplo clique abriria a loja duas vezes.
+            return new Promise((resolve) => setTimeout(resolve, 1_000));
+          },
+        }
+      : status === "unauthorized" && invite
+        ? { label: "Conectar", run: () => connectIfoodChat().catch(() => undefined) }
+        : null;
+
+  return (
+    <li className="flex items-center gap-3 border-rule-soft px-4 py-3 [&+&]:border-t">
+      <SystemIcon type="IFOOD" className="size-9 rounded-[9px] text-[12px]" />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <span className="text-[13px] font-semibold">Chat do iFood</span>
+          <IntegrationBadge badge={CHAT_BADGE[status]} />
+        </div>
+        <p className="mt-0.5 text-[11px] text-ink-3">
+          {status === "unauthorized" && !invite ? "Autorize pelo convite do widget do iFood, no canto da tela." : CHAT_TEXT[status]}
+        </p>
+      </div>
+      {action && (
+        <Button variant="outline" size="sm" className="text-ink-2" onClick={action.run}>
+          {action.label}
+        </Button>
       )}
     </li>
   );
