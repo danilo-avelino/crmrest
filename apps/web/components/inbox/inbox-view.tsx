@@ -2,7 +2,7 @@
 
 import { LoaderCircleIcon, WifiOffIcon } from "lucide-react";
 import { useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { ChannelAlert } from "@/components/inbox/channel-alert";
 import { ConversationList } from "@/components/inbox/conversation-list";
 import { ConversationPane } from "@/components/inbox/conversation-pane";
@@ -23,6 +23,12 @@ export function InboxView() {
     if (linked) setSelectedId(linked);
   }
   const offline = useInboxRealtime();
+  // Conversas na ordem em que a lista as mostra: "Resolver" passa para a seguinte (ou a anterior, se era a última).
+  const listedRef = useRef<string[]>([]);
+  const nextAfter = (id: string) => {
+    const index = listedRef.current.indexOf(id);
+    return (index === -1 ? listedRef.current[0] : (listedRef.current[index + 1] ?? listedRef.current[index - 1])) ?? null;
+  };
 
   return (
     <div className="flex h-full overflow-hidden bg-paper">
@@ -44,9 +50,14 @@ export function InboxView() {
         <ChannelAlert />
         <IfoodExtensionAlert />
         <div className="flex min-h-0 flex-1">
-          <ConversationList selectedId={selectedId} onSelect={setSelectedId} />
+          <ConversationList selectedId={selectedId} onSelect={setSelectedId} listedRef={listedRef} />
           {selectedId ? (
-            <ConversationPane key={selectedId} conversationId={selectedId} onOpenConversation={setSelectedId} />
+            <ConversationPane
+              key={selectedId}
+              conversationId={selectedId}
+              onOpenConversation={setSelectedId}
+              nextConversationId={() => nextAfter(selectedId)}
+            />
           ) : (
             <InboxHome />
           )}

@@ -33,10 +33,13 @@ import { ago } from "@/lib/format";
 export function ConversationPane({
   conversationId,
   onOpenConversation,
+  nextConversationId,
 }: {
   conversationId: string;
-  /** Troca a conversa aberta na Inbox. */
-  onOpenConversation: (id: string) => void;
+  /** Troca a conversa aberta na Inbox; null volta para a Inbox sem conversa aberta. */
+  onOpenConversation: (id: string | null) => void;
+  /** A conversa que abre depois de esta ser resolvida (a seguinte na lista). */
+  nextConversationId: () => string | null;
 }) {
   const { request } = useAuth();
   const queryClient = useQueryClient();
@@ -81,7 +84,11 @@ export function ConversationPane({
   return (
     <>
       <section className="flex min-w-0 flex-1 flex-col border-r border-rule bg-paper">
-        <ConversationHeader conversation={conversation.data} />
+        <ConversationHeader
+          conversation={conversation.data}
+          onResolved={onOpenConversation}
+          nextConversationId={nextConversationId}
+        />
         <MessageTimeline data={messages.data} contact={conversation.data.contact} onOpenConversation={onOpenConversation} />
         <Composer conversation={conversation.data} />
       </section>
@@ -96,7 +103,15 @@ export function ConversationPane({
   );
 }
 
-function ConversationHeader({ conversation }: { conversation: ConversationListItem }) {
+function ConversationHeader({
+  conversation,
+  onResolved,
+  nextConversationId,
+}: {
+  conversation: ConversationListItem;
+  onResolved: (next: string | null) => void;
+  nextConversationId: () => string | null;
+}) {
   const { request, session } = useAuth();
   const queryClient = useQueryClient();
   const now = useNow();
@@ -113,6 +128,12 @@ function ConversationHeader({ conversation }: { conversation: ConversationListIt
   };
   const [assign] = usePendingAction((assignedUserId: string | null) => update({ assignedUserId }));
   const [setStatus] = usePendingAction((status: ConversationListItem["status"]) => update({ status }));
+  // A seguinte é escolhida antes de a lista recarregar sem a conversa resolvida.
+  const resolve = async () => {
+    const next = nextConversationId();
+    await update({ status: "RESOLVED" });
+    onResolved(next);
+  };
 
   const assigned = conversation.assignedUser;
   const subtitle = [
@@ -162,7 +183,7 @@ function ConversationHeader({ conversation }: { conversation: ConversationListIt
             Reabrir
           </Button>
         ) : (
-          <Button size="sm" onClick={() => update({ status: "RESOLVED" })}>
+          <Button size="sm" onClick={resolve}>
             Resolver
           </Button>
         )}

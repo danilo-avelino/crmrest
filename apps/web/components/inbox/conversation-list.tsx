@@ -31,9 +31,12 @@ const FILTERS: { value: StatusFilter; label: string }[] = [
 export function ConversationList({
   selectedId,
   onSelect,
+  listedRef,
 }: {
   selectedId: string | null;
   onSelect: (id: string) => void;
+  /** Recebe as conversas na ordem mostrada (para "Resolver" abrir a seguinte). */
+  listedRef: { current: string[] };
 }) {
   const { request, session } = useAuth();
   const master = session?.context?.mode === "master";
@@ -76,6 +79,9 @@ export function ConversationList({
 
   const items = conversations.data?.pages.flatMap((page) => page.items) ?? [];
   useUnreadSignals(items, calling + quiet);
+  useEffect(() => {
+    listedRef.current = items.map((conversation) => conversation.id);
+  });
 
   return (
     <section className="flex w-80 shrink-0 flex-col border-r border-rule bg-surface">

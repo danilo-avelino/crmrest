@@ -58,9 +58,10 @@ test("atende uma conversa do WhatsApp de ponta a ponta", async ({ page }) => {
   expect(reply!.y).toBeGreaterThan(note!.y);
   await page.screenshot({ path: "test-results/inbox.png" });
 
-  // Resolver.
+  // Resolver: sai dos ativos e a conversa seguinte da lista abre.
   await page.getByRole("button", { name: "Resolver" }).click();
-  await expect(page.getByRole("button", { name: "Reabrir" })).toBeVisible();
+  await expect(page.locator("header").getByText(fx.closedContact.name)).toBeVisible();
+  await expect(row).toHaveCount(0);
 
   // Janela de 24h fechada: texto livre bloqueado, só template aprovado.
   await page.getByRole("button", { name: new RegExp(fx.closedContact.name) }).click();
