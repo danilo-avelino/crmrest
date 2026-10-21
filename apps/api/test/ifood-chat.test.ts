@@ -261,6 +261,31 @@ describe("Chat do iFood na Inbox (trava IFOOD_CHAT_BRIDGE ligada)", () => {
     expect((await timeline(silent.id)).filter((m) => (m.content as { automation?: string }).automation)).toEqual([]);
   });
 
+  it("pedido que já saiu quando o chat começa: o aviso da saída vai logo depois do chamado, uma vez só", async () => {
+    const gone = await ifoodOrder("6575", "Aydane Gomez", minutesAgo(50));
+    const dispatchedAt = minutesAgo(12);
+    await admin.order.update({ where: { id: gone.id }, data: { status: "DISPATCHED", dispatchedAt } });
+    const first = shown("INBOUND", "Oi", minutesAgo(1));
+    await post("/ifood-chat/sync", { orderCode: "6575", messages: [first] }).expect(200);
+    await settle();
+    const chat = await admin.conversation.findFirstOrThrow({ where: { contactId: gone.contactId, channelId: fx.ifood.id } });
+    const hora = new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" }).format(dispatchedAt);
+    expect((await typeOutbox()).filter((item) => item.conversationId === chat.id).map((item) => item.text)).toEqual([
+      expect.stringContaining("Estamos chamando um atendente"),
+      `🛵 Boa notícia! Seu pedido #6575 saiu para entrega às ${hora}.`,
+    ]);
+
+    // Atendimento novo na mesma conversa (o cliente voltou depois de um tempo): a saída já foi avisada.
+    for (const { id, createdAt } of await admin.message.findMany({ where: { conversationId: chat.id } })) {
+      await admin.message.update({ where: { id }, data: { createdAt: new Date(createdAt.getTime() - INACTIVITY_CLOSE_MS - 60_000) } });
+    }
+    await post("/ifood-chat/sync", { orderCode: "6575", messages: [first, shown("INBOUND", "Alguém?", new Date())] }).expect(200);
+    await settle();
+    const notices = (await timeline(chat.id)).filter((m) => (m.content as { automation?: string }).automation === "order_dispatched");
+    expect(notices).toHaveLength(1);
+    await typeOutbox();
+  });
+
   it("loja recém-conectada: o histórico do chat e os pedidos de antes da conexão entram sem nenhuma mensagem automática", async () => {
     await admin.channel.update({ where: { id: fx.ifood.id }, data: { connectedAt: minutesAgo(5) } });
     try {
