@@ -1,6 +1,8 @@
 import type { INestApplication } from "@nestjs/common";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { DatabaseService } from "../src/core/database.service.js";
+import { forecastOrder } from "../src/orders/forecast.js";
 import { accessTokenFor, admin, createChannelFixture, createTestApp } from "./helpers.js";
 
 const MINUTE = 60_000;
@@ -67,17 +69,52 @@ describe("previsão de saída do pedido (E26)", () => {
     for (const took of [10, 12, 14, 30, 40]) await order(120 + took, took);
     await order(8); // na cozinha, feito antes: fica na frente
     const current = await order(5);
-    const expected = new Date(Date.now() - 5 * MINUTE + 14 * MINUTE);
+    // A partir da confirmação gravada (placedAt + 1 min), não de outro Date.now(): o arredondamento de 5 em 5 minutos
+    // daria outro horário se os dois instantes caíssem em lados opostos de uma virada.
+    const expected = new Date(current.placedAt.getTime() + MINUTE + 14 * MINUTE);
     expect(await forecast(current.id)).toBe(
       [`⏱️ Previsão de saída do restaurante: por volta das ${clock(expected)}.`, "Há 1 pedido na sua frente na cozinha."].join("\n"),
     );
+  });
+
+  it("a fila soma os pedidos de todas as integrações e não para na meia-noite", async () => {
+    // 0h05 em Brasília (data longe de agora, para os pedidos dos outros testes ficarem de fora): o pedido do Cardápio
+    // Web das 23h55 e o do iFood das 23h58 ainda estão na cozinha, na frente do pedido do iFood da 0h03.
+    const now = new Date("2026-01-15T03:05:00Z");
+    const cardapio = await admin.channel.create({
+      data: { tenantId: fx.tenant.id, type: "CARDAPIO_WEB", name: "Cardápio Web", externalId: `cw-${Date.now()}`, credentials: Buffer.from("-"), status: "CONNECTED" },
+    });
+    const placed = (channelId: string, minutesAgo: number) => {
+      sequence += 1;
+      return admin.order.create({
+        data: {
+          tenantId: fx.tenant.id,
+          contactId,
+          channelId,
+          externalOrderId: `fila-${sequence}-${Date.now()}`,
+          displayCode: String(2000 + sequence),
+          status: "PREPARING",
+          subtotal: "30.00",
+          deliveryFee: "0.00",
+          total: "30.00",
+          placedAt: new Date(now.getTime() - minutesAgo * MINUTE),
+          raw: {},
+        },
+      });
+    };
+    await placed(cardapio.id, 10);
+    await placed(fx.ifood.id, 7);
+    const current = await placed(fx.ifood.id, 2);
+
+    const result = await app.get(DatabaseService).withTenants({ tenantIds: [fx.tenant.id] }, (tx) => forecastOrder(tx, current.id, now));
+    expect(result?.ahead).toBe(2);
   });
 
   it("atrasado: pede desculpas e usa só os pedidos que demoraram mais que ele", async () => {
     const late = await order(20); // já passou dos 14 min; mais demorados: 30 e 40 → 35 min
     const text = await forecast(late.id);
     expect(text).toMatch(/^Pedimos desculpas pela demora! 🙏/);
-    expect(text).toContain(`Nova previsão de saída do restaurante: por volta das ${clock(new Date(Date.now() - 20 * MINUTE + 35 * MINUTE))}.`);
+    expect(text).toContain(`Nova previsão de saída do restaurante: por volta das ${clock(new Date(late.placedAt.getTime() + MINUTE + 35 * MINUTE))}.`);
   });
 
   it("com horário prometido pelo iFood: só pede desculpas se a previsão passar da promessa", async () => {

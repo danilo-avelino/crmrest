@@ -1,7 +1,6 @@
 import type { TenantTx } from "@dishdesk/database";
 import { type AutomationMessages, automationMessagesOf, fillMessage, orderForecastOf } from "@dishdesk/shared";
 import { z } from "zod";
-import { localDate } from "../automations/automation.js";
 
 /** Quantos pedidos que já saíram do restaurante formam a base da previsão. */
 const SAMPLE = 10;
@@ -22,7 +21,10 @@ export type Forecast = {
    * Web), o pedido já passou do tempo normal de saída. A mensagem pede desculpas só quando atrasado.
    */
   late: boolean;
-  /** Pedidos de hoje feitos antes deste e que ainda não saíram. */
+  /**
+   * Pedidos do restaurante feitos antes deste e que ainda não saíram, de todas as integrações (iFood, Cardápio Web...).
+   * Sem corte na meia-noite: o pedido das 23h55 ainda no forno conta para quem pede às 0h05.
+   */
   ahead: number;
 };
 
@@ -74,8 +76,7 @@ export async function forecastOrder(tx: TenantTx, orderId: string, now = new Dat
   const promised = promisedAt(order.raw);
   const late = promised ? departAt > promised.getTime() : slow;
 
-  const today = new Date(`${localDate(now)}T00:00:00-03:00`);
-  const since = new Date(Math.max(today.getTime(), now.getTime() - STALE_MS));
+  const since = new Date(now.getTime() - STALE_MS);
   const ahead = await tx.order.count({
     where: {
       tenantId: order.tenantId,
