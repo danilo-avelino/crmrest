@@ -43,6 +43,7 @@ const EVENT_LABEL: Record<string, string> = {
   DISPATCHED: "Saiu para entrega",
   COLLECTED: "Entregador coletou",
   DELIVERED: "Entregue",
+  DELIVERY_DROP_CODE_VALIDATION_SUCCESS: "Entregue (código confirmado)",
   CONCLUDED: "Concluído",
   CANCELLATION_REQUESTED: "Cancelamento pedido",
   CANCELLATION_REQUEST_FAILED: "Cancelamento não aceito pelo iFood",

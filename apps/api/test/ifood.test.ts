@@ -400,6 +400,23 @@ describe("iFood (pedidos por polling)", () => {
     ]);
   });
 
+  it("entrega própria: o código de entrega validado marca entregue e avisa", async () => {
+    ifood.state.orders["pedido-codigo"] = ifoodOrder("pedido-codigo", "6917");
+    const placed = Date.now() - 40 * 60_000;
+    const at = (minutes: number) => new Date(placed + minutes * 60_000);
+    ifood.state.events.push(event("ev-codigo-1", "PLACED", "pedido-codigo", undefined, at(0)));
+    await service.poll();
+    const { contactId } = await admin.order.findFirstOrThrow({ where: { tenantId: fx.tenant.id, externalOrderId: "pedido-codigo" } });
+    const conversation = await admin.conversation.findFirstOrThrow({ where: { tenantId: fx.tenant.id, contactId, channelId: fx.whatsapp.id } });
+    ifood.state.events.push(event("ev-codigo-2", "DISPATCHED", "pedido-codigo", undefined, at(20)), event("ev-codigo-3", "DELIVERY_DROP_CODE_VALIDATION_SUCCESS", "pedido-codigo", undefined, at(35)));
+    await service.poll();
+    const order = await admin.order.findFirstOrThrow({ where: { tenantId: fx.tenant.id, externalOrderId: "pedido-codigo" } });
+    expect(order.status).toBe("DELIVERED");
+    expect(order.deliveredAt).toEqual(at(35));
+    const texts = (await admin.message.findMany({ where: { conversationId: conversation.id } })).map((m) => (m.content as { text?: string }).text);
+    expect(texts).toContain("✅ Seu pedido #6917 foi entregue! Bom apetite 😋");
+  });
+
   it("entregue só pelo CONCLUDED (que chega horas depois): não avisa", async () => {
     ifood.state.orders["pedido-4"] = ifoodOrder("pedido-4", "6020");
     ifood.state.events.push(event("ev-aviso-6", "PLACED", "pedido-4"));

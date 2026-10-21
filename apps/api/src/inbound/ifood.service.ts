@@ -161,13 +161,13 @@ export class IfoodService implements OnModuleInit {
           status,
           // Saída do restaurante: o primeiro entre "saiu para entrega" (entrega própria) e "coletado" (entregador iFood).
           ...(status === "DISPATCHED" && !order.dispatchedAt && { dispatchedAt: at }),
-          // CONCLUDED chega até horas depois da entrega: só DELIVERED marca o horário de entrega.
-          ...(event.fullCode === "DELIVERED" && { deliveredAt: at }),
+          // CONCLUDED chega até horas depois da entrega: só a entrega de fato marca o horário de entrega.
+          ...(DELIVERED_EVENTS.has(event.fullCode) && { deliveredAt: at }),
         },
       });
-      // Aviso ao cliente: ficou pronto, saiu para entrega, ou entregue (só DELIVERED: o CONCLUDED chega horas depois).
+      // Aviso ao cliente: ficou pronto, saiu para entrega, ou entregue (não pelo CONCLUDED, que chega horas depois).
       const notice: NoticeStatus | null =
-        status === "READY" || status === "DISPATCHED" ? status : event.fullCode === "DELIVERED" ? "DELIVERED" : null;
+        status === "READY" || status === "DISPATCHED" ? status : DELIVERED_EVENTS.has(event.fullCode) ? "DELIVERED" : null;
       return { conversationId: order.conversationId, notice: notice && { orderId: order.id, status: notice } };
     });
     if (updated.conversationId) this.realtime.inboxChanged(channel.tenantId, updated.conversationId);
@@ -252,6 +252,9 @@ export class IfoodService implements OnModuleInit {
     });
   }
 }
+
+/** A entrega de fato: retirada/autoatendimento (DELIVERED) ou código de entrega validado (entrega própria). */
+const DELIVERED_EVENTS = new Set(["DELIVERED", "DELIVERY_DROP_CODE_VALIDATION_SUCCESS"]);
 
 const MERCHANT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 

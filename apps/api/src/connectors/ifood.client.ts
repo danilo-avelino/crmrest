@@ -71,6 +71,7 @@ export type IfoodCancellationReason = { code: string; description: string };
 /**
  * Eventos (fullCode) que mudam o status do pedido no Dish Desk; todos os eventos entram na linha do tempo (order_events).
  * COLLECTED: o entregador do iFood coletou (a saída real). DELIVERED: entregue na retirada/autoatendimento.
+ * DELIVERY_DROP_CODE_VALIDATION_SUCCESS: o cliente deu o código ao entregador (a entrega real, na entrega própria).
  */
 export const IFOOD_STATUS: Record<string, OrderStatus> = {
   PLACED: "PLACED",
@@ -80,6 +81,7 @@ export const IFOOD_STATUS: Record<string, OrderStatus> = {
   DISPATCHED: "DISPATCHED",
   COLLECTED: "DISPATCHED",
   DELIVERED: "DELIVERED",
+  DELIVERY_DROP_CODE_VALIDATION_SUCCESS: "DELIVERED",
   CONCLUDED: "DELIVERED",
   CANCELLED: "CANCELED",
 };
