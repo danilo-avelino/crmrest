@@ -164,6 +164,9 @@ model Channel {
   status      ChannelStatus
   deletedAt   DateTime?     @map("deleted_at") @db.Timestamptz(3) // integração excluída: some do painel, o histórico fica
   connectedAt DateTime?     @map("connected_at") @db.Timestamptz(3) // o que aconteceu antes de conectar não aciona automações
+  // WhatsApp ou Instagram que atende várias unidades: outros restaurantes do mesmo administrador cujos pedidos o
+  // atendimento deste canal também procura (Configurações → Integrações). As conversas continuam neste restaurante.
+  servedTenantIds String[] @default([]) @map("served_tenant_ids") @db.Uuid
 
   tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   conversations Conversation[]

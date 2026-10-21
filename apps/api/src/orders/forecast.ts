@@ -159,22 +159,26 @@ export function deliveredNoticeMessage(code: string, messages: AutomationMessage
 /**
  * O que dizer ao cliente sobre o andamento do pedido: se já saiu para entrega, quando saiu; se ainda está na cozinha,
  * a previsão de saída. Null quando não há o que dizer (entregue, cancelado ou sem base para a previsão).
+ * `speakerSettings`: configurações do restaurante que fala com o cliente (personalidade e fila), quando o pedido é de
+ * outro restaurante atendido pelo mesmo canal; sem elas, valem as do restaurante do pedido.
  */
 export async function orderUpdateMessage(
   tx: TenantTx,
   orderId: string,
   now = new Date(),
+  speakerSettings?: unknown,
 ): Promise<{ kind: "dispatched" | "forecast"; text: string } | null> {
   const order = await tx.order.findUnique({
     where: { id: orderId },
     select: { status: true, dispatchedAt: true, tenant: { select: { settings: true } } },
   });
   if (!order) return null;
-  const messages = automationMessagesOf(order.tenant.settings);
+  const settings = speakerSettings ?? order.tenant.settings;
+  const messages = automationMessagesOf(settings);
   if (order.status === "DISPATCHED" && order.dispatchedAt) {
     return { kind: "dispatched", text: dispatchedMessage(order.dispatchedAt, messages, now) };
   }
   const forecast = await forecastOrder(tx, orderId, now);
   if (!forecast) return null;
-  return { kind: "forecast", text: forecastMessage(forecast, orderForecastOf(order.tenant.settings).showQueue, messages) };
+  return { kind: "forecast", text: forecastMessage(forecast, orderForecastOf(settings).showQueue, messages) };
 }

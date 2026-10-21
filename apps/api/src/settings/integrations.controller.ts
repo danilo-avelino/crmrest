@@ -7,6 +7,7 @@ import {
   type IntegrationDto,
   type IntegrationsDto,
   RenameIntegrationRequest,
+  ServedTenantsRequest,
   WhatsAppSignupRequest,
 } from "@dishdesk/shared";
 import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Query, Redirect } from "@nestjs/common";
@@ -83,6 +84,17 @@ export class IntegrationsController {
     @CurrentAuth() auth: RequestAuth,
   ): Promise<IntegrationDto> {
     return this.integrations.rename(auth, tenantId, channelId, body.name);
+  }
+
+  /** WhatsApp ou Instagram: restaurantes, além deste, cujos pedidos o atendimento da conta também procura. */
+  @Patch(":tenantId/:channelId/served-tenants")
+  setServedTenants(
+    @Param("tenantId", ParseUUIDPipe) tenantId: string,
+    @Param("channelId", ParseUUIDPipe) channelId: string,
+    @Body(new ZodPipe(ServedTenantsRequest)) body: ServedTenantsRequest,
+    @CurrentAuth() auth: RequestAuth,
+  ): Promise<IntegrationDto> {
+    return this.integrations.setServedTenants(auth, tenantId, channelId, body.tenantIds);
   }
 
   @Delete(":tenantId/:channelId")

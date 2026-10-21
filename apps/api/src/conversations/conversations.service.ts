@@ -31,6 +31,7 @@ import { ConnectorsService } from "../connectors/connectors.service.js";
 import { contactSearch } from "../contacts/contact-search.js";
 import { DatabaseService } from "../core/database.service.js";
 import { type AutomationJob, type OutboundJob, QUEUES } from "../queues/queues.module.js";
+import { withOrderTenants } from "../orders/order-scope.js";
 import { RealtimeEmitter } from "../realtime/realtime.emitter.js";
 import { isTenantAdmin } from "../settings/tenant-admin.js";
 import { conversationListInclude, toListItem, toMessageDto, toOrderDto, withoutRatingScores } from "./conversation.mapper.js";
@@ -114,10 +115,20 @@ export class ConversationsService {
       // A nota da pesquisa de satisfação é só do administrador do restaurante.
       const messages = isTenantAdmin(auth, conversation.tenantId) ? all : withoutRatingScores(all);
       const orderIds = messages.flatMap((m) => (m.content.event === "order" && m.content.orderId ? [m.content.orderId] : []));
+      // O card pode ser de um pedido de outro restaurante atendido pelo canal da conversa: ele leva o nome do restaurante.
       const orders = orderIds.length
-        ? await tx.order.findMany({ where: { id: { in: orderIds } }, include: { items: true, channel: { select: { type: true } } } })
+        ? await withOrderTenants(this.db, tx, conversation.channelId, (scoped) =>
+            scoped.order.findMany({
+              where: { id: { in: orderIds } },
+              include: { items: true, channel: { select: { type: true } }, tenant: { select: { name: true } } },
+            }),
+          )
         : [];
-      return { messages, orders: Object.fromEntries(orders.map((order) => [order.id, toOrderDto(order)])) };
+      const toCard = (order: (typeof orders)[number]) => ({
+        ...toOrderDto(order),
+        ...(order.tenantId !== conversation.tenantId && { restaurantName: order.tenant.name }),
+      });
+      return { messages, orders: Object.fromEntries(orders.map((order) => [order.id, toCard(order)])) };
     });
   }
 

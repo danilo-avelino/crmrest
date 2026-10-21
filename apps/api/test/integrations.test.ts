@@ -134,7 +134,14 @@ describe("Integrações (Configurações)", () => {
 
   it("WhatsApp: confere o número, inscreve a conta nos webhooks e guarda o token cifrado", async () => {
     const { body } = await add({ type: "WHATSAPP", phoneNumberId: "555000111", wabaId: "999000222", accessToken: "token-do-system-user-123" }).expect(201);
-    expect(body).toEqual({ id: expect.any(String), type: "WHATSAPP", name: "Moby Dick (+1 555-736-8710)", externalId: "555000111", status: "CONNECTED" });
+    expect(body).toEqual({
+      id: expect.any(String),
+      type: "WHATSAPP",
+      name: "Moby Dick (+1 555-736-8710)",
+      externalId: "555000111",
+      status: "CONNECTED",
+      servedTenantIds: [],
+    });
     expect(graph.requests).toContainEqual(
       expect.objectContaining({ method: "POST", path: "/999000222/subscribed_apps", authorization: "Bearer token-do-system-user-123" }),
     );
@@ -180,11 +187,12 @@ describe("Integrações (Configurações)", () => {
     it("na volta, troca o código pelo token de 60 dias, conecta a conta e devolve ao painel", async () => {
       const state = (await loginUrl()).searchParams.get("state") ?? "";
       const { headers } = await callback({ code: "codigo-do-login", state });
-      expect(headers.location).toBe("http://painel.teste/configuracoes/integracoes?instagram=conectado");
+      const channel = await admin.channel.findFirstOrThrow({ where: { tenantId: fx.tenant.id, type: "INSTAGRAM", externalId: "17841499990001" } });
+      // A conta volta no endereço: o painel pergunta em seguida quais restaurantes ela atende.
+      expect(headers.location).toBe(`http://painel.teste/configuracoes/integracoes?instagram=conectado&canal=${channel.id}`);
       expect(graph.requests).toContainEqual(
         expect.objectContaining({ method: "POST", path: "/oauth/access_token", body: expect.stringContaining("code=codigo-do-login") }),
       );
-      const channel = await admin.channel.findFirstOrThrow({ where: { tenantId: fx.tenant.id, type: "INSTAGRAM", externalId: "17841499990001" } });
       const secrets = JSON.parse(decrypt(channel.credentials, parseEncryptionKey(process.env.ENCRYPTION_KEY ?? "")));
       expect(secrets.accessToken).toBe("token-longo-do-instagram");
     });

@@ -13,6 +13,7 @@ import {
 } from "@dishdesk/shared";
 import { Inject, Injectable, Logger, NotFoundException, UnprocessableEntityException } from "@nestjs/common";
 import type { RequestAuth } from "../auth/auth.decorators.js";
+import { tenantSettings } from "../automations/automation.js";
 import { ENV, type Env } from "../config/env.js";
 import { IfoodAuthService } from "../connectors/ifood-auth.service.js";
 import { toOrderDto } from "../conversations/conversation.mapper.js";
@@ -25,6 +26,7 @@ import { forecastOrder, isTakeout, orderUpdateMessage, PlatformOrder, promisedAt
 import { customerHistory } from "./customer-history.js";
 import { eventDetail, openDispute, platformInfo } from "./ifood-order.js";
 import { latestOrderOf } from "./latest-order.js";
+import { withOrderTenants } from "./order-scope.js";
 
 const PAGE_SIZE = 50;
 /** Ainda no restaurante (filtro "em produção" e o alerta de atraso). */
@@ -116,11 +118,23 @@ export class OrdersService {
   }
 
   /** Botão do card/painel: o texto que o atendente confere antes de mandar (saída ou previsão; null: nada a dizer). */
-  async forecast(auth: RequestAuth, orderId: string): Promise<{ text: string | null }> {
+  /**
+   * Andamento do pedido para mandar ao cliente. Com a conversa, vale também o pedido de outro restaurante atendido pelo
+   * canal dela (Configurações → Integrações).
+   */
+  async forecast(auth: RequestAuth, orderId: string, conversationId?: string): Promise<{ text: string | null }> {
     return this.db.withTenants(auth.scope, async (tx) => {
-      const order = await tx.order.findUnique({ where: { id: orderId }, select: { id: true } });
-      if (!order) throw new NotFoundException("Pedido não encontrado.");
-      return { text: (await orderUpdateMessage(tx, orderId))?.text ?? null };
+      const update = async (orders: TenantTx, speakerSettings?: unknown) => {
+        const order = await orders.order.findUnique({ where: { id: orderId }, select: { id: true } });
+        if (!order) throw new NotFoundException("Pedido não encontrado.");
+        return { text: (await orderUpdateMessage(orders, orderId, new Date(), speakerSettings))?.text ?? null };
+      };
+      if (!conversationId) return update(tx);
+      const conversation = await tx.conversation.findUnique({ where: { id: conversationId }, select: { tenantId: true, channelId: true } });
+      if (!conversation) throw new NotFoundException("Conversa não encontrada.");
+      // A mensagem sai pelo canal da conversa: no tom do restaurante dela, mesmo com o pedido de outra unidade.
+      const speaker = await tenantSettings(tx, conversation.tenantId);
+      return withOrderTenants(this.db, tx, conversation.channelId, (orders) => update(orders, speaker));
     });
   }
 
@@ -276,32 +290,39 @@ export class OrdersService {
     return conversation.id;
   }
 
-  /** Painel do cliente na Inbox: o pedido ligado ao cadastro da conversa, com o andamento e a previsão de saída. */
+  /**
+   * Painel do cliente na Inbox: o pedido ligado ao cadastro da conversa, com o andamento e a previsão de saída. Procura
+   * no restaurante da conversa e nos que o canal dela atende; no painel master, os outros restaurantes do atendente
+   * ficam de fora.
+   */
   async currentForConversation(auth: RequestAuth, conversationId: string, now = new Date()): Promise<CurrentOrderDto | null> {
-    return this.db.withTenants(auth.scope, async (tx) => {
-      const conversation = await tx.conversation.findUnique({ where: { id: conversationId }, select: { contact: true } });
+    return this.db.withTenants(auth.scope, async (scoped) => {
+      const conversation = await scoped.conversation.findUnique({ where: { id: conversationId }, select: { tenantId: true, channelId: true, contact: true } });
       if (!conversation) throw new NotFoundException("Conversa não encontrada.");
-      const found = await latestOrderOf(tx, conversation.contact, now);
-      if (!found) return null;
-      const order = await tx.order.findUniqueOrThrow({
-        where: { id: found.id },
-        include: {
-          items: true,
-          channel: { select: { type: true } },
-          events: { where: { code: "CONFIRMED" }, orderBy: { occurredAt: "asc" }, take: 1, select: { occurredAt: true } },
-        },
+      return withOrderTenants(this.db, scoped, conversation.channelId, async (tx) => {
+        const found = await latestOrderOf(tx, conversation.contact, now);
+        if (!found) return null;
+        const order = await tx.order.findUniqueOrThrow({
+          where: { id: found.id },
+          include: {
+            items: true,
+            channel: { select: { type: true } },
+            tenant: { select: { name: true } },
+            events: { where: { code: "CONFIRMED" }, orderBy: { occurredAt: "asc" }, take: 1, select: { occurredAt: true } },
+          },
+        });
+        const forecast = await forecastOrder(tx, order.id, now);
+        const platform = PlatformOrder.safeParse(order.raw).data;
+        return {
+          order: { ...toOrderDto(order), ...(order.tenantId !== conversation.tenantId && { restaurantName: order.tenant.name }) },
+          notes: [platform?.extraInfo, platform?.delivery?.observations].filter((note): note is string => Boolean(note?.trim())),
+          startedAt: (order.events[0]?.occurredAt ?? order.placedAt).toISOString(),
+          promisedAt: promisedAt(order.raw)?.toISOString() ?? null,
+          forecast: forecast && { departAt: forecast.departAt.toISOString(), late: forecast.late, ahead: forecast.ahead },
+          history: await customerHistory(tx, conversation.contact),
+          stale: !order.dispatchedAt && ["PLACED", "CONFIRMED", "PREPARING", "READY"].includes(order.status) && now.getTime() - order.placedAt.getTime() > STALE_MS,
+        };
       });
-      const forecast = await forecastOrder(tx, order.id, now);
-      const platform = PlatformOrder.safeParse(order.raw).data;
-      return {
-        order: toOrderDto(order),
-        notes: [platform?.extraInfo, platform?.delivery?.observations].filter((note): note is string => Boolean(note?.trim())),
-        startedAt: (order.events[0]?.occurredAt ?? order.placedAt).toISOString(),
-        promisedAt: promisedAt(order.raw)?.toISOString() ?? null,
-        forecast: forecast && { departAt: forecast.departAt.toISOString(), late: forecast.late, ahead: forecast.ahead },
-        history: await customerHistory(tx, conversation.contact),
-        stale: !order.dispatchedAt && ["PLACED", "CONFIRMED", "PREPARING", "READY"].includes(order.status) && now.getTime() - order.placedAt.getTime() > STALE_MS,
-      };
     });
   }
 }

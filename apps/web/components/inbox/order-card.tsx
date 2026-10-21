@@ -51,6 +51,7 @@ export function OrderCard({
           <span className={cn("size-[7px] shrink-0 rounded-full", CHANNEL_DOT[order.channelType])} />
           <span className="text-[11.5px] font-semibold">
             Pedido {CHANNEL_LABEL[order.channelType]} #{order.displayCode ?? order.id.slice(0, 6)}
+            {order.restaurantName && <span className="font-normal text-ink-3"> · {order.restaurantName}</span>}
           </span>
         </div>
         <span
@@ -103,7 +104,15 @@ function CustomerChat({ order, onOpen }: { order: OrderDto; onOpen: (conversatio
     queryKey: ["order-customer-chat", order.id],
     queryFn: () => request<OrderCustomerChat>(`/orders/${order.id}/customer-chat`),
   });
-  if (!chat.data) return null;
+  if (!chat.data) {
+    // Pedido de outra unidade atendida pelo canal, sem acesso do atendente a ela: a conversa com o cliente é por lá.
+    if (!chat.isError || !order.restaurantName) return null;
+    return (
+      <div className="border-t border-rule px-3.5 py-2 text-[11.5px] text-ink-3">
+        Cliente de {order.restaurantName}: para conversar com ele, entre nessa unidade.
+      </div>
+    );
+  }
   const { channel, contactName } = chat.data;
 
   const open = async () => {
@@ -148,7 +157,8 @@ export function ForecastButton({ order, conversationId }: { order: OrderDto; con
   const open = async () => {
     setError(null);
     try {
-      setPreview((await request<{ text: string | null }>(`/orders/${order.id}/forecast`)).text);
+      // Com a conversa, a API aceita o pedido de outro restaurante atendido pelo canal dela.
+      setPreview((await request<{ text: string | null }>(`/orders/${order.id}/forecast?conversationId=${conversationId}`)).text);
     } catch (failure) {
       toast(failure instanceof ApiError ? failure.message : "Não foi possível calcular a previsão.");
     }

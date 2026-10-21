@@ -3,6 +3,8 @@ import { type AutomationMessages, automationMessagesOf, COURIER_MENU_OPTIONS, fi
 import { Inject, Injectable } from "@nestjs/common";
 import { ENV, type Env } from "../config/env.js";
 import { openIfoodConversation } from "../conversations/ifood-conversation.js";
+import { DatabaseService } from "../core/database.service.js";
+import { withOrderTenants } from "../orders/order-scope.js";
 import {
   type AutomationState,
   automationMessage,
@@ -20,11 +22,15 @@ type Conversation = { id: string; tenantId: string; channelId: string; automatio
 /**
  * Menu de quem tem a tag Entregador, no lugar do menu de atendimento (sem aviso de fora do horário nem coleta de telefone):
  * avisar o cliente que chegou (pelo chat do iFood do pedido), relatar um problema com um pedido ou falar de outro assunto.
- * Só o problema relatado chama a equipe com o alarme; nos outros casos, o chamado é sem urgência.
+ * Só o problema relatado chama a equipe com o alarme; nos outros casos, o chamado é sem urgência. O pedido é procurado
+ * também nos restaurantes que o canal atende (o WhatsApp de um grupo; Configurações → Integrações).
  */
 @Injectable()
 export class CourierMenuService {
-  constructor(@Inject(ENV) private readonly env: Env) {}
+  constructor(
+    private readonly db: DatabaseService,
+    @Inject(ENV) private readonly env: Env,
+  ) {}
 
   async step(tx: TenantTx, conversation: Conversation, event: InboundEvent): Promise<Step> {
     const messages = automationMessagesOf(await tenantSettings(tx, conversation.tenantId));
@@ -62,29 +68,36 @@ export class CourierMenuService {
 
   /** "Avisar que cheguei": o aviso vai para o cliente no chat do iFood do pedido e o atendimento do entregador se resolve sozinho. */
   private async notifyArrival(tx: TenantTx, conversation: Conversation, state: AutomationState, messages: AutomationMessages, text?: string): Promise<Step> {
-    const found = await this.findOrder(tx, text, true);
+    const found = await this.findOrder(tx, conversation, text, true);
     // Sem o pedido (ou sem o chat do iFood na Inbox), é a equipe que avisa o cliente.
     if (!found?.order || !this.env.IFOOD_CHAT_BRIDGE) {
       const note = found ? `Entregador avisou que chegou com o pedido #${found.code}` : "Entregador avisou que chegou";
       return this.callTeam(tx, conversation, state, await this.passOn(tx, conversation, messages, found), note);
     }
-    const chat = await openIfoodConversation(tx, found.order, new Date(), "RESOLVED");
-    const notice = await automationMessage(
-      tx,
-      { id: chat.id, tenantId: found.order.tenantId, channelId: found.order.channelId },
-      "courier_arrival",
-      messages.courierArrivalNotice,
-    );
+    const order = found.order;
+    // O aviso vai para o chat do iFood da loja do pedido, que pode ser outra unidade atendida por este canal: lá ele é
+    // gravado numa transação dela, no tom dela.
+    const notify = async (store: TenantTx, notice: string) => {
+      const chat = await openIfoodConversation(store, order, new Date(), "RESOLVED");
+      const messageId = await automationMessage(store, { id: chat.id, tenantId: order.tenantId, channelId: order.channelId }, "courier_arrival", notice);
+      return { tenantId: order.tenantId, conversationId: chat.id, messageId };
+    };
+    const alsoSend =
+      order.tenantId === conversation.tenantId
+        ? await notify(tx, messages.courierArrivalNotice)
+        : await this.db.withTenants({ tenantIds: [order.tenantId] }, async (store) =>
+            notify(store, automationMessagesOf(await tenantSettings(store, order.tenantId)).courierArrivalNotice),
+          );
     const confirmation = fillMessage(messages.courierArrivalConfirmed, { pedido: found.code });
     const id = await automationMessage(tx, conversation, "courier_arrival_confirmed", confirmation);
     await setAutomationState(tx, conversation.id, { ...state, triage: "done" });
     await tx.conversation.update({ where: { id: conversation.id }, data: { status: "RESOLVED", unreadCount: 0 } });
-    return { send: [id], done: false, alsoSend: { conversationId: chat.id, messageId: notice } };
+    return { send: [id], done: false, alsoSend };
   }
 
   /** "Problema com um pedido": com o pedido achado, o card dele fica na conversa e o entregador conta o que houve. */
   private async findProblemOrder(tx: TenantTx, conversation: Conversation, state: AutomationState, messages: AutomationMessages, text?: string): Promise<Step> {
-    const found = await this.findOrder(tx, text, false);
+    const found = await this.findOrder(tx, conversation, text, false);
     if (!found?.order) {
       const note = found ? `Entregador com problema no pedido #${found.code}, que não foi encontrado` : "Entregador com problema em um pedido";
       return this.callTeam(tx, conversation, state, await this.passOn(tx, conversation, messages, found), note);
@@ -97,22 +110,24 @@ export class CourierMenuService {
   }
 
   /**
-   * O pedido de hoje ou de ontem com o número que o entregador digitou. null = não digitou número; `order: null` = o número
-   * não bate com um pedido só (nenhum, ou mais de um).
+   * O pedido de hoje ou de ontem com o número que o entregador digitou, aqui ou num restaurante que o canal atende.
+   * null = não digitou número; `order: null` = o número não bate com um pedido só (nenhum, ou mais de um).
    */
-  private async findOrder(tx: TenantTx, text: string | undefined, ifoodOnly: boolean) {
+  private async findOrder(tx: TenantTx, conversation: Conversation, text: string | undefined, ifoodOnly: boolean) {
     const digits = text?.match(/\d+/)?.[0];
     if (!digits) return null;
     const code = digits.replace(/^0+(?=\d)/, "");
-    const orders = await tx.order.findMany({
-      where: {
-        displayCode: { in: [...new Set([digits, code])] },
-        placedAt: { gte: startOfYesterday(new Date()) },
-        ...(ifoodOnly && { channel: { type: "IFOOD" as const } }),
-      },
-      select: { id: true, tenantId: true, contactId: true, channelId: true, conversationId: true },
-      take: 2,
-    });
+    const orders = await withOrderTenants(this.db, tx, conversation.channelId, (scoped) =>
+      scoped.order.findMany({
+        where: {
+          displayCode: { in: [...new Set([digits, code])] },
+          placedAt: { gte: startOfYesterday(new Date()) },
+          ...(ifoodOnly && { channel: { type: "IFOOD" as const } }),
+        },
+        select: { id: true, tenantId: true, contactId: true, channelId: true, conversationId: true },
+        take: 2,
+      }),
+    );
     return { code, order: orders.length === 1 ? orders[0]! : null };
   }
 

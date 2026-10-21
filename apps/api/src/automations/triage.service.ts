@@ -20,6 +20,7 @@ import type { Queue } from "bullmq";
 import { mergeContacts } from "../contacts/contact-merge.js";
 import { orderUpdateMessage } from "../orders/forecast.js";
 import { latestOrderOf } from "../orders/latest-order.js";
+import { withOrderTenants } from "../orders/order-scope.js";
 import { DatabaseService } from "../core/database.service.js";
 import { type OutboundJob, QUEUES } from "../queues/queues.module.js";
 import { RealtimeEmitter } from "../realtime/realtime.emitter.js";
@@ -81,7 +82,8 @@ export type Step = {
   handoff?: boolean;
   quiet?: boolean;
   handoffText?: string;
-  alsoSend?: { conversationId: string; messageId: string };
+  /** Mensagem em outra conversa (o aviso do entregador no chat do iFood do pedido), que pode ser de outra unidade. */
+  alsoSend?: { tenantId: string; conversationId: string; messageId: string };
 };
 
 /**
@@ -122,7 +124,7 @@ export class TriageService {
       return result;
     });
     await dispatch(this.outbound, this.realtime, tenantId, event.conversationId, step.send);
-    if (step.alsoSend) await dispatch(this.outbound, this.realtime, tenantId, step.alsoSend.conversationId, [step.alsoSend.messageId]);
+    if (step.alsoSend) await dispatch(this.outbound, this.realtime, step.alsoSend.tenantId, step.alsoSend.conversationId, [step.alsoSend.messageId]);
     for (const conversationId of step.notify ?? []) this.realtime.inboxChanged(tenantId, conversationId);
     if (step.done) await this.phoneCollection.afterInbound(event);
   }
@@ -190,8 +192,9 @@ export class TriageService {
     const messages = automationMessagesOf(settings);
     const option = /^\s*([123])(?!\d)/.exec(text ?? "")?.[1];
     if (option === "1") {
-      // Antes de pedir o número, procura o pedido mais recente (de hoje ou de ontem) ligado ao cadastro do cliente.
-      const order = await latestOrderOf(tx, conversation.contact);
+      // Antes de pedir o número, procura o pedido mais recente (de hoje ou de ontem) ligado ao cadastro do cliente, aqui
+      // e nos restaurantes que o canal atende.
+      const order = await withOrderTenants(this.db, tx, conversation.channelId, (orders) => latestOrderOf(orders, conversation.contact));
       if (order) {
         return this.offerOrder(tx, conversation, { ...state, autoFound: true }, messages, order, order.displayCode ?? order.externalOrderId);
       }
@@ -229,12 +232,14 @@ export class TriageService {
     if (!digits) return finish(await automationMessage(tx, conversation, "handoff", messages.handoff));
 
     const code = digits.replace(/^0+(?=\d)/, "");
-    const orders = await tx.order.findMany({
-      where: { displayCode: { in: [...new Set([digits, code])] }, placedAt: { gte: startOfYesterday(new Date()) } },
-      include: { items: true },
-      orderBy: { placedAt: "desc" },
-      take: 2,
-    });
+    const orders = await withOrderTenants(this.db, tx, conversation.channelId, (scoped) =>
+      scoped.order.findMany({
+        where: { displayCode: { in: [...new Set([digits, code])] }, placedAt: { gte: startOfYesterday(new Date()) } },
+        include: { items: true },
+        orderBy: { placedAt: "desc" },
+        take: 2,
+      }),
+    );
     if (orders.length === 0) {
       return finish(await automationMessage(tx, conversation, "order_lookup", fillMessage(messages.orderNotFound, { pedido: code })));
     }
@@ -280,17 +285,24 @@ export class TriageService {
   ): Promise<Step> {
     const reply = (text ?? "").trim().toLowerCase().normalize("NFD").replace(/\p{M}/gu, "");
     if (state.autoFound && /^(2(?!\d)|n(ao)?\b)/.test(reply)) return this.askOrderNumber(tx, conversation, state, messages);
-    const order =
-      /^(1(?!\d)|s(im)?\b)/.test(reply) && state.foundOrderId
-        ? await tx.order.findUnique({ where: { id: state.foundOrderId }, include: { contact: true, channel: { select: { type: true } } } })
-        : null;
-    if (!order) {
+    const foundOrderId = /^(1(?!\d)|s(im)?\b)/.test(reply) ? state.foundOrderId : undefined;
+    // Andamento: já saiu (quando) ou previsão de saída (com desculpas, se estiver atrasado), no tom deste restaurante.
+    const speaker = await tenantSettings(tx, conversation.tenantId);
+    const found = foundOrderId
+      ? await withOrderTenants(this.db, tx, conversation.channelId, async (orders) => {
+          const order = await orders.order.findUnique({
+            where: { id: foundOrderId },
+            include: { contact: true, channel: { select: { type: true } }, tenant: { select: { name: true } } },
+          });
+          return order && { order, update: await orderUpdateMessage(orders, order.id, new Date(), speaker) };
+        })
+      : null;
+    if (!found) {
       await setAutomationState(tx, conversation.id, { ...state, triage: "done", foundOrderId: undefined, autoFound: undefined });
       return { send: [await automationMessage(tx, conversation, "handoff", messages.handoff)], done: true, handoff: true };
     }
+    const { order, update } = found;
     const notify = await this.linkContact(tx, conversation, order);
-    // Andamento: já saiu (quando) ou previsão de saída (com desculpas, se estiver atrasado).
-    const update = await orderUpdateMessage(tx, order.id);
     const send = [await automationMessage(tx, conversation, "order_confirmed", TEXTS.orderConfirmed(messages, update?.text))];
     await setAutomationState(tx, conversation.id, {
       ...state,
@@ -304,14 +316,22 @@ export class TriageService {
     return { send, done: true, notify };
   }
 
-  /** O pedido identifica o cliente: une o cadastro da conversa ao do pedido. Devolve as outras conversas afetadas. */
+  /**
+   * O pedido identifica o cliente: une o cadastro da conversa ao do pedido. Devolve as outras conversas afetadas.
+   * Pedido de outro restaurante atendido pelo canal: cada restaurante tem a própria base de clientes, então os
+   * cadastros ficam separados e a conversa só registra de onde é o pedido.
+   */
   private async linkContact(
     tx: TenantTx,
     conversation: Conversation,
-    order: { displayCode: string | null; contact: Contact; channel: { type: ChannelType } },
+    order: { tenantId: string; displayCode: string | null; contact: Contact; channel: { type: ChannelType }; tenant: { name: string } },
   ): Promise<string[]> {
     if (order.contact.id === conversation.contact.id) return [];
     const label = `#${order.displayCode} (${CHANNEL_LABEL[order.channel.type]})`;
+    if (order.tenantId !== conversation.tenantId) {
+      await systemEvent(tx, conversation, { event: "order_other_restaurant", text: `O pedido ${label} é do restaurante ${order.tenant.name}` });
+      return [];
+    }
     const result = await mergeContacts(tx, conversation.contact, order.contact);
     if (!result.merged) {
       await systemEvent(tx, conversation, {

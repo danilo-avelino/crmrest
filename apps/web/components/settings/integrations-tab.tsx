@@ -11,6 +11,7 @@ import {
   type IntegrationsDto,
   type IntegrationType,
   RenameIntegrationRequest,
+  SERVING_TYPES,
 } from "@dishdesk/shared";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckIcon, ChevronRightIcon, CircleAlertIcon, CopyIcon, PencilIcon, PlusIcon, SearchIcon, XIcon } from "lucide-react";
@@ -412,9 +413,15 @@ function IntegrationPanel({ system, data, adding, onClose }: { system: System; d
   const label = CHANNEL_LABEL[system.type];
   const items = data.integrations.filter((integration) => integration.type === system.type);
   const signup = system.type === "WHATSAPP" ? data.platform.whatsappSignup : null;
-  // "details": as contas; "form": nova integração por formulário; uma conta: a confirmação antes de desconectá-la ou excluí-la.
-  const [view, setView] = useState<"details" | "form" | { item: IntegrationDto; remove: boolean }>(
-    adding && data.canEdit && system.type !== "INSTAGRAM" && !signup ? "form" : "details",
+  // Pode atender outros restaurantes: o admin administra mais de um e a conta é um canal de atendimento.
+  const canServe = data.canEdit && data.servableTenants.length > 0 && (SERVING_TYPES as readonly IntegrationType[]).includes(system.type);
+  // Volta do login do Instagram com a conta conectada (?canal=…): já pergunta quais restaurantes ela atende.
+  const params = useSearchParams();
+  const connected = params.get("instagram") === "conectado" ? items.find((item) => item.id === params.get("canal")) : undefined;
+  // "details": as contas; "form": nova integração por formulário; uma conta: a confirmação antes de desconectá-la ou
+  // excluí-la; `serve`: logo depois de conectar, os restaurantes que a conta atende.
+  const [view, setView] = useState<"details" | "form" | { item: IntegrationDto; remove: boolean } | { serve: IntegrationDto }>(() =>
+    canServe && connected ? { serve: connected } : adding && data.canEdit && system.type !== "INSTAGRAM" && !signup ? "form" : "details",
   );
   const tip = pendingOf(system.type, data.platform)?.text ?? system.tip;
   const addLabel = items.some((item) => item.status !== "DISCONNECTED") ? system.another : `Conectar o ${label}`;
@@ -425,7 +432,11 @@ function IntegrationPanel({ system, data, adding, onClose }: { system: System; d
   let action: ReactNode;
   if (!data.canEdit) action = <p className="text-[12px] text-ink-3">Só o administrador do restaurante adiciona integrações.</p>;
   else if (system.type === "INSTAGRAM") action = <InstagramLogin tenantId={data.tenantId} enabled={data.platform.instagramLogin} label={addLabel} />;
-  else if (signup) action = <WhatsAppSignup tenantId={data.tenantId} ids={signup} label={addLabel} />;
+  else if (signup) {
+    action = (
+      <WhatsAppSignup tenantId={data.tenantId} ids={signup} label={addLabel} onConnected={(item) => canServe && setView({ serve: item })} />
+    );
+  }
   else action = <AddButton onClick={() => setView("form")}>{addLabel}</AddButton>;
 
   return (
@@ -435,7 +446,13 @@ function IntegrationPanel({ system, data, adding, onClose }: { system: System; d
         <div className="min-w-0">
           <DialogTitle className="text-[16px]">{system.title ?? label}</DialogTitle>
           <DialogDescription className="mt-0.5 truncate">
-            {view === "details" ? "Detalhes da conexão" : view === "form" ? "Nova integração" : `${view.remove ? "Excluir" : "Desconectar"} ${view.item.name}?`}
+            {view === "details"
+              ? "Detalhes da conexão"
+              : view === "form"
+                ? "Nova integração"
+                : "serve" in view
+                  ? `${view.serve.name} conectado`
+                  : `${view.remove ? "Excluir" : "Desconectar"} ${view.item.name}?`}
           </DialogDescription>
         </div>
         <CloseButton onClick={onClose} />
@@ -448,6 +465,10 @@ function IntegrationPanel({ system, data, adding, onClose }: { system: System; d
           ifoodLinkCode={system.type === "IFOOD" && data.platform.ifoodLinkCode}
           onClose={() => setView("details")}
         />
+      ) : view !== "details" && "serve" in view ? (
+        <div className="px-[26px] py-[22px]">
+          <ServedTenants data={data} item={view.serve} step onDone={() => setView("details")} />
+        </div>
       ) : view !== "details" ? (
         <RemovalConfirm tenantId={data.tenantId} item={view.item} remove={view.remove} onClose={() => setView("details")} />
       ) : (
@@ -480,6 +501,11 @@ function IntegrationPanel({ system, data, adding, onClose }: { system: System; d
                   <dd className="text-[12px] font-semibold break-all tabular-nums">{item.externalId}</dd>
                 </div>
               </dl>
+              {canServe && (
+                <div className="mt-3 rounded-[10px] bg-paper px-[15px] py-[13px]">
+                  <ServedTenants data={data} item={item} />
+                </div>
+              )}
             </div>
           ))}
           {tip && (
@@ -658,7 +684,17 @@ function InstagramLogin({ tenantId, enabled, label }: { tenantId: string; enable
  * WhatsApp Business escolhe conectar o app e escaneia um QR code com o celular (Coexistência): o número continua
  * funcionando no app.
  */
-function WhatsAppSignup({ tenantId, ids, label }: { tenantId: string; ids: { appId: string; configId: string }; label: string }) {
+function WhatsAppSignup({
+  tenantId,
+  ids,
+  label,
+  onConnected,
+}: {
+  tenantId: string;
+  ids: { appId: string; configId: string };
+  label: string;
+  onConnected?: (item: IntegrationDto) => void;
+}) {
   const { request } = useAuth();
   const queryClient = useQueryClient();
   const toast = useToast();
@@ -681,10 +717,11 @@ function WhatsAppSignup({ tenantId, ids, label }: { tenantId: string; ids: { app
       const result = await runEmbeddedSignup(sdk, ids.configId);
       if (!result) return; // janela fechada
       setStep("saving");
-      await request(`/integrations/${tenantId}/whatsapp/signup`, { method: "POST", body: result });
+      const item = await request<IntegrationDto>(`/integrations/${tenantId}/whatsapp/signup`, { method: "POST", body: result });
       await queryClient.invalidateQueries({ queryKey: ["integrations", tenantId] });
       setOpen(false);
       toast("WhatsApp conectado");
+      onConnected?.(item);
     } catch (error) {
       leaveIfBlocked(error, tenantId);
       setFailure(error instanceof Error ? error.message : "Não foi possível conectar o WhatsApp.");
@@ -736,6 +773,108 @@ function WhatsAppSignup({ tenantId, ids, label }: { tenantId: string; ids: { app
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+/**
+ * Restaurantes atendidos por um WhatsApp ou Instagram (um número de grupo, o Instagram de uma rede): quando o cliente
+ * fala de um pedido, o atendimento procura também nas unidades marcadas. A conversa continua neste restaurante. Só
+ * aparecem restaurantes de que o administrador também é administrador. `step`: logo depois de conectar, com "Agora
+ * não"; nos detalhes da conta, o "Salvar" aparece quando a escolha muda.
+ */
+function ServedTenants({ data, item, step, onDone }: { data: IntegrationsDto; item: IntegrationDto; step?: boolean; onDone?: () => void }) {
+  const { request } = useAuth();
+  const queryClient = useQueryClient();
+  const toast = useToast();
+  const tenant = useSettingsTenant();
+  const [checked, setChecked] = useState(() => new Set(item.servedTenantIds));
+  const [failure, setFailure] = useState<string | null>(null);
+  const changed = checked.size !== item.servedTenantIds.length || item.servedTenantIds.some((id) => !checked.has(id));
+  const account = item.type === "WHATSAPP" ? "este número" : "esta conta";
+
+  const [save, saving] = usePendingAction(async () => {
+    setFailure(null);
+    try {
+      await request(`/integrations/${data.tenantId}/${item.id}/served-tenants`, { method: "PATCH", body: { tenantIds: [...checked] } });
+      await queryClient.invalidateQueries({ queryKey: ["integrations", data.tenantId] });
+      toast("Restaurantes atendidos salvos");
+      onDone?.();
+    } catch (error) {
+      setFailure(error instanceof ApiError ? error.message : "Não foi possível salvar os restaurantes atendidos.");
+    }
+  });
+
+  return (
+    <form
+      noValidate
+      onSubmit={(event) => {
+        event.preventDefault();
+        save();
+      }}
+    >
+      {step ? (
+        <p className="mb-3 leading-normal text-ink-2">
+          {item.name} atende mais de um restaurante? Marque as unidades em que o atendimento deve procurar o pedido quando o cliente
+          falar de um. As conversas continuam em {tenant.name}.
+        </p>
+      ) : (
+        <>
+          <div className="mb-[5px] text-[10px] font-bold tracking-[0.07em] text-ink-3 uppercase">Restaurantes atendidos</div>
+          <p className="mb-2.5 text-[11.5px] leading-normal text-ink-3">Quando o cliente fala de um pedido, {account} procura também nas unidades marcadas.</p>
+        </>
+      )}
+      <ul className="flex flex-col gap-1.5">
+        <li>
+          <label className="flex items-center gap-2.5 text-[12.5px] text-ink-3">
+            <input type="checkbox" checked disabled className="size-4 shrink-0 accent-ink" />
+            <span className="truncate">{tenant.name} (este restaurante)</span>
+          </label>
+        </li>
+        {data.servableTenants.map((other) => (
+          <li key={other.id}>
+            <label className="flex items-center gap-2.5 text-[12.5px]">
+              <input
+                type="checkbox"
+                checked={checked.has(other.id)}
+                disabled={saving}
+                onChange={(event) =>
+                  setChecked((current) => {
+                    const next = new Set(current);
+                    if (event.target.checked) next.add(other.id);
+                    else next.delete(other.id);
+                    return next;
+                  })
+                }
+                className="size-4 shrink-0 accent-ink"
+              />
+              <span className="truncate">{other.name}</span>
+            </label>
+          </li>
+        ))}
+      </ul>
+      {failure && <Failure>{failure}</Failure>}
+      {step ? (
+        <div className="mt-4 flex justify-end gap-2">
+          <Button type="button" variant="ghost" disabled={saving} onClick={onDone}>
+            Agora não
+          </Button>
+          <Button type="submit" loading={saving}>
+            Salvar
+          </Button>
+        </div>
+      ) : (
+        changed && (
+          <div className="mt-2.5 flex justify-end gap-1.5">
+            <Button type="button" variant="ghost" size="xs" disabled={saving} onClick={() => setChecked(new Set(item.servedTenantIds))}>
+              Cancelar
+            </Button>
+            <Button type="submit" size="xs" loading={saving}>
+              Salvar
+            </Button>
+          </div>
+        )
+      )}
+    </form>
   );
 }
 

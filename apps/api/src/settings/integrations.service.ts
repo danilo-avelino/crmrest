@@ -10,6 +10,7 @@ import {
   type IntegrationDto,
   type IntegrationsDto,
   type IntegrationType,
+  SERVING_TYPES,
   TRIAL_REUSE_DAYS,
   type WhatsAppSignupRequest,
 } from "@dishdesk/shared";
@@ -40,7 +41,7 @@ import { isTenantAdmin, requireTenantAdmin } from "./tenant-admin.js";
 /** O que vai para o canal depois de a credencial ser conferida no sistema de origem. */
 type VerifiedChannel = { type: IntegrationType; externalId: string; name: string; secrets: Record<string, string> };
 
-const SELECT = { id: true, type: true, name: true, externalId: true, status: true } as const;
+const SELECT = { id: true, type: true, name: true, externalId: true, status: true, servedTenantIds: true } as const;
 
 /** Autorização do iFood com mais de uma loja: em vez de conectar, `add` devolve as lojas para o restaurante escolher. */
 class IfoodStoreChoice {
@@ -97,9 +98,10 @@ export class IntegrationsService {
         orderBy: [{ type: "asc" }, { name: "asc" }],
       }),
     );
+    const canEdit = isTenantAdmin(auth, tenantId);
     return {
       tenantId,
-      canEdit: isTenantAdmin(auth, tenantId),
+      canEdit,
       platform: {
         ifood: Boolean(this.env.IFOOD_CLIENT_ID && this.env.IFOOD_CLIENT_SECRET),
         ifoodLinkCode: this.ifood.configured && this.ifood.distributed,
@@ -111,7 +113,40 @@ export class IntegrationsService {
             : null,
       },
       integrations: channels.map(toDto),
+      servableTenants: canEdit ? await this.servableTenants(auth.userId, tenantId) : [],
     };
+  }
+
+  /**
+   * WhatsApp ou Instagram que atende várias unidades: a busca de pedidos do atendimento procura também nos restaurantes
+   * escolhidos. Só entram restaurantes de que o administrador também é administrador (outra empresa não é ligada por
+   * engano); a lista substitui a anterior.
+   */
+  async setServedTenants(auth: RequestAuth, tenantId: string, channelId: string, tenantIds: string[]): Promise<IntegrationDto> {
+    requireTenantAdmin(auth, tenantId);
+    const allowed = new Set((await this.servableTenants(auth.userId, tenantId)).map((tenant) => tenant.id));
+    const served = [...new Set(tenantIds)].filter((id) => id !== tenantId);
+    if (served.some((id) => !allowed.has(id))) throw new ForbiddenException("Só dá para escolher restaurantes de que você é administrador.");
+    return this.db.withTenants({ tenantIds: [tenantId], userId: auth.userId }, async (tx) => {
+      const channel = await tx.channel.findFirst({
+        where: { id: channelId, tenantId, deletedAt: null, type: { in: [...SERVING_TYPES] } },
+        select: { id: true },
+      });
+      if (!channel) throw new NotFoundException("Integração não encontrada.");
+      return toDto(await tx.channel.update({ where: { id: channel.id }, data: { servedTenantIds: served }, select: SELECT }));
+    });
+  }
+
+  /** Outros restaurantes ativos de que o usuário é administrador. */
+  private async servableTenants(userId: string, tenantId: string): Promise<{ id: string; name: string }[]> {
+    const memberships = await this.db.withTenants({ tenantIds: [tenantId], userId }, (tx) =>
+      tx.tenantMember.findMany({
+        where: { userId, role: "ADMIN", isActive: true, tenantId: { not: tenantId }, tenant: { status: "ACTIVE" } },
+        select: { tenant: { select: { id: true, name: true } } },
+        orderBy: { tenant: { name: "asc" } },
+      }),
+    );
+    return memberships.map((membership) => membership.tenant);
   }
 
   /**
@@ -207,8 +242,9 @@ export class IntegrationsService {
     if (query.error || !query.code) return back({ motivo: "O login no Instagram foi cancelado." });
     try {
       const accessToken = await this.connectors.instagram.exchangeLoginCode(query.code, this.instagramRedirectUri());
-      await this.save(state.tenantId, state.userId, await this.verify({ type: "INSTAGRAM", accessToken }));
-      return back({ instagram: "conectado" });
+      const saved = await this.save(state.tenantId, state.userId, await this.verify({ type: "INSTAGRAM", accessToken }));
+      // A conta conectada volta no endereço: o painel pergunta em seguida quais restaurantes ela atende.
+      return back({ instagram: "conectado", canal: saved.id });
     } catch (error) {
       // Teste grátis repetido: o restaurante acabou de ser bloqueado, e a tela de pagamento explica o motivo.
       if (error instanceof HttpException && error.getStatus() === HttpStatus.PAYMENT_REQUIRED) {
@@ -466,6 +502,13 @@ export class IntegrationsService {
   }
 }
 
-function toDto(channel: { id: string; type: string; name: string; externalId: string; status: IntegrationDto["status"] }): IntegrationDto {
+function toDto(channel: {
+  id: string;
+  type: string;
+  name: string;
+  externalId: string;
+  status: IntegrationDto["status"];
+  servedTenantIds: string[];
+}): IntegrationDto {
   return { ...channel, type: channel.type as IntegrationType };
 }

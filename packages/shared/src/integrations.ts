@@ -12,6 +12,11 @@ export type IntegrationDto = {
   name: string;
   externalId: string;
   status: ChannelStatus;
+  /**
+   * WhatsApp ou Instagram: outros restaurantes atendidos por esta conta (a busca de pedidos do atendimento procura
+   * neles também). Vazio nos marketplaces e quando a conta atende só o próprio restaurante.
+   */
+  servedTenantIds: string[];
 };
 
 export type IntegrationsDto = {
@@ -30,7 +35,12 @@ export type IntegrationsDto = {
     whatsappSignup: { appId: string; configId: string } | null;
   };
   integrations: IntegrationDto[];
+  /** Outros restaurantes de que quem está vendo é administrador: os que um WhatsApp ou Instagram pode atender. */
+  servableTenants: { id: string; name: string }[];
 };
+
+/** Canais de atendimento que podem atender mais de um restaurante (um WhatsApp de grupo, o Instagram de uma rede). */
+export const SERVING_TYPES = ["WHATSAPP", "INSTAGRAM"] as const satisfies readonly IntegrationType[];
 
 const digits = (message: string) => z.string().trim().regex(/^\d{3,30}$/, message);
 const secret = (message: string) => z.string().trim().min(10, message).max(1000, message);
@@ -65,6 +75,10 @@ export type AddIntegrationRequest = z.infer<typeof AddIntegrationRequest>;
 /** Novo nome de uma integração (Configurações → Integrações → Gerenciar). */
 export const RenameIntegrationRequest = z.object({ name: z.string().trim().min(1, "Informe o nome.").max(60, "Use até 60 caracteres.") });
 export type RenameIntegrationRequest = z.infer<typeof RenameIntegrationRequest>;
+
+/** Restaurantes, além do próprio, que um WhatsApp ou Instagram atende. */
+export const ServedTenantsRequest = z.object({ tenantIds: z.array(z.uuid()).max(50) });
+export type ServedTenantsRequest = z.infer<typeof ServedTenantsRequest>;
 
 /**
  * Código de vinculação do iFood (aplicativo distribuído): o responsável pela loja abre `verificationUrl` no Portal do

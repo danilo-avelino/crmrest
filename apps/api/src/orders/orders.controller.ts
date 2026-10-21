@@ -9,9 +9,12 @@ import {
   type OrderPage,
 } from "@dishdesk/shared";
 import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Post, Query } from "@nestjs/common";
+import { z } from "zod";
 import { CurrentAuth, type RequestAuth } from "../auth/auth.decorators.js";
 import { ZodPipe } from "../common/zod.pipe.js";
 import { OrdersService } from "./orders.service.js";
+
+const ForecastQuery = z.object({ conversationId: z.uuid().optional() });
 
 @Controller("orders")
 export class OrdersController {
@@ -31,9 +34,14 @@ export class OrdersController {
     return { current: await this.orders.currentForConversation(auth, conversationId) };
   }
 
+  /** Com a conversa, vale também o pedido de outro restaurante atendido pelo canal dela. */
   @Get(":id/forecast")
-  forecast(@Param("id", ParseUUIDPipe) id: string, @CurrentAuth() auth: RequestAuth): Promise<{ text: string | null }> {
-    return this.orders.forecast(auth, id);
+  forecast(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Query(new ZodPipe(ForecastQuery)) query: { conversationId?: string },
+    @CurrentAuth() auth: RequestAuth,
+  ): Promise<{ text: string | null }> {
+    return this.orders.forecast(auth, id, query.conversationId);
   }
 
   @Post(":id/advance")

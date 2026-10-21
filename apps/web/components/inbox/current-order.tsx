@@ -35,6 +35,7 @@ export function CurrentOrder({ conversationId }: { conversationId: string }) {
       <div className="flex items-center gap-1.5 text-[12.5px] font-semibold">
         <span className={cn("size-[7px] shrink-0 rounded-full", CHANNEL_DOT[order.channelType])} />
         {CHANNEL_LABEL[order.channelType]} #{order.displayCode ?? order.id.slice(0, 6)}
+        {order.restaurantName && <span className="truncate font-normal text-ink-3">· {order.restaurantName}</span>}
         <span className="ml-auto font-normal text-ink-2 tabular-nums">{currency(order.total)}</span>
       </div>
 

@@ -46,6 +46,8 @@ export type MessageContent = {
     | "opt_out"
     | "contacts_merged"
     | "merge_conflict"
+    /** Pedido confirmado é de outro restaurante atendido pelo canal: os cadastros ficam separados. */
+    | "order_other_restaurant"
     | "order_ambiguous"
     | "rating"
     | "handoff"
@@ -85,6 +87,8 @@ export type OrderDto = {
   deliveredAt: string | null;
   /** `unitPrice` já inclui os complementos escolhidos (`options`, na ordem do pedido). */
   items: { name: string; quantity: number; unitPrice: string; notes: string | null; options: string[] }[];
+  /** Pedido de outro restaurante atendido pelo canal da conversa (Configurações → Integrações): o nome dele. */
+  restaurantName?: string;
 };
 
 /**
