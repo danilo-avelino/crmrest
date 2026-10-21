@@ -2,8 +2,8 @@ import { createPrismaClient, withTenants } from "@dishdesk/database";
 import type { INestApplication } from "@nestjs/common";
 import { hash } from "@node-rs/argon2";
 import request from "supertest";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { accessTokenFor, admin, createAuthFixture, createTestApp, PASSWORD } from "./helpers.js";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { accessTokenFor, admin, createAuthFixture, createTestApp, PASSWORD, startMockGraph } from "./helpers.js";
 
 describe("Configurações → usuários do restaurante", () => {
   let app: INestApplication;
@@ -118,5 +118,111 @@ describe("Configurações → usuários do restaurante", () => {
     } finally {
       await db.$disconnect();
     }
+  });
+});
+
+describe("Configurações → usuários: convite por e-mail", () => {
+  let app: INestApplication;
+  let noSupabase: INestApplication;
+  let fx: Awaited<ReturnType<typeof createAuthFixture>>;
+  let supabase: Awaited<ReturnType<typeof startMockGraph>>;
+  let adminToken: string; // o usuário do fixture é administrador em B
+  let agentToken: string; // e atendente em A
+  let inviteStatus = 200;
+  const createdEmails: string[] = [];
+  const calls = () => supabase.requests.map((call) => `${call.method} ${call.path}`);
+  const redirect = encodeURIComponent("https://painel.teste/redefinir-senha");
+
+  beforeAll(async () => {
+    supabase = await startMockGraph();
+    // Supabase falso: o convite responde inviteStatus (422 = o e-mail já tem cópia no Supabase).
+    supabase.reply((call) => (call.path.startsWith("/auth/v1/invite") ? { status: inviteStatus, body: {} } : { status: 200, body: {} }));
+    [app, noSupabase, fx] = await Promise.all([
+      createTestApp({ SUPABASE_URL: supabase.url, SUPABASE_SECRET_KEY: "sb_secret_teste", WEB_ORIGIN: "https://painel.teste" }),
+      createTestApp(), // sem SUPABASE_URL e SUPABASE_SECRET_KEY (o .env de teste e o CI não têm)
+      createAuthFixture(),
+    ]);
+    adminToken = await accessTokenFor(app, fx.user.email, fx.b.id);
+    agentToken = await accessTokenFor(app, fx.user.email, fx.a.id);
+  });
+
+  beforeEach(() => {
+    supabase.requests.length = 0;
+    inviteStatus = 200;
+  });
+
+  afterAll(async () => {
+    await admin.user.deleteMany({ where: { email: { in: createdEmails } } });
+    await fx?.cleanup();
+    await Promise.all([app?.close(), noSupabase?.close()]);
+    await supabase?.close();
+  });
+
+  const create = (body: object, server = app) =>
+    request(server.getHttpServer()).post(`/api/settings/${fx.b.id}/members`).set("Authorization", `Bearer ${adminToken}`).send(body);
+
+  it("sem senha: cria a conta sem senha conhecida e manda o convite com o retorno em /redefinir-senha", async () => {
+    const email = `convidada-${fx.b.id}@teste.local`;
+    createdEmails.push(email);
+    const { body } = await create({ name: "Convidada", email, role: "AGENT" }).expect(201);
+    expect(body.find((m: { email: string }) => m.email === email)).toMatchObject({ name: "Convidada", role: "AGENT", isActive: true });
+    expect(calls()).toEqual([`POST /auth/v1/invite?redirect_to=${redirect}`]);
+    expect(supabase.requests[0]!.body).toEqual({ email });
+    // Ninguém entra antes de criar a senha pelo link.
+    await request(app.getHttpServer()).post("/api/auth/login").send({ email, password: PASSWORD }).expect(401);
+  });
+
+  it("e-mail que já tem cópia no Supabase: vai o link de recuperação no lugar do convite", async () => {
+    const email = `ja-no-supabase-${fx.b.id}@teste.local`;
+    createdEmails.push(email);
+    inviteStatus = 422;
+    await create({ name: "Já no Supabase", email, role: "AGENT" }).expect(201);
+    expect(calls()).toEqual([
+      `POST /auth/v1/invite?redirect_to=${redirect}`,
+      "POST /auth/v1/admin/users",
+      `POST /auth/v1/recover?redirect_to=${redirect}`,
+    ]);
+  });
+
+  it("quem já tem conta no Dish Desk só ganha acesso, sem convite", async () => {
+    const colleague = await admin.user.create({
+      data: { name: "Colega Antigo", email: `antigo-${fx.b.id}@teste.local`, passwordHash: await hash(PASSWORD) },
+      select: { email: true },
+    });
+    createdEmails.push(colleague.email);
+    await create({ name: "Colega Antigo", email: colleague.email, role: "AGENT" }).expect(201);
+    expect(calls()).toEqual([]);
+    await accessTokenFor(app, colleague.email, fx.b.id); // a senha de antes continua valendo
+  });
+
+  it("convite que não sai: o usuário fica criado e o admin vê o motivo", async () => {
+    const email = `sem-email-${fx.b.id}@teste.local`;
+    createdEmails.push(email);
+    inviteStatus = 500;
+    const { body } = await create({ name: "Sem E-mail", email, role: "AGENT" }).expect(503);
+    expect(body.message).toBe('Sem E-mail foi adicionado, mas o e-mail do convite não saiu. Use "Enviar convite" na lista em alguns minutos.');
+    expect(await admin.user.count({ where: { email } })).toBe(1);
+  });
+
+  it("reenvia o convite a quem está no restaurante; atendente não reenvia", async () => {
+    const member = await admin.user.findFirstOrThrow({ where: { email: `convidada-${fx.b.id}@teste.local` }, select: { id: true } });
+    const invite = (tenantId: string, token: string, userId = member.id) =>
+      request(app.getHttpServer()).post(`/api/settings/${tenantId}/members/${userId}/invite`).set("Authorization", `Bearer ${token}`);
+    await invite(fx.b.id, adminToken).expect(204);
+    expect(calls()).toEqual([`POST /auth/v1/invite?redirect_to=${redirect}`]);
+    await invite(fx.a.id, agentToken).expect(403);
+    await invite(fx.b.id, adminToken, fx.user.id.replace(/.$/, "0")).expect(404);
+  });
+
+  it("sem o Supabase configurado: pede a senha temporária e não cria ninguém", async () => {
+    const email = `sem-supabase-${fx.b.id}@teste.local`;
+    const token = await accessTokenFor(noSupabase, fx.user.email, fx.b.id);
+    const { body } = await request(noSupabase.getHttpServer())
+      .post(`/api/settings/${fx.b.id}/members`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ name: "Sem Supabase", email, role: "AGENT" })
+      .expect(503);
+    expect(body.message).toBe("O convite por e-mail ainda não está disponível. Defina uma senha temporária.");
+    expect(await admin.user.count({ where: { email } })).toBe(0);
   });
 });

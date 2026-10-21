@@ -40,7 +40,18 @@ export async function sendRecoveryEmail(env: SupabaseEnv, email: string): Promis
 }
 
 /**
- * E-mail do dono do token que o link de recuperação entregou ao painel; null se o Supabase não reconhece o token.
+ * Convite de usuário novo (Configurações → Usuários): o e-mail "Invite user" do Supabase, com o link para
+ * /redefinir-senha, onde a pessoa cria a senha. Se o e-mail já tem cópia no Supabase (422), vai o de recuperação.
+ */
+export async function sendInviteEmail(env: SupabaseEnv, email: string): Promise<void> {
+  const redirect = encodeURIComponent(`${env.WEB_ORIGIN}/redefinir-senha`);
+  const invited = await supabase(env, "POST", `/invite?redirect_to=${redirect}`, { body: { email } });
+  if (invited.status === 422) return sendRecoveryEmail(env, email);
+  await ensureOk(invited, "invite");
+}
+
+/**
+ * E-mail do dono do token que o link de recuperação (ou de convite) entregou ao painel; null se o Supabase não reconhece o token.
  * Um token válido prova que quem o tem recebeu o link no e-mail: o cadastro direto no Supabase fica desligado e as
  * cópias que a API cria não têm senha. (Não se exige a origem "recovery" no token: o link do e-mail pode emiti-lo
  * como "otp", e o painel recusava links válidos.) Depois de lido, o token é encerrado: o mesmo link não troca a senha duas vezes.

@@ -1,20 +1,42 @@
 import type { TenantTx } from "@dishdesk/database";
 import { CreateMemberRequest, type TeamMemberDto, UpdateMemberRequest } from "@dishdesk/shared";
 import { hash } from "@node-rs/argon2";
-import { randomUUID } from "node:crypto";
-import { Body, Controller, ForbiddenException, Get, NotFoundException, Param, ParseUUIDPipe, Patch, Post } from "@nestjs/common";
+import { randomBytes, randomUUID } from "node:crypto";
+import {
+  Body,
+  Controller,
+  ForbiddenException,
+  Get,
+  HttpCode,
+  Inject,
+  Logger,
+  NotFoundException,
+  Param,
+  ParseUUIDPipe,
+  Patch,
+  Post,
+  ServiceUnavailableException,
+} from "@nestjs/common";
 import { CurrentAuth, type RequestAuth } from "../auth/auth.decorators.js";
+import { hasSupabaseAuth, sendInviteEmail, type SupabaseEnv } from "../auth/supabase-auth.js";
 import { ZodPipe } from "../common/zod.pipe.js";
+import { ENV, type Env } from "../config/env.js";
 import { DatabaseService } from "../core/database.service.js";
 import { requireTenantAdmin } from "./tenant-admin.js";
 
 /**
- * Usuários do restaurante (Configurações → Usuários): a equipe vê quem tem acesso; o administrador cria acessos, muda
- * o papel e desativa ou reativa. Ninguém altera o próprio acesso, então o restaurante nunca fica sem administrador.
+ * Usuários do restaurante (Configurações → Usuários): a equipe vê quem tem acesso; o administrador cria acessos (com
+ * senha temporária ou convite por e-mail), muda o papel e desativa ou reativa. Ninguém altera o próprio acesso, então o
+ * restaurante nunca fica sem administrador.
  */
 @Controller("settings/:tenantId/members")
 export class MembersController {
-  constructor(private readonly db: DatabaseService) {}
+  private readonly logger = new Logger(MembersController.name);
+
+  constructor(
+    private readonly db: DatabaseService,
+    @Inject(ENV) private readonly env: Env,
+  ) {}
 
   @Get()
   list(@Param("tenantId", ParseUUIDPipe) tenantId: string, @CurrentAuth() auth: RequestAuth): Promise<TeamMemberDto[]> {
@@ -22,6 +44,10 @@ export class MembersController {
     return this.db.withTenants({ tenantIds: [tenantId], userId: auth.userId }, (tx) => members(tx, tenantId, auth.userId));
   }
 
+  /**
+   * Sem senha, a conta nasce com uma senha aleatória que ninguém conhece e a pessoa recebe o convite para criar a dela.
+   * Quem já tem conta no Dish Desk só ganha acesso ao restaurante: entra com a senha que já usa, sem convite.
+   */
   @Post()
   async create(
     @Param("tenantId", ParseUUIDPipe) tenantId: string,
@@ -29,12 +55,14 @@ export class MembersController {
     @CurrentAuth() auth: RequestAuth,
   ): Promise<TeamMemberDto[]> {
     requireTenantAdmin(auth, tenantId);
-    const passwordHash = await hash(body.password);
+    const invite = body.password === undefined;
+    const env = invite ? this.inviteEnv() : null;
+    const passwordHash = await hash(body.password ?? randomBytes(32).toString("base64url"));
     const newUserId = randomUUID();
-    return this.db.withTenants({ tenantIds: [tenantId], userId: auth.userId }, async (tx) => {
+    const { list, created } = await this.db.withTenants({ tenantIds: [tenantId], userId: auth.userId }, async (tx) => {
       const existing = await tx.user.findFirst({ where: { email: body.email }, select: { id: true } });
       if (existing?.id === auth.userId) throw new ForbiddenException("Peça a outro administrador para alterar o seu acesso.");
-      await tx.$queryRaw`
+      const [row] = await tx.$queryRaw<{ id: string }[]>`
         SELECT app.create_or_restore_member(
           ${newUserId}::uuid,
           ${tenantId}::uuid,
@@ -42,9 +70,28 @@ export class MembersController {
           ${body.email},
           ${passwordHash},
           ${body.role}::"TenantRole"
-        )`;
-      return members(tx, tenantId, auth.userId);
+        ) AS id`;
+      return { list: await members(tx, tenantId, auth.userId), created: row?.id === newUserId };
     });
+    if (env && created) await this.sendInvite(env, body.email, `${body.name} foi adicionado, mas o e-mail do convite não saiu. Use "Enviar convite" na lista em alguns minutos.`);
+    return list;
+  }
+
+  /** Manda (de novo) o convite: o link para a pessoa criar ou trocar a senha. */
+  @Post(":userId/invite")
+  @HttpCode(204)
+  async invite(
+    @Param("tenantId", ParseUUIDPipe) tenantId: string,
+    @Param("userId", ParseUUIDPipe) userId: string,
+    @CurrentAuth() auth: RequestAuth,
+  ): Promise<void> {
+    requireTenantAdmin(auth, tenantId);
+    const env = this.inviteEnv();
+    const member = await this.db.withTenants({ tenantIds: [tenantId], userId: auth.userId }, (tx) =>
+      tx.tenantMember.findFirst({ where: { tenantId, userId, isActive: true }, select: { user: { select: { email: true } } } }),
+    );
+    if (!member) throw new NotFoundException("Esta pessoa não tem acesso ativo ao restaurante.");
+    await this.sendInvite(env, member.user.email, "O e-mail do convite não saiu. Tente de novo em alguns minutos.");
   }
 
   @Patch(":userId")
@@ -61,6 +108,23 @@ export class MembersController {
       if (count === 0) throw new NotFoundException("Esta pessoa não faz parte do restaurante.");
       return members(tx, tenantId, auth.userId);
     });
+  }
+
+  private inviteEnv(): SupabaseEnv {
+    if (!hasSupabaseAuth(this.env)) {
+      throw new ServiceUnavailableException("O convite por e-mail ainda não está disponível. Defina uma senha temporária.");
+    }
+    return this.env;
+  }
+
+  /** `failure`: o que o administrador lê se o e-mail não sair. */
+  private async sendInvite(env: SupabaseEnv, email: string, failure: string): Promise<void> {
+    try {
+      await sendInviteEmail(env, email);
+    } catch (error) {
+      this.logger.error({ err: error }, "E-mail de convite não enviado");
+      throw new ServiceUnavailableException(failure);
+    }
   }
 }
 

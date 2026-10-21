@@ -42,7 +42,7 @@ export function MembersTab() {
       </ul>
       <p className="border-t border-rule bg-paper px-5 py-3 text-[12px] text-ink-3">
         {canEdit
-          ? "Novos usuários entram com a senha temporária definida aqui. Ninguém altera o próprio acesso."
+          ? "Com a senha temporária, o usuário já entra com ela; sem senha, recebe um convite por e-mail para criar a dele. Ninguém altera o próprio acesso."
           : "Só o administrador do restaurante altera os usuários."}
       </p>
     </section>
@@ -61,7 +61,8 @@ function CreateMemberForm({ tenantId }: { tenantId: string }) {
   const [errors, setErrors] = useState<{ name?: string; email?: string; password?: string; form?: string }>({});
 
   const [save, saving] = usePendingAction(async () => {
-    const parsed = CreateMemberRequest.safeParse({ name, email, password, role });
+    // Senha em branco: convite por e-mail.
+    const parsed = CreateMemberRequest.safeParse({ name, email, password: password || undefined, role });
     if (!parsed.success) {
       const field = (fieldName: keyof typeof errors) => parsed.error.issues.find((issue) => issue.path[0] === fieldName)?.message;
       return setErrors({ name: field("name"), email: field("email"), password: field("password") });
@@ -71,12 +72,18 @@ function CreateMemberForm({ tenantId }: { tenantId: string }) {
       const updated = await request<TeamMemberDto[]>(`/settings/${tenantId}/members`, { method: "POST", body: parsed.data });
       queryClient.setQueryData(["members-settings", tenantId], updated);
       void queryClient.invalidateQueries({ queryKey: ["members"] });
-      toast(`${parsed.data.name} foi adicionado`);
+      toast(
+        parsed.data.password
+          ? `${parsed.data.name} foi adicionado`
+          : `${parsed.data.name} foi adicionado. Quem ainda não tem conta recebe o convite por e-mail`,
+      );
       setName("");
       setEmail("");
       setPassword("");
       setRole("AGENT");
     } catch (failure) {
+      // O usuário pode ter sido criado mesmo com o e-mail do convite recusado: a lista é lida de novo.
+      void queryClient.invalidateQueries({ queryKey: ["members-settings", tenantId] });
       setErrors({ form: failure instanceof ApiError ? failure.message : "Não foi possível criar o usuário." });
     }
   });
@@ -119,6 +126,7 @@ function CreateMemberForm({ tenantId }: { tenantId: string }) {
           <Input
             id={`${id}-password`}
             type="password"
+            placeholder="Em branco: convite por e-mail"
             value={password}
             maxLength={128}
             autoComplete="new-password"
@@ -187,6 +195,16 @@ function MemberRow({ tenantId, member, canEdit }: { tenantId: string; member: Te
     }
   };
 
+  const sendInvite = async () => {
+    setError(null);
+    try {
+      await request(`/settings/${tenantId}/members/${member.userId}/invite`, { method: "POST" });
+      toast(`Convite enviado para ${member.email}`);
+    } catch (failure) {
+      setError(failure instanceof ApiError ? failure.message : "Não foi possível enviar o convite.");
+    }
+  };
+
   return (
     <li className={cn("flex items-center gap-3 border-b border-rule-soft px-5 py-3 last:border-b-0", !member.isActive && "opacity-60")}>
       <div className="min-w-0 flex-1">
@@ -203,6 +221,11 @@ function MemberRow({ tenantId, member, canEdit }: { tenantId: string; member: Te
       </span>
       {canEdit && (
         <div className="flex shrink-0 gap-1.5">
+          {member.isActive && (
+            <Button variant="outline" size="sm" title="Manda o link para a pessoa criar ou trocar a senha" onClick={sendInvite}>
+              Enviar convite
+            </Button>
+          )}
           {member.isActive && (
             <Button
               variant="outline"

@@ -121,7 +121,7 @@ Pagamento pendente (Claude, 11/10): a renovação do mensal tem 1 dia de folga; 
   - [x] No Supabase, Authentication → Sign In / Providers: desligar "Allow new users to sign up" (a API cria a cópia do usuário pela chave secreta; ninguém deve criar conta direto no Supabase) — Claude, 20/10.
   - [ ] SMTP próprio (Resend, por exemplo) em Authentication → SMTP Settings: o e-mail padrão do Supabase só entrega para os membros da sua equipe no Supabase, poucos por hora — você.
   - [ ] Traduzir o modelo "Reset Password" em Authentication → Email Templates, mantendo o `{{ .ConfirmationURL }}`. O Supabase só libera a edição depois do SMTP próprio — você ou Claude.
-- [ ] **Convite de usuário.** Usuário novo é criado por script ou pelo admin com senha definida por ele; não há convite por e-mail.
+- [x] **Convite de usuário** — Claude, 21/10. Em Configurações → Usuários, com a senha em branco a pessoa recebe o e-mail "Invite user" do Supabase e cria a senha em `/redefinir-senha`; "Enviar convite" manda de novo. Usa a mesma configuração do "Esqueceu?" (variáveis `SUPABASE_*` na `api` e SMTP próprio, itens acima); falta traduzir o modelo "Invite user" em Authentication → Email Templates, como o de "Reset Password".
 - [ ] **Botão "Continuar com Google".** Aparece no login de produção, mas só mostra "em breve". Decidir: esconder até existir ou implementar.
 - [ ] **Monitoramento.** Sentry e painel das filas estão prontos no código, mas só ligam com as variáveis `SENTRY_DSN`, `NEXT_PUBLIC_SENTRY_DSN` e `BULL_BOARD_PASSWORD` na Railway. Falta conferir se estão lá.
 - [ ] **Cabeçalhos de segurança.** A API e o painel não enviam cabeçalhos como CSP — Claude.

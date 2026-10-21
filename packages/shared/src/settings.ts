@@ -216,7 +216,8 @@ export type TeamMemberDto = {
 export const CreateMemberRequest = z.object({
   name: z.string().trim().min(1, "Informe o nome.").max(80, "Use até 80 caracteres."),
   email: z.email({ error: "Informe um e-mail válido." }).transform((email) => email.toLowerCase()),
-  password: z.string().min(8, "Use pelo menos 8 caracteres.").max(128, "Use até 128 caracteres."),
+  /** Sem senha, a pessoa recebe um convite por e-mail para criar a dela. */
+  password: z.string().min(8, "Use pelo menos 8 caracteres.").max(128, "Use até 128 caracteres.").optional(),
   role: z.enum(["ADMIN", "AGENT"]),
 });
 export type CreateMemberRequest = z.infer<typeof CreateMemberRequest>;

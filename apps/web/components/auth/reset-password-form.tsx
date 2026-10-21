@@ -14,13 +14,14 @@ const EXPIRED = "Este link expirou ou já foi usado. Peça um novo na tela de lo
 
 /**
  * Painel esquerdo de /redefinir-senha, no padrão do login. O Supabase Auth volta do link do e-mail com o token no
- * fragmento do endereço (#access_token=...&type=recovery) ou com o erro (#error_code=otp_expired). Só roda no
- * navegador: a página o carrega sem SSR, porque o fragmento não chega ao servidor.
+ * fragmento do endereço (#access_token=...&type=recovery, ou type=invite no convite de usuário novo) ou com o erro
+ * (#error_code=otp_expired). Só roda no navegador: a página o carrega sem SSR, porque o fragmento não chega ao servidor.
  */
 export function ResetPasswordForm() {
-  const [token] = useState(() => {
+  const [{ token, invite }] = useState(() => {
     const params = new URLSearchParams(window.location.hash.slice(1));
-    return params.get("type") === "recovery" ? params.get("access_token") : null;
+    const type = params.get("type");
+    return { token: type === "recovery" || type === "invite" ? params.get("access_token") : null, invite: type === "invite" };
   });
   const [password, setPassword] = useState("");
   const [confirmation, setConfirmation] = useState("");
@@ -55,13 +56,17 @@ export function ResetPasswordForm() {
 
       <div className="mb-10">
         <h1 className="mb-2 font-heading text-[26px] leading-[1.1] font-bold tracking-[-0.5px]">
-          {done ? "Senha alterada" : token ? "Crie uma senha nova" : "Link expirado"}
+          {done ? (invite ? "Senha criada" : "Senha alterada") : token ? (invite ? "Crie a sua senha" : "Crie uma senha nova") : "Link expirado"}
         </h1>
         <p className="text-ink-3">
           {done
-            ? "Pronto. Por segurança, encerramos as sessões abertas: entre de novo com a senha nova."
+            ? invite
+              ? "Pronto. Entre com o seu e-mail e a senha que acabou de criar."
+              : "Pronto. Por segurança, encerramos as sessões abertas: entre de novo com a senha nova."
             : token
-              ? "Use pelo menos 8 caracteres. Depois de salvar, você entra com a senha nova."
+              ? invite
+                ? "Você foi convidado para atender no Dish Desk. Use pelo menos 8 caracteres."
+                : "Use pelo menos 8 caracteres. Depois de salvar, você entra com a senha nova."
               : EXPIRED}
         </p>
       </div>
@@ -119,7 +124,7 @@ export function ResetPasswordForm() {
           )}
 
           <Button type="submit" size="lg" className="mt-0.5 w-full" loading={submitting}>
-            Salvar senha nova
+            {invite ? "Criar senha" : "Salvar senha nova"}
           </Button>
         </form>
       )}
