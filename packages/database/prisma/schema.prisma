@@ -42,7 +42,8 @@ model Tenant {
   // criado pela plataforma) não há teste nem cobrança. trialRevokedAt: teste encerrado antes da hora porque um canal
   // conectado já tinha passado por outro teste grátis (app.claim_channel). trustUntil: assinatura vencida com o acesso
   // liberado por confiança até esta data, uma vez por atraso (app.release_tenant_trust). billingPlan: último plano pago.
-  trialEndsAt      DateTime?    @map("trial_ends_at") @db.Timestamptz(3)
+  // Restaurante adicionado por quem já tem conta (app.add_tenant) não tem teste: trialEndsAt igual a createdAt.
+  trialEndsAt     DateTime?    @map("trial_ends_at") @db.Timestamptz(3)
   trialRevokedAt   DateTime?    @map("trial_revoked_at") @db.Timestamptz(3)
   paidUntil        DateTime?    @map("paid_until") @db.Timestamptz(3)
   trustUntil       DateTime?    @map("trust_until") @db.Timestamptz(3)

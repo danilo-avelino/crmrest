@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatTaxId, isValidCnpj, SignupRequest, tenantBlock } from "../src/index.js";
+import { AddTenantRequest, formatTaxId, isValidCnpj, SignupRequest, tenantBlock } from "../src/index.js";
 
 describe("CNPJ", () => {
   it("valida os dígitos verificadores, também no formato alfanumérico", () => {
@@ -67,5 +67,29 @@ describe("bloqueio do restaurante", () => {
   it("teste encerrado por canal repetido fica bloqueado até pagar", () => {
     expect(tenantBlock({ trialEndsAt: past, paidUntil: null, trialRevokedAt: past }, now)).toBe("reused");
     expect(tenantBlock({ trialEndsAt: past, paidUntil: future, trialRevokedAt: past }, now)).toBeNull();
+  });
+
+  it("restaurante adicionado por quem já tem conta não tem teste: espera o primeiro pagamento", () => {
+    expect(tenantBlock({ createdAt: past, trialEndsAt: past, paidUntil: null }, now)).toBe("unpaid");
+    expect(tenantBlock({ createdAt: past, trialEndsAt: past, paidUntil: null, trialRevokedAt: past }, now)).toBe("unpaid");
+    expect(tenantBlock({ createdAt: past, trialEndsAt: past, paidUntil: future }, now)).toBeNull();
+    expect(tenantBlock({ createdAt: past, trialEndsAt: past, paidUntil: past }, now)).toBe("payment");
+    // Cadastro pelo site: o teste termina depois da criação.
+    expect(tenantBlock({ createdAt: new Date("2026-09-25T12:00:00Z"), trialEndsAt: past, paidUntil: null }, now)).toBe("trial");
+  });
+});
+
+describe("adicionar restaurante", () => {
+  it("pede CPF ou CNPJ, a não ser no restaurante de teste", () => {
+    expect(AddTenantRequest.parse({ name: " Filial Centro ", taxId: "66.832.307/0001-67" })).toEqual({
+      name: "Filial Centro",
+      taxId: "66832307000167",
+      test: false,
+    });
+    expect(AddTenantRequest.parse({ name: "Teste", test: true })).toEqual({ name: "Teste", test: true });
+    const message = (body: object) => AddTenantRequest.safeParse(body).error?.issues[0]?.message;
+    expect(message({ name: "Filial" })).toBe("Informe um CPF ou CNPJ válido.");
+    expect(message({ name: "Filial", taxId: "123.456.789-00" })).toBe("Informe um CPF ou CNPJ válido.");
+    expect(message({ name: " ", taxId: "123.456.789-09" })).toBe("Informe o nome do restaurante.");
   });
 });

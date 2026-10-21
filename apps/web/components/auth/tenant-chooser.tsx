@@ -1,18 +1,25 @@
 "use client";
 
-import type { SelectContextRequest } from "@dishdesk/shared";
-import { ChevronRightIcon, LayersIcon, LoaderCircleIcon } from "lucide-react";
+import { BILLING_PLANS, type SelectContextRequest } from "@dishdesk/shared";
+import { ChevronRightIcon, LayersIcon, LoaderCircleIcon, PlusIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { type ReactNode, useEffect, useState } from "react";
+import { AddTenantDialog } from "@/components/auth/add-tenant-dialog";
 import { useAuth } from "@/components/auth/auth-provider";
 import { usePendingAction } from "@/hooks/use-pending-action";
 import { ApiError } from "@/lib/api";
+import { currencyWhole } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 // Cores das iniciais na ordem do design.
 const BADGE_COLORS = ["bg-tomate", "bg-[#1A2D3A]", "bg-[#2A1A34]"];
 const ROLE_LABEL = { ADMIN: "Admin", AGENT: "Atendente" } as const;
-const BLOCK_LABEL = { trial: "teste encerrado", payment: "assinatura vencida", reused: "teste já utilizado" } as const;
+const BLOCK_LABEL = {
+  trial: "teste encerrado",
+  payment: "assinatura vencida",
+  reused: "teste já utilizado",
+  unpaid: "aguardando pagamento",
+} as const;
 
 /** Painel direito (escuro) do board "Login · Escolha de restaurante". */
 export function TenantChooser() {
@@ -20,6 +27,7 @@ export function TenantChooser() {
   const router = useRouter();
   const [choosing, setChoosing] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
 
   const [choose, pending] = usePendingAction(async (request: SelectContextRequest, key: string) => {
     setChoosing(key);
@@ -35,6 +43,8 @@ export function TenantChooser() {
 
   const tenants = session?.tenants ?? [];
   const totalOpen = tenants.reduce((sum, tenant) => sum + tenant.openConversations, 0);
+  // Quem administra algum restaurante (ou é da plataforma) pode adicionar outro; o banco confere de novo.
+  const canAdd = Boolean(session?.user.isSuperAdmin || tenants.some((tenant) => tenant.role === "ADMIN"));
 
   return (
     <section className="relative flex flex-1 flex-col overflow-hidden bg-ink">
@@ -103,7 +113,22 @@ export function TenantChooser() {
                   />
                 </>
               )}
+
+              {/* Adicionar restaurante: não existe no design; segue o padrão visual dos itens. */}
+              {canAdd && (
+                <ChooserItem
+                  badge={<PlusIcon className="size-[18px] text-[#C0B8B0]" aria-hidden />}
+                  badgeClassName="border border-dashed border-[#3D3A34]"
+                  title="Adicionar restaurante"
+                  subtitle={`${currencyWhole(BILLING_PLANS.monthly.amountCents / 100)} por mês ou ${currencyWhole(BILLING_PLANS.annual.amountCents / 100)} por ano`}
+                  active={false}
+                  loading={false}
+                  disabled={pending}
+                  onClick={() => setAdding(true)}
+                />
+              )}
             </div>
+            <AddTenantDialog open={adding} onOpenChange={setAdding} />
 
             {error && (
               <p role="alert" className="mt-4 text-[12px] text-[#F5B5AC]">

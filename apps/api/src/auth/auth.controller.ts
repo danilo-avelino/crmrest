@@ -1,4 +1,6 @@
 import {
+  AddTenantRequest,
+  type AddTenantResponse,
   type AuthSession,
   ForgotPasswordRequest,
   LoginRequest,
@@ -52,6 +54,15 @@ export class AuthController {
     const { refreshToken, session } = await this.auth.signup(body, request.headers["user-agent"]);
     this.setSessionCookie(response, refreshToken);
     return session;
+  }
+
+  /** Outro restaurante para quem já tem conta, na escolha de restaurante (antes de existir access token). */
+  @Public()
+  @Post("tenants")
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ default: { limit: 10, ttl: 60 * 60_000 } })
+  addTenant(@Body(new ZodPipe(AddTenantRequest)) body: AddTenantRequest, @Req() request: Request): Promise<AddTenantResponse> {
+    return this.auth.addTenant(sessionCookie(request), body);
   }
 
   /** Responde 204 para qualquer e-mail: quem pede não fica sabendo se a conta existe. */

@@ -1,5 +1,14 @@
 import { randomUUID } from "node:crypto";
-import type { AuthContext, AuthSession, AuthTenant, AuthUser, SelectContextRequest, SignupRequest } from "@dishdesk/shared";
+import type {
+  AddTenantRequest,
+  AddTenantResponse,
+  AuthContext,
+  AuthSession,
+  AuthTenant,
+  AuthUser,
+  SelectContextRequest,
+  SignupRequest,
+} from "@dishdesk/shared";
 import { SelectContextRequest as SelectContextSchema, slugify, tenantBilling, tenantBlock, TRIAL_DAYS } from "@dishdesk/shared";
 import { hash, verify } from "@node-rs/argon2";
 import {
@@ -72,6 +81,26 @@ export class AuthService implements OnModuleInit {
 
     const refreshToken = await this.openSession(userId, userAgent);
     return { refreshToken, session: await this.selectContext(refreshToken, { mode: "tenant", tenantId }) };
+  }
+
+  /**
+   * Outro restaurante para quem já tem conta, com ela como administradora. Sem teste grátis: fica aguardando o
+   * primeiro pagamento. O de teste (sem cobrança) só o super admin cria; o banco confere quem pode (app.add_tenant).
+   */
+  async addTenant(refreshToken: string | undefined, body: AddTenantRequest): Promise<AddTenantResponse> {
+    const { userId } = await this.requireSession(refreshToken);
+    const tenantId = randomUUID();
+    const slug = slugify(body.name).slice(0, 50) || "restaurante";
+    const [result] = await this.db.withTenants({ tenantIds: [], userId }, (tx) =>
+      tx.$queryRaw<{ created: boolean }[]>`
+        SELECT app.add_tenant(${tenantId}::uuid, ${body.name}, ${slug}, ${body.test ? null : body.taxId}, ${!body.test}) AS created`,
+    );
+    if (!result?.created) {
+      throw new ForbiddenException(
+        body.test ? "Só a equipe da plataforma cria restaurantes de teste." : "Só o administrador de um restaurante pode adicionar outro.",
+      );
+    }
+    return { tenantId };
   }
 
   /**
@@ -188,7 +217,17 @@ export class AuthService implements OnModuleInit {
         select: {
           role: true,
           tenant: {
-            select: { id: true, name: true, slug: true, trialEndsAt: true, paidUntil: true, trialRevokedAt: true, trustUntil: true, billingPlan: true },
+            select: {
+              id: true,
+              name: true,
+              slug: true,
+              createdAt: true,
+              trialEndsAt: true,
+              paidUntil: true,
+              trialRevokedAt: true,
+              trustUntil: true,
+              billingPlan: true,
+            },
           },
         },
         orderBy: { tenant: { name: "asc" } },

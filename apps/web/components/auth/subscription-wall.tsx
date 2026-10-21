@@ -33,10 +33,12 @@ const TITLE = {
   trial: "Seu teste grátis acabou",
   payment: "Pagamento pendente",
   reused: "Este teste grátis já foi usado",
+  unpaid: "Escolha o plano do novo restaurante",
 } as const;
 
 /**
- * Restaurante bloqueado (teste encerrado, assinatura vencida ou canal que já passou por outro teste grátis): escolha
+ * Restaurante bloqueado (teste encerrado, assinatura vencida, canal que já passou por outro teste grátis ou restaurante
+ * novo, adicionado por quem já tem conta, esperando o primeiro pagamento): escolha
  * do plano e ida para o pagamento na Stripe. Com a assinatura vencida, qualquer usuário do restaurante pode liberar o
  * acesso por confiança, uma vez por atraso.
  * O design ainda não tem este board: segue o board "Login · Escolha de restaurante". Desktop no MVP.
@@ -129,10 +131,17 @@ export function SubscriptionWall() {
               encerrado.
             </p>
           )}
-          <p className="text-ink-3">
-            Para continuar atendendo em <span className="font-medium text-ink-2">{tenant.name}</span>, escolha um plano. Suas
-            conversas, clientes e configurações continuam guardados.
-          </p>
+          {tenant.blockedBy === "unpaid" ? (
+            <p className="text-ink-3">
+              Para começar a atender em <span className="font-medium text-ink-2">{tenant.name}</span>, escolha um plano. Cada
+              restaurante tem a própria assinatura.
+            </p>
+          ) : (
+            <p className="text-ink-3">
+              Para continuar atendendo em <span className="font-medium text-ink-2">{tenant.name}</span>, escolha um plano. Suas
+              conversas, clientes e configurações continuam guardados.
+            </p>
+          )}
         </div>
 
         {confirming ? (
@@ -216,15 +225,27 @@ export function SubscriptionWall() {
         </div>
       </section>
 
-      <AuthAside
-        title="Tudo continua onde você deixou"
-        subtitle="Assim que o pagamento é confirmado, o acesso volta na hora."
-        items={[
-          "Conversas e histórico dos clientes guardados",
-          "Canais conectados continuam recebendo mensagens",
-          "Pagamento processado pela Stripe",
-        ]}
-      />
+      {tenant.blockedBy === "unpaid" ? (
+        <AuthAside
+          title="Mais um restaurante na sua mesa"
+          subtitle="Assim que o pagamento é confirmado, o restaurante abre na hora."
+          items={[
+            "WhatsApp, Instagram e iFood no mesmo lugar",
+            "Painel master com todos os seus restaurantes",
+            "Pagamento processado pela Stripe",
+          ]}
+        />
+      ) : (
+        <AuthAside
+          title="Tudo continua onde você deixou"
+          subtitle="Assim que o pagamento é confirmado, o acesso volta na hora."
+          items={[
+            "Conversas e histórico dos clientes guardados",
+            "Canais conectados continuam recebendo mensagens",
+            "Pagamento processado pela Stripe",
+          ]}
+        />
+      )}
     </main>
   );
 }

@@ -36,6 +36,12 @@ export function formatTaxId(value: string): string {
     : value.replace(/^(.{2})(.{3})(.{3})(.{4})(.{2})$/, "$1.$2.$3/$4-$5");
 }
 
+// CPF ou CNPJ de quem vai receber a nota fiscal; fica guardado sem pontuação.
+const TaxId = z
+  .string()
+  .transform((taxId) => taxId.replace(/[^0-9a-z]/gi, "").toUpperCase())
+  .refine((taxId) => isValidCpf(taxId) || isValidCnpj(taxId), "Informe um CPF ou CNPJ válido.");
+
 /** Cadastro pelo site: cria o restaurante em teste com quem se cadastrou como administrador. */
 export const SignupRequest = z.object({
   restaurantName: z.string().trim().min(1, "Informe o nome do restaurante.").max(80, "Use até 80 caracteres."),
@@ -44,11 +50,7 @@ export const SignupRequest = z.object({
     .string()
     .refine((phone) => toE164(phone) !== null, "Informe um WhatsApp válido, com DDD.")
     .transform((phone) => toE164(phone)!),
-  // CPF ou CNPJ de quem vai receber a nota fiscal; fica guardado sem pontuação.
-  taxId: z
-    .string()
-    .transform((taxId) => taxId.replace(/[^0-9a-z]/gi, "").toUpperCase())
-    .refine((taxId) => isValidCpf(taxId) || isValidCnpj(taxId), "Informe um CPF ou CNPJ válido."),
+  taxId: TaxId,
   email: z.email({ error: "Informe um e-mail válido." }).transform((email) => email.toLowerCase()),
   password: z.string().min(8, "Use pelo menos 8 caracteres.").max(128, "Use até 128 caracteres."),
 });
@@ -61,17 +63,28 @@ export type SignupRequest = z.infer<typeof SignupRequest>;
 export const TRUST_DAYS = 3;
 
 /**
- * Por que o restaurante está bloqueado: o teste acabou sem pagamento, a assinatura venceu ou o teste foi encerrado
- * porque um canal conectado já tinha passado por outro teste grátis ("reused").
+ * Por que o restaurante está bloqueado: o teste acabou sem pagamento, a assinatura venceu, o teste foi encerrado
+ * porque um canal conectado já tinha passado por outro teste grátis ("reused") ou o restaurante foi adicionado por
+ * quem já tem conta e espera o primeiro pagamento ("unpaid").
  */
-export type TenantBlock = "trial" | "payment" | "reused";
+export type TenantBlock = "trial" | "payment" | "reused" | "unpaid";
 
-type TenantAccess = { trialEndsAt: Date | null; paidUntil: Date | null; trialRevokedAt?: Date | null; trustUntil?: Date | null };
+type TenantAccess = {
+  trialEndsAt: Date | null;
+  paidUntil: Date | null;
+  trialRevokedAt?: Date | null;
+  trustUntil?: Date | null;
+  createdAt?: Date;
+};
 
-/** Restaurante criado pela plataforma (sem trialEndsAt) nunca é bloqueado. */
+/**
+ * Restaurante criado pela plataforma (sem trialEndsAt) nunca é bloqueado. O adicionado por quem já tem conta não tem
+ * teste grátis: nasce com trialEndsAt igual a createdAt.
+ */
 export function tenantBlock(tenant: TenantAccess, now = new Date()): TenantBlock | null {
   if (!tenant.trialEndsAt) return null;
   if (tenant.paidUntil) return tenant.paidUntil > now || (tenant.trustUntil && tenant.trustUntil > now) ? null : "payment";
+  if (tenant.trialEndsAt.getTime() === tenant.createdAt?.getTime()) return "unpaid";
   if (tenant.trialRevokedAt) return "reused";
   return tenant.trialEndsAt > now ? null : "trial";
 }
@@ -108,3 +121,18 @@ export type CheckoutResponse = { url: string };
 
 export const TrustReleaseRequest = z.object({ tenantId: z.uuid() });
 export type TrustReleaseRequest = z.infer<typeof TrustReleaseRequest>;
+
+/**
+ * Administrador que adiciona outro restaurante na escolha de restaurante. O novo não tem teste grátis: espera o
+ * primeiro pagamento. Só o super admin cria um restaurante de teste, sem cobrança (e sem CPF/CNPJ).
+ */
+export const AddTenantRequest = z
+  .object({
+    name: z.string().trim().min(1, "Informe o nome do restaurante.").max(80, "Use até 80 caracteres."),
+    taxId: TaxId.optional(),
+    test: z.boolean().default(false),
+  })
+  .refine((body) => body.test || body.taxId, { path: ["taxId"], message: "Informe um CPF ou CNPJ válido." });
+export type AddTenantRequest = z.infer<typeof AddTenantRequest>;
+
+export type AddTenantResponse = { tenantId: string };
