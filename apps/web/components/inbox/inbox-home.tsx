@@ -9,7 +9,14 @@ import {
   type OrderPage,
 } from "@dishdesk/shared";
 import { useQuery } from "@tanstack/react-query";
-import { AlertTriangleIcon, LoaderCircleIcon, MessageSquareIcon, PlusIcon } from "lucide-react";
+import {
+  AlertTriangleIcon,
+  LoaderCircleIcon,
+  MessageSquareIcon,
+  PanelRightCloseIcon,
+  PanelRightOpenIcon,
+  PlusIcon,
+} from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
@@ -41,23 +48,21 @@ const ARRIVES: Record<IntegrationType, string> = {
 };
 
 /**
- * Inbox sem conversa aberta: a situação de cada integração (com o atalho para conectar) e a barra lateral com os
- * pedidos de hoje. O design ainda não tem este estado; segue o cartão de Integrações e o painel do cliente. Desktop no MVP.
+ * Inbox sem conversa aberta: a situação de cada integração (com o atalho para conectar). A barra lateral com os pedidos
+ * de hoje (TodayOrders) fica na InboxView. O design ainda não tem este estado; segue o cartão de Integrações e o painel
+ * do cliente. Desktop no MVP.
  */
 export function InboxHome() {
   return (
-    <>
-      <div className="flex min-w-0 flex-1 overflow-y-auto">
-        <div className="m-auto w-full max-w-[460px] px-6 py-10">
-          <Integrations />
-          <p className="mt-8 flex items-center justify-center gap-2 text-ink-3">
-            <MessageSquareIcon className="size-4" aria-hidden />
-            Escolha uma conversa na lista para responder.
-          </p>
-        </div>
+    <div className="flex min-w-0 flex-1 overflow-y-auto">
+      <div className="m-auto w-full max-w-[460px] px-6 py-10">
+        <Integrations />
+        <p className="mt-8 flex items-center justify-center gap-2 text-ink-3">
+          <MessageSquareIcon className="size-4" aria-hidden />
+          Escolha uma conversa na lista para responder.
+        </p>
       </div>
-      <TodayOrders />
-    </>
+    </div>
   );
 }
 
@@ -142,9 +147,10 @@ function IntegrationRow({ type, channels, admin }: { type: IntegrationType; chan
 
 /**
  * Barra lateral com os pedidos de hoje ainda em produção, do mais antigo para o mais novo, com o alerta de atraso. O
- * clique abre o pedido num modal com os detalhes e as ações da aba Pedidos.
+ * clique abre o pedido num modal com os detalhes e as ações da aba Pedidos. Com uma conversa aberta, a barra fica
+ * recolhida numa faixa no canto (com a contagem e os atrasados) até o atendente expandir.
  */
-function TodayOrders() {
+export function TodayOrders({ collapsed, onToggle }: { collapsed?: boolean; onToggle?: () => void }) {
   const { request, session } = useAuth();
   const master = session?.context?.mode === "master";
   const now = useNow(60_000);
@@ -160,6 +166,29 @@ function TodayOrders() {
   // O modal acompanha a lista; o pedido que sai da produção (ex.: despachado) continua aberto como estava.
   const open = selected && (data?.items.find((order) => order.id === selected.id) ?? selected);
 
+  if (collapsed) {
+    return (
+      <aside aria-label="Pedidos em produção" className="flex w-11 shrink-0 flex-col items-center border-l border-rule bg-surface pt-2">
+        <Button variant="ghost" size="icon-sm" onClick={onToggle} aria-label="Mostrar pedidos em produção" title="Mostrar pedidos em produção">
+          <PanelRightOpenIcon aria-hidden />
+        </Button>
+        <button
+          type="button"
+          onClick={onToggle}
+          className="mt-2 flex flex-col items-center gap-1.5 rounded-lg px-1 py-2 text-ink-3 hover:bg-paper hover:text-ink"
+        >
+          <span className="text-[13px] font-semibold text-ink tabular-nums">{data ? count(data.total) : "–"}</span>
+          {late > 0 && (
+            <span className="rounded-full bg-tomate px-1.5 text-[10px] leading-4 font-semibold text-white tabular-nums" title="Atrasados">
+              {count(late)}
+            </span>
+          )}
+          <span className="text-[11px] font-medium [writing-mode:vertical-rl]">Em produção</span>
+        </button>
+      </aside>
+    );
+  }
+
   return (
     <aside aria-labelledby="inbox-pedidos-hoje" className="flex w-[344px] shrink-0 flex-col border-l border-rule bg-surface">
       <div className="flex shrink-0 items-start justify-between gap-3 border-b border-rule px-4 pt-4 pb-3.5">
@@ -172,9 +201,16 @@ function TodayOrders() {
             {late > 0 && <span className="font-medium text-tomate"> · {late === 1 ? "1 atrasado" : `${count(late)} atrasados`}</span>}
           </p>
         </div>
-        <Link href="/pedidos" className={cn(buttonVariants({ variant: "outline", size: "xs" }), "text-ink-2")}>
-          {data && data.total > data.items.length ? `Ver os ${count(data.total)}` : "Abrir Pedidos"}
-        </Link>
+        <div className="flex shrink-0 items-center gap-1">
+          <Link href="/pedidos" className={cn(buttonVariants({ variant: "outline", size: "xs" }), "text-ink-2")}>
+            {data && data.total > data.items.length ? `Ver os ${count(data.total)}` : "Abrir Pedidos"}
+          </Link>
+          {onToggle && (
+            <Button variant="ghost" size="icon-xs" onClick={onToggle} aria-label="Recolher pedidos em produção" title="Recolher">
+              <PanelRightCloseIcon aria-hidden />
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* pb-20: o widget do iFood fica fixo no canto de baixo e cobriria o último pedido. */}

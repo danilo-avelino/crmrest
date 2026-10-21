@@ -7,7 +7,7 @@ import { ChannelAlert } from "@/components/inbox/channel-alert";
 import { ConversationList } from "@/components/inbox/conversation-list";
 import { ConversationPane } from "@/components/inbox/conversation-pane";
 import { IfoodExtensionAlert } from "@/components/inbox/ifood-extension-alert";
-import { InboxHome } from "@/components/inbox/inbox-home";
+import { InboxHome, TodayOrders } from "@/components/inbox/inbox-home";
 import { NavRail } from "@/components/inbox/nav-rail";
 import { useInboxRealtime } from "@/hooks/use-inbox-realtime";
 
@@ -23,6 +23,8 @@ export function InboxView() {
     if (linked) setSelectedId(linked);
   }
   const offline = useInboxRealtime();
+  // Pedidos em produção com conversa aberta: recolhidos no canto até o atendente expandir (vale para as próximas conversas).
+  const [ordersOpen, setOrdersOpen] = useState(false);
   // Conversas na ordem em que a lista as mostra: "Resolver" passa para a seguinte (ou a anterior, se era a última).
   const listedRef = useRef<string[]>([]);
   const nextAfter = (id: string) => {
@@ -60,6 +62,11 @@ export function InboxView() {
             />
           ) : (
             <InboxHome />
+          )}
+          {selectedId ? (
+            <TodayOrders collapsed={!ordersOpen} onToggle={() => setOrdersOpen(!ordersOpen)} />
+          ) : (
+            <TodayOrders />
           )}
         </div>
       </div>
