@@ -65,6 +65,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 **Nunca fazer commit sem pedido explícito do usuário.**
 
 - Não rodar `git commit`, `git push`, criar PR, push de branch ou merge por iniciativa própria — mesmo que pareça o "próximo passo natural" depois de uma mudança. Terminar a tarefa, mostrar o que mudou e esperar o usuário pedir o commit.
+- **Exceção: correção de falha de CI.** Se o CI da `main` falhou, posso fazer o commit e o push da correção na `main` e publicar o deploy na Railway (`api` e `web`, "Deploy commit" ou Redeploy) sem pedir autorização. Vale só para o que corrige a falha: nada de juntar outras mudanças no mesmo commit. Antes do push, rodar localmente o que falhou; depois, conferir se o CI ficou verde e se o deploy subiu, e avisar o que foi feito.
 
 ---
 6. Botões. Em todos os novos botões devemos adicionar um guard de duplo-clique e aviso de Carregando
