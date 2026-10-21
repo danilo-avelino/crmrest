@@ -161,6 +161,38 @@ describe("Chat do iFood na Inbox (trava IFOOD_CHAT_BRIDGE ligada)", () => {
     }
   });
 
+  it("loja puxou a conversa (no widget ou pela Inbox) e o cliente respondeu: sem chamado nem resposta automática", async () => {
+    const called = await ifoodOrder("6533", "Iane Pimentel");
+    const knock = [shown("OUTBOUND", "Boa tarde, entregador está no local!", minutesAgo(2)), shown("INBOUND", "Só um minuto", minutesAgo(1))];
+    await post("/ifood-chat/sync", { orderCode: "6533", messages: knock }).expect(200);
+
+    // Conversa resolvida em que a equipe escreve de novo pela Inbox.
+    const resolved = await ifoodOrder("6534", "Caio Prado", minutesAgo(200));
+    const old = shown("INBOUND", "Obrigado!", minutesAgo(180));
+    await post("/ifood-chat/sync", { orderCode: "6534", messages: [old] }).expect(200);
+    const chat = await admin.conversation.findFirstOrThrow({ where: { contactId: resolved.contactId, channelId: fx.ifood.id } });
+    await admin.conversation.update({ where: { id: chat.id }, data: { status: "RESOLVED" } });
+    await post(`/conversations/${chat.id}/messages`, { text: "Esquecemos o refrigerante, já vai!" }).expect(201);
+    await typeOutbox();
+    // O painel lê a resposta no widget e, numa leitura seguinte, a do cliente.
+    const reply = shown("OUTBOUND", "Esquecemos o refrigerante, já vai!", new Date());
+    await post("/ifood-chat/sync", { orderCode: "6534", messages: [old, reply] }).expect(200);
+    const before = (await timeline(chat.id)).length;
+    await post("/ifood-chat/sync", { orderCode: "6534", messages: [old, reply, shown("INBOUND", "Beleza", new Date(Date.now() + 2000))] }).expect(200);
+    await settle();
+
+    const knocked = await admin.conversation.findFirstOrThrow({ where: { contactId: called.contactId, channelId: fx.ifood.id } });
+    expect(knocked).toMatchObject({ status: "OPEN", unreadCount: 1, awaitingAgentSince: null });
+    // Só o pedido do telefone, como em qualquer atendimento em andamento: sem chamado nem aviso do pedido.
+    expect((await timeline(knocked.id)).flatMap((m) => (m.content as { automation?: string }).automation ?? [])).toEqual(["phone_collection"]);
+    expect(await admin.conversation.findUniqueOrThrow({ where: { id: chat.id } })).toMatchObject({ status: "OPEN", awaitingAgentSince: null });
+    expect((await timeline(chat.id)).slice(before).map((m) => m.content)).toEqual(
+      expect.arrayContaining([{ text: "Beleza" }, { automation: "phone_collection", text: expect.any(String) }]),
+    );
+    expect(await timeline(chat.id)).toHaveLength(before + 2);
+    await typeOutbox();
+  });
+
   it("pedido que ainda não chegou pelo polling, ou de outro restaurante: nada é gravado", async () => {
     expect((await post("/ifood-chat/sync", { orderCode: "9999", messages: [shown("INBOUND", "Olá", new Date())] }).expect(200)).body).toEqual({ found: false });
     const outsider = await accessTokenFor(app, other.user.email, other.a.id);

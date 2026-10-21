@@ -188,6 +188,22 @@ describe("menu de atendimento, busca do pedido e pesquisa de satisfação", () =
     expect((await automations("5511970000001")).at(-1)).toBe("menu");
   });
 
+  it("depois de resolvida, a equipe escreve de novo: a resposta do cliente não começa outro atendimento", async () => {
+    await say("5511970000030", "wamid.RS1", "Oi");
+    const { id } = await conversationOf("5511970000030");
+    await admin.conversation.update({ where: { id }, data: { status: "RESOLVED" } });
+    await request(app.getHttpServer())
+      .post(`/api/conversations/${id}/messages`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ text: "Esquecemos o refrigerante, já vai!" })
+      .expect(201);
+    await drainQueues(app);
+    await say("5511970000030", "wamid.RS2", "Beleza");
+
+    expect(await conversationOf("5511970000030")).toMatchObject({ status: "OPEN" });
+    expect(await automations("5511970000030")).toEqual(["menu"]);
+  });
+
   it("pedido de três dias atrás não é achado, e sem pedido não há pesquisa", async () => {
     await ifoodOrder("7777", new Date(Date.now() - 3 * DAY));
     await say("5511970000002", "wamid.N1", "Oi");

@@ -32,6 +32,8 @@ const HOUR_MS = 60 * 60_000;
  * com o painel fechado na hora, entra só como não lida. A folga cobre o fuso do navegador (o widget só mostra a hora).
  */
 const ATTEND_WITHIN_MS = 2 * HOUR_MS;
+/** Mensagem do cliente até este tempo depois de um balão da loja, na mesma leitura do widget, é resposta à loja. */
+const STORE_REPLY_MS = 5 * 60_000;
 const BRASILIA_DAY = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" });
 
 type ChatOrder = { id: string; tenantId: string; contactId: string; channelId: string; conversationId: string | null; externalOrderId: string; placedAt: Date };
@@ -91,11 +93,14 @@ export class IfoodChatService {
       const touch = await tx.message.findFirst({
         where: { conversationId: conversation.id, OR: [{ direction: "INBOUND" }, { direction: "OUTBOUND", sentByUserId: { not: null } }] },
         orderBy: { createdAt: "desc" },
-        select: { createdAt: true },
+        select: { createdAt: true, sentByUserId: true },
       });
       let unread = 0;
+      /** Saídas escritas no próprio widget (as da Inbox, inclusive as automáticas, só são confirmadas). */
+      const typed = new Set<Entry>();
       for (const entry of fresh) {
         if (entry.direction === "OUTBOUND" && (await this.confirmSent(tx, conversation.id, entry))) continue;
+        if (entry.direction === "OUTBOUND") typed.add(entry);
         await tx.message.create({
           data: {
             tenantId: order.tenantId,
@@ -132,13 +137,19 @@ export class IfoodChatService {
         (!connectedAt || newest.at >= connectedAt);
       if (!waiting) return result;
       const inbound = fresh.filter((entry) => entry.direction === "INBOUND");
+      const first = inbound[0]!;
+      const recent = !!touch && first.at.getTime() - touch.createdAt.getTime() < INACTIVITY_CLOSE_MS;
+      // Cliente respondendo à loja não começa atendimento: a equipe já está na conversa. A loja falou pela Inbox, ou no
+      // widget logo antes, na mesma leitura (só o lado do balão não basta: o iFood manda mensagens automáticas desse lado).
+      const before = fresh[fresh.indexOf(first) - 1];
+      const answering =
+        (recent && !!touch?.sentByUserId) || (!!before && typed.has(before) && first.at.getTime() - before.at.getTime() < STORE_REPLY_MS);
       // Como nos outros canais: conversa nova, resolvida ou sem interação há INACTIVITY_CLOSE_MS começa um atendimento.
-      const idle = !touch || inbound[0]!.at.getTime() - touch.createdAt.getTime() >= INACTIVITY_CLOSE_MS;
       const event = {
         channel: { id: order.channelId, tenantId: order.tenantId, type: "IFOOD" as const },
         conversationId: conversation.id,
         previousStatus: conversation.previousStatus,
-        newAttendance: conversation.previousStatus === null || conversation.previousStatus === "RESOLVED" || idle,
+        newAttendance: !answering && (conversation.previousStatus === null || conversation.previousStatus === "RESOLVED" || !recent),
         text: inbound.map((entry) => entry.text).join("\n"),
       };
       return { ...result, ifood: { event, orderId: order.id } };

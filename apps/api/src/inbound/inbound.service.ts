@@ -276,15 +276,14 @@ export class InboundService {
     });
     if (latest) {
       // Conversa aberta, mas sem interação há INACTIVITY_CLOSE_MS: o atendimento anterior acabou, mesmo sem ter sido resolvido.
-      const last =
-        latest.status === "RESOLVED"
-          ? null
-          : await tx.message.findFirst({
-              where: { conversationId: latest.id, direction: { in: ["INBOUND", "OUTBOUND"] } },
-              orderBy: { createdAt: "desc" },
-              select: { createdAt: true },
-            });
-      const newAttendance = !last || at.getTime() - last.createdAt.getTime() >= INACTIVITY_CLOSE_MS;
+      const last = await tx.message.findFirst({
+        where: { conversationId: latest.id, direction: { in: ["INBOUND", "OUTBOUND"] } },
+        orderBy: { createdAt: "desc" },
+        select: { createdAt: true, sentByUserId: true },
+      });
+      const recent = !!last && at.getTime() - last.createdAt.getTime() < INACTIVITY_CLOSE_MS;
+      // Resolvida também começa um atendimento, a não ser que a equipe tenha escrito depois: o cliente está respondendo a ela.
+      const newAttendance = !recent || (latest.status === "RESOLVED" && !last?.sentByUserId);
       return { id: latest.id, previousStatus: latest.status, newAttendance };
     }
 
