@@ -31,6 +31,8 @@ export type ContactSource = Pick<NormalizedMessage, "channelType" | "externalCon
 export type OpenedConversation = { id: string; previousStatus: ConversationStatus | null; newAttendance: boolean };
 
 const WINDOW_MS = 24 * 60 * 60 * 1000;
+// Até quanto depois do horário informado pela plataforma a mensagem ainda conta como chegando agora (ver arrivalTime).
+const ARRIVAL_TOLERANCE_MS = 5_000;
 
 // Um status só avança (ex.: READ não volta para DELIVERED se os webhooks chegarem fora de ordem).
 const PREVIOUS_STATUSES: Record<StatusUpdate["status"], MessageStatus[]> = {
@@ -306,13 +308,14 @@ export class InboundService {
 }
 
 /**
- * As plataformas informam o horário com precisão de segundos. Processada dentro desse segundo, a mensagem
- * usa a hora de chegada (preserva a ordem com respostas do mesmo segundo); se o webhook atrasou, vale o horário original.
+ * As plataformas informam o horário com precisão de segundos (arredondado para baixo). Processada logo depois, a
+ * mensagem usa a hora de chegada: preserva a ordem com o que a equipe fez nesses segundos (resposta, nota). Se o
+ * webhook atrasou mais que isso, vale o horário original.
  */
 function arrivalTime(timestamp: Date): Date {
   const now = new Date();
   const elapsed = now.getTime() - timestamp.getTime();
-  return elapsed >= 0 && elapsed < 1_000 ? now : timestamp;
+  return elapsed >= 0 && elapsed < ARRIVAL_TOLERANCE_MS ? now : timestamp;
 }
 
 /** Palavras de opt-out de campanhas (§5.5), sem diferenciar maiúsculas, acentos ou pontuação. */

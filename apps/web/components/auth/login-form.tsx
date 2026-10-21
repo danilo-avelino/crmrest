@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { usePendingAction } from "@/hooks/use-pending-action";
-import { ApiError } from "@/lib/api";
+import { ApiError, apiRequest } from "@/lib/api";
 
 /** Painel esquerdo do board "Login · Escolha de restaurante". */
 export function LoginForm() {
@@ -18,6 +18,7 @@ export function LoginForm() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [forgot, setForgot] = useState(false);
 
   const [submit, submitting] = usePendingAction(async () => {
     setError(null);
@@ -37,11 +38,15 @@ export function LoginForm() {
       </div>
 
       <div className="mb-10">
-        <h1 className="mb-2 font-heading text-[26px] leading-[1.1] font-bold tracking-[-0.5px]">Bem-vindo de volta</h1>
+        <h1 className="mb-2 font-heading text-[26px] leading-[1.1] font-bold tracking-[-0.5px]">
+          {forgot && !session ? "Redefinir senha" : "Bem-vindo de volta"}
+        </h1>
         <p className="text-ink-3">
           {session
             ? `Conectado como ${session.user.name}. Escolha ao lado onde quer atender.`
-            : "Entre com seu e-mail e senha para acessar o painel de atendimento."}
+            : forgot
+              ? "Informe o e-mail da sua conta. Enviamos um link para você criar uma senha nova."
+              : "Entre com seu e-mail e senha para acessar o painel de atendimento."}
         </p>
       </div>
 
@@ -49,6 +54,8 @@ export function LoginForm() {
         <Button variant="outline" className="h-10 w-full" onClick={() => logout()}>
           Entrar com outra conta
         </Button>
+      ) : forgot ? (
+        <ForgotPasswordForm email={email} onEmailChange={setEmail} onBack={() => setForgot(false)} />
       ) : (
         <form
           className="flex flex-col gap-[18px]"
@@ -81,7 +88,10 @@ export function LoginForm() {
               <button
                 type="button"
                 className="text-[11.5px] text-ink-3 hover:text-ink-2"
-                onClick={() => setNotice("Para redefinir a senha, fale com o admin do restaurante.")}
+                onClick={() => {
+                  setError(null);
+                  setForgot(true);
+                }}
               >
                 Esqueceu?
               </button>
@@ -138,6 +148,76 @@ export function LoginForm() {
         .
       </p>
     </section>
+  );
+}
+
+/** "Esqueceu?": o link chega pelo e-mail (Supabase Auth) e abre /redefinir-senha. */
+function ForgotPasswordForm({ email, onEmailChange, onBack }: { email: string; onEmailChange(email: string): void; onBack(): void }) {
+  const [sentTo, setSentTo] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const [submit, submitting] = usePendingAction(async () => {
+    setError(null);
+    try {
+      await apiRequest("/auth/forgot-password", { method: "POST", body: { email } });
+      setSentTo(email);
+    } catch (failure) {
+      setError(failure instanceof ApiError ? failure.message : "Não foi possível enviar o link. Tente novamente.");
+    }
+  });
+
+  if (sentTo) {
+    return (
+      <div className="flex flex-col gap-[18px]">
+        <p role="status" className="rounded-lg border border-rule bg-surface px-4 py-3 text-ink-2">
+          Se houver uma conta com <span className="font-medium text-ink">{sentTo}</span>, o link chega em alguns minutos.
+          Confira também a caixa de spam.
+        </p>
+        <Button variant="outline" className="h-10 w-full" onClick={onBack}>
+          Voltar para o login
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <form
+      className="flex flex-col gap-[18px]"
+      onSubmit={(event) => {
+        event.preventDefault();
+        submit();
+      }}
+    >
+      <div className="flex flex-col gap-[5px]">
+        <Label htmlFor="forgot-email" className="text-[11.5px]">
+          E-mail
+        </Label>
+        <Input
+          id="forgot-email"
+          type="email"
+          autoComplete="email"
+          required
+          autoFocus
+          className="h-10"
+          value={email}
+          onChange={(event) => onEmailChange(event.target.value)}
+          aria-invalid={error ? true : undefined}
+        />
+      </div>
+
+      {error && (
+        <p role="alert" className="text-[11px] text-tomate">
+          {error}
+        </p>
+      )}
+
+      <Button type="submit" size="lg" className="mt-0.5 w-full" loading={submitting}>
+        Enviar link
+      </Button>
+      <Button type="button" variant="ghost" className="h-10 w-full" onClick={onBack}>
+        Voltar para o login
+      </Button>
+    </form>
   );
 }
 

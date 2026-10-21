@@ -8,6 +8,19 @@ export const LoginRequest = z.object({
 });
 export type LoginRequest = z.input<typeof LoginRequest>;
 
+/** "Esqueceu?" no login: pede o e-mail com o link de redefinição. */
+export const ForgotPasswordRequest = z.object({
+  email: z.email().transform((email) => email.toLowerCase()),
+});
+export type ForgotPasswordRequest = z.input<typeof ForgotPasswordRequest>;
+
+/** Página do link do e-mail: accessToken é o token de recuperação que o Supabase Auth pôs no endereço. */
+export const ResetPasswordRequest = z.object({
+  accessToken: z.string().min(1),
+  password: z.string().min(8, "Use pelo menos 8 caracteres.").max(128, "Use até 128 caracteres."),
+});
+export type ResetPasswordRequest = z.infer<typeof ResetPasswordRequest>;
+
 /** Depois do login: um restaurante ou o painel master (todos os restaurantes do usuário, §5.1.1). */
 export const SelectContextRequest = z.discriminatedUnion("mode", [
   z.object({ mode: z.literal("tenant"), tenantId: z.uuid() }),

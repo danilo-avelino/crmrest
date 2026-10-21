@@ -49,6 +49,10 @@ const EnvSchema = z.object({
   STRIPE_SECRET_KEY: z.string().min(1).optional(),
   STRIPE_WEBHOOK_SECRET: z.string().min(1).optional(),
   STRIPE_API_URL: z.url().default("https://api.stripe.com"),
+  // Supabase Auth: só manda o e-mail de "Esqueceu a senha?" e confere o link de volta; o login continua sendo o nosso.
+  // A chave é a secreta (service_role). Sem as duas, a recuperação de senha responde 503.
+  SUPABASE_URL: z.url().optional(),
+  SUPABASE_SECRET_KEY: z.string().min(1).optional(),
   // Desenvolvimento sem credenciais reais: envios aos canais são simulados (nunca em produção).
   CHANNELS_DRY_RUN: z.stringbool().default(false),
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),

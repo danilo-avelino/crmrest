@@ -113,7 +113,13 @@ Pagamento pendente (Claude, 11/10): a renovação do mensal tem 1 dia de folga; 
 - [ ] **Mídia recebida.** Desde 11/10 a conversa mostra a imagem e toca o áudio (vídeo e documento têm "Baixar"), buscando o arquivo na Meta cada vez que a conversa é aberta. Nada é guardado: quando a Meta apaga o arquivo (no WhatsApp, a documentação fala em 7 dias para o id que chega no webhook), a conversa mostra "não está mais disponível".
   - [ ] Conferir em produção com uma imagem e um áudio reais do WhatsApp e do Instagram (o teste automático usa uma Meta simulada).
   - [ ] Guardar o arquivo na chegada, para o histórico não se perder. Depende de você escolher o armazenamento (S3, R2, Supabase Storage…).
-- [ ] **Recuperar senha e convite de usuário.** "Esqueceu?" só mostra "fale com o admin", e usuário novo é criado por script. Depende de você escolher o provedor de e-mail.
+- [ ] **Recuperar senha.** Desde 20/10 o "Esqueceu?" do login pede o e-mail e o Supabase Auth manda o link para `/redefinir-senha` (o login continua sendo o nosso: a API só copia o e-mail para o Supabase Auth e confere o link de volta). Falta configurar:
+  - [ ] Na Railway, na `api`: `SUPABASE_URL` (`https://ooffbemelkhyjypzodex.supabase.co`) e `SUPABASE_SECRET_KEY` (Supabase → Project Settings → API Keys → secret / service_role). Sem elas, o "Esqueceu?" responde que a recuperação não está disponível — você.
+  - [x] No Supabase, Authentication → URL Configuration: colocar `https://www.dishdesk.com.br/redefinir-senha` (e `http://localhost:3000/redefinir-senha` para o dev) em Redirect URLs, e o Site URL `https://www.dishdesk.com.br` — Claude, 20/10.
+  - [x] No Supabase, Authentication → Sign In / Providers: desligar "Allow new users to sign up" (a API cria a cópia do usuário pela chave secreta; ninguém deve criar conta direto no Supabase) — Claude, 20/10.
+  - [ ] SMTP próprio (Resend, por exemplo) em Authentication → SMTP Settings: o e-mail padrão do Supabase só entrega para os membros da sua equipe no Supabase, poucos por hora — você.
+  - [ ] Traduzir o modelo "Reset Password" em Authentication → Email Templates, mantendo o `{{ .ConfirmationURL }}`. O Supabase só libera a edição depois do SMTP próprio — você ou Claude.
+- [ ] **Convite de usuário.** Usuário novo é criado por script ou pelo admin com senha definida por ele; não há convite por e-mail.
 - [ ] **Botão "Continuar com Google".** Aparece no login de produção, mas só mostra "em breve". Decidir: esconder até existir ou implementar.
 - [ ] **Monitoramento.** Sentry e painel das filas estão prontos no código, mas só ligam com as variáveis `SENTRY_DSN`, `NEXT_PUBLIC_SENTRY_DSN` e `BULL_BOARD_PASSWORD` na Railway. Falta conferir se estão lá.
 - [ ] **Cabeçalhos de segurança.** A API e o painel não enviam cabeçalhos como CSP — Claude.

@@ -91,6 +91,7 @@ A configuração fica no painel (Settings de cada serviço), sem comando de buil
 | `INSTAGRAM_APP_SECRET` | Chave secreta do app do Instagram. Sem ela, os webhooks do Instagram são recusados (401). |
 | `IFOOD_CLIENT_ID`, `IFOOD_CLIENT_SECRET` | Credencial centralizada. Sem ela, o polling de pedidos fica desligado. |
 | `CARDAPIO_WEB_API_URL` | API de parceiros do Cardápio Web (`https://integracao.cardapioweb.com`). Sem ela, o polling de pedidos fica desligado. A chave é de cada loja, no canal. |
+| `SUPABASE_URL`, `SUPABASE_SECRET_KEY` | Supabase Auth, só para o e-mail de "Esqueceu?" (chave secreta / service_role). Sem eles, a recuperação de senha responde 503. `<WEB_ORIGIN>/redefinir-senha` precisa estar em Redirect URLs no Supabase. |
 | `SENTRY_DSN` | Opcional. Erros da API e jobs que falharam de vez. |
 | `BULL_BOARD_PASSWORD` | Opcional. Liga o painel das filas em `/api/admin/filas` (Basic auth, usuário `BULL_BOARD_USER`, padrão `admin`). |
 | `LOG_LEVEL` | Padrão `info`. Logs em JSON (Pino), com `tenantId` nas requisições autenticadas. |

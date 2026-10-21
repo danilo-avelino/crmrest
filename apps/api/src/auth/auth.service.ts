@@ -3,15 +3,21 @@ import type { AuthContext, AuthSession, AuthTenant, AuthUser, SelectContextReque
 import { SelectContextRequest as SelectContextSchema, slugify, tenantBilling, tenantBlock, TRIAL_DAYS } from "@dishdesk/shared";
 import { hash, verify } from "@node-rs/argon2";
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   HttpException,
   HttpStatus,
+  Inject,
   Injectable,
+  Logger,
   type OnModuleInit,
+  ServiceUnavailableException,
   UnauthorizedException,
 } from "@nestjs/common";
+import { ENV, type Env } from "../config/env.js";
 import { DatabaseService } from "../core/database.service.js";
+import { consumeRecoveryToken, hasSupabaseAuth, sendRecoveryEmail, type SupabaseEnv } from "./supabase-auth.js";
 import {
   formatRefreshToken,
   hashSecret,
@@ -27,11 +33,13 @@ export type Profile = { user: AuthUser; tenants: AuthTenant[] };
 
 @Injectable()
 export class AuthService implements OnModuleInit {
+  private readonly logger = new Logger(AuthService.name);
   private dummyHash = "";
 
   constructor(
     private readonly db: DatabaseService,
     private readonly tokens: TokensService,
+    @Inject(ENV) private readonly env: Env,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -64,6 +72,35 @@ export class AuthService implements OnModuleInit {
 
     const refreshToken = await this.openSession(userId, userAgent);
     return { refreshToken, session: await this.selectContext(refreshToken, { mode: "tenant", tenantId }) };
+  }
+
+  /**
+   * "Esqueceu?": manda o link de redefinição só a usuário ativo, mas responde igual para qualquer e-mail e não espera
+   * o envio, para a resposta não revelar quais e-mails têm conta.
+   */
+  async forgotPassword(email: string): Promise<void> {
+    const env = this.supabaseEnv();
+    const [found] = await this.db.client.$queryRaw<{ is_active: boolean }[]>`
+      SELECT is_active FROM app.find_login_user(${email})`;
+    if (!found?.is_active) return;
+    sendRecoveryEmail(env, email).catch((error: unknown) => this.logger.error({ err: error }, "E-mail de redefinição de senha não enviado"));
+  }
+
+  /** Link do e-mail: troca a senha do dono do token e encerra as sessões abertas dele. */
+  async resetPassword(accessToken: string, password: string): Promise<void> {
+    const email = await consumeRecoveryToken(this.supabaseEnv(), accessToken);
+    const userId = email
+      ? (await this.db.client.$queryRaw<{ id: string | null }[]>`
+          SELECT app.reset_password(${email}, ${await hash(password)}) AS id`)[0]?.id
+      : null;
+    if (!userId) throw new BadRequestException("Este link expirou ou já foi usado. Peça um novo na tela de login.");
+  }
+
+  private supabaseEnv(): SupabaseEnv {
+    if (!hasSupabaseAuth(this.env)) {
+      throw new ServiceUnavailableException("A recuperação de senha ainda não está disponível. Fale com o admin do restaurante.");
+    }
+    return this.env;
   }
 
   /** Usuário e restaurantes da sessão do cookie, para o que acontece antes de escolher o restaurante (pagamento). */

@@ -1,4 +1,11 @@
-import { type AuthSession, LoginRequest, SelectContextRequest, SignupRequest } from "@dishdesk/shared";
+import {
+  type AuthSession,
+  ForgotPasswordRequest,
+  LoginRequest,
+  ResetPasswordRequest,
+  SelectContextRequest,
+  SignupRequest,
+} from "@dishdesk/shared";
 import { Body, Controller, Get, HttpCode, Inject, Post, Req, Res, UseGuards } from "@nestjs/common";
 import { Throttle, ThrottlerGuard } from "@nestjs/throttler";
 import type { Request, Response } from "express";
@@ -45,6 +52,25 @@ export class AuthController {
     const { refreshToken, session } = await this.auth.signup(body, request.headers["user-agent"]);
     this.setSessionCookie(response, refreshToken);
     return session;
+  }
+
+  /** Responde 204 para qualquer e-mail: quem pede não fica sabendo se a conta existe. */
+  @Public()
+  @Post("forgot-password")
+  @HttpCode(204)
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ default: { limit: 10, ttl: 15 * 60_000 } })
+  forgotPassword(@Body(new ZodPipe(ForgotPasswordRequest)) body: { email: string }): Promise<void> {
+    return this.auth.forgotPassword(body.email);
+  }
+
+  @Public()
+  @Post("reset-password")
+  @HttpCode(204)
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ default: { limit: 10, ttl: 15 * 60_000 } })
+  resetPassword(@Body(new ZodPipe(ResetPasswordRequest)) body: ResetPasswordRequest): Promise<void> {
+    return this.auth.resetPassword(body.accessToken, body.password);
   }
 
   @Public()
