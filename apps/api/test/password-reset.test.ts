@@ -63,15 +63,13 @@ describe("recuperação de senha pelo Supabase Auth", () => {
     expect(calls()).toEqual([]);
   });
 
-  it("recusa token inválido ou que não veio de um link de recuperação", async () => {
-    validToken = token("password");
-    for (const accessToken of [token("recovery"), validToken]) {
-      const { body } = await request(app.getHttpServer())
-        .post("/api/auth/reset-password")
-        .send({ accessToken, password: NEW_PASSWORD })
-        .expect(400);
-      expect(body.message).toBe("Este link expirou ou já foi usado. Peça um novo na tela de login.");
-    }
+  it("recusa token que o Supabase não reconhece (expirado ou já usado)", async () => {
+    validToken = token("otp");
+    const { body } = await request(app.getHttpServer())
+      .post("/api/auth/reset-password")
+      .send({ accessToken: token("recovery"), password: NEW_PASSWORD })
+      .expect(400);
+    expect(body.message).toBe("Este link expirou ou já foi usado. Peça um novo na tela de login.");
     await login(PASSWORD).expect(200);
   });
 
@@ -79,7 +77,8 @@ describe("recuperação de senha pelo Supabase Auth", () => {
     const agent = request.agent(app.getHttpServer());
     await agent.post("/api/auth/login").send({ email: fx.user.email, password: PASSWORD }).expect(200);
 
-    validToken = token("recovery");
+    // O link do e-mail emite o token como "otp": vale do mesmo jeito.
+    validToken = token("otp");
     await request(app.getHttpServer())
       .post("/api/auth/reset-password")
       .send({ accessToken: validToken, password: NEW_PASSWORD })

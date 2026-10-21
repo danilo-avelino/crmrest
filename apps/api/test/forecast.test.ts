@@ -77,14 +77,15 @@ describe("previsão de saída do pedido (E26)", () => {
     );
   });
 
-  it("a fila soma os pedidos de todas as integrações e não para na meia-noite", async () => {
+  it("a fila soma os pedidos na cozinha de todas as integrações e não para na meia-noite", async () => {
     // 0h05 em Brasília (data longe de agora, para os pedidos dos outros testes ficarem de fora): o pedido do Cardápio
-    // Web das 23h55 e o do iFood das 23h58 ainda estão na cozinha, na frente do pedido do iFood da 0h03.
+    // Web das 23h55 (confirmado: lá não há etapa de preparo) e o do iFood das 23h58 estão na cozinha, na frente do
+    // pedido do iFood da 0h03. O pronto, à espera do entregador, e o ainda não aceito ficam fora da fila.
     const now = new Date("2026-01-15T03:05:00Z");
     const cardapio = await admin.channel.create({
       data: { tenantId: fx.tenant.id, type: "CARDAPIO_WEB", name: "Cardápio Web", externalId: `cw-${Date.now()}`, credentials: Buffer.from("-"), status: "CONNECTED" },
     });
-    const placed = (channelId: string, minutesAgo: number) => {
+    const placed = (channelId: string, minutesAgo: number, status: "PLACED" | "CONFIRMED" | "PREPARING" | "READY" = "PREPARING") => {
       sequence += 1;
       return admin.order.create({
         data: {
@@ -93,7 +94,7 @@ describe("previsão de saída do pedido (E26)", () => {
           channelId,
           externalOrderId: `fila-${sequence}-${Date.now()}`,
           displayCode: String(2000 + sequence),
-          status: "PREPARING",
+          status,
           subtotal: "30.00",
           deliveryFee: "0.00",
           total: "30.00",
@@ -102,8 +103,10 @@ describe("previsão de saída do pedido (E26)", () => {
         },
       });
     };
-    await placed(cardapio.id, 10);
+    await placed(cardapio.id, 10, "CONFIRMED");
     await placed(fx.ifood.id, 7);
+    await placed(fx.ifood.id, 9, "READY");
+    await placed(cardapio.id, 4, "PLACED");
     const current = await placed(fx.ifood.id, 2);
 
     const result = await app.get(DatabaseService).withTenants({ tenantIds: [fx.tenant.id] }, (tx) => forecastOrder(tx, current.id, now));

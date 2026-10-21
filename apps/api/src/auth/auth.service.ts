@@ -122,6 +122,7 @@ export class AuthService implements OnModuleInit {
       ? (await this.db.client.$queryRaw<{ id: string | null }[]>`
           SELECT app.reset_password(${email}, ${await hash(password)}) AS id`)[0]?.id
       : null;
+    if (email && !userId) this.logger.warn("Redefinição de senha: o e-mail do token não é de um usuário ativo");
     if (!userId) throw new BadRequestException("Este link expirou ou já foi usado. Peça um novo na tela de login.");
   }
 

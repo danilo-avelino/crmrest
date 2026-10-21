@@ -1,3 +1,4 @@
+import { Logger } from "@nestjs/common";
 import { z } from "zod";
 import type { Env } from "../config/env.js";
 
@@ -5,6 +6,8 @@ import type { Env } from "../config/env.js";
  * Supabase Auth como carteiro da recuperação de senha. Os usuários e as senhas continuam na nossa tabela users: o
  * Supabase só guarda uma cópia do e-mail, manda o link e, na volta, diz de quem é o token que veio no link.
  */
+const logger = new Logger("SupabaseAuth");
+
 export type SupabaseEnv = Env & { SUPABASE_URL: string; SUPABASE_SECRET_KEY: string };
 
 export function hasSupabaseAuth(env: Env): env is SupabaseEnv {
@@ -36,30 +39,24 @@ export async function sendRecoveryEmail(env: SupabaseEnv, email: string): Promis
   await ensureOk(await supabase(env, "POST", `/recover?redirect_to=${redirect}`, { body: { email } }), "recover");
 }
 
-const Claims = z.object({ amr: z.array(z.object({ method: z.string() })).default([]) });
-
 /**
- * E-mail do dono do token que o link de recuperação entregou ao painel; null se o token não vale ou não veio de um
- * link de recuperação (um token de outro tipo de login no Supabase não pode trocar a senha de ninguém).
- * Depois de lido, o token é encerrado: o mesmo link não troca a senha duas vezes.
+ * E-mail do dono do token que o link de recuperação entregou ao painel; null se o Supabase não reconhece o token.
+ * Um token válido prova que quem o tem recebeu o link no e-mail: o cadastro direto no Supabase fica desligado e as
+ * cópias que a API cria não têm senha. (Não se exige a origem "recovery" no token: o link do e-mail pode emiti-lo
+ * como "otp", e o painel recusava links válidos.) Depois de lido, o token é encerrado: o mesmo link não troca a senha duas vezes.
  */
 export async function consumeRecoveryToken(env: SupabaseEnv, token: string): Promise<string | null> {
   const response = await supabase(env, "GET", "/user", { token });
-  if (!response.ok) return null;
-  // O Supabase já validou o token acima; aqui só se lê como ele foi emitido.
-  const claims = Claims.safeParse(decodeJwtPayload(token));
-  if (!claims.success || !claims.data.amr.some((entry) => entry.method === "recovery")) return null;
+  if (!response.ok) {
+    logger.warn(`Token de recuperação recusado pelo Supabase: HTTP ${response.status} ${await response.text()}`);
+    return null;
+  }
   const user = z.object({ email: z.email() }).safeParse(await response.json());
-  if (!user.success) return null;
+  if (!user.success) {
+    logger.warn("Token de recuperação sem e-mail no usuário do Supabase");
+    return null;
+  }
   // Sem o logout, o token ainda expira sozinho em 1 hora.
   await supabase(env, "POST", "/logout", { token }).catch(() => undefined);
   return user.data.email;
-}
-
-function decodeJwtPayload(token: string): unknown {
-  try {
-    return JSON.parse(Buffer.from(token.split(".")[1] ?? "", "base64url").toString("utf8"));
-  } catch {
-    return null;
-  }
 }

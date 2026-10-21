@@ -12,6 +12,9 @@ const LATE_MARGIN_MS = 10 * 60_000;
  */
 export const STALE_MS = 4 * 60 * 60_000;
 const EXITED = ["DISPATCHED", "DELIVERED", "CANCELED"] as const;
+// Na cozinha: confirmado ou em preparo. O Cardápio Web não tem etapa de preparo (o confirmado já está sendo feito);
+// o pedido ainda não aceito e o pronto, à espera do entregador ou da retirada, não entram na fila.
+const IN_KITCHEN = ["CONFIRMED", "PREPARING"] as const;
 
 export type Forecast = {
   /** Previsão de saída do restaurante (nunca antes de agora). */
@@ -22,7 +25,7 @@ export type Forecast = {
    */
   late: boolean;
   /**
-   * Pedidos do restaurante feitos antes deste e que ainda não saíram, de todas as integrações (iFood, Cardápio Web...).
+   * Pedidos do restaurante na cozinha (IN_KITCHEN) feitos antes deste, de todas as integrações (iFood, Cardápio Web...).
    * Sem corte na meia-noite: o pedido das 23h55 ainda no forno conta para quem pede às 0h05.
    */
   ahead: number;
@@ -82,7 +85,7 @@ export async function forecastOrder(tx: TenantTx, orderId: string, now = new Dat
       tenantId: order.tenantId,
       placedAt: { gte: since, lt: order.placedAt },
       dispatchedAt: null,
-      status: { notIn: [...EXITED] },
+      status: { in: [...IN_KITCHEN] },
     },
   });
   return { departAt: new Date(departAt), late, ahead };
