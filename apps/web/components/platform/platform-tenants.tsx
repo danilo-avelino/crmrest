@@ -1,8 +1,18 @@
 "use client";
 
-import { CreateTenantRequest, formatPhone, formatTaxId, type PlatformTenantDto, slugify, tenantBlock } from "@dishdesk/shared";
+import {
+  CreateTenantRequest,
+  formatPhone,
+  formatTaxId,
+  MODULE_LABEL,
+  MODULES,
+  type PlatformTenantDto,
+  slugify,
+  tenantBlock,
+  UpdateTenantAccessRequest,
+} from "@dishdesk/shared";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertCircleIcon, LogInIcon, PlusIcon, TriangleAlertIcon } from "lucide-react";
+import { AlertCircleIcon, LogInIcon, PlusIcon, SlidersHorizontalIcon, TriangleAlertIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { type ComponentProps, useId, useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
@@ -19,11 +29,12 @@ import { count, fullDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 const TENANTS_KEY = ["platform-tenants"] as const;
-const COLUMNS = "grid grid-cols-[minmax(0,1fr)_84px_72px_64px_76px_92px_88px_196px] items-center gap-3";
+const COLUMNS = "grid grid-cols-[minmax(0,1fr)_84px_72px_64px_76px_92px_88px_276px] items-center gap-3";
 
 /**
  * Restaurantes da plataforma (Super Admin, E16; o design ainda não tem este board, segue o padrão de Configurações):
- * uso de cada restaurante, criação com o primeiro administrador, suspensão e acesso de suporte. Desktop no MVP.
+ * uso de cada restaurante, criação com o primeiro administrador, suspensão, acesso de suporte, plano e módulos.
+ * Desktop no MVP.
  */
 export function PlatformTenants() {
   const { request } = useAuth();
@@ -177,6 +188,7 @@ function TenantRow({ tenant }: { tenant: PlatformTenantDto }) {
   const router = useRouter();
   const toast = useToast();
   const [confirming, setConfirming] = useState(false);
+  const [managing, setManaging] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const suspended = tenant.status === "SUSPENDED";
 
@@ -224,6 +236,10 @@ function TenantRow({ tenant }: { tenant: PlatformTenantDto }) {
       <Metric value={tenant.messagesLast30Days} />
       <span className="text-[12px] text-ink-2 tabular-nums">{fullDate(tenant.createdAt)}</span>
       <div className="flex justify-end gap-1.5">
+        <Button variant="outline" size="sm" onClick={() => setManaging(true)}>
+          <SlidersHorizontalIcon aria-hidden />
+          Plano
+        </Button>
         <Button variant="outline" size="sm" disabled={suspended} title={suspended ? "Reative para entrar" : undefined} onClick={enter}>
           <LogInIcon aria-hidden />
           Entrar
@@ -271,7 +287,163 @@ function TenantRow({ tenant }: { tenant: PlatformTenantDto }) {
           </div>
         </DialogContent>
       </Dialog>
+      <Dialog open={managing} onOpenChange={setManaging}>
+        <DialogContent>{managing && <PlanDialog tenant={tenant} />}</DialogContent>
+      </Dialog>
     </li>
+  );
+}
+
+/** "AAAA-MM-DD" daqui a `days` dias, no fuso do navegador (o valor do campo de data). */
+function dateInput(days: number): string {
+  const date = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+  return [date.getFullYear(), String(date.getMonth() + 1).padStart(2, "0"), String(date.getDate()).padStart(2, "0")].join("-");
+}
+
+/**
+ * Plano e módulos de um restaurante: libera o acesso até uma data (pagamento por fora da Stripe ou cortesia, só para
+ * quem se cadastrou pelo site) e liga ou desliga os módulos pagos. Tudo fica na auditoria da plataforma.
+ */
+function PlanDialog({ tenant }: { tenant: PlatformTenantDto }) {
+  const { request } = useAuth();
+  const queryClient = useQueryClient();
+  const toast = useToast();
+  const id = useId();
+  const billed = tenant.trialEndsAt !== null;
+  const [plan, setPlan] = useState<UpdateTenantAccessRequest["plan"]>(tenant.billingPlan ?? "MONTHLY");
+  const [paidUntil, setPaidUntil] = useState(() => dateInput(30));
+  const [error, setError] = useState<string | null>(null);
+
+  const apply = (updated: PlatformTenantDto[]) => {
+    queryClient.setQueryData(TENANTS_KEY, updated);
+    void queryClient.invalidateQueries({ queryKey: ["platform-audit"] });
+  };
+
+  const [grant, granting] = usePendingAction(async () => {
+    setError(null);
+    const parsed = UpdateTenantAccessRequest.safeParse({ plan, paidUntil });
+    if (!parsed.success) return setError(parsed.error.issues[0]?.message ?? "Confira a data.");
+    try {
+      apply(await request<PlatformTenantDto[]>(`/platform/tenants/${tenant.id}/access`, { method: "PATCH", body: parsed.data }));
+      toast(`Acesso de ${tenant.name} liberado até ${fullDate(`${paidUntil}T12:00:00`)}`);
+    } catch (failure) {
+      setError(failure instanceof ApiError ? failure.message : "Não foi possível liberar o acesso.");
+    }
+  });
+
+  const setModule = async (module: (typeof MODULES)[number], enabled: boolean) => {
+    setError(null);
+    try {
+      apply(await request<PlatformTenantDto[]>(`/platform/tenants/${tenant.id}/modules/${module}`, { method: "PUT", body: { enabled } }));
+      toast(`Módulo ${MODULE_LABEL[module]} ${enabled ? "ligado" : "desligado"} em ${tenant.name}`);
+    } catch (failure) {
+      setError(failure instanceof ApiError ? failure.message : "Não foi possível alterar o módulo.");
+    }
+  };
+
+  return (
+    <>
+      <div className="border-b border-rule-soft px-6 py-5">
+        <DialogTitle className="mb-1">Plano de {tenant.name}</DialogTitle>
+        <DialogDescription>{tenant.slug}</DialogDescription>
+      </div>
+      <div className="flex flex-col gap-5 px-6 py-[18px]">
+        <section>
+          <div className="mb-2 text-[10px] font-semibold tracking-[0.08em] text-ink-3 uppercase">Acesso</div>
+          {billed ? (
+            <form
+              noValidate
+              onSubmit={(event) => {
+                event.preventDefault();
+                grant();
+              }}
+            >
+              <p className="mb-3 text-[13px] leading-relaxed text-ink-2">
+                {tenant.paidUntil ? `Pago até ${fullDate(tenant.paidUntil)}.` : `Em teste até ${fullDate(tenant.trialEndsAt!)}.`} Para um
+                pagamento fora da Stripe (Pix, transferência) ou uma cortesia, libere até o dia combinado.
+              </p>
+              <div className="grid grid-cols-2 gap-2.5">
+                <fieldset className="flex flex-col gap-1">
+                  <legend className="text-[11px] leading-none font-medium text-ink-2">Plano</legend>
+                  <div className="grid h-9 grid-cols-2 rounded-lg border border-input bg-surface p-0.5">
+                    {(
+                      [
+                        ["MONTHLY", "Mensal"],
+                        ["ANNUAL", "Anual"],
+                      ] as const
+                    ).map(([value, label]) => (
+                      <label
+                        key={value}
+                        className={cn(
+                          "flex cursor-pointer items-center justify-center rounded-md text-[12px] font-medium transition-colors",
+                          plan === value ? "bg-ink text-paper" : "text-ink-3 hover:text-ink-2",
+                        )}
+                      >
+                        <input
+                          type="radio"
+                          name={`${id}-plan`}
+                          value={value}
+                          checked={plan === value}
+                          onChange={() => setPlan(value)}
+                          className="sr-only"
+                        />
+                        {label}
+                      </label>
+                    ))}
+                  </div>
+                </fieldset>
+                <div className="flex flex-col gap-1">
+                  <Label htmlFor={`${id}-until`}>Liberado até</Label>
+                  <Input
+                    id={`${id}-until`}
+                    type="date"
+                    min={dateInput(0)}
+                    value={paidUntil}
+                    onChange={(event) => setPaidUntil(event.target.value)}
+                  />
+                </div>
+              </div>
+              <div className="mt-3 flex justify-end">
+                <Button type="submit" size="sm" loading={granting}>
+                  Liberar acesso
+                </Button>
+              </div>
+            </form>
+          ) : (
+            <p className="text-[13px] leading-relaxed text-ink-2">Criado pela plataforma: sem cobrança pelo sistema, o acesso não vence.</p>
+          )}
+        </section>
+
+        <section>
+          <div className="mb-2 text-[10px] font-semibold tracking-[0.08em] text-ink-3 uppercase">Módulos</div>
+          <ul className="overflow-hidden rounded-lg border border-rule">
+            {MODULES.map((module) => {
+              const enabled = tenant.modules.includes(module);
+              return (
+                <li key={module} className="flex items-center gap-3 border-b border-rule-soft px-3.5 py-2.5 last:border-b-0">
+                  <span className="flex-1 font-medium">{MODULE_LABEL[module]}</span>
+                  {enabled ? <StatusBadge tone="resolved">Ligado</StatusBadge> : <span className="text-[12px] text-ink-3">Desligado</span>}
+                  <Button variant={enabled ? "destructive" : "outline"} size="sm" onClick={() => setModule(module, !enabled)}>
+                    {enabled ? "Desligar" : "Ligar"}
+                  </Button>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+
+        {error && (
+          <p role="alert" className="flex items-center gap-[5px] text-[11.5px] text-tomate">
+            <AlertCircleIcon className="size-3 shrink-0" aria-hidden />
+            {error}
+          </p>
+        )}
+        <div className="flex items-center gap-2 rounded-[7px] border border-[#FDE68A] bg-warning-lt px-3.5 py-2.5">
+          <TriangleAlertIcon className="size-3.5 shrink-0 text-[#D97706]" aria-hidden />
+          <span className="text-xs text-warning-ink">Estas ações ficam registradas na auditoria da plataforma.</span>
+        </div>
+      </div>
+    </>
   );
 }
 

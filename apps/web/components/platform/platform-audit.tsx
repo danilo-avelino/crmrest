@@ -1,20 +1,27 @@
 "use client";
 
-import type { PlatformAuditDto } from "@dishdesk/shared";
+import { MODULE_LABEL, type PlatformAuditDto } from "@dishdesk/shared";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/components/auth/auth-provider";
 import { PlatformHeader, PlatformLoading } from "@/components/platform/platform-header";
 import { useNow } from "@/hooks/use-now";
-import { dayTime } from "@/lib/format";
+import { dayTime, fullDate } from "@/lib/format";
 
-const ACTION_LABEL: Record<PlatformAuditDto["action"], string> = {
-  "tenant.create": "Criou o restaurante",
-  "tenant.suspend": "Suspendeu o restaurante",
-  "tenant.reactivate": "Reativou o restaurante",
-  "tenant.support_access": "Entrou como suporte em",
+const ACTION_LABEL: Record<PlatformAuditDto["action"], (data: PlatformAuditDto["data"]) => string> = {
+  "tenant.create": () => "Criou o restaurante",
+  "tenant.suspend": () => "Suspendeu o restaurante",
+  "tenant.reactivate": () => "Reativou o restaurante",
+  "tenant.support_access": () => "Entrou como suporte em",
+  "tenant.access_grant": (data) =>
+    `Liberou o acesso${data?.paidUntil ? ` até ${fullDate(data.paidUntil)}` : ""}${data?.plan ? ` (plano ${data.plan === "ANNUAL" ? "anual" : "mensal"})` : ""} em`,
+  "tenant.module_on": (data) => `Ligou o módulo ${data?.module ? MODULE_LABEL[data.module] : ""} em`,
+  "tenant.module_off": (data) => `Desligou o módulo ${data?.module ? MODULE_LABEL[data.module] : ""} em`,
 };
 
-/** Auditoria da plataforma (Super Admin, E16): criação, suspensão e acessos de suporte, mais recentes primeiro. */
+/**
+ * Auditoria da plataforma (Super Admin, E16): criação, suspensão, acessos de suporte, acesso liberado e módulos, mais
+ * recentes primeiro.
+ */
 export function PlatformAudit() {
   const { request } = useAuth();
   const now = useNow(60_000);
@@ -43,7 +50,7 @@ export function PlatformAudit() {
                       <span className="w-28 shrink-0 text-[12px] text-ink-3 tabular-nums">{dayTime(entry.createdAt, now)}</span>
                       <span className="min-w-0 flex-1">
                         <span className="font-medium">{entry.userName ?? "Usuário removido"}</span>{" "}
-                        <span className="text-ink-2">{ACTION_LABEL[entry.action] ?? entry.action}</span>{" "}
+                        <span className="text-ink-2">{ACTION_LABEL[entry.action]?.(entry.data) ?? entry.action}</span>{" "}
                         <span className="font-medium">{entry.tenantName ?? "restaurante removido"}</span>
                       </span>
                     </li>

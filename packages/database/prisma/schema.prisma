@@ -1,6 +1,6 @@
 // Modelo de dados do Dish Desk (PROJETO_CRM_RESTAURANTES.md §7).
 // Toda tabela de negócio tem tenant_id e RLS; as políticas ficam na migration tenant_isolation.
-// Modelos de fases futuras (módulos, segmentos, templates, campanhas) entram junto com seus épicos.
+// Modelos de fases futuras (segmentos, templates, campanhas) entram junto com seus épicos.
 
 generator client {
   provider            = "prisma-client"
@@ -28,6 +28,11 @@ enum TenantRole {
 enum BillingPlan {
   MONTHLY
   ANNUAL
+}
+
+// Módulos pagos à parte do plano (o Campanhas, Fase 3).
+enum ModuleKey {
+  CAMPAIGNS
 }
 
 model Tenant {
@@ -68,8 +73,22 @@ model Tenant {
   ratings             Rating[]
   quickReplies        QuickReply[]
   auditLogs           AuditLog[]
+  modules             TenantModule[]
 
   @@map("tenants")
+}
+
+// Módulo ligado num restaurante. Só a plataforma liga e desliga (app.set_tenant_module); o restaurante só lê.
+model TenantModule {
+  id        String    @id @default(uuid(7)) @db.Uuid
+  tenantId  String    @map("tenant_id") @db.Uuid
+  module    ModuleKey
+  enabledAt DateTime  @default(now()) @map("enabled_at") @db.Timestamptz(3)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, module])
+  @@map("tenant_modules")
 }
 
 model User {

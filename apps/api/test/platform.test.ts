@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { createPrismaClient, withTenants } from "@dishdesk/database";
 import type { INestApplication } from "@nestjs/common";
 import { hash } from "@node-rs/argon2";
 import request from "supertest";
@@ -40,7 +41,7 @@ describe("painel da plataforma (Super Admin)", () => {
     await app?.close();
   });
 
-  const api = (method: "get" | "post" | "patch", path: string, token: string) =>
+  const api = (method: "get" | "post" | "patch" | "put", path: string, token: string) =>
     request(app.getHttpServer())[method](`/api/platform/${path}`).set("Authorization", `Bearer ${token}`);
 
   it("só a equipe da plataforma acessa", async () => {
@@ -128,5 +129,61 @@ describe("painel da plataforma (Super Admin)", () => {
     const agent = request.agent(app.getHttpServer());
     await agent.post("/api/auth/login").send({ email: superAdmin.email, password: PASSWORD }).expect(200);
     await agent.post("/api/auth/context").send({ mode: "tenant", tenantId: fx.c.id }).expect(403);
+  });
+
+  it("liga e desliga módulos, com auditoria; o restaurante não liga sozinho", async () => {
+    const on = await api("put", `tenants/${fx.b.id}/modules/CAMPAIGNS`, superToken).send({ enabled: true }).expect(200);
+    expect(on.body.find((t: { id: string }) => t.id === fx.b.id).modules).toEqual(["CAMPAIGNS"]);
+    await api("put", `tenants/${fx.b.id}/modules/CAMPAIGNS`, superToken).send({ enabled: true }).expect(200); // já ligado
+
+    await api("put", `tenants/${fx.b.id}/modules/CAMPAIGNS`, userToken).send({ enabled: false }).expect(403);
+    await api("put", `tenants/${fx.b.id}/modules/INEXISTENTE`, superToken).send({ enabled: true }).expect(404);
+    const db = createPrismaClient(process.env.DATABASE_URL ?? "");
+    try {
+      // O administrador de B vê os módulos de B, mas não grava (só a plataforma, por app.set_tenant_module).
+      const asAdmin = <T>(fn: Parameters<typeof withTenants<T>>[2]) => withTenants(db, { tenantIds: [fx.b.id], userId: fx.user.id }, fn);
+      expect(await asAdmin((tx) => tx.tenantModule.count())).toBe(1);
+      await expect(asAdmin((tx) => tx.tenantModule.deleteMany({}))).rejects.toThrow(/permission denied/);
+      await expect(asAdmin((tx) => tx.$executeRaw`SELECT app.set_tenant_module(${fx.b.id}::uuid, 'CAMPAIGNS', false)`)).rejects.toThrow(
+        /Só a equipe da plataforma/,
+      );
+    } finally {
+      await db.$disconnect();
+    }
+
+    const off = await api("put", `tenants/${fx.b.id}/modules/CAMPAIGNS`, superToken).send({ enabled: false }).expect(200);
+    expect(off.body.find((t: { id: string }) => t.id === fx.b.id).modules).toEqual([]);
+    const { body: audit } = await api("get", "audit", superToken).expect(200);
+    const entries = audit.filter((e: { tenantId: string; action: string }) => e.tenantId === fx.b.id && e.action.startsWith("tenant.module"));
+    expect(entries.map((e: { action: string; data: unknown }) => [e.action, e.data])).toEqual([
+      ["tenant.module_off", { module: "CAMPAIGNS" }],
+      ["tenant.module_on", { module: "CAMPAIGNS" }],
+    ]);
+  });
+
+  it("libera o acesso até uma data a quem se cadastrou pelo site, e o restaurante bloqueado volta a entrar", async () => {
+    // B como cadastro do site com o teste grátis vencido: bloqueado até pagar.
+    const past = new Date(Date.now() - 20 * 24 * 60 * 60 * 1000);
+    await admin.tenant.update({ where: { id: fx.b.id }, data: { trialEndsAt: past, trustUntil: past } });
+    await expect(accessTokenFor(app, fx.user.email, fx.b.id)).rejects.toThrow();
+
+    const until = new Date(Date.now() + 40 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const { body } = await api("patch", `tenants/${fx.b.id}/access`, superToken).send({ plan: "ANNUAL", paidUntil: until }).expect(200);
+    expect(body.find((t: { id: string }) => t.id === fx.b.id)).toMatchObject({
+      billingPlan: "ANNUAL",
+      paidUntil: new Date(`${until}T23:59:59.999-03:00`).toISOString(),
+    });
+    expect((await admin.tenant.findUniqueOrThrow({ where: { id: fx.b.id } })).trustUntil).toBeNull(); // a confiança volta a valer
+    await accessTokenFor(app, fx.user.email, fx.b.id);
+
+    const { body: audit } = await api("get", "audit", superToken).expect(200);
+    const grant = audit.find((e: { tenantId: string; action: string }) => e.tenantId === fx.b.id && e.action === "tenant.access_grant");
+    expect(grant.data.plan).toBe("ANNUAL");
+    expect(new Date(grant.data.paidUntil).toISOString()).toBe(new Date(`${until}T23:59:59.999-03:00`).toISOString());
+
+    await api("patch", `tenants/${fx.b.id}/access`, superToken).send({ plan: "MONTHLY", paidUntil: "2020-01-01" }).expect(422);
+    const free = await api("patch", `tenants/${fx.c.id}/access`, superToken).send({ plan: "MONTHLY", paidUntil: until }).expect(422);
+    expect(free.body.message).toBe("Este restaurante não tem cobrança pelo sistema.");
+    await api("patch", `tenants/${fx.b.id}/access`, userToken).send({ plan: "MONTHLY", paidUntil: until }).expect(403);
   });
 });
