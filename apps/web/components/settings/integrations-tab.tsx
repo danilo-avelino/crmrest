@@ -10,9 +10,10 @@ import {
   type IntegrationDto,
   type IntegrationsDto,
   type IntegrationType,
+  RenameIntegrationRequest,
 } from "@dishdesk/shared";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckIcon, ChevronRightIcon, CircleAlertIcon, CopyIcon, PlusIcon, SearchIcon, XIcon } from "lucide-react";
+import { CheckIcon, ChevronRightIcon, CircleAlertIcon, CopyIcon, PencilIcon, PlusIcon, SearchIcon, XIcon } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
@@ -472,7 +473,7 @@ function IntegrationPanel({ system, data, adding, onClose }: { system: System; d
               <dl className="grid grid-cols-2 gap-3">
                 <div className="rounded-[10px] bg-paper px-[15px] py-[13px]">
                   <dt className="mb-[5px] text-[10px] font-bold tracking-[0.07em] text-ink-3 uppercase">{system.account}</dt>
-                  <dd className="text-[15px] font-bold break-words">{item.name}</dd>
+                  <IntegrationName tenantId={data.tenantId} item={item} canEdit={data.canEdit} />
                 </div>
                 <div className="rounded-[10px] bg-paper px-[15px] py-[13px]">
                   <dt className="mb-[5px] text-[10px] font-bold tracking-[0.07em] text-ink-3 uppercase">{system.idLabel}</dt>
@@ -505,6 +506,84 @@ function IntegrationPanel({ system, data, adding, onClose }: { system: System; d
         </div>
       )}
     </>
+  );
+}
+
+/** Nome da conta no modal; o admin troca pelo lápis (o nome aparece no painel e na Inbox). */
+function IntegrationName({ tenantId, item, canEdit }: { tenantId: string; item: IntegrationDto; canEdit: boolean }) {
+  const { request } = useAuth();
+  const queryClient = useQueryClient();
+  const toast = useToast();
+  const [draft, setDraft] = useState<string | null>(null);
+  const [failure, setFailure] = useState<string | null>(null);
+
+  const [save, saving] = usePendingAction(async () => {
+    const parsed = RenameIntegrationRequest.safeParse({ name: draft });
+    if (!parsed.success) return setFailure(parsed.error.issues[0]!.message);
+    try {
+      await request(`/integrations/${tenantId}/${item.id}`, { method: "PATCH", body: parsed.data });
+      await queryClient.invalidateQueries({ queryKey: ["integrations", tenantId] });
+      void queryClient.invalidateQueries({ queryKey: ["channels"] });
+      toast("Nome da integração alterado");
+      setDraft(null);
+    } catch (error) {
+      setFailure(error instanceof ApiError ? error.message : "Não foi possível alterar o nome.");
+    }
+  });
+
+  if (draft === null) {
+    return (
+      <dd className="flex items-start justify-between gap-2">
+        <span className="text-[15px] font-bold break-words">{item.name}</span>
+        {canEdit && (
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            aria-label="Editar o nome"
+            className="-mt-0.5 -mr-1 text-ink-3"
+            onClick={() => {
+              setFailure(null);
+              setDraft(item.name);
+            }}
+          >
+            <PencilIcon aria-hidden />
+          </Button>
+        )}
+      </dd>
+    );
+  }
+
+  return (
+    <dd>
+      <form
+        noValidate
+        onSubmit={(event) => {
+          event.preventDefault();
+          save();
+        }}
+      >
+        <Input
+          autoFocus
+          aria-label="Nome da integração"
+          maxLength={60}
+          value={draft}
+          aria-invalid={Boolean(failure) || undefined}
+          onChange={(event) => {
+            setDraft(event.target.value);
+            setFailure(null);
+          }}
+        />
+        {failure && <Failure>{failure}</Failure>}
+        <div className="mt-2 flex justify-end gap-1.5">
+          <Button type="button" variant="ghost" size="xs" onClick={() => setDraft(null)}>
+            Cancelar
+          </Button>
+          <Button type="submit" size="xs" loading={saving}>
+            Salvar
+          </Button>
+        </div>
+      </form>
+    </dd>
   );
 }
 

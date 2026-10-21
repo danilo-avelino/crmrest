@@ -332,6 +332,20 @@ describe("Integrações (Configurações)", () => {
     expect(graph.requests.length).toBe(before);
   });
 
+  it("renomear: só o admin, só contas do próprio restaurante, e o nome novo aparece na lista", async () => {
+    const rename = (channelId: string, body: object, token = adminToken) =>
+      request(app.getHttpServer()).patch(`/api/integrations/${fx.tenant.id}/${channelId}`).set("Authorization", `Bearer ${token}`).send(body);
+    await rename(fx.ifood.id, { name: "Loja Centro" }, agentToken).expect(403);
+    await rename(other.ifood.id, { name: "Loja Centro" }).expect(404);
+    await rename(fx.ifood.id, { name: "   " }).expect(400);
+    await rename(fx.ifood.id, { name: "x".repeat(61) }).expect(400);
+
+    const { body } = await rename(fx.ifood.id, { name: "  Loja Centro  " }).expect(200);
+    expect(body).toMatchObject({ id: fx.ifood.id, name: "Loja Centro", externalId: fx.ifood.externalId });
+    const listed = (await list(adminToken).expect(200)).body.integrations.find((i: { id: string }) => i.id === fx.ifood.id);
+    expect(listed.name).toBe("Loja Centro");
+  });
+
   describe("excluir", () => {
     const remove = (channelId: string, token = adminToken) =>
       request(app.getHttpServer()).delete(`/api/integrations/${fx.tenant.id}/${channelId}`).set("Authorization", `Bearer ${token}`);

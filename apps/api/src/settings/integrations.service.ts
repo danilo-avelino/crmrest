@@ -266,6 +266,19 @@ export class IntegrationsService {
     await this.turnOff(auth, tenantId, channelId, { deletedAt: new Date() });
   }
 
+  /** Troca o nome que a integração mostra no painel e na Inbox. */
+  rename(auth: RequestAuth, tenantId: string, channelId: string, name: string): Promise<IntegrationDto> {
+    requireTenantAdmin(auth, tenantId);
+    return this.db.withTenants({ tenantIds: [tenantId], userId: auth.userId }, async (tx) => {
+      const channel = await tx.channel.findFirst({
+        where: { id: channelId, tenantId, deletedAt: null, type: { in: [...INTEGRATION_TYPES] } },
+        select: { id: true },
+      });
+      if (!channel) throw new NotFoundException("Integração não encontrada.");
+      return toDto(await tx.channel.update({ where: { id: channel.id }, data: { name }, select: SELECT }));
+    });
+  }
+
   private turnOff(auth: RequestAuth, tenantId: string, channelId: string, extra: { deletedAt?: Date }): Promise<IntegrationDto> {
     requireTenantAdmin(auth, tenantId);
     return this.db.withTenants({ tenantIds: [tenantId], userId: auth.userId }, async (tx) => {

@@ -62,6 +62,10 @@ export const AddIntegrationRequest = z.discriminatedUnion("type", [
 ]);
 export type AddIntegrationRequest = z.infer<typeof AddIntegrationRequest>;
 
+/** Novo nome de uma integração (Configurações → Integrações → Gerenciar). */
+export const RenameIntegrationRequest = z.object({ name: z.string().trim().min(1, "Informe o nome.").max(60, "Use até 60 caracteres.") });
+export type RenameIntegrationRequest = z.infer<typeof RenameIntegrationRequest>;
+
 /**
  * Código de vinculação do iFood (aplicativo distribuído): o responsável pela loja abre `verificationUrl` no Portal do
  * Parceiro, confere o código e autoriza. `state` volta com o código de autorização ao conectar.

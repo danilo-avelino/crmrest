@@ -6,9 +6,10 @@ import {
   type IfoodStoresResultDto,
   type IntegrationDto,
   type IntegrationsDto,
+  RenameIntegrationRequest,
   WhatsAppSignupRequest,
 } from "@dishdesk/shared";
-import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Post, Query, Redirect } from "@nestjs/common";
+import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Query, Redirect } from "@nestjs/common";
 import { z } from "zod";
 import { CurrentAuth, Public, type RequestAuth } from "../auth/auth.decorators.js";
 import { ZodPipe } from "../common/zod.pipe.js";
@@ -72,6 +73,16 @@ export class IntegrationsController {
     @CurrentAuth() auth: RequestAuth,
   ): Promise<IntegrationDto> {
     return this.integrations.disconnect(auth, tenantId, channelId);
+  }
+
+  @Patch(":tenantId/:channelId")
+  rename(
+    @Param("tenantId", ParseUUIDPipe) tenantId: string,
+    @Param("channelId", ParseUUIDPipe) channelId: string,
+    @Body(new ZodPipe(RenameIntegrationRequest)) body: RenameIntegrationRequest,
+    @CurrentAuth() auth: RequestAuth,
+  ): Promise<IntegrationDto> {
+    return this.integrations.rename(auth, tenantId, channelId, body.name);
   }
 
   @Delete(":tenantId/:channelId")
