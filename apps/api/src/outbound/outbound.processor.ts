@@ -72,7 +72,6 @@ export class OutboundProcessor extends JobProcessor {
       throw new DelayedError();
     }
 
-    const connector = this.connectors.get(message.channel.type);
     const recipient = message.conversation.contact.identities.find((i) => i.channelType === message.channel.type);
     const content = message.content as MessageContent;
 
@@ -80,9 +79,12 @@ export class OutboundProcessor extends JobProcessor {
     let authFailed = false;
     try {
       if (message.channel.status === "DISCONNECTED") throw new PermanentSendError("A integração deste canal foi desconectada.");
-      if (!connector || !recipient) throw new PermanentSendError("Este canal não permite enviar esta mensagem.");
-      const { accessToken } = this.connectors.secrets(message.channel.credentials);
-      const target = { externalChannelId: message.channel.externalId, recipientId: recipient.externalId, accessToken };
+      if (!this.connectors.get(message.channel.type) || !recipient) throw new PermanentSendError("Este canal não permite enviar esta mensagem.");
+      const secrets = this.connectors.secrets(message.channel.credentials);
+      const connector = this.connectors.get(message.channel.type, secrets)!;
+      // WhatsApp por QR Code: quem envia é a instância da Evolution, não o número.
+      const externalChannelId = secrets.instance ?? message.channel.externalId;
+      const target = { externalChannelId, recipientId: recipient.externalId, accessToken: secrets.accessToken };
       let sent: { externalMessageId: string };
       if (content.template && connector.sendTemplate) sent = await connector.sendTemplate(target, content.template);
       else if (content.text) sent = await connector.send(target, { type: "TEXT", text: content.text });

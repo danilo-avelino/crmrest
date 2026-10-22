@@ -26,7 +26,7 @@ test("atende uma conversa do WhatsApp de ponta a ponta", async ({ page }) => {
   // Conversa e painel do cliente.
   await expect(page.locator("header").getByText(fx.contact.name)).toBeVisible();
   await expect(page.getByText("(11) 95555-0000").first()).toBeVisible();
-  await expect(page.getByText(/Janela de 24h: \d+h restantes/)).toBeVisible();
+  await expect(page.getByText(/Janela de 24h/)).toHaveCount(0); // WhatsApp por QR Code: sem janela de 24h
 
   // Resposta rápida com "/".
   const composer = page.getByLabel("Mensagem para o cliente");
@@ -63,12 +63,9 @@ test("atende uma conversa do WhatsApp de ponta a ponta", async ({ page }) => {
   await expect(page.locator("header").getByText(fx.closedContact.name)).toBeVisible();
   await expect(row).toHaveCount(0);
 
-  // Janela de 24h fechada (a conversa que o Resolver abriu): texto livre bloqueado, só template aprovado.
-  await expect(page.getByText(/A janela de 24h terminou/)).toBeVisible();
-  await expect(page.getByLabel("Mensagem para o cliente")).toHaveCount(0);
-  await page.getByRole("button", { name: "Template" }).click();
-  await page.getByRole("button", { name: /retomar_atendimento/ }).click();
-  await page.getByLabel("Variável {{1}}").fill("Carla");
-  await page.getByRole("button", { name: "Enviar template" }).click();
-  await expect(timeline.getByText(/Olá, Carla! Aqui é do restaurante/)).toBeVisible();
+  // Conversa parada há dois dias (a que o Resolver abriu): pelo QR Code não há janela de 24h, a resposta é livre.
+  await expect(page.getByText(/A janela de 24h terminou/)).toHaveCount(0);
+  await page.getByLabel("Mensagem para o cliente").fill("Oi, Carla! Podemos continuar?");
+  await page.getByRole("button", { name: "Enviar" }).click();
+  await expect(timeline.getByText("Oi, Carla! Podemos continuar?")).toBeVisible();
 });

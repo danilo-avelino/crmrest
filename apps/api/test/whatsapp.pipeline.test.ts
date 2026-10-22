@@ -73,7 +73,7 @@ describe("pipeline do WhatsApp", () => {
       include: { contact: { include: { identities: true } }, messages: { orderBy: { createdAt: "asc" } } },
     });
     expect(conversation).toMatchObject({ status: "OPEN", unreadCount: 1, channelId: fx.whatsapp.id });
-    expect(conversation.windowExpiresAt!.getTime()).toBeGreaterThan(Date.now() + 23 * 3_600_000);
+    expect(conversation.windowExpiresAt).toBeNull(); // sem janela de 24h no WhatsApp (QR Code)
     expect(conversation.contact).toMatchObject({ name: "João Silva", phone: "+5511911110001", phoneSource: "channel" });
     expect(conversation.contact.identities.map((i) => [i.channelType, i.externalId])).toEqual([["WHATSAPP", "5511911110001"]]);
     expect(conversation.messages.map((m) => [m.type, (m.content as { text?: string }).text])).toEqual([
@@ -231,13 +231,13 @@ describe("pipeline do WhatsApp", () => {
     expect((await channels()).find((c) => c.id === fx.whatsapp.id)).toMatchObject({ status: "CONNECTED" });
   });
 
-  it("não envia fora da janela de 24h nem em canal sem envio (iFood)", async () => {
+  it("não envia fora da janela de 24h (Instagram) nem em canal sem envio (iFood)", async () => {
     const contact = await admin.contact.create({ data: { tenantId: fx.tenant.id, name: "Sem janela" } });
     const closed = await admin.conversation.create({
       data: {
         tenantId: fx.tenant.id,
         contactId: contact.id,
-        channelId: fx.whatsapp.id,
+        channelId: fx.instagram.id,
         status: "OPEN",
         windowExpiresAt: new Date(Date.now() - 60_000),
       },
@@ -254,7 +254,7 @@ describe("pipeline do WhatsApp", () => {
     expect((await send(ifood.id).expect(422)).body.message).toBe("Este canal não permite responder pelo Dish Desk.");
   });
 
-  it("com a janela fechada, só sai template aprovado, com as variáveis", async () => {
+  it("template aprovado da API oficial sai com as variáveis", async () => {
     const contact = await admin.contact.create({
       data: {
         tenantId: fx.tenant.id,
@@ -287,7 +287,6 @@ describe("pipeline do WhatsApp", () => {
       const api = (method: "get" | "post", path: string) =>
         request(app.getHttpServer())[method](`/api/conversations/${closed.id}${path}`).set("Authorization", `Bearer ${token}`);
 
-      await api("post", "/messages").send({ text: "texto livre" }).expect(422);
       const templates = await api("get", "/templates").expect(200);
       expect(templates.body).toEqual([
         { name: "retomar_atendimento", language: "pt_BR", category: "UTILITY", body: "Olá, {{1}}! Podemos continuar seu atendimento?", variables: 1 },

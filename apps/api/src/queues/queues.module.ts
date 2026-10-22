@@ -17,7 +17,7 @@ export const QUEUES = {
 } as const;
 
 /** Payload bruto de um webhook, como chegou da plataforma. */
-export type InboundJob = { source: "meta"; payload: unknown };
+export type InboundJob = { source: "meta" | "evolution"; payload: unknown };
 export type OutboundJob = { tenantId: string; messageId: string };
 /** `ifood`: só no job "ifood-inbound" (mensagem do cliente copiada do chat do iFood, com o pedido da conversa). */
 export type AutomationJob = { tenantId: string; conversationId: string; ifood?: { event: InboundEvent; orderId: string } };

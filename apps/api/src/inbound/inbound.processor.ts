@@ -13,5 +13,6 @@ export class InboundProcessor extends JobProcessor {
 
   async process(job: Job<InboundJob>): Promise<void> {
     if (job.data.source === "meta") await this.inbound.processMeta(job.data.payload);
+    else if (job.data.source === "evolution") await this.inbound.processEvolution(job.data.payload);
   }
 }

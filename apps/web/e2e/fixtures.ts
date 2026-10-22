@@ -86,7 +86,7 @@ export async function createInboxFixture() {
     "Peço desculpas pela demora! Já estou verificando.",
   ]);
 
-  // Segundo cliente: a janela de 24h já fechou (só template).
+  // Segundo cliente: conversa parada há dois dias (na API oficial, a janela de 24h teria fechado).
   const closedContact = { id: randomUUID(), name: `Cliente Sem Janela ${fx.suffix}`, waId: "5511955551111" };
   await fx.db.query(`INSERT INTO contacts (id, tenant_id, name, phone, phone_source, phone_status) VALUES ($1, $2, $3, $4, 'channel', 'ok')`, [
     closedContact.id,

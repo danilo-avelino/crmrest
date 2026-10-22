@@ -33,6 +33,40 @@ services:
       timeout: 5s
       retries: 10
 
+  # WhatsApp por QR Code (Evolution API). Usa o banco "evolution" do mesmo Postgres. A chave é a EVOLUTION_API_KEY do .env;
+  # o painel da própria Evolution fica em http://localhost:8085/manager. Os webhooks vão para a API de dev no host.
+  evolution:
+    image: evoapicloud/evolution-api:v2.3.7
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SERVER_URL: http://localhost:8085
+      AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY:-dev-evolution-key}
+      DATABASE_PROVIDER: postgresql
+      DATABASE_CONNECTION_URI: postgresql://comanda:comanda@postgres:5432/evolution?schema=public
+      DATABASE_CONNECTION_CLIENT_NAME: dishdesk
+      # Só o necessário: as instâncias e as mensagens novas (o status das enviadas e o download de mídia dependem delas).
+      DATABASE_SAVE_DATA_INSTANCE: "true"
+      DATABASE_SAVE_DATA_NEW_MESSAGE: "true"
+      DATABASE_SAVE_MESSAGE_UPDATE: "false"
+      DATABASE_SAVE_DATA_CONTACTS: "false"
+      DATABASE_SAVE_DATA_CHATS: "false"
+      DATABASE_SAVE_DATA_LABELS: "false"
+      DATABASE_SAVE_DATA_HISTORIC: "false"
+      CACHE_REDIS_ENABLED: "false"
+      CACHE_LOCAL_ENABLED: "true"
+      # Nome do aparelho em "Aparelhos conectados" no celular do restaurante.
+      CONFIG_SESSION_PHONE_CLIENT: Dish Desk
+      CONFIG_SESSION_PHONE_NAME: Chrome
+      QRCODE_COLOR: "#1A1814" # ink do design
+      TELEMETRY_ENABLED: "false"
+      LOG_LEVEL: ERROR,WARN,INFO
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "127.0.0.1:8085:8080"
+
 volumes:
   postgres-data:
   redis-data:

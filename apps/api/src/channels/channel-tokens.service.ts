@@ -73,6 +73,7 @@ export class ChannelTokensService implements OnModuleInit {
   async refreshWhatsApp(tenantId: string, channelId: string): Promise<void> {
     const scope = { tenantIds: [tenantId] };
     const secrets = await this.secrets(tenantId, channelId);
+    if (secrets.instance) return; // conectado por QR Code: o token é da Evolution e não vence
     const status = await this.connectors.whatsapp.tokenStatus(secrets.accessToken);
     if (!status) return; // simulação ou app da Meta não configurado: não há como conferir
     if (!status.valid) {

@@ -50,6 +50,8 @@ export type IntegrationsDto = {
     instagramLogin: boolean;
     /** Cadastro incorporado da Meta (WhatsApp): ids públicos que o SDK do Facebook usa no navegador. */
     whatsappSignup: { appId: string; configId: string } | null;
+    /** WhatsApp por QR Code (Evolution API): sem ela configurada no servidor, o botão fica desligado. */
+    whatsappQr: boolean;
   };
   integrations: IntegrationDto[];
   /** Outros restaurantes de que quem está vendo é administrador: os que um WhatsApp ou Instagram pode atender. */
@@ -146,3 +148,11 @@ export const WhatsAppSignupRequest = z.object({
     .optional(),
 });
 export type WhatsAppSignupRequest = z.infer<typeof WhatsAppSignupRequest>;
+
+/**
+ * Conexão do WhatsApp por QR Code. `session` identifica a tentativa (a instância na Evolution API); `qr` é a imagem
+ * (data URL) a escanear, null enquanto a Evolution ainda não gerou ou quando o número já conectou.
+ */
+export type WhatsAppQrDto =
+  | { status: "waiting"; session: string; qr: string | null }
+  | { status: "connected"; session: string; integration: IntegrationDto };

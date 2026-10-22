@@ -15,6 +15,8 @@ if (process.env.REDIS_URL) {
 for (const key of ["IFOOD_CLIENT_ID", "IFOOD_CLIENT_SECRET", "IFOOD_APP_TYPE", "IFOOD_WIDGET_ID", "IFOOD_CHAT_BRIDGE", "IFOOD_ORDER_ACTIONS", "IFOOD_EXTENSION_URL"]) delete process.env[key];
 // O mesmo vale para o Cardápio Web de produção e o envio real: o banco é o mesmo do dev, com lojas e clientes reais.
 delete process.env.CARDAPIO_WEB_API_URL;
+// A Evolution de dev conectaria números de verdade: os testes usam uma falsa e passam as próprias variáveis.
+for (const key of ["EVOLUTION_API_URL", "EVOLUTION_API_KEY", "EVOLUTION_WEBHOOK_URL", "EVOLUTION_WEBHOOK_TOKEN"]) delete process.env[key];
 // Recuperação de senha: os testes usam um Supabase Auth falso; o de verdade mandaria e-mails.
 for (const key of ["SUPABASE_URL", "SUPABASE_SECRET_KEY"]) delete process.env[key];
 process.env.CHANNELS_DRY_RUN = "true";

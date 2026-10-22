@@ -1,17 +1,20 @@
-import { createHmac, randomInt, timingSafeEqual } from "node:crypto";
+import { createHmac, randomBytes, randomInt, timingSafeEqual } from "node:crypto";
 import { decrypt, encrypt, parseEncryptionKey } from "@dishdesk/database";
 import {
   type AddIntegrationRequest,
   type AddIntegrationResponse,
   CHANNEL_LABEL,
+  formatPhone,
   type IfoodStoresRequest,
   type IfoodStoresResultDto,
   INTEGRATION_TYPES,
   type IntegrationDto,
   type IntegrationsDto,
   type IntegrationType,
+  phoneFromWhatsAppId,
   SERVING_TYPES,
   TRIAL_REUSE_DAYS,
+  type WhatsAppQrDto,
   type WhatsAppSignupRequest,
 } from "@dishdesk/shared";
 import { InjectQueue } from "@nestjs/bullmq";
@@ -121,6 +124,7 @@ export class IntegrationsService {
           this.env.META_APP_ID && this.env.META_APP_SECRET && this.env.META_EMBEDDED_SIGNUP_CONFIG_ID
             ? { appId: this.env.META_APP_ID, configId: this.env.META_EMBEDDED_SIGNUP_CONFIG_ID }
             : null,
+        whatsappQr: this.connectors.evolution.configured,
       },
       integrations: channels.map(toDto),
       servableTenants: canEdit ? await this.servableTenants(auth.userId, tenantId) : [],
@@ -296,6 +300,88 @@ export class IntegrationsService {
   }
 
   /**
+   * WhatsApp por QR Code: cria uma instância na Evolution e devolve o QR Code. A `session` (o nome da instância) começa
+   * pelo id do restaurante: é o que prova, na leitura seguinte, de quem é a tentativa.
+   */
+  async whatsappQrStart(auth: RequestAuth, tenantId: string): Promise<WhatsAppQrDto> {
+    requireTenantAdmin(auth, tenantId);
+    if (!this.connectors.evolution.configured) {
+      throw new UnprocessableEntityException("A conexão do WhatsApp por QR Code não está configurada neste servidor.");
+    }
+    const session = `${tenantId}-${randomBytes(6).toString("hex")}`;
+    try {
+      return { status: "waiting", session, qr: await this.connectors.evolution.createInstance(session) };
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      throw new UnprocessableEntityException(`Não foi possível gerar o QR Code: ${reason.replace(/\.$/, "")}.`);
+    }
+  }
+
+  /**
+   * O painel lê de tempos em tempos: enquanto o número não conecta, devolve o QR Code atual. Conectado, o número vira
+   * a integração (o mesmo número de antes só troca de instância, e a antiga é apagada). Recusado (número de outro
+   * restaurante, teste grátis repetido), a instância é apagada: ela não pode ficar recebendo mensagens.
+   */
+  async whatsappQrStatus(auth: RequestAuth, tenantId: string, session: string): Promise<WhatsAppQrDto> {
+    requireTenantAdmin(auth, tenantId);
+    this.requireQrSession(tenantId, session);
+    const evolution = this.connectors.evolution;
+    let connection: Awaited<ReturnType<typeof evolution.connection>>;
+    try {
+      connection = await evolution.connection(session);
+    } catch (error) {
+      this.logger.warn(`QR Code do WhatsApp indisponível: ${error instanceof Error ? error.message : String(error)}`);
+      throw new UnprocessableEntityException("Esta tentativa de conexão expirou. Gere outro QR Code.");
+    }
+    if (connection.state === "waiting") return { status: "waiting", session, qr: connection.qr };
+
+    const phone = formatPhone(phoneFromWhatsAppId(connection.ownerId));
+    const verified: VerifiedChannel = {
+      type: "WHATSAPP",
+      externalId: connection.ownerId,
+      name: connection.name ? `${connection.name} (${phone})` : phone,
+      secrets: { accessToken: evolution.instanceToken(session), instance: session },
+    };
+    const previous = (await this.whatsappInstances(auth, tenantId, connection.ownerId))[0];
+    let integration: IntegrationDto;
+    try {
+      integration = await this.save(tenantId, auth.userId, verified);
+    } catch (error) {
+      await this.dropInstance(session);
+      throw error;
+    }
+    if (previous && previous !== session) await this.dropInstance(previous);
+    return { status: "connected", session, integration };
+  }
+
+  /** Fechou o QR Code sem conectar: apaga a instância (a não ser que o número tenha conectado nesse meio tempo). */
+  async whatsappQrCancel(auth: RequestAuth, tenantId: string, session: string): Promise<void> {
+    requireTenantAdmin(auth, tenantId);
+    this.requireQrSession(tenantId, session);
+    if ((await this.whatsappInstances(auth, tenantId)).includes(session)) return;
+    await this.dropInstance(session);
+  }
+
+  private requireQrSession(tenantId: string, session: string): void {
+    if (!session.startsWith(`${tenantId}-`)) throw new NotFoundException("Tentativa de conexão não encontrada.");
+  }
+
+  /** Instâncias da Evolution dos WhatsApps deste restaurante (só do número informado, se houver). */
+  private async whatsappInstances(auth: RequestAuth, tenantId: string, externalId?: string): Promise<string[]> {
+    const channels = await this.db.withTenants({ tenantIds: [tenantId], userId: auth.userId }, (tx) =>
+      tx.channel.findMany({ where: { tenantId, type: "WHATSAPP", ...(externalId && { externalId }) }, select: { credentials: true } }),
+    );
+    return channels.flatMap((channel) => instanceOf(this.connectors, channel.credentials) ?? []);
+  }
+
+  /** Apaga uma instância da Evolution; se falhar, só registra (ela fica sem canal e os webhooks dela são ignorados). */
+  private async dropInstance(instance: string): Promise<void> {
+    await this.connectors.evolution.deleteInstance(instance).catch((error: Error) => {
+      this.logger.warn(`Instância ${instance} da Evolution não apagada: ${error.message}`);
+    });
+  }
+
+  /**
    * Desconecta uma conta ou loja: apaga a credencial e deixa de aceitar mensagens, pedidos e envios dela.
    * O canal continua existindo por causa do histórico (conversas e pedidos); conectar a mesma conta de novo o reativa.
    */
@@ -325,17 +411,21 @@ export class IntegrationsService {
     });
   }
 
-  private turnOff(auth: RequestAuth, tenantId: string, channelId: string, extra: { deletedAt?: Date }): Promise<IntegrationDto> {
+  private async turnOff(auth: RequestAuth, tenantId: string, channelId: string, extra: { deletedAt?: Date }): Promise<IntegrationDto> {
     requireTenantAdmin(auth, tenantId);
-    return this.db.withTenants({ tenantIds: [tenantId], userId: auth.userId }, async (tx) => {
+    const { saved, instance } = await this.db.withTenants({ tenantIds: [tenantId], userId: auth.userId }, async (tx) => {
       const channel = await tx.channel.findFirst({
         where: { id: channelId, tenantId, deletedAt: null, type: { in: [...INTEGRATION_TYPES] } },
-        select: { id: true },
+        select: { id: true, credentials: true },
       });
       if (!channel) throw new NotFoundException("Integração não encontrada.");
       const data = { status: "DISCONNECTED" as const, credentials: encrypt(JSON.stringify({}), this.key), ...extra };
-      return toDto(await tx.channel.update({ where: { id: channel.id }, data, select: SELECT }));
+      const saved = toDto(await tx.channel.update({ where: { id: channel.id }, data, select: SELECT }));
+      return { saved, instance: instanceOf(this.connectors, channel.credentials) };
     });
+    // WhatsApp por QR Code: o aparelho do Dish Desk sai de "Aparelhos conectados" no celular do restaurante.
+    if (instance) await this.dropInstance(instance);
+    return saved;
   }
 
   private async save(tenantId: string, userId: string, verified: VerifiedChannel): Promise<IntegrationDto> {
@@ -528,6 +618,15 @@ export class IntegrationsService {
 
   private loginStateMac(payload: string): string {
     return createHmac("sha256", this.env.JWT_SECRET).update(`instagram-login:${payload}`).digest("base64url");
+  }
+}
+
+/** A instância da Evolution guardada nas credenciais (WhatsApp por QR Code); credenciais vazias ou da Meta: null. */
+function instanceOf(connectors: ConnectorsService, credentials: Uint8Array): string | null {
+  try {
+    return connectors.secrets(credentials).instance ?? null;
+  } catch {
+    return null; // integração desconectada: as credenciais foram apagadas
   }
 }
 

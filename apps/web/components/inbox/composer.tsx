@@ -197,10 +197,11 @@ export function Composer({ conversation }: { conversation: ConversationListItem 
               </Button>
             ))}
             <div className="mx-1 h-[18px] w-px bg-rule" />
-            {conversation.channel.type === "WHATSAPP" ? (
+            {/* Templates são da API oficial do WhatsApp, a única com janela de 24h; pelo QR Code, a resposta é sempre livre. */}
+            {conversation.channel.type === "WHATSAPP" && capabilities.window24h ? (
               <TemplatePicker conversationId={conversation.id} emphasized={!windowOpen} />
             ) : (
-              <Button variant="outline" size="sm" disabled title="Templates só existem no WhatsApp" className="text-[11.5px]">
+              <Button variant="outline" size="sm" disabled title="Templates só existem na API oficial do WhatsApp" className="text-[11.5px]">
                 Template
               </Button>
             )}

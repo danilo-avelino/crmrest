@@ -10,7 +10,8 @@ export type ChannelCapabilities = {
 };
 
 export const CHANNEL_CAPABILITIES: Record<ChannelType, ChannelCapabilities> = {
-  WHATSAPP: { send: true, window24h: true, providesPhone: true },
+  // WhatsApp conectado por QR Code (Evolution API): sem a janela de 24h nem templates, que são regras da API oficial.
+  WHATSAPP: { send: true, window24h: false, providesPhone: true },
   INSTAGRAM: { send: true, window24h: true, providesPhone: false },
   MESSENGER: { send: false, window24h: true, providesPhone: false },
   // O iFood não oferece chat por integração: a conversa mostra só os pedidos.

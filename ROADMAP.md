@@ -65,7 +65,7 @@ Objetivo: um restaurante piloto atende clientes de WhatsApp, Instagram e iFood e
 - Como atendente, quero ver o status de entrega (enviado, entregue, lido, falhou ✓✓).
 - Como atendente, quero receber imagens, áudios e documentos (só exibir; o envio de mídia fica para depois).
 - Como atendente, quero enviar um **template aprovado** quando a janela de 24h estiver fechada (botão "Template" do composer).
-- Decisão: **somente a WhatsApp Cloud API oficial da Meta**, sem provedores intermediários. Bibliotecas não oficiais (WhatsApp Web) estão proibidas.
+- Decisão original: **somente a WhatsApp Cloud API oficial da Meta**. **Revista em 21/10/2026:** a Meta desabilitou o portfólio Dish Desk no WhatsApp e o canal passou a conectar **por QR Code, pela Evolution API** (WhatsApp Web, não oficial; serviço próprio). Sem janela de 24h nem templates. Risco aceito: o WhatsApp pode banir números, sobretudo com envio em massa. O código da API oficial continua no repositório para quando a Meta liberar.
 - No MVP, o canal é conectado por **script/seed administrativo** com credenciais criptografadas (AES-256-GCM). A tela de Canais fica na Fase 2.
 
 #### E6 — Conector Instagram Direct · **M** · depende de: E4, App Review da Meta

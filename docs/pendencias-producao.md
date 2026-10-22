@@ -34,11 +34,11 @@ Esta é a lista do que falta para o Dish Desk atender restaurantes de verdade. Q
   - [x] Política de privacidade e exclusão de dados do app da Meta apontando para `https://www.dishdesk.com.br/privacidade` e `/exclusao-de-dados` (substitui o documento publicado) — 11/10.
   - [ ] `dishdesk.com.br` sem `www` não abre: a Railway exige CNAME na raiz e o DNS do Registro.br não aceita. Decisão de 11/10: nada fora da Railway (sem Cloudflare). Resta testar, com você logado no Registro.br, se o redirecionamento do "modo básico" convive com o CNAME do `www`; se substituir a zona avançada, a raiz fica sem responder.
   - [ ] Apagar na zona do Registro.br os registros antigos `app` (CNAME) e `_railway-verify.app` (TXT). Não atrapalham — você, ou o Claude com o Registro.br logado.
-- [ ] **Número real de WhatsApp** — a produção usa o número de teste da Meta (+1 555)
-  - [ ] Escolher o número do restaurante piloto.
-  - [ ] Cadastrar a forma de pagamento na conta do WhatsApp.
-  - [ ] Ter o nome de exibição aprovado.
-  - [ ] Criar os templates na conta de produção.
+- [ ] **WhatsApp por QR Code (Evolution API)** — decisão de 21/10, depois de a Meta desabilitar o portfólio Dish Desk no WhatsApp. Substitui o "número real de WhatsApp" da API oficial (pagamento, nome de exibição e templates não se aplicam).
+  - [x] Conector, webhook `/api/webhooks/evolution`, modal do QR Code em Integrações e testes — Claude, 21/10. Testado no dev com a Evolution 2.3.7 no Docker; QR escaneado com celular de verdade pelo usuário em 21/10.
+  - [ ] Railway: serviço novo com a imagem `evoapicloud/evolution-api:v2.3.7`, as variáveis do `docker-compose.yml` (banco próprio, por exemplo um schema `evolution` no Supabase) e domínio privado.
+  - [ ] Railway, na `api`: `EVOLUTION_API_URL`, `EVOLUTION_API_KEY`, `EVOLUTION_WEBHOOK_URL` (endereço privado da `api` + `/api/webhooks/evolution`) e `EVOLUTION_WEBHOOK_TOKEN`.
+  - [ ] Conectar o número do restaurante piloto pelo QR Code.
 - [ ] **iFood** — a produção usa credenciais de teste
   - [x] Criar a conta Empresa (CNPJ) no Portal do Desenvolvedor — feito em 12/10 (dishdesk.crm@gmail.com, perfil Profissional).
   - [x] Cadastrar o app "Dish Desk" no Portal (Centralizado, categoria PDV, módulos Order e Events, não listado) — Claude, 12/10. Fica "Em desenvolvimento": o iFood só entrega as credenciais dele depois da homologação.

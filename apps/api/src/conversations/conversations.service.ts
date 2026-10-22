@@ -149,7 +149,11 @@ export class ConversationsService {
       let file: Response;
       if (media.url) file = await fetch(media.url, { signal: AbortSignal.timeout(60_000) });
       else if (media.externalMediaId && message.channel.type === "WHATSAPP") {
-        file = await this.connectors.whatsapp.fetchMedia(media.externalMediaId, this.connectors.secrets(message.channel.credentials).accessToken);
+        const { accessToken, instance } = this.connectors.secrets(message.channel.credentials);
+        // WhatsApp por QR Code: a Evolution baixa o arquivo pelo id da mensagem.
+        file = instance
+          ? await this.connectors.evolution.fetchMedia(instance, accessToken, media.externalMediaId)
+          : await this.connectors.whatsapp.fetchMedia(media.externalMediaId, accessToken);
       } else throw new Error("mídia sem origem");
       if (!file.ok || !file.body) throw new Error(`HTTP ${file.status}`);
       // O Instagram não informa o tipo no webhook ("image/*"): vale o que o arquivo diz.

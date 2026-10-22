@@ -13,9 +13,10 @@ import { INACTIVITY_CLOSE_MS } from "../automations/inactivity.service.js";
 import { TriageService } from "../automations/triage.service.js";
 import { ENV, type Env } from "../config/env.js";
 import { ConnectorsService } from "../connectors/connectors.service.js";
+import { evolutionConnection, parseEvolution, splitEvolutionPayload } from "../connectors/evolution.connector.js";
 import { parseInstagram } from "../connectors/instagram.connector.js";
 import { splitMetaPayload } from "../connectors/meta.js";
-import { parseWhatsApp } from "../connectors/whatsapp.connector.js";
+import { type ParsedWebhook, parseWhatsApp } from "../connectors/whatsapp.connector.js";
 import { DatabaseService } from "../core/database.service.js";
 import { RealtimeEmitter } from "../realtime/realtime.emitter.js";
 
@@ -67,22 +68,58 @@ export class InboundService {
       }
       const parsed =
         batch.channelType === "WHATSAPP" ? parseWhatsApp(channel.id, batch.value) : parseInstagram(channel.id, batch.events);
-      if (parsed.rejected) this.logger.warn(`${parsed.rejected} evento(s) fora do formato esperado ignorado(s)`);
-      for (const message of parsed.messages) {
-        const conversation = await this.handleMessage(channel, await this.withProfile(channel, message));
-        // "SAIR" pede para parar de receber mensagens: não é hora de responder com o menu.
-        if (conversation && !(channel.type === "WHATSAPP" && isOptOut(message.text))) {
-          await this.triage.afterInbound({
-            channel,
-            conversationId: conversation.id,
-            previousStatus: conversation.previousStatus,
-            newAttendance: conversation.newAttendance,
-            text: message.text,
-          });
-        }
-      }
-      for (const status of parsed.statuses) await this.handleStatus(channel, status);
+      await this.deliver(channel, parsed);
     }
+  }
+
+  /**
+   * Webhook da Evolution (WhatsApp por QR Code). O canal é achado pelo número da instância e só aceita eventos da
+   * instância guardada nele: uma instância antiga do mesmo número (reconectado) é ignorada.
+   */
+  async processEvolution(payload: unknown): Promise<void> {
+    const batch = splitEvolutionPayload(payload);
+    if (!batch?.externalId) return; // instância que ainda não conectou (o QR Code é lido pela tela de Integrações)
+    const channel = await this.resolveChannel("WHATSAPP", batch.externalId);
+    const instance = channel && (await this.channelSecrets(channel)).instance;
+    if (!channel || instance !== batch.instance) {
+      this.logger.warn(`Webhook de instância desconhecida da Evolution: ${batch.instance}`);
+      return;
+    }
+    const connection = evolutionConnection(batch.event, batch.data);
+    if (connection) {
+      // Desconectado no celular: o canal fica "Com erro" e a Inbox pede para conectar de novo.
+      const status = connection === "open" ? "CONNECTED" : "ERROR";
+      await this.db.withTenants({ tenantIds: [channel.tenantId] }, (tx) =>
+        tx.channel.updateMany({ where: { id: channel.id, status: { not: "DISCONNECTED" } }, data: { status } }),
+      );
+      return;
+    }
+    await this.deliver(channel, parseEvolution(channel.id, batch.event, batch.data));
+  }
+
+  private async deliver(channel: ResolvedChannel, parsed: ParsedWebhook): Promise<void> {
+    if (parsed.rejected) this.logger.warn(`${parsed.rejected} evento(s) fora do formato esperado ignorado(s)`);
+    for (const message of parsed.messages) {
+      const conversation = await this.handleMessage(channel, await this.withProfile(channel, message));
+      // "SAIR" pede para parar de receber mensagens: não é hora de responder com o menu.
+      if (conversation && !(channel.type === "WHATSAPP" && isOptOut(message.text))) {
+        await this.triage.afterInbound({
+          channel,
+          conversationId: conversation.id,
+          previousStatus: conversation.previousStatus,
+          newAttendance: conversation.newAttendance,
+          text: message.text,
+        });
+      }
+    }
+    for (const status of parsed.statuses) await this.handleStatus(channel, status);
+  }
+
+  private async channelSecrets(channel: ResolvedChannel) {
+    const { credentials } = await this.db.withTenants({ tenantIds: [channel.tenantId] }, (tx) =>
+      tx.channel.findUniqueOrThrow({ where: { id: channel.id }, select: { credentials: true } }),
+    );
+    return this.connectors.secrets(credentials);
   }
 
   /** Webhooks chegam sem contexto: o canal é achado por uma função restrita do banco. */

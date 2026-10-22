@@ -8,6 +8,7 @@ import {
   type IntegrationsDto,
   RenameIntegrationRequest,
   ServedTenantsRequest,
+  type WhatsAppQrDto,
   WhatsAppSignupRequest,
 } from "@dishdesk/shared";
 import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Query, Redirect } from "@nestjs/common";
@@ -17,6 +18,8 @@ import { ZodPipe } from "../common/zod.pipe.js";
 import { type InstagramCallback, IntegrationsService } from "./integrations.service.js";
 
 const IntegrationsQuery = z.object({ tenantId: z.uuid() });
+// Tentativa de conexão do WhatsApp por QR Code: o id do restaurante e um sufixo aleatório (IntegrationsService.whatsappQrStart).
+const QrSession = z.string().regex(/^[0-9a-f-]{36}-[0-9a-f]{12}$/, "Tentativa de conexão inválida.");
 const InstagramCallbackQuery = z.looseObject({ code: z.string().optional(), state: z.string().optional(), error: z.string().optional() });
 
 @Controller("integrations")
@@ -114,5 +117,31 @@ export class IntegrationsController {
     @CurrentAuth() auth: RequestAuth,
   ): Promise<IntegrationDto> {
     return this.integrations.whatsappSignup(auth, tenantId, body);
+  }
+
+  /** WhatsApp por QR Code: cria a tentativa de conexão e devolve o primeiro QR Code. */
+  @Post(":tenantId/whatsapp/qr")
+  whatsappQrStart(@Param("tenantId", ParseUUIDPipe) tenantId: string, @CurrentAuth() auth: RequestAuth): Promise<WhatsAppQrDto> {
+    return this.integrations.whatsappQrStart(auth, tenantId);
+  }
+
+  /** O QR Code atual ou, se o número já foi conectado, a integração. */
+  @Get(":tenantId/whatsapp/qr/:session")
+  whatsappQrStatus(
+    @Param("tenantId", ParseUUIDPipe) tenantId: string,
+    @Param("session", new ZodPipe(QrSession)) session: string,
+    @CurrentAuth() auth: RequestAuth,
+  ): Promise<WhatsAppQrDto> {
+    return this.integrations.whatsappQrStatus(auth, tenantId, session);
+  }
+
+  @Delete(":tenantId/whatsapp/qr/:session")
+  @HttpCode(204)
+  whatsappQrCancel(
+    @Param("tenantId", ParseUUIDPipe) tenantId: string,
+    @Param("session", new ZodPipe(QrSession)) session: string,
+    @CurrentAuth() auth: RequestAuth,
+  ): Promise<void> {
+    return this.integrations.whatsappQrCancel(auth, tenantId, session);
   }
 }

@@ -25,6 +25,12 @@ const EnvSchema = z.object({
   META_APP_ID: z.string().min(1).optional(),
   META_EMBEDDED_SIGNUP_CONFIG_ID: z.string().min(1).optional(),
   META_GRAPH_URL: z.url().default("https://graph.facebook.com/v24.0"),
+  // WhatsApp por QR Code (Evolution API, serviço próprio): endereço e chave global da Evolution, o endereço em que ela
+  // entrega os webhooks à API (/api/webhooks/evolution) e o token que ela manda neles. Sem os quatro, o botão fica desligado.
+  EVOLUTION_API_URL: z.url().optional(),
+  EVOLUTION_API_KEY: z.string().min(1).optional(),
+  EVOLUTION_WEBHOOK_URL: z.url().optional(),
+  EVOLUTION_WEBHOOK_TOKEN: z.string().min(16).optional(),
   INSTAGRAM_GRAPH_URL: z.url().default("https://graph.instagram.com/v24.0"),
   // iFood: credencial do aplicativo. Sem ela, o polling fica desligado.
   IFOOD_CLIENT_ID: z.string().min(1).optional(),

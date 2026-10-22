@@ -156,7 +156,7 @@ describe("API da Inbox", () => {
     expect(body).toMatchObject({ type: "NOTE", direction: "INTERNAL", status: null, sentBy: { id: fx.user.id } });
   });
 
-  it("reenvia uma mensagem que falhou, respeitando a janela de 24h", async () => {
+  it("reenvia uma mensagem que falhou; no WhatsApp (QR Code) não há janela de 24h", async () => {
     const chat = await admin.conversation.findUniqueOrThrow({ where: { id: mariaChat.id } });
     const failed = await admin.message.create({
       data: {
@@ -173,9 +173,6 @@ describe("API da Inbox", () => {
     const retry = () => send("post", `/conversations/${chat.id}/messages/${failed.id}/retry`);
 
     await admin.conversation.update({ where: { id: chat.id }, data: { windowExpiresAt: minutesAgo(1) } });
-    expect((await retry().expect(422)).body.message).toBe("A janela de 24h para resposta livre terminou.");
-
-    await admin.conversation.update({ where: { id: chat.id }, data: { windowExpiresAt: new Date(Date.now() + 3_600_000) } });
     const { body } = await retry().expect(200);
     expect(body).toMatchObject({ id: failed.id, status: "PENDING", statusError: null });
     await retry().expect(422); // já não está mais como falha

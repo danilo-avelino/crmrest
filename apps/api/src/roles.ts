@@ -35,6 +35,7 @@ import { MembersController } from "./settings/members.controller.js";
 import { QuickRepliesController } from "./settings/quick-replies.controller.js";
 import { SettingsController } from "./settings/settings.controller.js";
 import { SettingsService } from "./settings/settings.service.js";
+import { EvolutionWebhookController } from "./webhooks/evolution-webhook.controller.js";
 import { MetaWebhookController } from "./webhooks/meta-webhook.controller.js";
 import { StripeWebhookController } from "./webhooks/stripe-webhook.controller.js";
 
@@ -60,7 +61,7 @@ import { StripeWebhookController } from "./webhooks/stripe-webhook.controller.js
 export class ApiRoleModule {}
 
 /** gateway: endpoints públicos dos canais (só valida e enfileira) e o webhook de pagamento da Stripe. */
-@Module({ controllers: [MetaWebhookController, StripeWebhookController] })
+@Module({ controllers: [MetaWebhookController, EvolutionWebhookController, StripeWebhookController] })
 export class GatewayRoleModule {}
 
 /** realtime: Socket.IO para os painéis. */

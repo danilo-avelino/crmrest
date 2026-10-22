@@ -163,7 +163,7 @@ export async function drainQueues(app: INestApplication): Promise<void> {
 }
 
 type GraphReply = { status: number; body: unknown };
-type GraphRequest = { method: string; path: string; authorization?: string; body: unknown };
+type GraphRequest = { method: string; path: string; authorization?: string; apikey?: string; body: unknown };
 
 /** Resposta padrão: perfil do Instagram no GET; no POST, os ids de mensagem do WhatsApp e do Instagram. */
 const defaultReply = (request: GraphRequest, count: number): GraphReply =>
@@ -171,7 +171,7 @@ const defaultReply = (request: GraphRequest, count: number): GraphReply =>
     ? { status: 200, body: { name: "Fernanda Lima", username: "fe.lima" } }
     : { status: 200, body: { messages: [{ id: `wamid.MOCK${count}` }], message_id: `mid.MOCK${count}` } };
 
-/** Graph API falsa (Meta e Instagram): registra as requisições e responde (ou com o erro configurado). */
+/** Graph API falsa (Meta e Instagram, e também a Evolution API): registra as requisições e responde (ou com o erro configurado). */
 export async function startMockGraph() {
   const requests: GraphRequest[] = [];
   let reply = (request: GraphRequest): GraphReply => defaultReply(request, requests.length);
@@ -180,7 +180,8 @@ export async function startMockGraph() {
     for await (const chunk of req) raw += String(chunk);
     // Corpo em JSON ou, na troca de código do login do Instagram, um formulário (fica como texto).
     const parsed = !raw ? null : req.headers["content-type"]?.includes("json") ? JSON.parse(raw) : raw;
-    const request = { method: req.method ?? "GET", path: req.url ?? "", authorization: req.headers.authorization, body: parsed };
+    const apikey = req.headers.apikey as string | undefined; // a Evolution API se autentica por este cabeçalho
+    const request = { method: req.method ?? "GET", path: req.url ?? "", authorization: req.headers.authorization, apikey, body: parsed };
     requests.push(request);
     const { status, body } = reply(request);
     // Buffer = o download de um arquivo de mídia, devolvido como veio.

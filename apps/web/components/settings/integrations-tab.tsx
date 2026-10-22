@@ -14,6 +14,7 @@ import {
   SERVING_TYPES,
   tokenExpiryLabel,
   tokenExpiryWarning,
+  type WhatsAppQrDto,
 } from "@dishdesk/shared";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckIcon, ChevronRightIcon, CircleAlertIcon, CopyIcon, PencilIcon, PlusIcon, SearchIcon, XIcon } from "lucide-react";
@@ -29,7 +30,6 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/components/ui/toast";
 import { usePendingAction } from "@/hooks/use-pending-action";
 import { ApiError } from "@/lib/api";
-import { type FacebookSdk, loadFacebookSdk, runEmbeddedSignup } from "@/lib/embedded-signup";
 import { cn } from "@/lib/utils";
 
 type Field = { name: string; label: string; placeholder?: string; secret?: boolean; numeric?: boolean };
@@ -38,7 +38,7 @@ const GROUPS = ["Canais de atendimento", "Marketplaces"] as const;
 
 /**
  * Cada sistema: o que a integração faz, como identificar a conta e, quando a conexão é por formulário, o que pedir.
- * O Instagram conecta pelo login do Instagram; o WhatsApp, pela janela da Meta (com o formulário só sem ela).
+ * O Instagram conecta pelo login do Instagram; o WhatsApp, pelo QR Code.
  */
 const SYSTEMS: {
   type: IntegrationType;
@@ -59,19 +59,11 @@ const SYSTEMS: {
   {
     type: "WHATSAPP",
     group: "Canais de atendimento",
-    title: "WhatsApp Business API",
-    summary: "WhatsApp Business API",
-    description: "Números da WhatsApp Cloud API (Meta). As conversas de cada número chegam na Inbox.",
+    summary: "Conexão por QR Code",
+    description: "Números do WhatsApp ou do WhatsApp Business, conectados pelo QR Code como no WhatsApp Web. As conversas de cada número chegam na Inbox.",
     account: "Número conectado",
-    idLabel: "ID do número",
+    idLabel: "ID no WhatsApp",
     another: "Adicionar outro número",
-    tip: "Para receber mensagens, o número deve estar ativo no WhatsApp Business Manager com a conta aprovada pela Meta.",
-    help: "No app da Meta, em WhatsApp → Configuração da API. Use o token permanente de um usuário do sistema; o número precisa estar registrado na Cloud API.",
-    fields: [
-      { name: "phoneNumberId", label: "ID do número", placeholder: "Ex.: 997004416819345", numeric: true },
-      { name: "wabaId", label: "ID da conta do WhatsApp Business (WABA)", placeholder: "Ex.: 25239395755710258", numeric: true },
-      { name: "accessToken", label: "Token de acesso", secret: true },
-    ],
   },
   {
     type: "INSTAGRAM",
@@ -422,7 +414,6 @@ function Catalog({ onClose, onPick }: { onClose: () => void; onPick: (type: Inte
 function IntegrationPanel({ system, data, adding, onClose }: { system: System; data: IntegrationsDto; adding: boolean; onClose: () => void }) {
   const label = CHANNEL_LABEL[system.type];
   const items = data.integrations.filter((integration) => integration.type === system.type);
-  const signup = system.type === "WHATSAPP" ? data.platform.whatsappSignup : null;
   // Pode atender outros restaurantes: o admin administra mais de um e a conta é um canal de atendimento.
   const canServe = data.canEdit && data.servableTenants.length > 0 && (SERVING_TYPES as readonly IntegrationType[]).includes(system.type);
   // Volta do login do Instagram com a conta conectada (?canal=…): já pergunta quais restaurantes ela atende.
@@ -431,7 +422,7 @@ function IntegrationPanel({ system, data, adding, onClose }: { system: System; d
   // "details": as contas; "form": nova integração por formulário; uma conta: a confirmação antes de desconectá-la ou
   // excluí-la; `serve`: logo depois de conectar, os restaurantes que a conta atende.
   const [view, setView] = useState<"details" | "form" | { item: IntegrationDto; remove: boolean } | { serve: IntegrationDto }>(() =>
-    canServe && connected ? { serve: connected } : adding && data.canEdit && system.type !== "INSTAGRAM" && !signup ? "form" : "details",
+    canServe && connected ? { serve: connected } : adding && data.canEdit && system.fields ? "form" : "details",
   );
   const tip = pendingOf(system.type, data.platform)?.text ?? system.tip;
   const addLabel = items.some((item) => item.status !== "DISCONNECTED") ? system.another : `Conectar o ${label}`;
@@ -442,9 +433,14 @@ function IntegrationPanel({ system, data, adding, onClose }: { system: System; d
   let action: ReactNode;
   if (!data.canEdit) action = <p className="text-[12px] text-ink-3">Só o administrador do restaurante adiciona integrações.</p>;
   else if (system.type === "INSTAGRAM") action = <InstagramLogin tenantId={data.tenantId} enabled={data.platform.instagramLogin} label={addLabel} />;
-  else if (signup) {
+  else if (system.type === "WHATSAPP") {
     action = (
-      <WhatsAppSignup tenantId={data.tenantId} ids={signup} label={addLabel} onConnected={(item) => canServe && setView({ serve: item })} />
+      <WhatsAppQr
+        tenantId={data.tenantId}
+        enabled={data.platform.whatsappQr}
+        label={addLabel}
+        onConnected={(item) => canServe && setView({ serve: item })}
+      />
     );
   }
   else action = <AddButton onClick={() => setView("form")}>{addLabel}</AddButton>;
@@ -698,95 +694,130 @@ function InstagramLogin({ tenantId, enabled, label }: { tenantId: string; enable
 }
 
 /**
- * WhatsApp: o botão abre um modal do Dish Desk com o passo a passo; dele sai a janela do cadastro incorporado da
- * Meta (a Meta não deixa essas páginas dentro de outro site, então a janela continua separada). Quem já usa o app
- * WhatsApp Business escolhe conectar o app e escaneia um QR code com o celular (Coexistência): o número continua
- * funcionando no app.
+ * WhatsApp por QR Code (Evolution API): o modal cria a tentativa de conexão, mostra o QR Code e confere a cada 2 s se
+ * o número conectou. O QR Code vence em segundos e a API troca por outro; fechar sem conectar apaga a tentativa.
  */
-function WhatsAppSignup({
+function WhatsAppQr({
   tenantId,
-  ids,
+  enabled,
   label,
   onConnected,
 }: {
   tenantId: string;
-  ids: { appId: string; configId: string };
+  enabled: boolean;
   label: string;
   onConnected?: (item: IntegrationDto) => void;
 }) {
   const { request } = useAuth();
   const queryClient = useQueryClient();
   const toast = useToast();
-  const [sdk, setSdk] = useState<FacebookSdk | null>(null);
-  const [failure, setFailure] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
-  // "meta": a janela da Meta está aberta; "saving": a Meta respondeu e o Dish Desk está guardando a conexão.
-  const [step, setStep] = useState<"idle" | "meta" | "saving">("idle");
+  const [session, setSession] = useState<string | null>(null);
+  const [qr, setQr] = useState<string | null>(null);
+  const [failure, setFailure] = useState<string | null>(null);
 
-  // O SDK carrega antes do clique: a janela da Meta precisa abrir no próprio clique, senão o navegador a bloqueia.
-  useEffect(() => {
-    loadFacebookSdk(ids.appId).then(setSdk, (error: Error) => setFailure(error.message));
-  }, [ids.appId]);
-
-  async function connect() {
-    if (!sdk) return;
+  async function start() {
+    setOpen(true);
     setFailure(null);
-    setStep("meta");
+    setQr(null);
     try {
-      const result = await runEmbeddedSignup(sdk, ids.configId);
-      if (!result) return; // janela fechada
-      setStep("saving");
-      const item = await request<IntegrationDto>(`/integrations/${tenantId}/whatsapp/signup`, { method: "POST", body: result });
-      await queryClient.invalidateQueries({ queryKey: ["integrations", tenantId] });
-      setOpen(false);
-      toast("WhatsApp conectado");
-      onConnected?.(item);
+      const result = await request<WhatsAppQrDto>(`/integrations/${tenantId}/whatsapp/qr`, { method: "POST" });
+      setSession(result.session);
+      if (result.status === "waiting") setQr(result.qr);
     } catch (error) {
-      leaveIfBlocked(error, tenantId);
-      setFailure(error instanceof Error ? error.message : "Não foi possível conectar o WhatsApp.");
-    } finally {
-      setStep("idle");
+      setFailure(error instanceof ApiError ? error.message : "Não foi possível gerar o QR Code.");
     }
+  }
+
+  // Com o modal aberto: confere se o número conectou e pega o QR Code novo quando o anterior vence.
+  useEffect(() => {
+    if (!open || !session) return;
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const check = async () => {
+      try {
+        const result = await request<WhatsAppQrDto>(`/integrations/${tenantId}/whatsapp/qr/${session}`);
+        if (stopped) return;
+        if (result.status === "connected") {
+          await queryClient.invalidateQueries({ queryKey: ["integrations", tenantId] });
+          void queryClient.invalidateQueries({ queryKey: ["channels"] });
+          setSession(null);
+          setOpen(false);
+          toast("WhatsApp conectado");
+          onConnected?.(result.integration);
+          return;
+        }
+        setQr(result.qr);
+      } catch (error) {
+        if (stopped) return;
+        // Recusa da API (tentativa vencida, número de outro restaurante...): para e mostra o motivo. Falha de rede: tenta de novo.
+        if (error instanceof ApiError) {
+          leaveIfBlocked(error, tenantId);
+          setSession(null);
+          setFailure(error.message);
+          return;
+        }
+      }
+      timer = setTimeout(check, 2000);
+    };
+    timer = setTimeout(check, 2000);
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+    };
+  }, [open, session]);
+
+  function close() {
+    if (session) void request(`/integrations/${tenantId}/whatsapp/qr/${session}`, { method: "DELETE" }).catch(() => undefined);
+    setSession(null);
+    setOpen(false);
   }
 
   return (
     <div>
-      <AddButton disabled={!sdk} onClick={() => setOpen(true)}>
+      <AddButton disabled={!enabled} onClick={start}>
         {label}
       </AddButton>
-      {failure && !open && <Failure>{failure}</Failure>}
-      <Dialog open={open} onOpenChange={(next) => step === "idle" && setOpen(next)}>
+      {!enabled && <p className="mt-2 text-[11.5px] text-ink-3">A conexão do WhatsApp por QR Code ainda não foi configurada neste servidor.</p>}
+      <Dialog open={open} onOpenChange={(next) => !next && close()}>
         <DialogContent className="w-[460px]">
           <div className="flex items-center gap-3.5 border-b border-surface-2 px-[26px] py-[22px]">
             <SystemIcon type="WHATSAPP" className="size-[46px] rounded-2xl text-[14px]" />
             <div className="min-w-0">
               <DialogTitle className="text-[16px]">Conectar o WhatsApp</DialogTitle>
-              <DialogDescription className="mt-0.5">Cadastro oficial da Meta</DialogDescription>
+              <DialogDescription className="mt-0.5">Pelo QR Code, como no WhatsApp Web</DialogDescription>
             </div>
-            {step === "idle" && <CloseButton onClick={() => setOpen(false)} />}
+            <CloseButton onClick={close} />
           </div>
           <div className="px-[26px] py-[22px]">
-            <p className="mb-3 leading-normal text-ink-2">Ao continuar, abrimos uma janela da Meta, onde você faz o login e escolhe o número.</p>
             <ol className="mb-4 list-decimal space-y-1.5 pl-5 leading-normal text-ink-2">
-              <li>Entre com o seu Facebook e escolha a conta da empresa.</li>
-              <li>Informe o número do restaurante.</li>
-              <li>Se o número já usa o app WhatsApp Business, escolha conectar o app e escaneie o QR code com o celular. O número continua funcionando no app.</li>
-              <li>Se o número não usa o app, a Meta manda um código por SMS ou ligação.</li>
+              <li>No celular do restaurante, abra o WhatsApp ou o WhatsApp Business.</li>
+              <li>Toque em Mais opções (Android) ou em Configurações (iPhone) e depois em Aparelhos conectados → Conectar um aparelho.</li>
+              <li>Aponte a câmera do celular para o QR Code abaixo.</li>
             </ol>
+            <div className="mx-auto mb-4 flex size-[232px] items-center justify-center rounded-xl border border-rule bg-surface p-2">
+              {qr ? (
+                // eslint-disable-next-line @next/next/no-img-element -- data URL gerada pela Evolution, trocada a cada poucos segundos
+                <img src={qr} alt="QR Code para conectar o WhatsApp" className="size-full" />
+              ) : (
+                <p className="px-4 text-center text-[12px] text-ink-3">{failure ? "QR Code indisponível" : "Gerando o QR Code…"}</p>
+              )}
+            </div>
             <p className="mb-[18px] flex items-start gap-[9px] rounded-xl border border-warning-line bg-warning-lt px-[13px] py-[11px] text-[11px] leading-[1.55] text-warning-ink">
               <CircleAlertIcon className="mt-px size-3.5 shrink-0 text-warning" aria-hidden />
-              Para o QR code, deixe o app WhatsApp Business atualizado no celular e com o número em uso há alguns dias. Libere pop-ups para este site se o navegador bloquear a janela.
+              O número continua funcionando no celular. Esta conexão não é a API oficial da Meta: para o WhatsApp não bloquear o número, não mande
+              mensagens em massa para quem nunca falou com o restaurante. Abra o WhatsApp no celular pelo menos uma vez a cada 14 dias.
             </p>
-            {step === "meta" && <p className="mb-3 text-[12px] text-ink-3">Aguardando você concluir na janela da Meta…</p>}
-            {step === "saving" && <p className="mb-3 text-[12px] text-ink-3">Guardando a conexão…</p>}
             {failure && <Failure>{failure}</Failure>}
             <div className="mt-3 flex justify-end gap-2">
-              <Button variant="ghost" disabled={step !== "idle"} onClick={() => setOpen(false)}>
+              <Button variant="ghost" onClick={close}>
                 Cancelar
               </Button>
-              <Button variant="accent" disabled={!sdk} onClick={connect}>
-                Abrir a janela da Meta
-              </Button>
+              {failure && (
+                <Button variant="accent" onClick={start}>
+                  Gerar outro QR Code
+                </Button>
+              )}
             </div>
           </div>
         </DialogContent>
