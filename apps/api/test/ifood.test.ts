@@ -369,7 +369,7 @@ describe("iFood (pedidos por polling)", () => {
     await admin.conversation.delete({ where: { id: chat.id } });
   });
 
-  it("saiu para entrega com o cliente conversando pelo WhatsApp: avisa na conversa, uma vez só", async () => {
+  it("pronto e saiu para entrega com o cliente conversando pelo WhatsApp: avisa na conversa, uma vez cada", async () => {
     const { contactId } = await admin.order.findFirstOrThrow({ where: { tenantId: fx.tenant.id, externalOrderId: "pedido-2" } });
     const conversation = await admin.conversation.create({
       data: {
@@ -382,19 +382,26 @@ describe("iFood (pedidos por polling)", () => {
       },
     });
     // Entregador do iFood: "coletado" depois de "saiu para entrega" não repete o aviso.
-    ifood.state.events.push(event("ev-aviso-1", "CONFIRMED", "pedido-2"), event("ev-aviso-2", "DISPATCHED", "pedido-2"), event("ev-aviso-3", "COLLECTED", "pedido-2"));
+    ifood.state.events.push(
+      event("ev-aviso-1", "CONFIRMED", "pedido-2"),
+      event("ev-aviso-pronto", "READY_TO_PICKUP", "pedido-2"),
+      event("ev-aviso-2", "DISPATCHED", "pedido-2"),
+      event("ev-aviso-3", "COLLECTED", "pedido-2"),
+    );
     await service.poll();
-    const messages = await admin.message.findMany({ where: { conversationId: conversation.id } });
+    const messages = await admin.message.findMany({ where: { conversationId: conversation.id }, orderBy: { createdAt: "asc" } });
     expect(messages.map((m) => m.content)).toEqual([
+      { automation: "order_ready", text: "✅ Seu pedido #4901 ficou pronto!" },
       { automation: "order_dispatched", text: expect.stringMatching(/^🛵 Boa notícia! Seu pedido #4901 saiu para entrega às \d{2}:\d{2}\.$/) },
     ]);
-    expect(messages[0]!.direction).toBe("OUTBOUND");
+    expect(messages.every((m) => m.direction === "OUTBOUND")).toBe(true);
 
     // Entregue: avisa; o CONCLUDED que vem depois não repete.
     ifood.state.events.push(event("ev-aviso-4", "DELIVERED", "pedido-2"), event("ev-aviso-5", "CONCLUDED", "pedido-2"));
     await service.poll();
     const after = await admin.message.findMany({ where: { conversationId: conversation.id }, orderBy: { createdAt: "asc" } });
     expect(after.map((m) => m.content)).toEqual([
+      expect.objectContaining({ automation: "order_ready" }),
       expect.objectContaining({ automation: "order_dispatched" }),
       { automation: "order_delivered", text: "✅ Seu pedido #4901 foi entregue! Bom apetite 😋" },
     ]);

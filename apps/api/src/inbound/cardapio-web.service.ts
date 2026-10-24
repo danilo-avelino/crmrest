@@ -89,7 +89,7 @@ export class CardapioWebService implements OnModuleInit {
       if (!status) continue;
       const updated = await this.updateStatus(channel, summary.id, status, CARDAPIO_WEB_EVENT[summary.status], new Date(summary.updated_at));
       if (!updated) await this.createOrder(channel, await this.client.order(apiKey, summary.id));
-      else if (updated.changed && (status === "DISPATCHED" || status === "DELIVERED")) {
+      else if (updated.changed && (status === "READY" || status === "DISPATCHED" || status === "DELIVERED")) {
         await this.notices.statusChanged(channel.tenantId, updated.id, status);
       }
     }

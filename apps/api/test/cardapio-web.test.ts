@@ -225,7 +225,7 @@ describe("Cardápio Web (pedidos por polling)", () => {
     );
   });
 
-  it("saiu para entrega e entregue com a conversa do cliente em andamento: avisa uma vez cada, pelo WhatsApp", async () => {
+  it("pronto, saiu para entrega e entregue com a conversa do cliente em andamento: avisa uma vez cada, pelo WhatsApp", async () => {
     const order = cwOrder(9003, 50);
     cardapioWeb.state.orders["9003"] = order;
     cardapioWeb.state.updated = [summary(order, "confirmed")];
@@ -234,24 +234,34 @@ describe("Cardápio Web (pedidos por polling)", () => {
     const notices = async () =>
       (await admin.message.findMany({ where: { conversation }, orderBy: { createdAt: "asc" } }))
         .map((m) => m.content as { automation?: string; text?: string })
-        .filter((c) => c.automation === "order_dispatched" || c.automation === "order_delivered");
+        .filter((c) => ["order_ready", "order_dispatched", "order_delivered"].includes(c.automation ?? ""));
     expect(await notices()).toEqual([]); // confirmado não avisa
 
     const sentBefore = graph.requests.length;
+    cardapioWeb.state.updated = [summary(order, "ready")];
+    await service.poll();
+    // "Aguardando retirada" depois de "pronto" é o mesmo status: não repete o aviso.
+    cardapioWeb.state.updated = [summary(order, "waiting_to_catch")];
+    await service.poll();
+    await drainQueues(app);
+    expect(await notices()).toEqual([{ automation: "order_ready", text: "✅ Seu pedido #50 ficou pronto!" }]);
+
     cardapioWeb.state.updated = [summary(order, "released")];
     await service.poll();
     await drainQueues(app);
-    expect(await notices()).toEqual([
-      { automation: "order_dispatched", text: expect.stringMatching(/^🛵 Boa notícia! Seu pedido #50 saiu para entrega às \d{2}:\d{2}\.$/) },
-    ]);
+    expect((await notices()).at(-1)).toEqual({
+      automation: "order_dispatched",
+      text: expect.stringMatching(/^🛵 Boa notícia! Seu pedido #50 saiu para entrega às \d{2}:\d{2}\.$/),
+    });
     expect(graph.requests.slice(sentBefore).map((r) => r.body)).toEqual([
+      expect.objectContaining({ to: "5585994197929", text: expect.objectContaining({ body: expect.stringContaining("#50 ficou pronto") }) }),
       expect.objectContaining({ to: "5585994197929", text: expect.objectContaining({ body: expect.stringContaining("#50 saiu para entrega") }) }),
     ]);
 
     // O mesmo status lido de novo (a leitura se sobrepõe) não repete o aviso.
     await service.poll();
     await drainQueues(app);
-    expect(await notices()).toHaveLength(1);
+    expect(await notices()).toHaveLength(2);
 
     cardapioWeb.state.updated = [summary(order, "delivered")];
     await service.poll();
@@ -261,7 +271,7 @@ describe("Cardápio Web (pedidos por polling)", () => {
     cardapioWeb.state.updated = [summary(order, "closed")];
     await service.poll();
     await drainQueues(app);
-    expect(await notices()).toHaveLength(2);
+    expect(await notices()).toHaveLength(3);
   });
 
   it("base de clientes: importa todas as páginas, junta pelo telefone, não repete quem já está ligado nem traz quem só tem nome", async () => {
@@ -338,19 +348,33 @@ describe("Cardápio Web (pedidos por polling)", () => {
     await admin.channel.update({ where: { id: channelId }, data: { status: "CONNECTED" } });
   });
 
-  it("conversa resolvida não recebe o aviso de saída", async () => {
-    await admin.conversation.updateMany({ where: { tenantId: fx.tenant.id, contactId: whatsappContactId }, data: { status: "RESOLVED" } });
+  it("conversa resolvida: avisa se o cliente escreveu nas últimas 24h, sem reabrir; depois disso, não", async () => {
+    const conversations = { tenantId: fx.tenant.id, contactId: whatsappContactId };
+    await admin.conversation.updateMany({ where: conversations, data: { status: "RESOLVED" } });
     const order = cwOrder(9004, 51);
     cardapioWeb.state.orders["9004"] = order;
     cardapioWeb.state.updated = [summary(order, "confirmed")];
     await service.poll();
+    const texts = async () =>
+      (await admin.message.findMany({ where: { tenantId: fx.tenant.id, conversation: conversations } })).map(
+        (m) => (m.content as { text?: string }).text ?? "",
+      );
+
+    cardapioWeb.state.updated = [summary(order, "ready")];
+    await service.poll();
+    await drainQueues(app);
+    expect((await texts()).filter((text) => text.includes("#51"))).toEqual(["✅ Seu pedido #51 ficou pronto!"]);
+    expect((await admin.conversation.findMany({ where: conversations })).every((c) => c.status === "RESOLVED")).toBe(true);
+
+    // A última mensagem do cliente tem mais de 24h: não avisa.
+    await admin.message.updateMany({
+      where: { tenantId: fx.tenant.id, conversation: conversations, direction: "INBOUND" },
+      data: { createdAt: new Date(Date.now() - 25 * 3_600_000) },
+    });
     cardapioWeb.state.updated = [summary(order, "released")];
     await service.poll();
     await drainQueues(app);
-    const texts = (await admin.message.findMany({ where: { tenantId: fx.tenant.id, conversation: { contactId: whatsappContactId } } })).map(
-      (m) => (m.content as { text?: string }).text ?? "",
-    );
-    expect(texts.some((text) => text.includes("#51"))).toBe(false);
+    expect((await texts()).filter((text) => text.includes("#51"))).toHaveLength(1);
   });
 
   it("cada etapa vista pelo polling entra na linha do tempo do pedido, com o horário da alteração", async () => {
