@@ -36,6 +36,7 @@ const AUTOMATION_LABEL: Record<NonNullable<MessageContent["automation"]>, string
   order_delivered: "Automação · pedido entregue",
   order_links: "Automação · links para pedir",
   handoff: "Automação · encaminhado à equipe",
+  no_agents_online: "Automação · sem atendentes online",
   survey: "Automação · pesquisa de satisfação",
   survey_thanks: "Automação · avaliação recebida",
   after_hours: "Automação · fora do horário",
@@ -47,7 +48,7 @@ const AUTOMATION_LABEL: Record<NonNullable<MessageContent["automation"]>, string
 };
 
 const SUCCESS_EVENTS = new Set<MessageContent["event"]>(["phone_collected", "contacts_merged", "rating"]);
-const WARNING_EVENTS = new Set<MessageContent["event"]>(["phone_pending", "opt_out", "merge_conflict", "order_ambiguous"]);
+const WARNING_EVENTS = new Set<MessageContent["event"]>(["phone_pending", "opt_out", "merge_conflict", "order_ambiguous", "awaiting_agent"]);
 
 /** Linha do tempo da conversa: mensagens, eventos, notas e pedidos (board Inbox → "Mensagens"). */
 export function MessageTimeline({

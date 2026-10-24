@@ -74,30 +74,44 @@ export function CurrentOrder({ conversationId }: { conversationId: string }) {
 
 /**
  * Barra do pedido feito até o fim mais distante (saída prevista, entrega prometida ou agora): o preenchimento é o tempo
- * decorrido (ou até a saída, se já saiu); as marcas são a saída prevista (previsão real) e a entrega prometida.
+ * decorrido (até a saída, se já saiu; até o pronto, se é retirada); as marcas são o pronto, a saída prevista (previsão
+ * real) e a entrega prometida.
  */
 function Progress({ current }: { current: CurrentOrderDto }) {
   const now = useNow(30_000);
   const { order, forecast } = current;
   const start = Date.parse(order.placedAt);
   const departed = order.dispatchedAt ? Date.parse(order.dispatchedAt) : null;
+  const ready = current.readyAt ? Date.parse(current.readyAt) : null;
+  // Retirada pronta: a parte do restaurante acabou, falta o cliente buscar (sem saída nem atraso).
+  const awaitingPickup = current.takeout && ready !== null && departed === null;
   const departAt = forecast ? Date.parse(forecast.departAt) : null;
   const promised = current.promisedAt ? Date.parse(current.promisedAt) : null;
-  const filledUntil = departed ?? now;
+  const filledUntil = departed ?? (awaitingPickup && ready !== null ? ready : now);
   const end = Math.max(filledUntil, departAt ?? 0, promised ?? 0, start + 60_000);
   const at = (time: number) => `${Math.min(100, Math.max(0, ((time - start) / (end - start)) * 100))}%`;
-  const late = Boolean(forecast?.late) || (promised !== null && departed === null && now > promised);
+  const late = !awaitingPickup && (Boolean(forecast?.late) || (promised !== null && departed === null && now > promised));
 
   return (
     <div className="flex flex-col gap-1.5">
       <div className="relative h-2 rounded-full bg-surface-2" role="img" aria-label="Andamento do pedido">
         <div className={cn("absolute inset-y-0 left-0 rounded-full", late ? "bg-tomate" : "bg-ink")} style={{ width: at(filledUntil) }} />
+        {ready !== null && <Marker left={at(ready)} className="bg-ink-3" />}
         {departAt && <Marker left={at(departAt)} className="bg-warning" />}
         {promised && <Marker left={at(promised)} className="bg-success" />}
       </div>
       <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-[11.5px] tabular-nums">
-        <dt className="text-ink-3">{departed ? "Saiu em" : "Decorrido"}</dt>
+        <dt className="text-ink-3">{departed ? "Saiu em" : awaitingPickup ? "Pronto em" : "Decorrido"}</dt>
         <dd className="text-right font-medium">{responseTime((filledUntil - start) / 1000)}</dd>
+        {ready !== null && (
+          <>
+            <dt className="flex items-center gap-1.5 text-ink-3">
+              <span className="size-2 rounded-full bg-ink-3" />
+              {current.takeout ? "Pronto para retirada" : "Pronto"}
+            </dt>
+            <dd className="text-right">{clock(current.readyAt!)}</dd>
+          </>
+        )}
         {departed ? (
           <>
             <dt className="text-ink-3">Saída</dt>
@@ -121,12 +135,12 @@ function Progress({ current }: { current: CurrentOrderDto }) {
           <>
             <dt className="flex items-center gap-1.5 text-ink-3">
               <span className="size-2 rounded-full bg-success" />
-              Entrega prometida ({CHANNEL_LABEL[order.channelType]})
+              {current.takeout ? "Retirada" : "Entrega"} prometida ({CHANNEL_LABEL[order.channelType]})
             </dt>
             <dd className="text-right">{clock(current.promisedAt!)}</dd>
           </>
         )}
-        {!departed && !departAt && (
+        {!departed && !departAt && !awaitingPickup && (
           <dd className="col-span-2 text-ink-3">Sem previsão de saída: ainda não há pedidos que saíram para servir de base.</dd>
         )}
       </dl>

@@ -74,10 +74,11 @@ export class OrdersService {
       for (const { contact } of rows) {
         if (!histories.has(contact.id)) histories.set(contact.id, await customerHistory(tx, contact));
       }
-      // Atraso só dos que ainda estão no restaurante; sem base para a previsão, vale a entrega prometida.
+      // Atraso só dos que ainda estão no restaurante (a retirada pronta já está à espera do cliente); sem base para a
+      // previsão, vale a entrega prometida.
       const late = new Set<string>();
       for (const order of rows) {
-        if (order.dispatchedAt || !IN_PRODUCTION.includes(order.status)) continue;
+        if (order.dispatchedAt || !IN_PRODUCTION.includes(order.status) || (order.status === "READY" && isTakeout(order.raw))) continue;
         const forecast = await forecastOrder(tx, order.id, now);
         const promised = promisedAt(order.raw);
         if (forecast ? forecast.late : promised !== null && promised < now) late.add(order.id);
@@ -308,15 +309,22 @@ export class OrdersService {
             items: true,
             channel: { select: { type: true } },
             tenant: { select: { name: true } },
-            events: { where: { code: "CONFIRMED" }, orderBy: { occurredAt: "asc" }, take: 1, select: { occurredAt: true } },
+            events: {
+              where: { code: { in: ["CONFIRMED", "READY_TO_PICKUP"] } },
+              orderBy: { occurredAt: "asc" },
+              select: { code: true, occurredAt: true },
+            },
           },
         });
         const forecast = await forecastOrder(tx, order.id, now);
         const platform = PlatformOrder.safeParse(order.raw).data;
+        const at = (code: string) => order.events.find((event) => event.code === code)?.occurredAt;
         return {
           order: { ...toOrderDto(order), ...(order.tenantId !== conversation.tenantId && { restaurantName: order.tenant.name }) },
           notes: [platform?.extraInfo, platform?.delivery?.observations].filter((note): note is string => Boolean(note?.trim())),
-          startedAt: (order.events[0]?.occurredAt ?? order.placedAt).toISOString(),
+          startedAt: (at("CONFIRMED") ?? order.placedAt).toISOString(),
+          readyAt: at("READY_TO_PICKUP")?.toISOString() ?? null,
+          takeout: isTakeout(order.raw),
           promisedAt: promisedAt(order.raw)?.toISOString() ?? null,
           forecast: forecast && { departAt: forecast.departAt.toISOString(), late: forecast.late, ahead: forecast.ahead },
           history: await customerHistory(tx, conversation.contact),

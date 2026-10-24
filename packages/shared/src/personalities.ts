@@ -34,6 +34,8 @@ export type AutomationMessages = {
   closedMessage: string;
   /** O menu passou o atendimento à equipe. */
   handoff: string;
+  /** A IA precisa da equipe, mas não há atendente online (ou o restaurante está no 100% automático): a conversa espera um. */
+  noAgentsOnline: string;
   orderNumberRequest: string;
   /** Primeira linha do pedido achado; os itens e o total vêm logo abaixo. {pedido} {status} */
   orderFound: string;
@@ -92,6 +94,7 @@ export const PERSONALITY_MESSAGES: Record<Personality, AutomationMessages> = {
     phoneConfirmation: "Obrigado! Já anotamos seu telefone.",
     closedMessage: "Olá! 👋 No momento estamos fechados. Voltamos a atender {retorno} e, assim que abrirmos, respondemos sua mensagem.",
     handoff: "Certo! Um atendente já vai falar com você.",
+    noAgentsOnline: "No momento estamos sem atendentes online. Assim que um chegar, sua conversa será encaminhada para ele.",
     orderNumberRequest: "Qual é o número do pedido? Ele aparece no aplicativo ou no comprovante.",
     orderFound: "Encontramos o pedido #{pedido} ({status}):",
     orderFoundQuestion: "É este o seu pedido?",
@@ -132,6 +135,7 @@ export const PERSONALITY_MESSAGES: Record<Personality, AutomationMessages> = {
     closedMessage:
       "Olá. No momento estamos fora do horário de atendimento. Retomaremos as atividades {retorno}, quando sua mensagem será respondida.",
     handoff: "Perfeitamente. Um de nossos atendentes dará continuidade ao seu atendimento em instantes.",
+    noAgentsOnline: "No momento não há atendentes disponíveis. Assim que um de nossos atendentes estiver online, sua conversa será encaminhada a ele.",
     orderNumberRequest: "Por gentileza, informe o número do pedido. Ele consta no aplicativo ou no comprovante.",
     orderFound: "Localizamos o pedido #{pedido} ({status}):",
     orderFoundQuestion: "Poderia confirmar se este é o seu pedido?",
@@ -171,6 +175,7 @@ export const PERSONALITY_MESSAGES: Record<Personality, AutomationMessages> = {
     phoneConfirmation: "Oba, telefone anotado! 🙌 Valeu!",
     closedMessage: "Oiê! 🌙 A gente tá fechadinho agora, mas volta {retorno} e te responde assim que abrir, combinado? 😉",
     handoff: "Show! 🙌 Já já um atendente vem falar com você!",
+    noAgentsOnline: "Opa! Agora estamos sem atendentes online 😅 Assim que um chegar, sua conversa vai direto pra ele!",
     orderNumberRequest: "Bora achar seu pedido! 🔎 Qual é o número dele? Tá no app ou no comprovante.",
     orderFound: "Achamos! 🎉 Pedido #{pedido} ({status}):",
     orderFoundQuestion: "É esse aqui o seu?",
@@ -208,6 +213,7 @@ export const PERSONALITY_MESSAGES: Record<Personality, AutomationMessages> = {
     phoneConfirmation: "Fechou, telefone anotado! 👊",
     closedMessage: "Opa! Agora a gente tá fechado 😴 Mas relaxa: a gente volta {retorno} e te responde assim que abrir.",
     handoff: "Fechou! Já tem gente da equipe vindo falar com você 👊",
+    noAgentsOnline: "Agora não tem ninguém da equipe online, mas fica tranquilo: assim que alguém chegar, sua conversa vai pra ele 👊",
     orderNumberRequest: "Qual o número do pedido? Dá pra ver no app ou no comprovante.",
     orderFound: "Achamos aqui! Pedido #{pedido} ({status}):",
     orderFoundQuestion: "É esse mesmo?",
@@ -244,6 +250,7 @@ export const PERSONALITY_MESSAGES: Record<Personality, AutomationMessages> = {
     closedMessage:
       "Olá! 🧡 Agora estamos fechados, descansando para te receber da melhor forma. Voltamos {retorno} e respondemos sua mensagem com todo carinho.",
     handoff: "Pode deixar! Alguém da nossa equipe já vem conversar com você 🧡",
+    noAgentsOnline: "Neste momento nossa equipe não está online, mas não se preocupe: assim que alguém chegar, sua conversa será encaminhada com todo o carinho 🧡",
     orderNumberRequest: "Vamos encontrar seu pedido juntos! Qual é o número dele? Você encontra no aplicativo ou no comprovante.",
     orderFound: "Encontramos seu pedido #{pedido} ({status}):",
     orderFoundQuestion: "É este o seu pedido?",
@@ -284,6 +291,7 @@ export const PERSONALITY_MESSAGES: Record<Personality, AutomationMessages> = {
     phoneConfirmation: "Telefone cadastrado.",
     closedMessage: "Estamos fechados no momento. Voltamos {retorno} e respondemos assim que abrirmos.",
     handoff: "Um atendente vai falar com você.",
+    noAgentsOnline: "Sem atendentes online agora. Sua conversa vai para o primeiro que chegar.",
     orderNumberRequest: "Qual é o número do pedido? Está no aplicativo ou no comprovante.",
     orderFound: "Pedido #{pedido} ({status}):",
     orderFoundQuestion: "É este o seu pedido?",

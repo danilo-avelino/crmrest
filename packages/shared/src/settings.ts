@@ -200,6 +200,32 @@ export function reopeningAt(hours: BusinessHours, at: Date): string {
   return "em breve";
 }
 
+// ---------- Atendimento com IA (E27) ----------
+
+/**
+ * "100% automático", ligado na tela inicial da Inbox: a IA atende tudo e não chama a equipe; quem precisa de um
+ * atendente espera até o modo ser desligado (e haver alguém online, com o restaurante aberto).
+ */
+export function aiFullAutoOf(settings: unknown): boolean {
+  return z.looseObject({ aiFullAuto: z.boolean().optional() }).safeParse(settings).data?.aiFullAuto ?? false;
+}
+
+export const UpdateAiFullAutoRequest = z.object({ enabled: z.boolean() });
+export type UpdateAiFullAutoRequest = z.infer<typeof UpdateAiFullAutoRequest>;
+
+/** Situação do atendimento com IA de um restaurante (com o módulo), na tela inicial da Inbox. */
+export type AiAttendanceDto = {
+  tenantId: string;
+  tenantName: string;
+  fullAuto: boolean;
+  /** Fora do horário de funcionamento. */
+  closed: boolean;
+  /** Alguém da equipe com o Dish Desk aberto. */
+  agentsOnline: boolean;
+  /** Conversas em que o cliente espera um atendente. */
+  waiting: number;
+};
+
 // ---------- Usuários do restaurante (E15) ----------
 
 /** Pessoa da equipe na aba Usuários (inclui as desativadas). */

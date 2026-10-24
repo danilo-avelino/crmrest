@@ -23,6 +23,8 @@ export type InboundJob = { source: "meta" | "evolution"; payload: unknown };
 export type OutboundJob = { tenantId: string; messageId: string };
 /** `ifood`: só no job "ifood-inbound" (mensagem do cliente copiada do chat do iFood, com o pedido da conversa). */
 export type AutomationJob = { tenantId: string; conversationId: string; ifood?: { event: InboundEvent; orderId: string } };
+/** "ai-forward" (fila automations): as conversas que esperavam um atendente vão para a equipe, se houver alguém. */
+export type AiForwardJob = { tenantId: string };
 /** Uma página da base de clientes do Cardápio Web; `imported` soma o que as páginas anteriores trouxeram. */
 export type CardapioWebImportJob = { tenantId: string; channelId: string; page: number; imported: number };
 /** "reply": a IA responde à última mensagem do cliente; "evaluate": a IA avalia o atendimento resolvido. */

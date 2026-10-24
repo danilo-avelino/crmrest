@@ -2,9 +2,12 @@ import { getQueueToken } from "@nestjs/bullmq";
 import type { INestApplication } from "@nestjs/common";
 import type { Queue } from "bullmq";
 import request from "supertest";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { orderNumbersIn } from "../src/ai/ai-attendant.service.js";
 import { AiEvaluationService } from "../src/ai/ai-evaluation.service.js";
+import { AiForwardService } from "../src/ai/ai-forward.service.js";
+import { InactivityService } from "../src/automations/inactivity.service.js";
+import { PresenceService } from "../src/realtime/presence.service.js";
 import { keepsFacts } from "../src/ai/ai-review.service.js";
 import { QUEUES } from "../src/queues/queues.module.js";
 import {
@@ -48,6 +51,11 @@ describe("atendimento com IA: resposta, revisão e avaliação", () => {
     withoutAi = await createChannelFixture();
     await admin.tenantModule.create({ data: { tenantId: fx.tenant.id, module: "AI" } });
     token = await accessTokenFor(app, fx.user.email, fx.tenant.id);
+  });
+
+  // Alguém da equipe com o Dish Desk aberto (a presença que o gateway registra): a IA pode passar a conversa.
+  beforeEach(async () => {
+    await app.get(PresenceService).join("painel-de-teste", [fx.tenant.id]);
   });
 
   afterAll(async () => {
@@ -220,7 +228,7 @@ describe("atendimento com IA: resposta, revisão e avaliação", () => {
     expect(all.at(-1)).toMatchObject({ event: "handoff", text: "IA passou o atendimento para a equipe: Cliente mandou uma foto" });
   });
 
-  it("fechado, passar para a equipe sem dizer quando o restaurante volta: sai o aviso de fora do horário", async () => {
+  it("fechado, a conversa espera a equipe; sem dizer quando o restaurante volta, sai o aviso de fora do horário", async () => {
     // Abre só um minuto por semana: fechado agora, com dia e hora para voltar.
     const days = [{ open: "03:00", close: "03:01" }, null, null, null, null, null, null];
     const hours = { enabled: true, days, closedMessage: "Estamos fechados. Voltamos {retorno}." };
@@ -229,13 +237,102 @@ describe("atendimento com IA: resposta, revisão e avaliação", () => {
     try {
       await say("5511980000008", "wamid.AI-F1", "Quero falar com alguém");
       await settle();
+      // Ainda fechado: mesmo com alguém online, a conversa continua esperando.
+      await app.get(AiForwardService).forward(fx.tenant.id);
     } finally {
       await admin.tenant.update({ where: { id: fx.tenant.id }, data: { settings: {} } });
     }
 
-    const all = await contents("5511980000008");
+    const conversation = await conversationOf("5511980000008");
+    const all = conversation.messages.map((m) => m.content as Content);
     expect(all.at(-2)).toEqual({ text: expect.stringMatching(/^Estamos fechados\. Voltamos .+ às 03:00\.$/), automation: "after_hours" });
-    expect((await conversationOf("5511980000008")).status).toBe("PENDING");
+    expect(all.at(-1)).toMatchObject({ event: "awaiting_agent", text: expect.stringContaining("o restaurante está fechado") });
+    expect(conversation).toMatchObject({ status: "PENDING", awaitingAgentSince: null, automationState: { ai: "on", aiWaiting: true } });
+
+    // Aberto (sem horário configurado), com alguém online: a conversa vai para a equipe.
+    await app.get(AiForwardService).forward(fx.tenant.id);
+    const forwarded = await conversationOf("5511980000008");
+    expect(forwarded).toMatchObject({ status: "OPEN", automationState: { ai: "off" } });
+    expect(forwarded.awaitingAgentSince).not.toBeNull();
+    expect(forwarded.automationState).not.toHaveProperty("aiWaiting");
+    expect(forwarded.messages.at(-1)!.content).toMatchObject({ event: "handoff", text: "IA passou o atendimento para a equipe: Cliente pediu um atendente" });
+  });
+
+  it("ninguém online: a IA continua atendendo e a conversa vai para quem chegar", async () => {
+    await app.get(PresenceService).leave("painel-de-teste", [fx.tenant.id]);
+    const notice = "No momento estamos sem atendentes online. Assim que um chegar, sua conversa será encaminhada.";
+    answers.atendimento = { reply: notice, handoff: true, reason: "Cliente reclamou do atraso", order: "none" };
+    await say("5511980000010", "wamid.AI-O1", "Meu pedido está atrasado!");
+    await settle();
+
+    let conversation = await conversationOf("5511980000010");
+    expect(conversation.messages.map((m) => m.content as Content).slice(-2)).toMatchObject([
+      { text: notice, aiReply: true },
+      { event: "awaiting_agent", text: expect.stringContaining("não há atendente online") },
+    ]);
+    expect(conversation).toMatchObject({ status: "PENDING", awaitingAgentSince: null, automationState: { ai: "on", aiWaiting: true } });
+
+    // A IA segue respondendo enquanto ninguém chega, e o atendimento não é encerrado por inatividade.
+    answers.atendimento = { reply: "Abrimos às 11h.", handoff: false, reason: "", order: "none" };
+    await say("5511980000010", "wamid.AI-O2", "Que horas vocês abrem?");
+    await settle();
+    conversation = await conversationOf("5511980000010");
+    expect(conversation.messages.at(-1)!.content).toEqual({ text: "Abrimos às 11h.", aiReply: true });
+    await app.get(InactivityService).close(fx.tenant.id, conversation.id, new Date(Date.now() + 25 * 60_000));
+    expect((await conversationOf("5511980000010")).status).not.toBe("RESOLVED");
+
+    // Alguém abriu o Dish Desk.
+    await app.get(PresenceService).join("painel-de-teste", [fx.tenant.id]);
+    await app.get(AiForwardService).forward(fx.tenant.id);
+    conversation = await conversationOf("5511980000010");
+    expect(conversation).toMatchObject({ status: "OPEN", automationState: { ai: "off" } });
+    expect(conversation.awaitingAgentSince).not.toBeNull();
+  });
+
+  it("ninguém online e a IA perguntando sem avisar que não há atendente: a pergunta sai e o aviso vai logo depois", async () => {
+    await app.get(PresenceService).leave("painel-de-teste", [fx.tenant.id]);
+    answers.atendimento = { reply: "Sinto muito pelo atraso! Qual o número do pedido?", handoff: true, reason: "Atraso", order: "none" };
+    await say("5511980000012", "wamid.AI-N1", "Meu pedido atrasou");
+    await settle();
+
+    expect((await contents("5511980000012")).slice(-3)).toMatchObject([
+      { text: "Sinto muito pelo atraso! Qual o número do pedido?", aiReply: true },
+      { automation: "no_agents_online" },
+      { event: "awaiting_agent" },
+    ]);
+  });
+
+  it("100% automático: a IA nunca chama a equipe; desligado, as conversas que esperavam vão para ela", async () => {
+    const put = (bearer: string, enabled: boolean) =>
+      request(app.getHttpServer()).put(`/api/ai/${fx.tenant.id}/full-auto`).set("Authorization", `Bearer ${bearer}`).send({ enabled });
+    // Configuração do restaurante: o atendente não liga; o administrador, sim.
+    await put(token, true).expect(403);
+    const member = { where: { tenantId: fx.tenant.id, userId: fx.user.id } };
+    await admin.tenantMember.updateMany({ ...member, data: { role: "ADMIN" } });
+    onTestFinished(() => admin.tenantMember.updateMany({ ...member, data: { role: "AGENT" } }).then(() => undefined));
+    const adminToken = await accessTokenFor(app, fx.user.email, fx.tenant.id);
+    const toggle = (enabled: boolean) => put(adminToken, enabled).expect(200);
+    const { body: on } = await toggle(true);
+    expect(on).toMatchObject({ tenantId: fx.tenant.id, fullAuto: true, closed: false, agentsOnline: true });
+    const before = (on as { waiting: number }).waiting; // conversas que outros testes deixaram esperando
+
+    // Sem resposta da LLM: sai o aviso de que não há atendentes, na personalidade do restaurante.
+    delete answers.atendimento;
+    await say("5511980000011", "wamid.AI-A1", "Quero falar com uma pessoa");
+    await settle();
+    let conversation = await conversationOf("5511980000011");
+    expect(conversation.messages.map((m) => m.content as Content).slice(-2)).toMatchObject([
+      { text: "No momento estamos sem atendentes online. Assim que um chegar, sua conversa será encaminhada para ele.", automation: "no_agents_online" },
+      { event: "awaiting_agent", text: expect.stringContaining("o 100% automático está ligado") },
+    ]);
+    const { body: list } = await request(app.getHttpServer()).get("/api/ai/attendance").set("Authorization", `Bearer ${token}`).expect(200);
+    expect(list).toMatchObject([{ tenantId: fx.tenant.id, fullAuto: true, waiting: before + 1 }]);
+
+    await toggle(false);
+    // O encaminhamento roda no worker (job "ai-forward" da fila automations).
+    await vi.waitFor(async () => expect((await conversationOf("5511980000011")).awaitingAgentSince).not.toBeNull(), { timeout: 10_000 });
+    conversation = await conversationOf("5511980000011");
+    expect(conversation).toMatchObject({ status: "OPEN", automationState: { ai: "off" } });
   });
 
   it("resposta com os links para pedir não chama a equipe, mesmo que a LLM peça", async () => {

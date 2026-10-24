@@ -7,7 +7,7 @@ import { ENV, type Env } from "../config/env.js";
 import { DatabaseService } from "../core/database.service.js";
 import { type AiJob, type OutboundJob, QUEUES } from "../queues/queues.module.js";
 import { RealtimeEmitter } from "../realtime/realtime.emitter.js";
-import { automationMessage, channelSends, dispatch, tenantSettings } from "./automation.js";
+import { type AutomationState, automationMessage, channelSends, dispatch, tenantSettings } from "./automation.js";
 import { SurveyService } from "./survey.service.js";
 
 /** Tempo sem resposta do cliente, depois da última mensagem do restaurante, até encerrar o atendimento. */
@@ -37,6 +37,7 @@ export class InactivityService {
           status: true,
           windowExpiresAt: true,
           awaitingAgentSince: true,
+          automationState: true,
           channel: { select: { type: true } },
         },
       });
@@ -44,6 +45,8 @@ export class InactivityService {
       if (conversation?.status !== "OPEN") return null;
       // Cliente esperando um atendente (o "já vai falar com você" foi a última mensagem): não encerra.
       if (conversation.awaitingAgentSince) return null;
+      // Nem esperando um atendente que ainda não havia (fechado, 100% automático ou ninguém online).
+      if ((conversation.automationState as AutomationState).aiWaiting) return null;
       const capabilities = CHANNEL_CAPABILITIES[conversation.channel.type];
       const sends = channelSends(conversation.channel.type, this.env);
       if (!sends || (capabilities.window24h && !(conversation.windowExpiresAt && conversation.windowExpiresAt > now))) {

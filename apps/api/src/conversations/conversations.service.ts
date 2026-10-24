@@ -218,8 +218,8 @@ export class ConversationsService {
       // Responder implica ter lido a conversa; e o atendente assume, encerrando o menu automático (ou a IA) se ainda estiver aberto.
       const state = conversation.automationState as AutomationState;
       const menuOpen = !!state.triage && state.triage !== "done";
-      // Pendente só por ter chegado fora do horário: com a resposta da equipe, volta a ser um atendimento aberto.
-      const afterHoursPending = conversation.status === "PENDING" && state.afterHours;
+      // Pendente só por ter chegado fora do horário (ou esperando um atendente): com a resposta da equipe, volta a ser um atendimento aberto.
+      const afterHoursPending = conversation.status === "PENDING" && (state.afterHours || state.aiWaiting);
       await tx.conversation.update({
         where: { id: conversationId },
         data: {
@@ -227,12 +227,14 @@ export class ConversationsService {
           unreadCount: 0,
           awaitingAgentSince: null, // a equipe respondeu: o alarme para
           // Com o atendente na conversa, a próxima mensagem do cliente depois do pedido confirmado não chama a equipe.
-          ...((menuOpen || afterHoursPending || state.orderFollowUp || state.ai === "on") && {
+          ...((menuOpen || afterHoursPending || state.orderFollowUp || state.ai === "on" || state.aiWaiting) && {
             automationState: {
               ...state,
               triage: "done",
               afterHours: undefined,
               orderFollowUp: undefined,
+              aiWaiting: undefined,
+              aiWaitingReason: undefined,
               ...(state.ai === "on" && { ai: "off" }),
             },
           }),

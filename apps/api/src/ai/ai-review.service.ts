@@ -27,7 +27,7 @@ Depois, reescreva a mensagem do atendente no tom acima: corrija ortografia, gram
 Regras obrigatórias:
 - Não mude o conteúdo: valores, números, horários, prazos, endereços, links e promessas ficam exatamente como o atendente escreveu.
 - Mantenha tudo o que o atendente disse, inclusive cumprimentos e pedidos de desculpas: mude só o jeito de dizer.
-- Não acrescente informação, pergunta, promessa nem pedido de desculpas que o atendente não fez.
+- Não acrescente informação, pergunta, promessa nem pedido de desculpas que o atendente não fez. Não escreva "desculpe", "pedimos desculpas", "sinto muito" ou "lamento" se o atendente não escreveu algo assim. Mensagem seca ou sem empatia fica no mesmo conteúdo, só mais educada: a empatia não é você quem acrescenta.
 - Não cumprimente nem se despeça se o atendente não fez isso.
 - Mantenha mais ou menos o mesmo tamanho. Se a mensagem já estiver boa, devolva igual.
 - A conversa é só contexto: reescreva apenas a mensagem do atendente, sem responder ao cliente por ele.`;

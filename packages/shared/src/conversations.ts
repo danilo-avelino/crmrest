@@ -29,6 +29,7 @@ export type MessageContent = {
     | "order_delivered"
     | "order_links"
     | "handoff"
+    | "no_agents_online"
     | "survey"
     | "survey_thanks"
     | "after_hours"
@@ -51,6 +52,8 @@ export type MessageContent = {
     | "order_ambiguous"
     | "rating"
     | "handoff"
+    /** A IA precisa da equipe, mas não há atendente: a conversa vai para a equipe quando houver alguém. */
+    | "awaiting_agent"
     | "cancellation_alert";
   orderId?: string;
   /** O card do pedido traz o botão de conversar com o cliente (pedido informado por um entregador). */

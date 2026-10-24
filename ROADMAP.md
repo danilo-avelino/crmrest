@@ -291,7 +291,7 @@ Vale para os três épicos:
 - A definir na implementação:
   - de onde vem o cardápio (Cardápio Web, iFood ou cadastro próprio);
   - se a IA pode **anotar pedidos** ou só informa e tira dúvidas;
-  - o que acontece quando a IA transfere e não há atendente online;
+  - ~~o que acontece quando a IA transfere e não há atendente online~~ **Decidido em 24/10/2026:** sem atendente (restaurante fechado, ninguém com o Dish Desk aberto ou o **100% automático** ligado pelo administrador na tela inicial da Inbox), a IA responde tudo e não chama a equipe; quando o cliente precisa de alguém, ela avisa que no momento não há atendentes e que a conversa vai para um assim que houver. A conversa fica pendente, esperando; quando o restaurante abre, alguém abre o Dish Desk ou o 100% automático é desligado, ela vai para a equipe com o alarme de sempre;
   - os limites por conversa (nº de mensagens da IA antes de transferir).
 
 #### E28 — Suporte com revisão por IA · **M** · depende de: E8, E15

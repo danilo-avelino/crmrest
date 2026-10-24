@@ -130,6 +130,10 @@ export type CurrentOrderDto = {
   notes: string[];
   /** Início do preparo para a previsão: a confirmação (ou, sem ela, a hora do pedido). */
   startedAt: string;
+  /** Quando a loja marcou o pedido como pronto; null se ainda não marcou (ou foi direto para "saiu"). */
+  readyAt: string | null;
+  /** Retirada na loja: não há saída para entrega. */
+  takeout: boolean;
   /** Entrega (ou retirada) prometida ao cliente pela plataforma; null se ela não informa (ex.: Cardápio Web). */
   promisedAt: string | null;
   /** Previsão de saída do restaurante (E26); null se o pedido já saiu ou se ainda não há base. */

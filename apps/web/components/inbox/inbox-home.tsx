@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  type AiAttendanceDto,
   CHANNEL_LABEL,
   type ChannelHealthDto,
   INTEGRATION_TYPES,
@@ -8,9 +9,10 @@ import {
   type OrderListItem,
   type OrderPage,
 } from "@dishdesk/shared";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangleIcon,
+  BotIcon,
   LoaderCircleIcon,
   MessageSquareIcon,
   PanelRightCloseIcon,
@@ -58,6 +60,7 @@ export function InboxHome() {
   return (
     <div className="flex min-w-0 flex-1 overflow-y-auto">
       <div className="m-auto w-full max-w-[460px] px-6 py-10">
+        <AiAttendance />
         <Integrations />
         <p className="mt-8 flex items-center justify-center gap-2 text-ink-3">
           <MessageSquareIcon className="size-4" aria-hidden />
@@ -113,6 +116,86 @@ function Integrations() {
         <p className="mt-3 text-[12px] text-ink-3">Só o administrador do restaurante conecta integrações.</p>
       )}
     </section>
+  );
+}
+
+/**
+ * Atendimento com IA (restaurantes com o módulo): quem responde os clientes agora. No "100% automático", fechado ou sem
+ * ninguém online, a IA responde tudo e quem pede um atendente espera; o administrador liga e desliga o 100% automático.
+ */
+function AiAttendance() {
+  const { request, session } = useAuth();
+  const queryClient = useQueryClient();
+  const attendance = useQuery({
+    queryKey: ["ai-attendance"],
+    queryFn: () => request<AiAttendanceDto[]>("/ai/attendance"),
+    refetchInterval: 30_000,
+  });
+  if (!attendance.data?.length) return null;
+  const admin = (tenantId: string) => (session?.context?.tenants ?? []).some((tenant) => tenant.id === tenantId && tenant.role === "ADMIN");
+  const toggle = async (tenantId: string, enabled: boolean) => {
+    await request(`/ai/${tenantId}/full-auto`, { method: "PUT", body: { enabled } });
+    await queryClient.invalidateQueries({ queryKey: ["ai-attendance"] });
+  };
+
+  return (
+    <section aria-labelledby="inbox-ia" className="mb-8">
+      <h2 id="inbox-ia" className="font-heading text-[16px] font-bold tracking-[-0.3px]">
+        Atendimento com IA
+      </h2>
+      <p className="mt-0.5 mb-4 text-ink-3">Quem responde os clientes agora.</p>
+      <ul className="overflow-hidden rounded-2xl border border-rule-soft bg-surface">
+        {attendance.data.map((tenant) => (
+          <AiAttendanceRow
+            key={tenant.tenantId}
+            tenant={tenant}
+            showName={attendance.data.length > 1}
+            onToggle={admin(tenant.tenantId) ? () => toggle(tenant.tenantId, !tenant.fullAuto) : undefined}
+          />
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function AiAttendanceRow({ tenant, showName, onToggle }: { tenant: AiAttendanceDto; showName: boolean; onToggle?: () => Promise<void> }) {
+  const badge: Badge = tenant.fullAuto
+    ? { label: "100% automático", className: "bg-warning-lt text-warning-ink", dot: "bg-warning" }
+    : tenant.closed
+      ? { label: "Fechado", className: "bg-surface-2 text-ink-3", dot: "bg-ink-3" }
+      : { label: "IA + equipe", className: "bg-success-lt text-success-ink", dot: "bg-success" };
+  const text = tenant.fullAuto
+    ? "A IA responde tudo e não chama a equipe. Quem pedir um atendente espera até o 100% automático ser desligado."
+    : tenant.closed
+      ? "Restaurante fechado: a IA responde tudo, e quem pedir um atendente vai para a equipe quando abrir."
+      : "A IA responde e passa para a equipe quando o cliente precisa de alguém.";
+
+  return (
+    <li className="flex items-center gap-3 border-rule-soft px-4 py-3 [&+&]:border-t">
+      <span className="flex size-9 shrink-0 items-center justify-center rounded-[9px] bg-ink text-paper">
+        <BotIcon className="size-[18px]" aria-hidden />
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <span className="text-[13px] font-semibold">{showName ? tenant.tenantName : "IA"}</span>
+          <IntegrationBadge badge={badge} />
+        </div>
+        <p className="mt-0.5 text-[11px] text-ink-3">
+          {text}
+          {tenant.waiting > 0 && (
+            <span className="font-medium text-warning-ink tabular-nums">
+              {" "}
+              {tenant.waiting === 1 ? "1 cliente esperando atendente." : `${count(tenant.waiting)} clientes esperando atendente.`}
+            </span>
+          )}
+        </p>
+      </div>
+      {onToggle && (
+        <Button variant="outline" size="sm" className="shrink-0 text-ink-2" onClick={onToggle}>
+          {tenant.fullAuto ? "Desligar" : "Ligar 100% automático"}
+        </Button>
+      )}
+    </li>
   );
 }
 

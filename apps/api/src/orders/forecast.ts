@@ -47,7 +47,8 @@ function median(values: number[]): number {
 /**
  * Previsão de saída (E26): mediana de "confirmado → saída" dos últimos pedidos do restaurante que já saíram. Se o
  * pedido já passou desse tempo, a previsão usa só os pedidos que demoraram mais que ele; se nenhum demorou tanto,
- * agora + margem. Devolve null se o pedido já saiu ou se ainda não há pedidos que saíram para servir de base.
+ * agora + margem. Devolve null se o pedido já saiu, se é retirada e já ficou pronto (não há saída) ou se ainda não há
+ * pedidos que saíram para servir de base.
  */
 export async function forecastOrder(tx: TenantTx, orderId: string, now = new Date()): Promise<Forecast | null> {
   const confirmed = { where: { code: "CONFIRMED" }, orderBy: { occurredAt: "asc" as const }, take: 1, select: { occurredAt: true } };
@@ -56,6 +57,7 @@ export async function forecastOrder(tx: TenantTx, orderId: string, now = new Dat
     select: { id: true, tenantId: true, status: true, placedAt: true, dispatchedAt: true, raw: true, events: confirmed },
   });
   if (!order || order.dispatchedAt || (EXITED as readonly string[]).includes(order.status)) return null;
+  if (order.status === "READY" && isTakeout(order.raw)) return null;
   if (now.getTime() - order.placedAt.getTime() > STALE_MS) return null;
 
   const done = await tx.order.findMany({
@@ -157,8 +159,9 @@ export function deliveredNoticeMessage(code: string, messages: AutomationMessage
 }
 
 /**
- * O que dizer ao cliente sobre o andamento do pedido: se já saiu para entrega, quando saiu; se ainda está na cozinha,
- * a previsão de saída. Null quando não há o que dizer (entregue, cancelado ou sem base para a previsão).
+ * O que dizer ao cliente sobre o andamento do pedido: se já saiu para entrega, quando saiu; se é retirada e já ficou
+ * pronto, que está pronto; se ainda está na cozinha, a previsão de saída. Null quando não há o que dizer (entregue,
+ * cancelado ou sem base para a previsão).
  * `speakerSettings`: configurações do restaurante que fala com o cliente (personalidade e fila), quando o pedido é de
  * outro restaurante atendido pelo mesmo canal; sem elas, valem as do restaurante do pedido.
  */
@@ -167,16 +170,19 @@ export async function orderUpdateMessage(
   orderId: string,
   now = new Date(),
   speakerSettings?: unknown,
-): Promise<{ kind: "dispatched" | "forecast"; text: string } | null> {
+): Promise<{ kind: "dispatched" | "ready" | "forecast"; text: string } | null> {
   const order = await tx.order.findUnique({
     where: { id: orderId },
-    select: { status: true, dispatchedAt: true, tenant: { select: { settings: true } } },
+    select: { status: true, dispatchedAt: true, displayCode: true, externalOrderId: true, raw: true, tenant: { select: { settings: true } } },
   });
   if (!order) return null;
   const settings = speakerSettings ?? order.tenant.settings;
   const messages = automationMessagesOf(settings);
   if (order.status === "DISPATCHED" && order.dispatchedAt) {
     return { kind: "dispatched", text: dispatchedMessage(order.dispatchedAt, messages, now) };
+  }
+  if (order.status === "READY" && isTakeout(order.raw)) {
+    return { kind: "ready", text: readyNoticeMessage(order.displayCode ?? order.externalOrderId, messages) };
   }
   const forecast = await forecastOrder(tx, orderId, now);
   if (!forecast) return null;

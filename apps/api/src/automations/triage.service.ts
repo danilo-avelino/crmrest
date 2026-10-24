@@ -151,8 +151,15 @@ export class TriageService {
         select: { id: true, tenantId: true, channelId: true, automationState: true, contact: { select: { id: true, phone: true, tags: true } } },
       });
       if (conversation.contact.tags.includes(COURIER_TAG)) return null;
-      if (!event.newAttendance && (conversation.automationState as AutomationState).ai !== "on") return null;
-      if (event.newAttendance) await setAutomationState(tx, event.conversationId, { ai: "on" });
+      const state = conversation.automationState as AutomationState;
+      if (!event.newAttendance && state.ai !== "on") return null;
+      // Atendimento novo zera o estado, menos a espera por um atendente: o cliente continua esperando.
+      if (event.newAttendance) {
+        await setAutomationState(tx, event.conversationId, {
+          ai: "on",
+          ...(state.aiWaiting && { aiWaiting: true, aiWaitingReason: state.aiWaitingReason }),
+        });
+      }
       const phone =
         !conversation.contact.phone && !CHANNEL_CAPABILITIES[event.channel.type].providesPhone && event.text ? extractPhone(event.text) : null;
       return phone ? this.phoneCollection.register(tx, conversation, phone) : [];

@@ -6,10 +6,8 @@ import {
   CHANNEL_CAPABILITIES,
   CHANNEL_LABEL,
   fillMessage,
-  isOpenAt,
   type MessageContent,
   orderLinksOf,
-  reopeningAt,
 } from "@dishdesk/shared";
 import { InjectQueue } from "@nestjs/bullmq";
 import { Injectable, Logger } from "@nestjs/common";
@@ -23,6 +21,8 @@ import { latestOrderOf } from "../orders/latest-order.js";
 import { withOrderTenants } from "../orders/order-scope.js";
 import { type OutboundJob, QUEUES } from "../queues/queues.module.js";
 import { RealtimeEmitter } from "../realtime/realtime.emitter.js";
+import { PresenceService } from "../realtime/presence.service.js";
+import { type Attendance, attendanceOf } from "./ai-forward.service.js";
 import { LlmClient, type LlmMessage } from "./llm.client.js";
 import { restaurantFacts, toneOf, transcript, WRITING_RULES } from "./prompts.js";
 
@@ -82,8 +82,8 @@ Não passe para a equipe (handoff = false):
 
 Mensagem de quando você passa para a equipe (handoff = true):
 - Reclamação ou problema (não uma simples pergunta): comece reconhecendo o problema com empatia (ex.: lamentar o atraso), sem prometer solução, reembolso ou desconto.
-- Diga que alguém da equipe vai continuar o atendimento, sem fazer nenhuma pergunta (quem continua é a equipe). Não diga "um momento" nem que você vai verificar: quem verifica é a equipe.
-- Se os DADOS dizem "Está fechado agora", não diga que a equipe já vai responder: diga que o restaurante está fechado e quando volta a atender, com o dia e o horário dos DADOS.`;
+- Há atendente online (veja "Atendentes" nos DADOS): diga que alguém da equipe vai continuar o atendimento, sem fazer nenhuma pergunta (quem continua é a equipe). Não diga "um momento" nem que você vai verificar: quem verifica é a equipe.
+- Não há atendente: siga o que "Atendentes" diz nos DADOS e continue respondendo as outras dúvidas do cliente.`;
 }
 
 // "1234", "#1234", "é o 1234", "pedido 1234", "Pedido Nº 1234", "pedido: 1234", "número do pedido é 1234". Números
@@ -141,11 +141,27 @@ export function attendantMessages(
   now: Date,
   orderFacts: string,
   conversation: string,
+  attendance: Attendance,
 ): LlmMessage[] {
+  const facts = [restaurantFacts(restaurant, settings, now), attendanceFacts(attendance), orderFacts].join("\n");
   return [
     { role: "system", content: systemPrompt(restaurant, CHANNEL_LABEL[channel], settings) },
-    { role: "user", content: `DADOS\n${restaurantFacts(restaurant, settings, now)}\n${orderFacts}\n\nCONVERSA\n${conversation}` },
+    { role: "user", content: `DADOS\n${facts}\n\nCONVERSA\n${conversation}` },
   ];
+}
+
+/**
+ * Se há atendente para continuar o atendimento. Sem: a IA atende sozinha e, quando o cliente precisa da equipe, avisa
+ * que não há atendentes e que a conversa vai para um assim que houver (a instrução vai no próprio dado: o modelo a
+ * segue melhor que uma regra condicional no prompt).
+ */
+function attendanceFacts(attendance: Attendance): string {
+  if (attendance.available) return "Atendentes: há alguém da equipe online para continuar o atendimento.";
+  const when =
+    attendance.reason === "closed"
+      ? `nenhum agora, porque o restaurante está fechado. Quando o cliente precisar da equipe (handoff = true), diga que no momento estamos sem atendentes, que o restaurante volta a atender ${attendance.reopening} e que a conversa será encaminhada para a equipe assim que abrir.`
+      : "nenhum online agora. Quando o cliente precisar da equipe (handoff = true), diga que no momento estamos sem atendentes online e que, assim que um chegar, a conversa será encaminhada para ele.";
+  return `Atendentes: ${when} Você continua atendendo sozinho: responda tudo o que puder e não diga que alguém vai falar com ele agora.`;
 }
 
 /** O pedido do cliente nos DADOS da IA: o confirmado, o candidato a confirmar (sem o andamento liberado) ou nenhum. */
@@ -175,6 +191,7 @@ export class AiAttendantService {
     private readonly realtime: RealtimeEmitter,
     @InjectQueue(QUEUES.outbound) private readonly outbound: Queue<OutboundJob>,
     private readonly llm: LlmClient,
+    private readonly presence: PresenceService,
   ) {}
 
   /** Responde à última mensagem do cliente, se ninguém respondeu ainda (mensagens seguidas recebem uma resposta só). */
@@ -222,18 +239,20 @@ export class AiAttendantService {
 
     const { conversation, settings } = context;
     const state = conversation.automationState as AutomationState;
+    const attendance = await attendanceOf(this.presence, tenantId, settings, now);
     let answer: AttendantReply | null = null;
-    if ((state.aiReplies ?? 0) < MAX_AI_REPLIES) {
+    // Sem atendente, a IA responde tudo: o limite de respostas só serve para chamar a equipe.
+    if (!attendance.available || (state.aiReplies ?? 0) < MAX_AI_REPLIES) {
       const noPhone = !conversation.contact.phone && !CHANNEL_CAPABILITIES[conversation.channel.type].providesPhone;
       const orderFacts = orderFactsOf(context.order, noPhone);
       try {
         answer = await this.llm.json(
           "atendimento",
           AttendantReply,
-          attendantMessages(conversation.tenant.name, conversation.channel.type, settings, now, orderFacts, transcript(context.history)),
+          attendantMessages(conversation.tenant.name, conversation.channel.type, settings, now, orderFacts, transcript(context.history), attendance),
         );
       } catch (error) {
-        // Sem a LLM, o cliente não fica sem resposta: a equipe é chamada.
+        // Sem a LLM, o cliente não fica sem resposta: a equipe é chamada (ou, sem atendente, a conversa espera um).
         this.logger.warn(`IA sem resposta na conversa ${conversationId}: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
@@ -251,15 +270,29 @@ export class AiAttendantService {
 
       // Com os links para pedir, o cliente segue sozinho (como a opção "Fazer um pedido" do menu): a equipe não é chamada.
       const sentLinks = !!answer && orderLinksOf(settings).some((link) => answer.reply.includes(link.url));
-      const handoff = !answer || (answer.handoff && !sentLinks);
+      // O cliente precisa da equipe (ou a LLM não respondeu). Com atendente, a IA passa a conversa e sai; sem, ela continua
+      // atendendo e a conversa espera alguém (aiWaiting).
+      const needsTeam = !answer || (answer.handoff && !sentLinks);
+      const handoff = needsTeam && attendance.available;
+      const waits = needsTeam && !attendance.available;
+      const startsWaiting = waits && !current.aiWaiting;
+      // A conversa começa a esperar, mas a resposta não avisa o cliente (fechado: sem a hora em que o restaurante volta).
       const hours = businessHoursOf(settings);
-      const closed = hours.enabled && !isOpenAt(hours, now);
-      // Sem resposta da LLM, ou passando para a equipe com uma pergunta (que ninguém leria) ou, fechado, sem dizer quando o
-      // restaurante volta (só então a equipe responde), sai a mensagem automática de passar para a equipe; com o restaurante
-      // fechado, a de fora do horário.
-      const reopening = closed ? reopeningAt(hours, now).match(/\d\d:\d\d/)?.[0] : undefined;
-      const unfit = handoff && !!answer && (answer.reply.includes("?") || (reopening && !answer.reply.includes(reopening)));
+      const reopening = attendance.available ? undefined : attendance.reopening?.match(/\d\d:\d\d/)?.[0];
+      const noNotice = startsWaiting && !!answer && (reopening ? !answer.reply.includes(reopening) : !/atendente/i.test(answer.reply));
+      // Mensagem automática no lugar da resposta: sem resposta da LLM; passando para a equipe com uma pergunta (que ninguém
+      // leria); ou sem o aviso de que não há atendente, sem estar perguntando nada. Se a IA pergunta algo (ex.: o número do
+      // pedido), a resposta sai e o aviso vai logo depois.
+      const unfit = !!answer && ((handoff && answer.reply.includes("?")) || (noNotice && !answer.reply.includes("?")));
+      const appendNotice = noNotice && !unfit;
       const reply = answer && !unfit ? answer.reply : null;
+      const messages = automationMessagesOf(settings);
+      const notice = () =>
+        attendance.available
+          ? Promise.resolve(null)
+          : attendance.reason === "closed"
+            ? automationMessage(tx, conversation, "after_hours", fillMessage(hours.closedMessage, { retorno: attendance.reopening ?? "" }))
+            : automationMessage(tx, conversation, "no_agents_online", messages.noAgentsOnline);
       const id = reply
         ? (
             await tx.message.create({
@@ -275,9 +308,10 @@ export class AiAttendantService {
               select: { id: true },
             })
           ).id
-        : closed
-          ? await automationMessage(tx, conversation, "after_hours", fillMessage(hours.closedMessage, { retorno: reopeningAt(hours, now) }))
-          : await automationMessage(tx, conversation, "handoff", automationMessagesOf(settings).handoff);
+        : attendance.available
+          ? await automationMessage(tx, conversation, "handoff", messages.handoff)
+          : (await notice())!;
+      const extra = appendNotice ? await notice() : null;
       // Como no menu: a IA mostra o pedido (a resposta cita o número) e a resposta seguinte do cliente confirma ou não.
       // "É meu" une o cadastro ao do pedido; "não é" faz a IA procurar outro.
       const pending = context.order && !context.order.confirmed ? context.order : null;
@@ -287,28 +321,34 @@ export class AiAttendantService {
       const code = (pending?.displayCode ?? pending?.externalOrderId ?? "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       const offers = !!pending && !confirmed && !deniedId && !!answer && new RegExp(`(?<!\\d)${code}(?!\\d)`).test(answer.reply);
       const notify = confirmed ? await this.confirmOrder(tx, conversationId, confirmed) : [];
+      const reason = answer?.reason.trim() || undefined;
       await setAutomationState(tx, conversationId, {
         ...current,
         ai: handoff ? "off" : "on",
         aiReplies: (current.aiReplies ?? 0) + 1,
-        // Fechado: pendente até a equipe responder quando abrir, como no aviso de fora do horário.
-        ...(handoff && closed && { afterHours: true }),
+        ...(startsWaiting && { aiWaiting: true, aiWaitingReason: reason }),
         ...(confirmed && { linkedOrder: { id: confirmed, at: now.toISOString() } }),
         ...(deniedId && { aiDeniedOrderIds: [...(current.aiDeniedOrderIds ?? []), deniedId] }),
         ...(offers && pending && { aiOfferedOrderId: pending.id }),
       });
       if (handoff) {
-        const reason = answer?.reason.trim();
         await systemEvent(tx, conversation, { event: "handoff", text: `IA passou o atendimento para a equipe${reason ? `: ${reason}` : ""}` });
-        await tx.conversation.update({
-          where: { id: conversationId },
-          data: { awaitingAgentSince: new Date(), awaitingAgentQuiet: false, ...(closed && { status: "PENDING" }) },
-        });
+        await tx.conversation.update({ where: { id: conversationId }, data: { awaitingAgentSince: new Date(), awaitingAgentQuiet: false } });
       }
-      return { id, notify };
+      if (startsWaiting && !attendance.available) {
+        const why = { closed: "o restaurante está fechado", full_auto: "o 100% automático está ligado", offline: "não há atendente online" }[attendance.reason];
+        await systemEvent(tx, conversation, {
+          event: "awaiting_agent",
+          text: `Cliente precisa da equipe${reason ? ` (${reason})` : ""}, mas ${why}: a conversa vai para a equipe quando houver atendente`,
+        });
+        // Pendente: não é encerrada por inatividade enquanto espera.
+        await tx.conversation.update({ where: { id: conversationId }, data: { status: "PENDING" } });
+      }
+      return { ids: extra ? [id, extra] : [id], notify, startsWaiting };
     });
     if (!done) return;
-    await dispatch(this.outbound, this.realtime, tenantId, conversationId, [done.id]);
+    if (done.startsWaiting) await this.presence.markWaiting(tenantId);
+    await dispatch(this.outbound, this.realtime, tenantId, conversationId, done.ids);
     for (const other of done.notify) this.realtime.inboxChanged(tenantId, other);
   }
 

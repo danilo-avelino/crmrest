@@ -39,6 +39,12 @@ export type AutomationState = {
   ai?: "on" | "off";
   /** Respostas da IA neste atendimento (o limite chama a equipe). */
   aiReplies?: number;
+  /**
+   * A IA precisava da equipe, mas não havia atendente (fechado, 100% automático ou ninguém online): a conversa vai para a
+   * equipe quando houver (AiForwardService). Enquanto isso, a IA continua respondendo. `aiWaitingReason`: o porquê.
+   */
+  aiWaiting?: boolean;
+  aiWaitingReason?: string;
   /** Pedido que a IA mostrou ao cliente, esperando ele confirmar que é dele. */
   aiOfferedOrderId?: string;
   /** Pedidos que a IA mostrou e o cliente disse não serem dele: ela procura outro (pelo número que ele informar). */

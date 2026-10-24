@@ -1,6 +1,8 @@
 import { Module } from "@nestjs/common";
+import { AiAttendanceController } from "./ai/ai-attendance.controller.js";
 import { AiAttendantService } from "./ai/ai-attendant.service.js";
 import { AiEvaluationService } from "./ai/ai-evaluation.service.js";
+import { AiForwardService } from "./ai/ai-forward.service.js";
 import { AiReviewService } from "./ai/ai-review.service.js";
 import { AiProcessor } from "./ai/ai.processor.js";
 import { LlmClient } from "./ai/llm.client.js";
@@ -60,6 +62,7 @@ import { StripeWebhookController } from "./webhooks/stripe-webhook.controller.js
     ReportsController,
     OrdersController,
     PlatformController,
+    AiAttendanceController,
   ],
   providers: [
     ConversationsService,
@@ -108,6 +111,7 @@ export class RealtimeRoleModule {}
     AiAttendantService,
     AiReviewService,
     AiEvaluationService,
+    AiForwardService,
     AiProcessor,
   ],
 })

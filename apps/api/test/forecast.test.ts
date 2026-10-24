@@ -211,4 +211,36 @@ describe("previsão de saída do pedido (E26)", () => {
     expect(items.find((item) => item.id === late.id)?.late).toBe(true);
     expect(items.find((item) => item.id === onTime.id)?.late).toBe(false);
   });
+
+  it("retirada pronta: à espera do cliente, sem saída prevista nem atraso; o andamento para no pronto", async () => {
+    const conversation = await admin.conversation.create({
+      data: { tenantId: fx.tenant.id, contactId, channelId: fx.whatsapp.id, status: "OPEN" },
+    });
+    const takeout = await order(0); // o mais recente do cliente: é o que o painel mostra
+    const readyAt = new Date(Date.now() - 30_000);
+    const past = new Date(Date.now() - 5 * MINUTE).toISOString();
+    await admin.order.update({
+      where: { id: takeout.id },
+      data: {
+        status: "READY",
+        raw: { orderType: "TAKEOUT", takeout: { takeoutDateTime: past } }, // retirada prometida já passou
+        events: { create: { tenantId: fx.tenant.id, externalEventId: `rtp-${takeout.id}`, code: "READY_TO_PICKUP", occurredAt: readyAt } },
+      },
+    });
+    const get = (path: string) => request(app.getHttpServer()).get(`/api${path}`).set("Authorization", `Bearer ${token}`).expect(200);
+
+    expect(await forecast(takeout.id)).toBe(`✅ Seu pedido #${takeout.displayCode} ficou pronto!`);
+    const { body } = await get(`/orders/current?conversationId=${conversation.id}`);
+    expect(body.current).toMatchObject({ order: { id: takeout.id }, takeout: true, readyAt: readyAt.toISOString(), forecast: null });
+    const list = await get("/orders?period=7d&production=true");
+    expect((list.body.items as { id: string; late: boolean }[]).find((item) => item.id === takeout.id)?.late).toBe(false);
+
+    // Na entrega, o pronto aparece no andamento, mas o pedido ainda espera a saída: segue com previsão e atraso.
+    await admin.order.update({ where: { id: takeout.id }, data: { raw: { orderType: "DELIVERY", delivery: { deliveryDateTime: past } } } });
+    const delivery = await get(`/orders/current?conversationId=${conversation.id}`);
+    expect(delivery.body.current).toMatchObject({ takeout: false, readyAt: readyAt.toISOString(), forecast: { late: true } });
+    const deliveryList = await get("/orders?period=7d&production=true");
+    expect((deliveryList.body.items as { id: string; late: boolean }[]).find((item) => item.id === takeout.id)?.late).toBe(true);
+    await admin.order.delete({ where: { id: takeout.id } });
+  });
 });

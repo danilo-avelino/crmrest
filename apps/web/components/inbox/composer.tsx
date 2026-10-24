@@ -16,11 +16,19 @@ import { cn } from "@/lib/utils";
 
 type Mode = "reply" | "note";
 
+/** Intervalo entre as respostas do atendente na mesma conversa: 15 s, e 30 s depois da terceira, sem o cliente responder. */
+const COOLDOWN_MS = 15_000;
+const LONG_COOLDOWN_MS = 30_000;
+const LONG_COOLDOWN_FROM = 3;
+// Por conversa: quantas respostas o atendente mandou e quando mandou a última. Fica fora do componente para valer ao trocar de conversa e voltar.
+const sentReplies = new Map<string, { count: number; at: number }>();
+
 /** Área de resposta (board Inbox → "Input área"). */
 export function Composer({ conversation }: { conversation: ConversationListItem }) {
   const { request } = useAuth();
   const queryClient = useQueryClient();
-  const now = useNow();
+  const now = useNow(1_000);
+  const [, setSentTick] = useState(0);
   const [mode, setMode] = useState<Mode>("reply");
   const [text, setText] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -41,6 +49,16 @@ export function Composer({ conversation }: { conversation: ConversationListItem 
         ? "A janela de 24h terminou. Para retomar a conversa, envie um template aprovado (botão Template)."
         : null);
 
+  // O cliente respondeu depois da última resposta: a contagem recomeça.
+  const lastSent = sentReplies.get(conversation.id);
+  if (lastSent && conversation.lastMessage?.direction === "INBOUND" && conversation.lastMessageAt && new Date(conversation.lastMessageAt).getTime() > lastSent.at) {
+    sentReplies.delete(conversation.id);
+  }
+  const sent = sentReplies.get(conversation.id);
+  const waitMs = sent ? (sent.count >= LONG_COOLDOWN_FROM ? LONG_COOLDOWN_MS : COOLDOWN_MS) - (now - sent.at) : 0;
+  const cooling = mode === "reply" && waitMs > 0;
+  const seconds = Math.ceil(waitMs / 1_000);
+
   const quickReplies = useQuery({
     queryKey: ["quick-replies"],
     queryFn: () => request<QuickReplyDto[]>("/quick-replies"),
@@ -56,7 +74,7 @@ export function Composer({ conversation }: { conversation: ConversationListItem 
 
   const [submit, submitting] = usePendingAction(async () => {
     const body = text.trim();
-    if (!body || blocked) return;
+    if (!body || blocked || cooling) return;
     setError(null);
     try {
       await request(`/conversations/${conversation.id}/${mode === "reply" ? "messages" : "notes"}`, {
@@ -64,6 +82,10 @@ export function Composer({ conversation }: { conversation: ConversationListItem 
         body: { text: body },
       });
       setText("");
+      if (mode === "reply") {
+        sentReplies.set(conversation.id, { count: (sentReplies.get(conversation.id)?.count ?? 0) + 1, at: Date.now() });
+        setSentTick((tick) => tick + 1);
+      }
       for (const queryKey of [["messages", conversation.id], ["conversation", conversation.id], ["conversations"]]) {
         void queryClient.invalidateQueries({ queryKey });
       }
@@ -178,6 +200,13 @@ export function Composer({ conversation }: { conversation: ConversationListItem 
           />
         )}
 
+        {cooling && (
+          <p role="status" className="text-[11.5px] text-warning-ink">
+            <span className="font-medium tabular-nums">Próxima mensagem em {seconds}s.</span> Para uma performance melhor, digite tudo o que tem a
+            dizer em uma única mensagem.
+          </p>
+        )}
+
         {error && (
           <p role="alert" className="text-[11px] text-tomate">
             {error}
@@ -220,11 +249,13 @@ export function Composer({ conversation }: { conversation: ConversationListItem 
           <Button
             variant={mode === "reply" ? "accent" : "default"}
             className="h-8 rounded-md px-3.5 text-[12.5px]"
-            disabled={Boolean(blocked) || !text.trim()}
+            disabled={Boolean(blocked) || cooling || !text.trim()}
             loading={submitting}
             onClick={() => submit()}
           >
-            {mode === "reply" ? (
+            {cooling ? (
+              <span className="tabular-nums">Aguarde {seconds}s</span>
+            ) : mode === "reply" ? (
               <>
                 Enviar <SendIcon aria-hidden />
               </>
