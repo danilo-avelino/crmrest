@@ -39,6 +39,10 @@ export type AutomationState = {
   ai?: "on" | "off";
   /** Respostas da IA neste atendimento (o limite chama a equipe). */
   aiReplies?: number;
+  /** Pedido que a IA mostrou ao cliente, esperando ele confirmar que é dele. */
+  aiOfferedOrderId?: string;
+  /** Pedidos que a IA mostrou e o cliente disse não serem dele: ela procura outro (pelo número que ele informar). */
+  aiDeniedOrderIds?: string[];
 };
 
 /** Resposta à pesquisa de satisfação: só a nota, de 1 a 5. */

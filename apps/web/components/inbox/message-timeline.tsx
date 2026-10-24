@@ -115,6 +115,7 @@ function TimelineMessage({
     );
   }
   if (message.type === "NOTE") return <Note message={message} />;
+  if (message.content.aiReview === "blocked") return <Misconduct message={message} />;
   if (message.content.automation) return <Automation message={message} />;
   return message.direction === "INBOUND" ? <Inbound message={message} contact={contact} /> : <Outbound message={message} />;
 }
@@ -166,6 +167,30 @@ function Note({ message }: { message: MessageDto }) {
       <div className="text-[12.5px] leading-[1.4] whitespace-pre-wrap text-ink-2">{message.content.text}</div>
       <div className="mt-[3px] text-right text-[10px] text-ink-3 tabular-nums">
         {clock(message.createdAt)} · visível só para a equipe
+      </div>
+    </div>
+  );
+}
+
+/** Resposta do atendente bloqueada pela revisão da IA por má conduta: não foi ao cliente e vai para as Avaliações do gestor. */
+function Misconduct({ message }: { message: MessageDto }) {
+  return (
+    <div className="mx-auto my-1 max-w-[76%] rounded-[10px] border border-tomate-line bg-tomate-lt px-3.5 py-2.5">
+      <div className="mb-1 flex items-center gap-[5px] text-[10.5px] font-semibold text-tomate">
+        <TriangleAlertIcon className="size-3" aria-hidden />
+        Mensagem não enviada · má conduta no atendimento
+      </div>
+      <div className="text-[12.5px] leading-[1.45] text-ink-2">
+        A IA considerou esta resposta uma má conduta no atendimento. Ela não foi enviada ao cliente e será enviada ao gestor do
+        restaurante.
+      </div>
+      <div className="mt-1 text-[11.5px] leading-[1.4] text-tomate">Motivo: {message.content.misconduct}</div>
+      <div className="mt-1.5 border-t border-tomate-line pt-1.5 text-[11.5px] leading-[1.4] whitespace-pre-wrap text-ink-3">
+        Escrito pelo atendente: {message.content.original}
+      </div>
+      <div className="mt-1 text-right text-[10px] text-ink-3 tabular-nums">
+        {clock(message.createdAt)}
+        {message.sentBy && ` · ${message.sentBy.name.split(" ")[0]}`} · visível só para a equipe
       </div>
     </div>
   );

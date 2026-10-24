@@ -36,8 +36,8 @@ Esta é a lista do que falta para o Dish Desk atender restaurantes de verdade. Q
   - [ ] Apagar na zona do Registro.br os registros antigos `app` (CNAME) e `_railway-verify.app` (TXT). Não atrapalham — você, ou o Claude com o Registro.br logado.
 - [ ] **WhatsApp por QR Code (Evolution API)** — decisão de 21/10, depois de a Meta desabilitar o portfólio Dish Desk no WhatsApp. Substitui o "número real de WhatsApp" da API oficial (pagamento, nome de exibição e templates não se aplicam).
   - [x] Conector, webhook `/api/webhooks/evolution`, modal do QR Code em Integrações e testes — Claude, 21/10. Testado no dev com a Evolution 2.3.7 no Docker; QR escaneado com celular de verdade pelo usuário em 21/10.
-  - [ ] Railway: serviço novo com a imagem `evoapicloud/evolution-api:v2.3.7`, as variáveis do `docker-compose.yml` (banco próprio, por exemplo um schema `evolution` no Supabase) e domínio privado.
-  - [ ] Railway, na `api`: `EVOLUTION_API_URL`, `EVOLUTION_API_KEY`, `EVOLUTION_WEBHOOK_URL` (endereço privado da `api` + `/api/webhooks/evolution`) e `EVOLUTION_WEBHOOK_TOKEN`.
+  - [x] Railway: serviço `evolution` (imagem `evoapicloud/evolution-api:v2.3.7`, variáveis do `docker-compose.yml`, volume em `/evolution/instances`, sem domínio público) e um `Postgres` próprio na Railway — usuário e Claude, 22/10. O endereço do banco ficou como valor fixo (a referência `${{Postgres.DATABASE_URL}}` vinha vazia); se a senha do Postgres mudar, atualizar o `DATABASE_CONNECTION_URI`.
+  - [x] Railway, na `api`: `EVOLUTION_API_URL`, `EVOLUTION_API_KEY`, `EVOLUTION_WEBHOOK_URL` (endereço privado da `api` + `/api/webhooks/evolution`) e `EVOLUTION_WEBHOOK_TOKEN` — usuário, 22/10 (o webhook responde 401 sem token).
   - [ ] Conectar o número do restaurante piloto pelo QR Code.
 - [ ] **iFood** — a produção usa credenciais de teste
   - [x] Criar a conta Empresa (CNPJ) no Portal do Desenvolvedor — feito em 12/10 (dishdesk.crm@gmail.com, perfil Profissional).

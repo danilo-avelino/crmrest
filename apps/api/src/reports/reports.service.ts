@@ -1,4 +1,4 @@
-import type { AgentMetrics, RatingsReportDto, ReportPeriod } from "@dishdesk/shared";
+import type { AgentMetrics, MessageContent, RatingsReportDto, ReportPeriod } from "@dishdesk/shared";
 import { Injectable } from "@nestjs/common";
 import type { RequestAuth } from "../auth/auth.decorators.js";
 import { localDate } from "../automations/automation.js";
@@ -105,9 +105,24 @@ export class ReportsService {
             include: { conversation: { select: { contact: { select: { name: true } } } } },
           })
         : [];
+      // Respostas bloqueadas pela revisão da IA por má conduta.
+      const misconduct = aiModule
+        ? await tx.message.findMany({
+            where: { tenantId, createdAt: { gte: from }, content: { path: ["aiReview"], equals: "blocked" } },
+            orderBy: { createdAt: "desc" },
+            take: 50,
+            select: { id: true, conversationId: true, content: true, sentByUserId: true, createdAt: true, conversation: { select: { contact: { select: { name: true } } } } },
+          })
+        : [];
 
       const userIds = [
-        ...new Set([...handoffs, ...ratings, ...evaluations.map((row) => ({ user_id: row.userId }))].flatMap((row) => (row.user_id ? [row.user_id] : []))),
+        ...new Set(
+          [
+            ...[...handoffs, ...ratings].map((row) => row.user_id),
+            ...evaluations.map((row) => row.userId),
+            ...misconduct.map((row) => row.sentByUserId),
+          ].flatMap((userId) => (userId ? [userId] : [])),
+        ),
       ];
       const members = await tx.tenantMember.findMany({
         where: { tenantId, userId: { in: userIds } },
@@ -168,6 +183,18 @@ export class ReportsService {
                 summary: row.summary,
                 createdAt: row.createdAt.toISOString(),
               })),
+              misconduct: misconduct.map((row) => {
+                const content = row.content as MessageContent;
+                return {
+                  messageId: row.id,
+                  conversationId: row.conversationId,
+                  contactName: row.conversation.contact.name,
+                  agentName: nameOf(row.sentByUserId),
+                  original: content.original ?? "",
+                  reason: content.misconduct ?? "",
+                  createdAt: row.createdAt.toISOString(),
+                };
+              }),
             }
           : null,
       };

@@ -9,14 +9,20 @@ import { toneOf, transcript, WRITING_RULES } from "./prompts.js";
 /** Mensagens anteriores que a IA lê para entender o contexto da resposta. */
 const CONTEXT_LIMIT = 12;
 
-export const Rewrite = z.object({ text: z.string().trim().min(1).max(4096).describe("A mensagem reescrita.") });
+export const Rewrite = z.object({
+  misconduct: z.boolean().describe("A mensagem do atendente ofende ou desrespeita o cliente."),
+  reason: z.string().trim().max(200).describe("Se for má conduta, o motivo em poucas palavras; senão, vazio."),
+  text: z.string().trim().min(1).max(4096).describe("A mensagem reescrita."),
+});
 
 export function systemPrompt(restaurant: string, settings: unknown): string {
   return `Você revisa as mensagens que a equipe do restaurante ${restaurant} manda aos clientes, antes do envio.
 ${toneOf(settings)}
 ${WRITING_RULES}
 
-Reescreva a mensagem do atendente no tom acima: corrija ortografia, gramática e pontuação e deixe-a clara e educada.
+Primeiro, avalie a conduta do atendente (misconduct). É má conduta quando a mensagem xinga, ofende, humilha, ameaça, debocha, manda o cliente calar a boca, usa palavrão contra ele, é preconceituosa ou trata o cliente com grosseria ou desprezo. Responder na mesma moeda a um cliente grosseiro também é má conduta. Uma mensagem firme e educada, uma recusa ou uma má notícia não são má conduta. Nunca suavize uma ofensa: ofensa é sempre misconduct = true, com o motivo em reason; a mensagem não será enviada ao cliente. Sem má conduta, reason fica vazio.
+
+Depois, reescreva a mensagem do atendente no tom acima: corrija ortografia, gramática e pontuação e deixe-a clara e educada.
 
 Regras obrigatórias:
 - Não mude o conteúdo: valores, números, horários, prazos, endereços, links e promessas ficam exatamente como o atendente escreveu.
@@ -40,7 +46,8 @@ export function keepsFacts(original: string, rewritten: string): boolean {
 
 /**
  * Revisão por IA (E28): a resposta do atendente é reescrita no tom da personalidade do restaurante antes do envio (o
- * OutboundProcessor chama antes de mandar). Se a LLM falhar ou mudar algum dado, sai o texto do atendente.
+ * OutboundProcessor chama antes de mandar). Se a LLM falhar ou mudar algum dado, sai o texto do atendente. Uma
+ * mensagem ofensiva ao cliente não sai: é bloqueada como má conduta.
  */
 @Injectable()
 export class AiReviewService {
@@ -72,18 +79,32 @@ export class AiReviewService {
     const content = context.message.content as MessageContent;
     const original = content.text ?? "";
     let rewritten: string | null = null;
+    let misconduct: string | null = null;
     try {
       const { name, settings } = context.message.tenant;
       const result = await this.llm.json("revisao", Rewrite, [
         { role: "system", content: systemPrompt(name, settings) },
         { role: "user", content: `CONVERSA ATÉ AGORA\n${transcript(context.history)}\n\nMENSAGEM DO ATENDENTE PARA REESCREVER\n${original}` },
       ]);
-      if (keepsFacts(original, result.text)) rewritten = result.text;
+      if (result.misconduct) misconduct = result.reason || "Mensagem ofensiva ao cliente";
+      else if (keepsFacts(original, result.text)) rewritten = result.text;
       else this.logger.warn(`Revisão da mensagem ${messageId} mudou um dado: sai o texto do atendente`);
     } catch (error) {
       this.logger.warn(`Revisão da mensagem ${messageId} indisponível: ${error instanceof Error ? error.message : String(error)}`);
     }
 
+    // Má conduta: a mensagem não sai. Vira um alerta interno para o atendente, que vai para as Avaliações do gestor.
+    if (misconduct) {
+      const { text: _, ...rest } = content;
+      await this.db.withTenants(scope, (tx) =>
+        tx.message.update({
+          where: { id: messageId },
+          data: { direction: "INTERNAL", status: null, content: { ...rest, original, misconduct, aiReview: "blocked" } satisfies MessageContent },
+        }),
+      );
+      this.realtime.inboxChanged(tenantId, context.message.conversationId);
+      return;
+    }
     const next: MessageContent =
       rewritten && rewritten !== original.trim()
         ? { ...content, text: rewritten, original, aiReview: "rewritten" }

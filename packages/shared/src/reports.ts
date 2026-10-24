@@ -96,5 +96,15 @@ export type RatingsReportDto = {
       summary: string;
       createdAt: string;
     }[];
+    /** Respostas que a revisão da IA bloqueou por má conduta (ofensa, grosseria), com o texto que o atendente escreveu. */
+    misconduct: {
+      messageId: string;
+      conversationId: string;
+      contactName: string | null;
+      agentName: string | null;
+      original: string;
+      reason: string;
+      createdAt: string;
+    }[];
   } | null;
 };

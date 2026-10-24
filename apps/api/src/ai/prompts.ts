@@ -76,7 +76,11 @@ export function restaurantFacts(name: string, settings: unknown, now: Date): str
   if (hours.enabled) {
     const week = hours.days.map((day, index) => `${WEEKDAY_LABELS[index]}: ${day ? `${day.open} às ${day.close}` : "fechado"}`);
     lines.push(`Horário de funcionamento: ${week.join("; ")}`);
-    lines.push(isOpenAt(hours, now) ? "Está aberto agora." : `Está fechado agora. Volta a atender ${reopeningAt(hours, now)}.`);
+    lines.push(
+      isOpenAt(hours, now)
+        ? "Está aberto agora."
+        : `Está fechado agora. Volta a atender ${reopeningAt(hours, now)}. A equipe só responde quando o restaurante abrir: ao passar para a equipe, avise o cliente disso e diga quando o restaurante volta a atender.`,
+    );
   } else {
     lines.push("Horário de funcionamento: não informado.");
   }

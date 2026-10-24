@@ -68,10 +68,13 @@ export type MessageContent = {
   aiReply?: boolean;
   /**
    * Revisão da resposta do atendente pela IA, antes do envio: "pending" = ainda no worker; "rewritten" = o texto é o da
-   * IA e `original` é o que o atendente escreveu (só a equipe vê); "kept" = saiu o texto do atendente.
+   * IA e `original` é o que o atendente escreveu (só a equipe vê); "kept" = saiu o texto do atendente; "blocked" = má
+   * conduta (ofensa, grosseria): a mensagem não foi enviada e virou um alerta interno, com o texto em `original` e o
+   * motivo em `misconduct`, que vai para as Avaliações do gestor.
    */
-  aiReview?: "pending" | "rewritten" | "kept";
+  aiReview?: "pending" | "rewritten" | "kept" | "blocked";
   original?: string;
+  misconduct?: string;
 };
 
 /** Avaliação de um atendimento pela IA, feita quando a conversa é resolvida (só administradores veem). */

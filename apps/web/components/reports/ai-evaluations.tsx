@@ -41,6 +41,45 @@ export function AiEvaluations({ ai, now }: { ai: NonNullable<RatingsReportDto["a
         />
       </div>
 
+      <Section
+        title="Alertas de má conduta"
+        note="Respostas que a IA considerou ofensivas ou desrespeitosas ao cliente: não foram enviadas. Em Ver conversa, o alerta mostra o que o atendente escreveu."
+      >
+        {ai.misconduct.length === 0 ? (
+          <p className="px-5 py-6 text-[13px] text-ink-3">Nenhum alerta de má conduta no período.</p>
+        ) : (
+          <table className="w-full border-collapse">
+            <thead>
+              <tr className="bg-paper">
+                <Th>Atendente</Th>
+                <Th>Cliente</Th>
+                <Th>Mensagem original</Th>
+                <Th>Quando</Th>
+                <Th />
+              </tr>
+            </thead>
+            <tbody>
+              {ai.misconduct.map((alert) => (
+                <tr key={alert.messageId} className="border-b border-rule-soft align-top last:border-0">
+                  <Td className="font-medium whitespace-nowrap">{alert.agentName ?? "Ex-atendente"}</Td>
+                  <Td className="whitespace-nowrap">{alert.contactName ?? "Cliente sem nome"}</Td>
+                  <Td className="max-w-[420px] text-ink-2">
+                    <span className="whitespace-pre-wrap">“{alert.original}”</span>
+                    <div className="mt-0.5 text-xs text-tomate">{alert.reason}</div>
+                  </Td>
+                  <Td className="whitespace-nowrap text-ink-3">{dayTime(alert.createdAt, now)}</Td>
+                  <Td align="right">
+                    <Link href={`/inbox?conversa=${alert.conversationId}`} className="text-xs whitespace-nowrap text-tomate underline underline-offset-2">
+                      Ver conversa
+                    </Link>
+                  </Td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </Section>
+
       <Section title="Avaliação da IA por atendente" note="A avaliação vai para quem da equipe respondeu por último no atendimento.">
         {ai.agents.length === 0 ? (
           <p className="px-5 py-6 text-[13px] text-ink-3">Nenhum atendimento avaliado no período.</p>

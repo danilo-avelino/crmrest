@@ -336,7 +336,7 @@ export class TriageService {
       return { send: [await automationMessage(tx, conversation, "handoff", messages.handoff)], done: true, handoff: true };
     }
     const { order, update } = found;
-    const notify = await this.linkContact(tx, conversation, order);
+    const notify = await linkOrderContact(tx, conversation, order);
     const send = [await automationMessage(tx, conversation, "order_confirmed", TEXTS.orderConfirmed(messages, update?.text))];
     await setAutomationState(tx, conversation.id, {
       ...state,
@@ -349,36 +349,36 @@ export class TriageService {
     // A equipe só é chamada se o cliente escrever de novo: o andamento do pedido pode já ter resolvido.
     return { send, done: true, notify };
   }
+}
 
-  /**
-   * O pedido identifica o cliente: une o cadastro da conversa ao do pedido. Devolve as outras conversas afetadas.
-   * Pedido de outro restaurante atendido pelo canal: cada restaurante tem a própria base de clientes, então os
-   * cadastros ficam separados e a conversa só registra de onde é o pedido.
-   */
-  private async linkContact(
-    tx: TenantTx,
-    conversation: Conversation,
-    order: { tenantId: string; displayCode: string | null; contact: Contact; channel: { type: ChannelType }; tenant: { name: string } },
-  ): Promise<string[]> {
-    if (order.contact.id === conversation.contact.id) return [];
-    const label = `#${order.displayCode} (${CHANNEL_LABEL[order.channel.type]})`;
-    if (order.tenantId !== conversation.tenantId) {
-      await systemEvent(tx, conversation, { event: "order_other_restaurant", text: `O pedido ${label} é do restaurante ${order.tenant.name}` });
-      return [];
-    }
-    const result = await mergeContacts(tx, conversation.contact, order.contact);
-    if (!result.merged) {
-      await systemEvent(tx, conversation, {
-        event: "merge_conflict",
-        text: `O pedido ${label} está no cadastro de ${order.contact.name ?? "outro cliente"}, com ${result.conflict} diferente`,
-      });
-      return [];
-    }
-    await systemEvent(tx, conversation, { event: "contacts_merged", text: `Cadastro unificado com o do pedido ${label}` });
-    const others = await tx.conversation.findMany({
-      where: { contactId: result.contactId, id: { not: conversation.id } },
-      select: { id: true },
-    });
-    return others.map((other) => other.id);
+/**
+ * O cliente confirmou o pedido (no menu ou à IA), e o pedido o identifica: une o cadastro da conversa ao do pedido.
+ * Devolve as outras conversas afetadas. Pedido de outro restaurante atendido pelo canal: cada restaurante tem a
+ * própria base de clientes, então os cadastros ficam separados e a conversa só registra de onde é o pedido.
+ */
+export async function linkOrderContact(
+  tx: TenantTx,
+  conversation: Conversation,
+  order: { tenantId: string; displayCode: string | null; contact: Contact; channel: { type: ChannelType }; tenant: { name: string } },
+): Promise<string[]> {
+  if (order.contact.id === conversation.contact.id) return [];
+  const label = `#${order.displayCode} (${CHANNEL_LABEL[order.channel.type]})`;
+  if (order.tenantId !== conversation.tenantId) {
+    await systemEvent(tx, conversation, { event: "order_other_restaurant", text: `O pedido ${label} é do restaurante ${order.tenant.name}` });
+    return [];
   }
+  const result = await mergeContacts(tx, conversation.contact, order.contact);
+  if (!result.merged) {
+    await systemEvent(tx, conversation, {
+      event: "merge_conflict",
+      text: `O pedido ${label} está no cadastro de ${order.contact.name ?? "outro cliente"}, com ${result.conflict} diferente`,
+    });
+    return [];
+  }
+  await systemEvent(tx, conversation, { event: "contacts_merged", text: `Cadastro unificado com o do pedido ${label}` });
+  const others = await tx.conversation.findMany({
+    where: { contactId: result.contactId, id: { not: conversation.id } },
+    select: { id: true },
+  });
+  return others.map((other) => other.id);
 }
