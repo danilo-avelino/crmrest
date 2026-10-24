@@ -35,22 +35,26 @@ export class OutboundProcessor extends JobProcessor {
   async process(job: Job<OutboundJob>, token?: string): Promise<void> {
     const { tenantId, messageId } = job.data;
     const scope = { tenantIds: [tenantId] };
-    const { message, earlierPending } = await this.db.withTenants(scope, async (tx) => {
+    const { message, earlierPending, lastSender } = await this.db.withTenants(scope, async (tx) => {
       const message = await tx.message.findUnique({
         where: { id: messageId },
         include: { channel: true, conversation: { select: { contact: { select: { identities: true } } } } },
       });
-      const earlierPending = message
-        ? await tx.message.count({
-            where: {
-              conversationId: message.conversationId,
-              direction: "OUTBOUND",
-              status: "PENDING",
-              createdAt: { lt: message.createdAt, gte: new Date(message.createdAt.getTime() - ORDER_WAIT_MS) },
-            },
-          })
-        : 0;
-      return { message, earlierPending };
+      if (!message) return { message, earlierPending: 0, lastSender: undefined };
+      const earlierPending = await tx.message.count({
+        where: {
+          conversationId: message.conversationId,
+          direction: "OUTBOUND",
+          status: "PENDING",
+          createdAt: { lt: message.createdAt, gte: new Date(message.createdAt.getTime() - ORDER_WAIT_MS) },
+        },
+      });
+      const lastInbound = await tx.message.findFirst({
+        where: { conversationId: message.conversationId, direction: "INBOUND" },
+        orderBy: { createdAt: "desc" },
+        select: { content: true },
+      });
+      return { message, earlierPending, lastSender: (lastInbound?.content as MessageContent | undefined)?.from };
     });
     if (!message || message.status !== "PENDING") return; // já enviada (job repetido) ou removida
     // Atendimento com IA: a resposta do atendente é revisada antes de sair (e antes de um painel do iFood pegá-la).
@@ -79,7 +83,9 @@ export class OutboundProcessor extends JobProcessor {
       throw new DelayedError();
     }
 
-    const recipient = message.conversation.contact.identities.find((i) => i.channelType === message.channel.type);
+    // Cadastros unidos podem ter mais de um perfil no canal: a resposta vai para quem escreveu por último na conversa.
+    const profiles = message.conversation.contact.identities.filter((i) => i.channelType === message.channel.type);
+    const recipient = profiles.find((i) => i.externalId === lastSender) ?? profiles[0];
     const content = message.content as MessageContent;
 
     let outcome: { status: "SENT"; externalMessageId: string } | { status: "FAILED"; statusError: string };

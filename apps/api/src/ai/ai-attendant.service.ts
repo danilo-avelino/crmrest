@@ -1,9 +1,10 @@
-import { automationMessagesOf, businessHoursOf, CHANNEL_LABEL, isOpenAt, type MessageContent } from "@dishdesk/shared";
+import type { TenantTx } from "@dishdesk/database";
+import { automationMessagesOf, businessHoursOf, CHANNEL_CAPABILITIES, CHANNEL_LABEL, isOpenAt, type MessageContent } from "@dishdesk/shared";
 import { InjectQueue } from "@nestjs/bullmq";
 import { Injectable, Logger } from "@nestjs/common";
 import type { Queue } from "bullmq";
 import { z } from "zod";
-import { type AutomationState, automationMessage, dispatch, setAutomationState, systemEvent } from "../automations/automation.js";
+import { type AutomationState, automationMessage, dispatch, setAutomationState, startOfYesterday, systemEvent } from "../automations/automation.js";
 import { ORDER_STATUS_TEXT } from "../automations/triage.service.js";
 import { DatabaseService } from "../core/database.service.js";
 import { orderUpdateMessage } from "../orders/forecast.js";
@@ -40,9 +41,37 @@ Você tira dúvidas sobre o horário de funcionamento, os links para fazer pedid
 Regras obrigatórias:
 - Só afirme o que está nos DADOS. Nunca invente preço, cardápio, prazo, taxa, promoção, endereço ou política.
 - Você não anota pedidos: para pedir, mande os links (se houver); sem links, passe para a equipe.
+- Cliente perguntou de um pedido que não está nos DADOS: peça o número do pedido (e o telefone usado no pedido, se os DADOS disserem que o telefone não está no cadastro) e continue o atendimento (handoff = false). Se ele já informou e o pedido continua fora dos DADOS, passe para a equipe.
 - Passe para a equipe (handoff = true) quando o cliente pedir para falar com uma pessoa; reclamar ou contar um problema com o pedido (atraso, item errado ou faltando, qualidade); falar de cancelamento, reembolso, troca ou pagamento; perguntar algo que não está nos DADOS; mandar áudio, imagem ou documento que você não consegue ver; ou quando você não tiver certeza.
-- Ao passar para a equipe, diga ao cliente que alguém da equipe vai continuar o atendimento (com o restaurante fechado, diga quando ele volta a atender). Não prometa prazo de resposta.
+- Ao passar para a equipe, diga ao cliente que alguém da equipe vai continuar o atendimento (com o restaurante fechado, diga quando ele volta a atender). Não faça perguntas nessa mensagem: quem continua é a equipe. Não prometa prazo de resposta.
 - Cumprimente só na sua primeira resposta do atendimento; depois, vá direto ao ponto.`;
+}
+
+// "1234", "#1234", "pedido 1234", "Pedido Nº 1234", "pedido: 1234", "número do pedido é 1234". Números soltos no meio
+// do texto ("2 pizzas", "há 30 minutos") não contam: achariam o pedido de outro cliente.
+const ORDER_NUMBER = [
+  /^\s*(?:pedido\s*)?#?\s*(\d{1,6})\s*[.!]?\s*$/gi,
+  /pedido\s*(?:n[º°]\.?|n\.|n[uú]mero|#|:)\s*#?\s*(\d{1,6})(?!\d)/gi,
+  /n[uú]mero\s+do\s+pedido\s*(?:é|e|:)?\s*#?\s*(\d{1,6})(?!\d)/gi,
+];
+
+/** Números de pedido que o cliente informou nas mensagens (com e sem os zeros à esquerda). */
+export function orderNumbersIn(texts: string[]): string[] {
+  const numbers = texts.flatMap((text) => ORDER_NUMBER.flatMap((pattern) => [...text.matchAll(pattern)].map((match) => match[1]!)));
+  return [...new Set(numbers.flatMap((number) => [number, number.replace(/^0+(?=\d)/, "")]))];
+}
+
+/** Pedido de hoje ou de ontem com o número que o cliente informou na conversa; com dois pedidos possíveis, nenhum. */
+async function orderByNumber(orders: TenantTx, history: { direction: string; content: unknown }[], now: Date) {
+  const codes = orderNumbersIn(history.filter((m) => m.direction === "INBOUND").map((m) => (m.content as MessageContent).text ?? ""));
+  if (!codes.length) return null;
+  const found = await orders.order.findMany({
+    where: { displayCode: { in: codes }, placedAt: { gte: startOfYesterday(now) } },
+    include: { items: true },
+    orderBy: { placedAt: "desc" },
+    take: 2,
+  });
+  return found.length === 1 ? found[0]! : null;
 }
 
 /**
@@ -88,10 +117,11 @@ export class AiAttendantService {
       if (last?.direction !== "INBOUND") return null; // já respondida: por outro job, pela equipe ou por uma automação
       const settings = conversation.tenant.settings;
       const order = await withOrderTenants(this.db, tx, conversation.channelId, async (orders) => {
-        const found = await latestOrderOf(orders, conversation.contact, now);
+        const linked = await latestOrderOf(orders, conversation.contact, now);
+        const found = linked ?? (await orderByNumber(orders, history, now));
         if (!found) return null;
         const channel = await orders.channel.findUniqueOrThrow({ where: { id: found.channelId }, select: { type: true } });
-        return { ...found, channelType: channel.type, update: await orderUpdateMessage(orders, found.id, now, settings) };
+        return { ...found, byNumber: !linked, channelType: channel.type, update: await orderUpdateMessage(orders, found.id, now, settings) };
       });
       return { conversation, settings, history, lastId: last.id, order };
     });
@@ -102,13 +132,14 @@ export class AiAttendantService {
     let answer: AttendantReply | null = null;
     if ((state.aiReplies ?? 0) < MAX_AI_REPLIES) {
       const order = context.order;
+      const noPhone = !conversation.contact.phone && !CHANNEL_CAPABILITIES[conversation.channel.type].providesPhone;
       const orderFacts = order
         ? [
-            `Pedido recente do cliente: #${order.displayCode ?? order.externalOrderId} (${CHANNEL_LABEL[order.channelType]}), feito em ${BRASILIA_TIME.format(order.placedAt)}, ${ORDER_STATUS_TEXT[order.status]}.`,
+            `Pedido recente do cliente${order.byNumber ? " (achado pelo número que ele informou)" : ""}: #${order.displayCode ?? order.externalOrderId} (${CHANNEL_LABEL[order.channelType]}), feito em ${BRASILIA_TIME.format(order.placedAt)}, ${ORDER_STATUS_TEXT[order.status]}.`,
             `Itens: ${order.items.map((item) => `${item.quantity}x ${item.name}`).join("; ")}. Total: ${BRL.format(Number(order.total))}.`,
             ...(order.update ? [`Andamento: ${order.update.text}`] : []),
           ].join("\n")
-        : "Pedido recente do cliente: nenhum pedido de hoje ou de ontem no cadastro.";
+        : `Pedido recente do cliente: nenhum pedido de hoje ou de ontem no cadastro nem com um número informado na conversa.${noPhone ? " O telefone do cliente não está no cadastro." : ""}`;
       try {
         answer = await this.llm.json("atendimento", AttendantReply, [
           { role: "system", content: systemPrompt(conversation.tenant.name, CHANNEL_LABEL[conversation.channel.type], settings) },

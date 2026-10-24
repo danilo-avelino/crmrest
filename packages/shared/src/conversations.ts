@@ -59,6 +59,11 @@ export type MessageContent = {
   template?: { name: string; language: string; variables: string[] };
   media?: { mimeType: string; externalMediaId?: string; url?: string; filename?: string };
   location?: { latitude: number; longitude: number; name?: string; address?: string };
+  /**
+   * Mensagem recebida: id de quem escreveu no canal (wa_id, IGSID). Um cadastro pode ter mais de um perfil no mesmo
+   * canal (cadastros unidos): a resposta vai para o perfil que escreveu por último.
+   */
+  from?: string;
   /** Resposta escrita pela IA no atendimento com IA (módulo AI), sem atendente. */
   aiReply?: boolean;
   /**

@@ -374,6 +374,7 @@ function contentOf(message: NormalizedMessage): MessageContent & Prisma.InputJso
   const location = metadata.location as MessageContent["location"];
   const filename = typeof metadata.filename === "string" ? metadata.filename : undefined;
   return {
+    from: message.externalContactId,
     ...(message.text && { text: message.text }),
     ...(message.media && { media: { ...message.media, ...(filename && { filename }) } }),
     ...(location && { location }),

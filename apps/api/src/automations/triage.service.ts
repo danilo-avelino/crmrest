@@ -37,7 +37,7 @@ import {
   tenantSettings,
 } from "./automation.js";
 import { CourierMenuService } from "./courier-menu.service.js";
-import { PhoneCollectionService } from "./phone-collection.service.js";
+import { extractPhone, PhoneCollectionService } from "./phone-collection.service.js";
 import { SurveyService } from "./survey.service.js";
 
 export const ORDER_STATUS_TEXT: Record<OrderStatus, string> = {
@@ -139,23 +139,28 @@ export class TriageService {
   /**
    * Atendimento com IA (módulo AI): a IA atende no lugar do menu, do começo do atendimento até passar para a equipe.
    * A resposta sai pela fila ai, um pouco depois, para juntar as mensagens que o cliente manda em sequência.
-   * O entregador continua com o menu dele.
+   * O entregador continua com o menu dele. No lugar da coleta de telefone, o telefone que o cliente mandar à IA é
+   * cadastrado (e une o cadastro ao que já o tinha), para ela achar os pedidos dele.
    */
   private async aiTakes(event: InboundEvent): Promise<boolean> {
     const { tenantId } = event.channel;
-    const takes = await this.db.withTenants({ tenantIds: [tenantId] }, async (tx) => {
-      if (!(await this.llm.activeFor(tx, tenantId))) return false;
+    const notify = await this.db.withTenants({ tenantIds: [tenantId] }, async (tx) => {
+      if (!(await this.llm.activeFor(tx, tenantId))) return null;
       const conversation = await tx.conversation.findUniqueOrThrow({
         where: { id: event.conversationId },
-        select: { automationState: true, contact: { select: { tags: true } } },
+        select: { id: true, tenantId: true, channelId: true, automationState: true, contact: { select: { id: true, phone: true, tags: true } } },
       });
-      if (conversation.contact.tags.includes(COURIER_TAG)) return false;
-      if (!event.newAttendance) return (conversation.automationState as AutomationState).ai === "on";
-      await setAutomationState(tx, event.conversationId, { ai: "on" });
-      return true;
+      if (conversation.contact.tags.includes(COURIER_TAG)) return null;
+      if (!event.newAttendance && (conversation.automationState as AutomationState).ai !== "on") return null;
+      if (event.newAttendance) await setAutomationState(tx, event.conversationId, { ai: "on" });
+      const phone =
+        !conversation.contact.phone && !CHANNEL_CAPABILITIES[event.channel.type].providesPhone && event.text ? extractPhone(event.text) : null;
+      return phone ? this.phoneCollection.register(tx, conversation, phone) : [];
     });
-    if (takes) await this.ai.add("reply", { tenantId, conversationId: event.conversationId }, { delay: AI_REPLY_DELAY_MS });
-    return takes;
+    if (!notify) return false;
+    for (const conversationId of notify) this.realtime.inboxChanged(tenantId, conversationId);
+    await this.ai.add("reply", { tenantId, conversationId: event.conversationId }, { delay: AI_REPLY_DELAY_MS });
+    return true;
   }
 
   private async step(tx: TenantTx, event: InboundEvent): Promise<Step> {

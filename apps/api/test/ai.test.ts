@@ -3,10 +3,22 @@ import type { INestApplication } from "@nestjs/common";
 import type { Queue } from "bullmq";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { orderNumbersIn } from "../src/ai/ai-attendant.service.js";
 import { AiEvaluationService } from "../src/ai/ai-evaluation.service.js";
 import { keepsFacts } from "../src/ai/ai-review.service.js";
 import { QUEUES } from "../src/queues/queues.module.js";
-import { accessTokenFor, admin, createChannelFixture, createTestApp, drainQueues, metaPayload, postMetaWebhook, startMockGraph } from "./helpers.js";
+import {
+  accessTokenFor,
+  admin,
+  createChannelFixture,
+  createTestApp,
+  drainQueues,
+  instagramPayload,
+  instagramText,
+  metaPayload,
+  postMetaWebhook,
+  startMockGraph,
+} from "./helpers.js";
 
 type Content = { text?: string; automation?: string; event?: string; aiReply?: boolean; aiReview?: string; original?: string };
 type LlmBody = { response_format: { json_schema: { name: string } }; messages: { role: string; content: string }[] };
@@ -30,7 +42,7 @@ describe("atendimento com IA: resposta, revisão e avaliação", () => {
       if (answer === undefined) return { status: 500, body: {} };
       return { status: 200, body: { choices: [{ message: { content: JSON.stringify(answer) } }] } };
     });
-    app = await createTestApp({ CHANNELS_DRY_RUN: "false", META_GRAPH_URL: graph.url, AI_BASE_URL: llm.url });
+    app = await createTestApp({ CHANNELS_DRY_RUN: "false", META_GRAPH_URL: graph.url, INSTAGRAM_GRAPH_URL: graph.url, AI_BASE_URL: llm.url });
     aiQueue = app.get<Queue>(getQueueToken(QUEUES.ai));
     fx = await createChannelFixture();
     withoutAi = await createChannelFixture();
@@ -128,7 +140,7 @@ describe("atendimento com IA: resposta, revisão e avaliação", () => {
     await say("5511980000001", "wamid.AI-4", "Obrigada!");
     await settle();
     expect(llmCalls("atendimento").length).toBe(calls);
-    expect((await contents("5511980000001")).at(-1)).toEqual({ text: "Obrigada!" });
+    expect((await contents("5511980000001")).at(-1)).toEqual({ from: "5511980000001", text: "Obrigada!" });
   });
 
   it("revisão que muda um dado não sai: vai o texto do atendente", async () => {
@@ -203,6 +215,62 @@ describe("atendimento com IA: resposta, revisão e avaliação", () => {
     expect(body.evaluations).toEqual([]);
   });
 
+  it("Instagram: a IA acha o pedido pelo número, cadastra o telefone e responde ao perfil que escreveu", async () => {
+    // Cliente que já pediu, com telefone e um perfil antigo do Instagram no cadastro.
+    const bruna = await admin.contact.create({
+      data: {
+        tenantId: fx.tenant.id,
+        name: "Bruna Alves",
+        phone: "+5511976540001",
+        firstSeenAt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
+        identities: { create: { tenantId: fx.tenant.id, channelType: "INSTAGRAM", externalId: "IGSID-BRUNA-ANTIGO" } },
+      },
+    });
+    await admin.order.create({
+      data: {
+        tenantId: fx.tenant.id,
+        contactId: bruna.id,
+        channelId: fx.ifood.id,
+        externalOrderId: `pedido-ia-${Date.now()}`,
+        displayCode: "4321",
+        status: "PREPARING",
+        subtotal: "30.00",
+        deliveryFee: "0.00",
+        total: "30.00",
+        placedAt: new Date(),
+        raw: {},
+        items: { create: { tenantId: fx.tenant.id, name: "Açaí 500ml", quantity: 1, unitPrice: "30.00" } },
+      },
+    });
+    const dm = async (mid: string, text: string) => {
+      await postMetaWebhook(app, instagramPayload(fx.instagram.externalId, [instagramText("IGSID-BRUNA", fx.instagram.externalId, mid, text)])).expect(200);
+      await drainQueues(app);
+      await settle();
+    };
+    const lastPrompt = () => (llmCalls("atendimento").at(-1)!.body as LlmBody).messages[1]!.content;
+    const recipient = () => (graph.requests.at(-1)!.body as { recipient: { id: string } }).recipient.id;
+    answers.atendimento = { reply: "Pode me passar o número do pedido?", handoff: false, reason: "" };
+
+    await dm("mid.AI-IG-1", "Qual a previsão do meu pedido?");
+    expect(lastPrompt()).toContain("nenhum pedido de hoje ou de ontem no cadastro nem com um número informado na conversa. O telefone do cliente não está no cadastro.");
+
+    await dm("mid.AI-IG-2", "Pedido Nº 4321\nFeito às 13:44");
+    expect(lastPrompt()).toContain("Pedido recente do cliente (achado pelo número que ele informou): #4321 (iFood)");
+
+    // O telefone une o cadastro ao da Bruna, que tem dois perfis do Instagram: a resposta vai para o que escreveu.
+    await dm("mid.AI-IG-3", "(11) 97654-0001");
+    const conversation = await admin.conversation.findFirstOrThrow({
+      where: { tenantId: fx.tenant.id, channelId: fx.instagram.id, contactId: bruna.id },
+      include: { contact: { include: { identities: true } }, messages: { orderBy: { createdAt: "asc" } } },
+    });
+    expect(conversation.contact.identities.map((i) => i.externalId).sort()).toEqual(["IGSID-BRUNA", "IGSID-BRUNA-ANTIGO"]);
+    expect(conversation.messages.map((m) => (m.content as Content).event).filter(Boolean).slice(-2)).toEqual(["phone_collected", "contacts_merged"]);
+    expect(lastPrompt()).toContain("Pedido recente do cliente: #4321 (iFood)");
+    expect(conversation.automationState).toMatchObject({ ai: "on" });
+    expect(conversation.messages.at(-1)).toMatchObject({ status: "SENT", content: { aiReply: true } });
+    expect(recipient()).toBe("IGSID-BRUNA");
+  });
+
   it("restaurante sem o módulo continua com o menu de atendimento", async () => {
     const calls = llm.requests.length;
     await say("5511980000004", "wamid.AI-8", "Oi", withoutAi.whatsapp);
@@ -211,6 +279,16 @@ describe("atendimento com IA: resposta, revisão e avaliação", () => {
     const conversation = await conversationOf("5511980000004", withoutAi.tenant.id);
     expect(conversation.messages.map((m) => (m.content as Content).automation)).toContain("menu");
     expect(llm.requests.length).toBe(calls);
+  });
+});
+
+describe("atendimento com IA: número do pedido informado pelo cliente", () => {
+  it("lê o número do pedido, mas não números soltos no meio do texto", () => {
+    expect(orderNumbersIn(["4321"])).toEqual(["4321"]);
+    expect(orderNumbersIn(["#0042"])).toEqual(["0042", "42"]);
+    expect(orderNumbersIn(["Pedido Nº 1\nFeito às 13:44"])).toEqual(["1"]);
+    expect(orderNumbersIn(["o número do pedido é 5150", "pedido: 77"])).toEqual(["5150", "77"]);
+    expect(orderNumbersIn(["quero 2 pizzas", "fiz o pedido há 30 minutos", "86999731647", "(86) 99973-1647"])).toEqual([]);
   });
 });
 

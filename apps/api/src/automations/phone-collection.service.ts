@@ -56,17 +56,7 @@ export class PhoneCollectionService {
       if (state.phoneCollection === "awaiting_phone" && event.text) {
         const phone = extractPhone(event.text);
         if (!phone) return null;
-        // Quem já tinha este telefone (o cadastro mais antigo, se houver mais de um).
-        const known = await tx.contact.findFirst({
-          where: { phone, deletedAt: null, id: { not: conversation.contact.id } },
-          orderBy: { firstSeenAt: "asc" },
-        });
-        const contact = await tx.contact.update({
-          where: { id: conversation.contact.id },
-          data: { phone, phoneSource: "informed_by_customer", phoneStatus: "ok" },
-        });
-        await systemEvent(tx, conversation, { event: "phone_collected", text: "Telefone informado e cadastrado" });
-        const notify = known ? await this.unify(tx, conversation, contact, known) : [];
+        const notify = await this.register(tx, conversation, phone);
         const messageId = await automationMessage(tx, conversation, "phone_confirmation", texts.phoneConfirmation);
         await setAutomationState(tx, conversation.id, { ...state, phoneCollection: "phone_collected" });
         return { send: [messageId], remind: false, notify };
@@ -80,6 +70,28 @@ export class PhoneCollectionService {
     if (result.remind) {
       await this.automations.add("phone-reminder", { tenantId, conversationId: event.conversationId }, { delay: PHONE_REMINDER_DELAY_MS });
     }
+  }
+
+  /**
+   * Cadastra o telefone que o cliente informou na conversa (aqui ou ao responder a IA) e, se outro cadastro já tinha
+   * este telefone, une os dois. Devolve as outras conversas do cliente, para avisar os painéis.
+   */
+  async register(
+    tx: TenantTx,
+    conversation: { id: string; tenantId: string; channelId: string; contact: { id: string } },
+    phone: string,
+  ): Promise<string[]> {
+    // Quem já tinha este telefone (o cadastro mais antigo, se houver mais de um).
+    const known = await tx.contact.findFirst({
+      where: { phone, deletedAt: null, id: { not: conversation.contact.id } },
+      orderBy: { firstSeenAt: "asc" },
+    });
+    const contact = await tx.contact.update({
+      where: { id: conversation.contact.id },
+      data: { phone, phoneSource: "informed_by_customer", phoneStatus: "ok" },
+    });
+    await systemEvent(tx, conversation, { event: "phone_collected", text: "Telefone informado e cadastrado" });
+    return known ? this.unify(tx, conversation, contact, known) : [];
   }
 
   /** Une o cadastro da conversa ao que já tinha o telefone informado. Devolve as outras conversas do cliente, para avisar os painéis. */
