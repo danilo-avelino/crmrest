@@ -35,6 +35,10 @@ export type AutomationState = {
   phoneReminderSentAt?: string;
   /** Pesquisa de satisfação no fim do atendimento. */
   survey?: "awaiting_rating" | "answered" | "skipped";
+  /** Atendimento com IA no lugar do menu: "on" = a IA responde; "off" = passou para a equipe ou a equipe assumiu. */
+  ai?: "on" | "off";
+  /** Respostas da IA neste atendimento (o limite chama a equipe). */
+  aiReplies?: number;
 };
 
 /** Resposta à pesquisa de satisfação: só a nota, de 1 a 5. */

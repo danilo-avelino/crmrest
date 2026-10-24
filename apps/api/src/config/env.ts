@@ -59,6 +59,12 @@ const EnvSchema = z.object({
   // A chave é a secreta (service_role). Sem as duas, a recuperação de senha responde 503.
   SUPABASE_URL: z.url().optional(),
   SUPABASE_SECRET_KEY: z.string().min(1).optional(),
+  // LLM do módulo Atendimento com IA, no formato da OpenAI (/chat/completions): o Ollama local do docker-compose
+  // (http://localhost:11434/v1) ou um provedor. Sem o endereço, a IA fica desligada mesmo com o módulo ligado.
+  AI_BASE_URL: z.url().optional(),
+  AI_API_KEY: z.string().min(1).optional(),
+  AI_MODEL: z.string().min(1).default("gemma4:12b"),
+  AI_TIMEOUT_MS: z.coerce.number().int().positive().default(60_000),
   // Desenvolvimento sem credenciais reais: envios aos canais são simulados (nunca em produção).
   CHANNELS_DRY_RUN: z.stringbool().default(false),
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),

@@ -4,8 +4,8 @@ import { z } from "zod";
 // Painel da plataforma (Super Admin, E16): restaurantes, uso, plano, módulos e auditoria.
 
 /** Módulos pagos à parte do plano, que a plataforma liga por restaurante. */
-export const MODULES = ["CAMPAIGNS"] as const satisfies readonly ModuleKey[];
-export const MODULE_LABEL: Record<ModuleKey, string> = { CAMPAIGNS: "Campanhas" };
+export const MODULES = ["CAMPAIGNS", "AI"] as const satisfies readonly ModuleKey[];
+export const MODULE_LABEL: Record<ModuleKey, string> = { CAMPAIGNS: "Campanhas", AI: "Atendimento com IA" };
 
 /** Restaurante como aparece na lista da plataforma, com o uso de cada um. */
 export type PlatformTenantDto = {

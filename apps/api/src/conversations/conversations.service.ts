@@ -3,6 +3,7 @@ import type { ChannelType } from "@dishdesk/database/enums";
 import {
   CHANNEL_CAPABILITIES,
   type ConversationCounts,
+  type ConversationEvaluationDto,
   type ConversationListQuery,
   type ConversationMessages,
   type ConversationPage,
@@ -24,13 +25,15 @@ import {
   UnprocessableEntityException,
 } from "@nestjs/common";
 import type { Queue } from "bullmq";
+import { scheduleEvaluation } from "../ai/ai-evaluation.service.js";
+import { LlmClient } from "../ai/llm.client.js";
 import type { RequestAuth } from "../auth/auth.decorators.js";
 import { type AutomationState, channelSends } from "../automations/automation.js";
 import { ENV, type Env } from "../config/env.js";
 import { ConnectorsService } from "../connectors/connectors.service.js";
 import { contactSearch } from "../contacts/contact-search.js";
 import { DatabaseService } from "../core/database.service.js";
-import { type AutomationJob, type OutboundJob, QUEUES } from "../queues/queues.module.js";
+import { type AiJob, type AutomationJob, type OutboundJob, QUEUES } from "../queues/queues.module.js";
 import { withOrderTenants } from "../orders/order-scope.js";
 import { RealtimeEmitter } from "../realtime/realtime.emitter.js";
 import { isTenantAdmin } from "../settings/tenant-admin.js";
@@ -49,7 +52,9 @@ export class ConversationsService {
     private readonly realtime: RealtimeEmitter,
     @InjectQueue(QUEUES.outbound) private readonly outbound: Queue<OutboundJob>,
     @InjectQueue(QUEUES.automations) private readonly automations: Queue<AutomationJob>,
+    @InjectQueue(QUEUES.ai) private readonly ai: Queue<AiJob>,
     private readonly connectors: ConnectorsService,
+    private readonly llm: LlmClient,
     @Inject(ENV) private readonly env: Env,
   ) {
     this.key = parseEncryptionKey(env.ENCRYPTION_KEY);
@@ -112,8 +117,10 @@ export class ConversationsService {
         take: MESSAGES_LIMIT,
       });
       const all = latest.reverse().map(toMessageDto);
-      // A nota da pesquisa de satisfação é só do administrador do restaurante.
-      const messages = isTenantAdmin(auth, conversation.tenantId) ? all : withoutRatingScores(all);
+      // A nota da pesquisa de satisfação e a avaliação da IA são só do administrador do restaurante.
+      const admin = isTenantAdmin(auth, conversation.tenantId);
+      const messages = admin ? all : withoutRatingScores(all);
+      const evaluations = admin ? await this.evaluations(tx, conversation.tenantId, id) : [];
       const orderIds = messages.flatMap((m) => (m.content.event === "order" && m.content.orderId ? [m.content.orderId] : []));
       // O card pode ser de um pedido de outro restaurante atendido pelo canal da conversa: ele leva o nome do restaurante.
       const orders = orderIds.length
@@ -128,8 +135,27 @@ export class ConversationsService {
         ...toOrderDto(order),
         ...(order.tenantId !== conversation.tenantId && { restaurantName: order.tenant.name }),
       });
-      return { messages, orders: Object.fromEntries(orders.map((order) => [order.id, toCard(order)])) };
+      return { messages, orders: Object.fromEntries(orders.map((order) => [order.id, toCard(order)])), evaluations };
     });
+  }
+
+  /** Avaliações da IA da conversa, com o nome de quem da equipe respondeu por último em cada atendimento. */
+  private async evaluations(tx: TenantTx, tenantId: string, conversationId: string): Promise<ConversationEvaluationDto[]> {
+    const rows = await tx.conversationEvaluation.findMany({ where: { conversationId }, orderBy: { createdAt: "asc" } });
+    const userIds = [...new Set(rows.flatMap((row) => (row.userId ? [row.userId] : [])))];
+    const members = userIds.length
+      ? await tx.tenantMember.findMany({ where: { tenantId, userId: { in: userIds } }, select: { user: { select: { id: true, name: true } } } })
+      : [];
+    const names = new Map(members.map((member) => [member.user.id, member.user.name]));
+    return rows.map((row) => ({
+      id: row.id,
+      resolved: row.resolved,
+      satisfied: row.satisfied,
+      score: row.score,
+      summary: row.summary,
+      agentName: row.userId ? (names.get(row.userId) ?? "Ex-atendente") : null,
+      createdAt: row.createdAt.toISOString(),
+    }));
   }
 
   /**
@@ -174,6 +200,8 @@ export class ConversationsService {
       if (capabilities.window24h && (!conversation.windowExpiresAt || conversation.windowExpiresAt < new Date())) {
         throw new UnprocessableEntityException("A janela de 24h para resposta livre terminou.");
       }
+      // Atendimento com IA: a resposta é revisada pela IA no worker, antes do envio.
+      const review = await this.llm.activeFor(tx, conversation.tenantId);
       const created = await tx.message.create({
         data: {
           tenantId: conversation.tenantId,
@@ -181,13 +209,13 @@ export class ConversationsService {
           channelId: conversation.channelId,
           direction: "OUTBOUND",
           type: "TEXT",
-          content: { text } satisfies MessageContent,
+          content: { text, ...(review && { aiReview: "pending" }) } satisfies MessageContent,
           status: "PENDING",
           sentByUserId: auth.userId,
         },
         include: { sentByUser: { select: { id: true, name: true } } },
       });
-      // Responder implica ter lido a conversa; e o atendente assume, encerrando o menu automático se ainda estiver aberto.
+      // Responder implica ter lido a conversa; e o atendente assume, encerrando o menu automático (ou a IA) se ainda estiver aberto.
       const state = conversation.automationState as AutomationState;
       const menuOpen = !!state.triage && state.triage !== "done";
       // Pendente só por ter chegado fora do horário: com a resposta da equipe, volta a ser um atendimento aberto.
@@ -199,8 +227,14 @@ export class ConversationsService {
           unreadCount: 0,
           awaitingAgentSince: null, // a equipe respondeu: o alarme para
           // Com o atendente na conversa, a próxima mensagem do cliente depois do pedido confirmado não chama a equipe.
-          ...((menuOpen || afterHoursPending || state.orderFollowUp) && {
-            automationState: { ...state, triage: "done", afterHours: undefined, orderFollowUp: undefined },
+          ...((menuOpen || afterHoursPending || state.orderFollowUp || state.ai === "on") && {
+            automationState: {
+              ...state,
+              triage: "done",
+              afterHours: undefined,
+              orderFollowUp: undefined,
+              ...(state.ai === "on" && { ai: "off" }),
+            },
           }),
           ...(afterHoursPending && { status: "OPEN" }),
         },
@@ -348,8 +382,11 @@ export class ConversationsService {
       });
       return { conversation: updated, resolved: body.status === "RESOLVED" && current.status !== "RESOLVED" };
     });
-    // Fim do atendimento: a pesquisa de satisfação decide no worker se pergunta a nota.
-    if (resolved) await this.automations.add("survey", { tenantId: conversation.tenantId, conversationId });
+    // Fim do atendimento: a pesquisa de satisfação decide no worker se pergunta a nota; a IA avalia o atendimento.
+    if (resolved) {
+      await this.automations.add("survey", { tenantId: conversation.tenantId, conversationId });
+      await scheduleEvaluation(this.ai, conversation.tenantId, conversationId);
+    }
     this.realtime.inboxChanged(conversation.tenantId, conversationId);
     return toListItem(conversation, auth);
   }

@@ -2,9 +2,10 @@ import { automationMessagesOf, CHANNEL_CAPABILITIES } from "@dishdesk/shared";
 import { InjectQueue } from "@nestjs/bullmq";
 import { Inject, Injectable } from "@nestjs/common";
 import type { Queue } from "bullmq";
+import { scheduleEvaluation } from "../ai/ai-evaluation.service.js";
 import { ENV, type Env } from "../config/env.js";
 import { DatabaseService } from "../core/database.service.js";
-import { type OutboundJob, QUEUES } from "../queues/queues.module.js";
+import { type AiJob, type OutboundJob, QUEUES } from "../queues/queues.module.js";
 import { RealtimeEmitter } from "../realtime/realtime.emitter.js";
 import { automationMessage, channelSends, dispatch, tenantSettings } from "./automation.js";
 import { SurveyService } from "./survey.service.js";
@@ -19,6 +20,7 @@ export class InactivityService {
     private readonly db: DatabaseService,
     private readonly realtime: RealtimeEmitter,
     @InjectQueue(QUEUES.outbound) private readonly outbound: Queue<OutboundJob>,
+    @InjectQueue(QUEUES.ai) private readonly ai: Queue<AiJob>,
     private readonly survey: SurveyService,
     @Inject(ENV) private readonly env: Env,
   ) {}
@@ -63,5 +65,6 @@ export class InactivityService {
     if (!messageId) return;
     await dispatch(this.outbound, this.realtime, tenantId, conversationId, [messageId]);
     await this.survey.request(tenantId, conversationId, now);
+    await scheduleEvaluation(this.ai, tenantId, conversationId);
   }
 }

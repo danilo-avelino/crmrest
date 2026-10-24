@@ -144,6 +144,13 @@ export function score(value: number): string {
   return scoreFormat.format(value);
 }
 
+const percentFormat = new Intl.NumberFormat("pt-BR", { style: "percent", maximumFractionDigits: 0 });
+
+/** Proporção de 0 a 1: "83%". */
+export function percent(rate: number): string {
+  return percentFormat.format(rate);
+}
+
 /** Tempo de resposta: "45 s", "12 min", "1h 05 min". */
 export function responseTime(seconds: number): string {
   if (seconds < 60) return `${Math.round(seconds)} s`;

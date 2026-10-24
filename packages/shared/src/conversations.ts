@@ -59,6 +59,27 @@ export type MessageContent = {
   template?: { name: string; language: string; variables: string[] };
   media?: { mimeType: string; externalMediaId?: string; url?: string; filename?: string };
   location?: { latitude: number; longitude: number; name?: string; address?: string };
+  /** Resposta escrita pela IA no atendimento com IA (módulo AI), sem atendente. */
+  aiReply?: boolean;
+  /**
+   * Revisão da resposta do atendente pela IA, antes do envio: "pending" = ainda no worker; "rewritten" = o texto é o da
+   * IA e `original` é o que o atendente escreveu (só a equipe vê); "kept" = saiu o texto do atendente.
+   */
+  aiReview?: "pending" | "rewritten" | "kept";
+  original?: string;
+};
+
+/** Avaliação de um atendimento pela IA, feita quando a conversa é resolvida (só administradores veem). */
+export type ConversationEvaluationDto = {
+  id: string;
+  resolved: boolean;
+  /** null = o cliente não reagiu. */
+  satisfied: boolean | null;
+  score: number;
+  summary: string;
+  /** Quem da equipe respondeu por último; null = só a IA e as automações atenderam. */
+  agentName: string | null;
+  createdAt: string;
 };
 
 export type MessageDto = {
@@ -128,7 +149,8 @@ export type ConversationCounts = Record<ConversationStatus, number> & {
   awaitingQuiet: number;
   urgentSince: string | null;
 };
-export type ConversationMessages = { messages: MessageDto[]; orders: Record<string, OrderDto> };
+/** `evaluations`: avaliações da IA, na ordem em que foram feitas (vazio para quem não é administrador). */
+export type ConversationMessages = { messages: MessageDto[]; orders: Record<string, OrderDto>; evaluations: ConversationEvaluationDto[] };
 
 export const ConversationListQuery = z.object({
   /** ACTIVE: abertas e pendentes (o que a equipe ainda precisa tratar). */

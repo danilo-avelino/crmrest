@@ -76,4 +76,25 @@ export type RatingsReportDto = {
     agentName: string | null;
     orderCode: string | null;
   }[];
+  /** Avaliações dos atendimentos pela IA no período; null = restaurante sem o módulo Atendimento com IA. */
+  ai: {
+    evaluations: number;
+    averageScore: number | null;
+    /** De 0 a 1: atendimentos com o problema resolvido; e clientes satisfeitos entre os que reagiram. */
+    resolvedRate: number | null;
+    satisfiedRate: number | null;
+    /** A avaliação vai para quem da equipe respondeu por último; userId null = só a IA atendeu. */
+    agents: { userId: string | null; name: string; evaluations: number; averageScore: number | null }[];
+    recent: {
+      id: string;
+      conversationId: string;
+      contactName: string | null;
+      agentName: string | null;
+      score: number;
+      resolved: boolean;
+      satisfied: boolean | null;
+      summary: string;
+      createdAt: string;
+    }[];
+  } | null;
 };

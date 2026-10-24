@@ -175,6 +175,8 @@ export class IfoodChatService {
       const items: IfoodChatOutboxItem[] = [];
       const failed: { tenantId: string; conversationId: string }[] = [];
       for (const message of pending) {
+        // Resposta ainda em revisão pela IA (atendimento com IA): sai depois, com o texto revisado.
+        if ((message.content as MessageContent).aiReview === "pending") continue;
         // Com dois painéis abertos, só o primeiro leva a mensagem (a condição é reavaliada depois da trava da linha).
         const { count } = await tx.message.updateMany({
           where: { id: message.id, status: "PENDING", externalMessageId: null },

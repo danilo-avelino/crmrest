@@ -17,12 +17,13 @@ import {
 import { InjectQueue } from "@nestjs/bullmq";
 import { Injectable } from "@nestjs/common";
 import type { Queue } from "bullmq";
+import { LlmClient } from "../ai/llm.client.js";
 import { mergeContacts } from "../contacts/contact-merge.js";
 import { orderUpdateMessage } from "../orders/forecast.js";
 import { latestOrderOf } from "../orders/latest-order.js";
 import { withOrderTenants } from "../orders/order-scope.js";
 import { DatabaseService } from "../core/database.service.js";
-import { type OutboundJob, QUEUES } from "../queues/queues.module.js";
+import { type AiJob, type OutboundJob, QUEUES } from "../queues/queues.module.js";
 import { RealtimeEmitter } from "../realtime/realtime.emitter.js";
 import {
   type AutomationState,
@@ -39,7 +40,7 @@ import { CourierMenuService } from "./courier-menu.service.js";
 import { PhoneCollectionService } from "./phone-collection.service.js";
 import { SurveyService } from "./survey.service.js";
 
-const ORDER_STATUS_TEXT: Record<OrderStatus, string> = {
+export const ORDER_STATUS_TEXT: Record<OrderStatus, string> = {
   PLACED: "recebido",
   CONFIRMED: "confirmado",
   PREPARING: "em preparo",
@@ -50,6 +51,9 @@ const ORDER_STATUS_TEXT: Record<OrderStatus, string> = {
 };
 
 const BRL = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
+
+/** Espera antes de a IA responder: o cliente costuma mandar várias mensagens seguidas, que recebem uma resposta só. */
+export const AI_REPLY_DELAY_MS = 2_000;
 
 // Os textos vêm da personalidade do restaurante e de Configurações (E15); aqui só a montagem com os dados do pedido.
 const TEXTS = {
@@ -96,15 +100,18 @@ export class TriageService {
     private readonly db: DatabaseService,
     private readonly realtime: RealtimeEmitter,
     @InjectQueue(QUEUES.outbound) private readonly outbound: Queue<OutboundJob>,
+    @InjectQueue(QUEUES.ai) private readonly ai: Queue<AiJob>,
     private readonly phoneCollection: PhoneCollectionService,
     private readonly survey: SurveyService,
     private readonly courierMenu: CourierMenuService,
+    private readonly llm: LlmClient,
   ) {}
 
-  /** Roda depois de cada mensagem recebida: nota da pesquisa, menu e, terminado o menu, a coleta de telefone. */
+  /** Roda depois de cada mensagem recebida: nota da pesquisa, menu (ou a IA) e, terminado o menu, a coleta de telefone. */
   async afterInbound(event: InboundEvent): Promise<void> {
     if (!CHANNEL_CAPABILITIES[event.channel.type].send) return;
     if (await this.survey.handleAnswer(event)) return;
+    if (await this.aiTakes(event)) return;
 
     const { tenantId } = event.channel;
     const step = await this.db.withTenants({ tenantIds: [tenantId] }, async (tx) => {
@@ -127,6 +134,28 @@ export class TriageService {
     if (step.alsoSend) await dispatch(this.outbound, this.realtime, step.alsoSend.tenantId, step.alsoSend.conversationId, [step.alsoSend.messageId]);
     for (const conversationId of step.notify ?? []) this.realtime.inboxChanged(tenantId, conversationId);
     if (step.done) await this.phoneCollection.afterInbound(event);
+  }
+
+  /**
+   * Atendimento com IA (módulo AI): a IA atende no lugar do menu, do começo do atendimento até passar para a equipe.
+   * A resposta sai pela fila ai, um pouco depois, para juntar as mensagens que o cliente manda em sequência.
+   * O entregador continua com o menu dele.
+   */
+  private async aiTakes(event: InboundEvent): Promise<boolean> {
+    const { tenantId } = event.channel;
+    const takes = await this.db.withTenants({ tenantIds: [tenantId] }, async (tx) => {
+      if (!(await this.llm.activeFor(tx, tenantId))) return false;
+      const conversation = await tx.conversation.findUniqueOrThrow({
+        where: { id: event.conversationId },
+        select: { automationState: true, contact: { select: { tags: true } } },
+      });
+      if (conversation.contact.tags.includes(COURIER_TAG)) return false;
+      if (!event.newAttendance) return (conversation.automationState as AutomationState).ai === "on";
+      await setAutomationState(tx, event.conversationId, { ai: "on" });
+      return true;
+    });
+    if (takes) await this.ai.add("reply", { tenantId, conversationId: event.conversationId }, { delay: AI_REPLY_DELAY_MS });
+    return takes;
   }
 
   private async step(tx: TenantTx, event: InboundEvent): Promise<Step> {

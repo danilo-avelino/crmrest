@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { useNow } from "@/hooks/use-now";
 import { count, dayTime, responseTime, score } from "@/lib/format";
 import { cn } from "@/lib/utils";
+import { AiEvaluations } from "./ai-evaluations";
 import { IfoodReviews } from "./ifood-reviews";
 
 const PERIODS: { value: ReportPeriod; label: string }[] = [
@@ -222,6 +223,8 @@ export function RatingsReport() {
                   </table>
                 )}
               </Section>
+
+              {data!.ai && <AiEvaluations ai={data!.ai} now={now} />}
             </div>
           )}
         </div>
@@ -306,7 +309,7 @@ export function Stars({ value }: { value: number }) {
   );
 }
 
-function Th({ children, align = "left" }: { children?: ReactNode; align?: "left" | "right" }) {
+export function Th({ children, align = "left" }: { children?: ReactNode; align?: "left" | "right" }) {
   return (
     <th
       className={cn(
@@ -319,7 +322,7 @@ function Th({ children, align = "left" }: { children?: ReactNode; align?: "left"
   );
 }
 
-function Td({ children, className, align = "left" }: { children?: ReactNode; className?: string; align?: "left" | "right" }) {
+export function Td({ children, className, align = "left" }: { children?: ReactNode; className?: string; align?: "left" | "right" }) {
   return (
     <td className={cn("px-3 py-2.5 text-[13px] tabular-nums first:pl-5 last:pr-5", align === "right" && "text-right", className)}>
       {children}

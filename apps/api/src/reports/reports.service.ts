@@ -96,7 +96,19 @@ export class ReportsService {
         )
         ORDER BY c.conversation_id, c.day_end, c.created_at`;
 
-      const userIds = [...new Set([...handoffs, ...ratings].flatMap((row) => (row.user_id ? [row.user_id] : [])))];
+      // Avaliações da IA (módulo Atendimento com IA): a nota vai para quem da equipe respondeu por último.
+      const aiModule = await tx.tenantModule.findUnique({ where: { tenantId_module: { tenantId, module: "AI" } }, select: { id: true } });
+      const evaluations = aiModule
+        ? await tx.conversationEvaluation.findMany({
+            where: { tenantId, createdAt: { gte: from } },
+            orderBy: { createdAt: "desc" },
+            include: { conversation: { select: { contact: { select: { name: true } } } } },
+          })
+        : [];
+
+      const userIds = [
+        ...new Set([...handoffs, ...ratings, ...evaluations.map((row) => ({ user_id: row.userId }))].flatMap((row) => (row.user_id ? [row.user_id] : []))),
+      ];
       const members = await tx.tenantMember.findMany({
         where: { tenantId, userId: { in: userIds } },
         select: { user: { select: { id: true, name: true } } },
@@ -136,9 +148,41 @@ export class ReportsService {
           agentName: nameOf(row.user_id),
           orderCode: row.order_code,
         })),
+        ai: aiModule
+          ? {
+              ...evaluationMetrics(evaluations),
+              agents: [...new Set(evaluations.map((row) => row.userId))]
+                .map((userId) => {
+                  const rows = evaluations.filter((row) => row.userId === userId);
+                  return { userId, name: nameOf(userId) ?? "Só a IA", evaluations: rows.length, averageScore: evaluationMetrics(rows).averageScore };
+                })
+                .sort((a, b) => (a.userId === null ? 1 : b.userId === null ? -1 : a.name.localeCompare(b.name, "pt-BR"))),
+              recent: evaluations.slice(0, 50).map((row) => ({
+                id: row.id,
+                conversationId: row.conversationId,
+                contactName: row.conversation.contact.name,
+                agentName: nameOf(row.userId),
+                score: row.score,
+                resolved: row.resolved,
+                satisfied: row.satisfied,
+                summary: row.summary,
+                createdAt: row.createdAt.toISOString(),
+              })),
+            }
+          : null,
       };
     });
   }
+}
+
+function evaluationMetrics(rows: { score: number; resolved: boolean; satisfied: boolean | null }[]) {
+  const rate = (values: boolean[]) => (values.length ? values.filter(Boolean).length / values.length : null);
+  return {
+    evaluations: rows.length,
+    averageScore: rows.length ? rows.reduce((sum, row) => sum + row.score, 0) / rows.length : null,
+    resolvedRate: rate(rows.map((row) => row.resolved)),
+    satisfiedRate: rate(rows.flatMap((row) => (row.satisfied === null ? [] : [row.satisfied]))),
+  };
 }
 
 function metrics(ratings: RatingRow[], answered: HandoffRow[]): AgentMetrics {

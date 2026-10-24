@@ -30,9 +30,10 @@ enum BillingPlan {
   ANNUAL
 }
 
-// Módulos pagos à parte do plano (o Campanhas, Fase 3).
+// Módulos pagos à parte do plano: Campanhas (Fase 3) e Atendimento com IA (Fase 4).
 enum ModuleKey {
   CAMPAIGNS
+  AI
 }
 
 model Tenant {
@@ -71,6 +72,7 @@ model Tenant {
   orderItems          OrderItem[]
   orderEvents         OrderEvent[]
   ratings             Rating[]
+  evaluations         ConversationEvaluation[]
   quickReplies        QuickReply[]
   auditLogs           AuditLog[]
   modules             TenantModule[]
@@ -358,6 +360,7 @@ model Conversation {
   messages     Message[]
   orders       Order[]
   ratings      Rating[]
+  evaluations  ConversationEvaluation[]
 
   @@index([tenantId, status, lastMessageAt])
   @@index([tenantId, contactId])
@@ -497,6 +500,28 @@ model Rating {
 
   @@index([tenantId, createdAt])
   @@map("ratings")
+}
+
+// Avaliação de um atendimento pela IA (E29), feita quando a conversa é resolvida: uma por atendimento.
+// userId: quem da equipe respondeu por último (null = só a IA e as automações atenderam).
+model ConversationEvaluation {
+  id             String   @id @default(uuid(7)) @db.Uuid
+  tenantId       String   @map("tenant_id") @db.Uuid
+  conversationId String   @map("conversation_id") @db.Uuid
+  userId         String?  @map("user_id") @db.Uuid
+  resolved       Boolean // o problema do cliente foi resolvido
+  satisfied      Boolean? // null = o cliente não reagiu
+  score          Int // 1 a 5
+  summary        String
+  model          String
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  tenant       Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+  @@index([conversationId])
+  @@map("conversation_evaluations")
 }
 
 // ---------- Auditoria ----------

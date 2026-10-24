@@ -1,17 +1,18 @@
 "use client";
 
-import type { ConversationMessages, MessageContent, MessageDto } from "@dishdesk/shared";
+import type { ConversationEvaluationDto, ConversationMessages, MessageContent, MessageDto } from "@dishdesk/shared";
 import {
   AlertCircleIcon,
   CheckCircle2Icon,
   ClockIcon,
   MapPinIcon,
   SparklesIcon,
+  StarIcon,
   StickyNoteIcon,
   TriangleAlertIcon,
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
 import { Avatar } from "@/components/inbox/bits";
 import { MessageMedia } from "@/components/inbox/message-media";
@@ -65,33 +66,57 @@ export function MessageTimeline({
     end.current?.scrollIntoView({ block: "end" });
   }, [last]);
 
+  // Cada avaliação da IA entra depois da última mensagem anterior a ela.
+  const evaluationsAfter = new Map<string, ConversationEvaluationDto[]>();
+  const leading: ConversationEvaluationDto[] = [];
+  for (const evaluation of data.evaluations) {
+    const before = data.messages.findLast((message) => message.createdAt <= evaluation.createdAt);
+    if (!before) leading.push(evaluation);
+    else evaluationsAfter.set(before.id, [...(evaluationsAfter.get(before.id) ?? []), evaluation]);
+  }
+
   return (
     <div role="log" aria-label="Mensagens da conversa" className="flex flex-1 flex-col gap-2.5 overflow-y-auto px-5 pt-5 pb-3">
-      {data.messages.map((message) => {
-        const order = message.content.orderId ? data.orders[message.content.orderId] : undefined;
-        if (message.type === "SYSTEM") {
-          return order ? (
-            <OrderCard
-              key={message.id}
-              order={order}
-              conversationId={message.conversationId}
-              onOpenCustomerChat={message.content.customerChat ? onOpenConversation : undefined}
-            />
-          ) : (
-            <SystemEvent key={message.id} message={message} />
-          );
-        }
-        if (message.type === "NOTE") return <Note key={message.id} message={message} />;
-        if (message.content.automation) return <Automation key={message.id} message={message} />;
-        return message.direction === "INBOUND" ? (
-          <Inbound key={message.id} message={message} contact={contact} />
-        ) : (
-          <Outbound key={message.id} message={message} />
-        );
-      })}
+      {leading.map((evaluation) => (
+        <Evaluation key={evaluation.id} evaluation={evaluation} />
+      ))}
+      {data.messages.map((message) => (
+        <Fragment key={message.id}>
+          <TimelineMessage message={message} data={data} contact={contact} onOpenConversation={onOpenConversation} />
+          {evaluationsAfter.get(message.id)?.map((evaluation) => <Evaluation key={evaluation.id} evaluation={evaluation} />)}
+        </Fragment>
+      ))}
       <div ref={end} />
     </div>
   );
+}
+
+function TimelineMessage({
+  message,
+  data,
+  contact,
+  onOpenConversation,
+}: {
+  message: MessageDto;
+  data: ConversationMessages;
+  contact: { id: string; name: string | null };
+  onOpenConversation: (id: string) => void;
+}) {
+  const order = message.content.orderId ? data.orders[message.content.orderId] : undefined;
+  if (message.type === "SYSTEM") {
+    return order ? (
+      <OrderCard
+        order={order}
+        conversationId={message.conversationId}
+        onOpenCustomerChat={message.content.customerChat ? onOpenConversation : undefined}
+      />
+    ) : (
+      <SystemEvent message={message} />
+    );
+  }
+  if (message.type === "NOTE") return <Note message={message} />;
+  if (message.content.automation) return <Automation message={message} />;
+  return message.direction === "INBOUND" ? <Inbound message={message} contact={contact} /> : <Outbound message={message} />;
 }
 
 function SystemEvent({ message }: { message: MessageDto }) {
@@ -159,15 +184,64 @@ function Inbound({ message, contact }: { message: MessageDto; contact: { id: str
 }
 
 function Outbound({ message }: { message: MessageDto }) {
+  const { aiReply, aiReview, original } = message.content;
+  const [showOriginal, setShowOriginal] = useState(false);
   return (
     <div className="flex justify-end">
       <div className="max-w-[68%] rounded-[12px_12px_2px_12px] bg-ink px-3 py-2 text-paper">
         <MessageBody message={message} />
+        {showOriginal && original && (
+          <div className="mt-1.5 border-t border-ink-2 pt-1.5 text-[11.5px] leading-[1.4] whitespace-pre-wrap text-ink-3">
+            Escrito pelo atendente: {original}
+          </div>
+        )}
         <div className="mt-[3px] text-right text-[10px] text-ink-3 tabular-nums">
           {clock(message.createdAt)}
           {message.sentBy && ` · ${message.sentBy.name.split(" ")[0]}`}
+          {aiReply && (
+            <span className="ml-1 inline-flex items-center gap-0.5">
+              · <SparklesIcon className="size-2.5" aria-hidden /> IA
+            </span>
+          )}
+          {aiReview === "pending" && " · revisando com IA"}
+          {aiReview === "rewritten" && (
+            <>
+              {" · revisada pela IA · "}
+              <button type="button" onClick={() => setShowOriginal((shown) => !shown)} className="underline underline-offset-2 hover:text-paper">
+                {showOriginal ? "ocultar original" : "ver original"}
+              </button>
+            </>
+          )}
           <DeliveryStatus message={message} />
         </div>
+      </div>
+    </div>
+  );
+}
+
+/** Avaliação do atendimento pela IA, no ponto da conversa em que foi feita (só administradores recebem). */
+function Evaluation({ evaluation }: { evaluation: ConversationEvaluationDto }) {
+  const tone =
+    evaluation.score >= 4
+      ? "border-success-line bg-success-lt"
+      : evaluation.score <= 2
+        ? "border-tomate-line bg-tomate-lt"
+        : "border-warning-line bg-warning-lt";
+  const satisfaction = evaluation.satisfied === null ? "cliente sem reação" : evaluation.satisfied ? "cliente satisfeito" : "cliente insatisfeito";
+  return (
+    <div className={cn("mx-auto my-1 max-w-[76%] rounded-[10px] border px-3.5 py-2.5", tone)}>
+      <div className="mb-1 flex items-center gap-[5px] text-[10.5px] font-semibold text-ink-2">
+        <SparklesIcon className="size-3" aria-hidden />
+        Avaliação da IA · <StarIcon className="size-3 fill-warning text-warning" aria-hidden />
+        <span className="tabular-nums">{evaluation.score}/5</span>
+        <span className="font-normal">
+          · {evaluation.resolved ? "problema resolvido" : "problema não resolvido"} · {satisfaction}
+        </span>
+      </div>
+      <div className="text-[12.5px] leading-[1.45] text-ink-2">{evaluation.summary}</div>
+      <div className="mt-1 text-right text-[10px] text-ink-3 tabular-nums">
+        {clock(evaluation.createdAt)}
+        {evaluation.agentName ? ` · atendimento de ${evaluation.agentName.split(" ")[0]}` : " · só a IA atendeu"} · visível só para administradores
       </div>
     </div>
   );

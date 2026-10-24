@@ -287,6 +287,7 @@ Vale para os três épicos:
 - Como admin, quero ligar e desligar o atendimento com IA por canal e definir em que horário ele vale (sempre, ou só fora do horário de funcionamento).
 - **Regra obrigatória:** a IA só afirma o que está nos dados do restaurante (cardápio, horários, pedido). Nunca inventa preço, prazo, promoção ou política. Sem a informação, ela transfere.
 - A IA respeita a janela de 24h e o opt-out, como qualquer mensagem enviada.
+- **Primeira versão (24/10/2026, módulo `AI` ligado pela plataforma):** a IA atende no lugar do menu do WhatsApp e do Instagram (o entregador continua com o menu dele), com horário, links para pedir e o pedido recente do cliente; não anota pedidos; transfere com o restaurante fechado deixando a conversa pendente; até 8 respostas por atendimento; sem a LLM, chama a equipe. O atendente que responde tira a IA da conversa até o próximo atendimento. Ainda não há liga/desliga por canal nem por horário.
 - A definir na implementação:
   - de onde vem o cardápio (Cardápio Web, iFood ou cadastro próprio);
   - se a IA pode **anotar pedidos** ou só informa e tira dúvidas;
@@ -299,8 +300,8 @@ Vale para os três épicos:
 - Como restaurante, quero que a IA corrija ortografia, clareza e tom, **sem mudar o conteúdo**: valores, prazos e promessas ficam como o atendente escreveu.
 - Como admin, quero ligar e desligar a revisão por IA no restaurante.
 - ⚠️ O design do composer ainda não tem a revisão por IA. A tela precisa ser desenhada antes da implementação.
+- **Decidido em 24/10/2026 (teste com LLM local):** a revisão é **automática a cada envio**, sem prévia: o texto revisado sai direto e o original fica visível só para a equipe ("ver original" no balão). Se a revisão mudar ou acrescentar um número, horário, valor, link ou @, sai o texto do atendente. Isso substitui o "nada é enviado sem a minha confirmação" acima.
 - A definir na implementação:
-  - se a revisão é sob demanda (botão no composer) ou automática a cada envio;
   - se a IA também **sugere uma resposta** quando o atendente ainda não escreveu nada.
 
 #### E29 — Avaliação automática da conversa · **M** · depende de: E8
@@ -311,6 +312,7 @@ Vale para os três épicos:
 - Como admin, quero ver a avaliação na conversa e filtrar as conversas com nota baixa ou problema não resolvido.
 - Como admin, quero ver a nota média por atendente e por período. A avaliação vale tanto para o atendimento humano quanto para o da IA (E27).
 - Como plataforma, quero a avaliação rodando em **job assíncrono** (fila própria no `worker`), fora do caminho do atendimento. Uma falha na avaliação nunca atrasa nem bloqueia a conversa.
+- **Primeira versão (24/10/2026):** roda 5 minutos depois de resolvida (ou encerrada por inatividade) e avalia o que veio depois da última avaliação da conversa; reaberta antes disso, espera a próxima resolução. Nota de 1 a 5, resolvido, satisfeito (ou sem reação) e um resumo; aparece na conversa e na aba Avaliações, só para administradores. Modelo em teste: Gemma 4 12B local (Ollama).
 - **Modelo:** preferência por um modelo aberto e barato, **Gemma ou Llama**, se a qualidade permitir. Validar antes com uma amostra de conversas reais em português, comparando com a avaliação de uma pessoa. Se não atingir a qualidade, usar outro modelo.
 - A definir na implementação:
   - a escala da nota (ex.: 1 a 5) e os critérios de cada nível;

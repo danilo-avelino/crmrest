@@ -67,6 +67,41 @@ services:
     ports:
       - "127.0.0.1:8085:8080"
 
+  # LLM local do plano com IA (atendimento, revisão das respostas e avaliação). A API fala com ele pelo formato da OpenAI
+  # (AI_BASE_URL=http://localhost:11434/v1). Usa a GPU NVIDIA; o modelo é baixado uma vez: docker compose exec ollama ollama pull gemma4:12b
+  ollama:
+    image: ollama/ollama:0.40.4
+    environment:
+      # O modelo nunca sai da GPU (~8 GB de VRAM): carregar de novo leva ~100 s, mais que o AI_TIMEOUT_MS da API.
+      OLLAMA_KEEP_ALIVE: "-1"
+    gpus: all
+    restart: unless-stopped # volta sozinho quando o Docker abre: a produção usa este Ollama (serviço ngrok abaixo)
+    ports:
+      - "127.0.0.1:11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+
+  # Túnel da IA para a produção, enquanto só há clientes de teste: a API da Railway chama este Ollama pelo domínio fixo
+  # do ngrok (AI_BASE_URL=https://<domínio>/v1). Usa a conta do ngrok instalado no Windows (ngrok.yml) e a política em
+  # %LOCALAPPDATA%\ngrok\dishdesk-ia-policy.yml (fora do repositório: tem a chave, a mesma AI_API_KEY da Railway), que
+  # só deixa passar o POST de chat com a chave. Sobe à parte: docker compose --profile ia-producao up -d ngrok
+  ngrok:
+    image: ngrok/ngrok:3.39.12-alpine
+    profiles: [ia-producao]
+    depends_on: [ollama]
+    restart: unless-stopped
+    command:
+      - http
+      - http://ollama:11434
+      - --url=https://inenarrable-bev-mechanomorphic.ngrok-free.dev
+      - --config=/etc/ngrok/ngrok.yml
+      - --traffic-policy-file=/etc/ngrok/dishdesk-ia-policy.yml
+      - --log=stdout
+    volumes:
+      - ${LOCALAPPDATA}/ngrok/ngrok.yml:/etc/ngrok/ngrok.yml:ro
+      - ${LOCALAPPDATA}/ngrok/dishdesk-ia-policy.yml:/etc/ngrok/dishdesk-ia-policy.yml:ro
+
 volumes:
   postgres-data:
   redis-data:
+  ollama-data:

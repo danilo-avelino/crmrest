@@ -1,6 +1,6 @@
 # Pendências para produção — Dish Desk
 
-Atualizado em 21 de outubro de 2026.
+Atualizado em 24 de outubro de 2026.
 
 Esta é a lista do que falta para o Dish Desk atender restaurantes de verdade. Quando um item for concluído, marque `[x]` e troque a data acima.
 
@@ -137,6 +137,11 @@ Pagamento pendente (Claude, 11/10): a renovação do mensal tem 1 dia de folga; 
 - [ ] Pausar o projeto antigo do Supabase, em São Paulo.
 - [ ] Apagar os 421 contatos importados só com o nome.
 - [ ] Abandonar o app antigo da Meta ("Agente da Mobydick").
+- [ ] **Atendimento com IA (módulo pago, em teste desde 24/10)** — antes de ligar para um restaurante de verdade:
+  - [x] Produção usando a LLM do PC do Danilo (Ollama + Gemma 4 12B na RTX 3060), pelo túnel do ngrok com chave (serviço `ngrok`, perfil `ia-producao` do docker-compose) — decisão de 24/10, só enquanto houver clientes de teste. PC desligado: a IA passa para a equipe e a resposta do atendente sai sem revisão.
+  - [ ] Onde a LLM roda com clientes reais: a Railway não tem GPU. Opções: provedor de inferência compatível com a API da OpenAI (`AI_BASE_URL`, `AI_API_KEY`, `AI_MODEL`) ou servidor próprio com GPU — você.
+  - [ ] Política de privacidade: as conversas passam a ir para um provedor de LLM (LGPD) — você.
+  - [ ] Medir o consumo de IA por restaurante, para decidir a cobrança (roadmap, Fase 4).
 
 ## Ordem sugerida
 

@@ -2,6 +2,7 @@ import type { MessageContent } from "@dishdesk/shared";
 import { InjectQueue, Processor } from "@nestjs/bullmq";
 import { Logger } from "@nestjs/common";
 import { DelayedError, type Job, type Queue } from "bullmq";
+import { AiReviewService } from "../ai/ai-review.service.js";
 import { INACTIVITY_CLOSE_MS } from "../automations/inactivity.service.js";
 import { ChannelAuthError, PermanentSendError } from "../connectors/connector.js";
 import { ConnectorsService } from "../connectors/connectors.service.js";
@@ -26,6 +27,7 @@ export class OutboundProcessor extends JobProcessor {
     private readonly connectors: ConnectorsService,
     private readonly realtime: RealtimeEmitter,
     @InjectQueue(QUEUES.automations) private readonly automations: Queue<AutomationJob>,
+    private readonly review: AiReviewService,
   ) {
     super();
   }
@@ -51,6 +53,11 @@ export class OutboundProcessor extends JobProcessor {
       return { message, earlierPending };
     });
     if (!message || message.status !== "PENDING") return; // já enviada (job repetido) ou removida
+    // Atendimento com IA: a resposta do atendente é revisada antes de sair (e antes de um painel do iFood pegá-la).
+    if ((message.content as MessageContent).aiReview === "pending") {
+      await this.review.review(tenantId, messageId);
+      return this.process(job, token);
+    }
     // Chat do iFood: quem envia é o painel, pela extensão (IfoodChatService). O job só espera e, sem envio, registra a falha.
     if (message.channel.type === "IFOOD") {
       if (token && Date.now() - job.timestamp < IFOOD_CHAT_WAIT_MS) {

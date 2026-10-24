@@ -5,7 +5,8 @@ import type { Env } from "../config/env.js";
 
 /**
  * Filas (§3.1): inbound = webhooks; outbound = envios aos canais; automations = etapas das automações;
- * ifood e cardapioWeb = polling de pedidos (e, no Cardápio Web, a importação da base de clientes); channels = manutenção dos canais (renovação de tokens).
+ * ifood e cardapioWeb = polling de pedidos (e, no Cardápio Web, a importação da base de clientes); channels = manutenção dos canais (renovação de tokens);
+ * ai = respostas e avaliações da IA (módulo Atendimento com IA), separadas para a LLM não atrasar as automações.
  */
 export const QUEUES = {
   inbound: "inbound",
@@ -14,6 +15,7 @@ export const QUEUES = {
   ifood: "ifood",
   cardapioWeb: "cardapio-web",
   channels: "channels",
+  ai: "ai",
 } as const;
 
 /** Payload bruto de um webhook, como chegou da plataforma. */
@@ -23,6 +25,8 @@ export type OutboundJob = { tenantId: string; messageId: string };
 export type AutomationJob = { tenantId: string; conversationId: string; ifood?: { event: InboundEvent; orderId: string } };
 /** Uma página da base de clientes do Cardápio Web; `imported` soma o que as páginas anteriores trouxeram. */
 export type CardapioWebImportJob = { tenantId: string; channelId: string; page: number; imported: number };
+/** "reply": a IA responde à última mensagem do cliente; "evaluate": a IA avalia o atendimento resolvido. */
+export type AiJob = { tenantId: string; conversationId: string };
 
 @Global()
 @Module({})
@@ -47,6 +51,7 @@ export class QueuesModule {
           { name: QUEUES.ifood },
           { name: QUEUES.cardapioWeb },
           { name: QUEUES.channels },
+          { name: QUEUES.ai },
         ),
       ],
       exports: [BullModule],

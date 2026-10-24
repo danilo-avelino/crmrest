@@ -1,4 +1,9 @@
 import { Module } from "@nestjs/common";
+import { AiAttendantService } from "./ai/ai-attendant.service.js";
+import { AiEvaluationService } from "./ai/ai-evaluation.service.js";
+import { AiReviewService } from "./ai/ai-review.service.js";
+import { AiProcessor } from "./ai/ai.processor.js";
+import { LlmClient } from "./ai/llm.client.js";
 import { TokensModule } from "./auth/tokens.module.js";
 import { AutomationsProcessor } from "./automations/automations.processor.js";
 import { CourierMenuService } from "./automations/courier-menu.service.js";
@@ -56,7 +61,17 @@ import { StripeWebhookController } from "./webhooks/stripe-webhook.controller.js
     OrdersController,
     PlatformController,
   ],
-  providers: [ConversationsService, IfoodChatService, ContactsService, SettingsService, IntegrationsService, ReportsService, IfoodReviewsService, OrdersService],
+  providers: [
+    ConversationsService,
+    IfoodChatService,
+    ContactsService,
+    SettingsService,
+    IntegrationsService,
+    ReportsService,
+    IfoodReviewsService,
+    OrdersService,
+    LlmClient,
+  ],
 })
 export class ApiRoleModule {}
 
@@ -89,6 +104,11 @@ export class RealtimeRoleModule {}
     OrderNoticeService,
     ChannelTokensService,
     ChannelTokensProcessor,
+    LlmClient,
+    AiAttendantService,
+    AiReviewService,
+    AiEvaluationService,
+    AiProcessor,
   ],
 })
 export class WorkerRoleModule {}

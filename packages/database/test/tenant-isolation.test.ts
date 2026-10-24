@@ -33,6 +33,7 @@ const tenantTables: Record<string, (db: TenantTx) => Promise<Row[]>> = {
   order_items: (db) => db.orderItem.findMany({ select: { id: true, tenantId: true } }),
   order_events: (db) => db.orderEvent.findMany({ select: { id: true, tenantId: true } }),
   ratings: (db) => db.rating.findMany({ select: { id: true, tenantId: true } }),
+  conversation_evaluations: (db) => db.conversationEvaluation.findMany({ select: { id: true, tenantId: true } }),
   quick_replies: (db) => db.quickReply.findMany({ select: { id: true, tenantId: true } }),
   audit_logs: (db) => db.auditLog.findMany({ select: { id: true, tenantId: true } }),
   tenant_modules: (db) => db.tenantModule.findMany({ select: { id: true, tenantId: true } }),
@@ -110,6 +111,9 @@ async function seedTenant(label: string): Promise<Seeded> {
     },
   });
   await admin.rating.create({ data: { tenantId, conversationId: conversation.id, orderId: order.id, score: 5, channelType: "WHATSAPP" } });
+  await admin.conversationEvaluation.create({
+    data: { tenantId, conversationId: conversation.id, resolved: true, satisfied: true, score: 5, summary: "Pedido entregue.", model: "teste" },
+  });
   await admin.orderEvent.create({
     data: { tenantId, orderId: order.id, externalEventId: `evento-${suffix}`, code: "CONFIRMED", occurredAt: new Date() },
   });
