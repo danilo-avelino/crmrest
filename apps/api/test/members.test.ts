@@ -211,7 +211,7 @@ describe("Configurações → usuários: convite por e-mail", () => {
     await invite(fx.b.id, adminToken).expect(204);
     expect(calls()).toEqual([`POST /auth/v1/invite?redirect_to=${redirect}`]);
     await invite(fx.a.id, agentToken).expect(403);
-    await invite(fx.b.id, adminToken, fx.user.id.replace(/.$/, "0")).expect(404);
+    await invite(fx.b.id, adminToken, "00000000-0000-4000-8000-000000000000").expect(404);
   });
 
   it("sem o Supabase configurado: pede a senha temporária e não cria ninguém", async () => {
