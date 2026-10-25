@@ -4,6 +4,21 @@ import { z } from "zod";
 export const REPORT_PERIODS = ["today", "7d", "30d"] as const;
 export type ReportPeriod = (typeof REPORT_PERIODS)[number];
 
+/** Por que um atendimento precisou da equipe: a IA classifica ao avaliar o atendimento (módulo Atendimento com IA). */
+export const TEAM_REASONS = {
+  atraso: "Reclamação de atraso",
+  problema_pedido: "Problema no pedido",
+  troca_reembolso: "Troca ou reembolso",
+  fora_do_cardapio: "Fora do que a IA sabe",
+  pediu_pessoa: "Cliente pediu uma pessoa",
+  pedido_grande: "Pedido grande ou evento",
+  outro: "Outro motivo",
+} as const;
+export type TeamReason = keyof typeof TEAM_REASONS;
+
+/** Por que a conversa esperou atendente: restaurante fechado, 100% automático ligado ou ninguém online. */
+export type WaitingReason = "closed" | "full_auto" | "offline";
+
 /** Avaliações do iFood: últimos 7, 30 ou 90 dias (o iFood só conta na nota os últimos 3 meses). */
 export const IFOOD_REVIEW_PERIODS = ["7d", "30d", "90d"] as const;
 export type IfoodReviewPeriod = (typeof IFOOD_REVIEW_PERIODS)[number];
@@ -80,15 +95,29 @@ export type RatingsReportDto = {
   ai: {
     evaluations: number;
     averageScore: number | null;
-    /** De 0 a 1: atendimentos com o problema resolvido; e clientes satisfeitos entre os que reagiram. */
-    resolvedRate: number | null;
-    satisfiedRate: number | null;
+    /** Atendimentos com o problema resolvido; clientes que reagiram e, entre eles, os satisfeitos; notas 1 e 2. */
+    resolved: number;
+    reacted: number;
+    satisfied: number;
+    lowScores: number;
+    /** Atendimentos avaliados em que só a IA (e as automações) atendeu; os outros passaram pela equipe. */
+    onlyAi: number;
+    /** Motivos da passagem para a equipe, do mais comum ao menos. */
+    teamReasons: { reason: TeamReason; count: number }[];
+    /** Vezes que a IA precisou da equipe sem haver atendente, por motivo. */
+    waiting: Record<WaitingReason, number>;
+    /** Revisão automática das respostas de cada atendente: reescritas pela IA e mantidas como ele escreveu. */
+    reviews: { userId: string; name: string; rewritten: number; kept: number }[];
+    /** A resposta reescrita mais recente: o que o atendente escreveu e o que foi enviado. */
+    rewriteExample: { agentName: string | null; original: string; text: string; createdAt: string } | null;
     /** A avaliação vai para quem da equipe respondeu por último; userId null = só a IA atendeu. */
     agents: { userId: string | null; name: string; evaluations: number; averageScore: number | null }[];
     recent: {
       id: string;
       conversationId: string;
       contactName: string | null;
+      /** Quem da equipe respondeu por último; null = só a IA atendeu. */
+      userId: string | null;
       agentName: string | null;
       score: number;
       resolved: boolean;

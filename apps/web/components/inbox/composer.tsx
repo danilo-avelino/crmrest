@@ -2,7 +2,7 @@
 
 import { CHANNEL_CAPABILITIES, CHANNEL_LABEL, type ConversationListItem, type QuickReplyDto } from "@dishdesk/shared";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ClockIcon, ImageIcon, MicIcon, PaperclipIcon, SendIcon, StickyNoteIcon } from "lucide-react";
+import { ClockIcon, SendIcon, StickyNoteIcon } from "lucide-react";
 import { type KeyboardEvent, useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
 import { useIfoodWidget } from "@/components/ifood-widget";
@@ -215,24 +215,9 @@ export function Composer({ conversation }: { conversation: ConversationListItem 
 
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-1">
-            {/* Envio de mídia ainda não existe no MVP. */}
-            {[
-              { label: "Anexar arquivo", icon: PaperclipIcon },
-              { label: "Imagem", icon: ImageIcon },
-              { label: "Áudio", icon: MicIcon },
-            ].map(({ label, icon: Icon }) => (
-              <Button key={label} variant="outline" size="icon-sm" disabled aria-label={label} title={`${label} (em breve)`}>
-                <Icon aria-hidden />
-              </Button>
-            ))}
-            <div className="mx-1 h-[18px] w-px bg-rule" />
             {/* Templates são da API oficial do WhatsApp, a única com janela de 24h; pelo QR Code, a resposta é sempre livre. */}
-            {conversation.channel.type === "WHATSAPP" && capabilities.window24h ? (
+            {conversation.channel.type === "WHATSAPP" && capabilities.window24h && (
               <TemplatePicker conversationId={conversation.id} emphasized={!windowOpen} />
-            ) : (
-              <Button variant="outline" size="sm" disabled title="Templates só existem na API oficial do WhatsApp" className="text-[11.5px]">
-                Template
-              </Button>
             )}
             {capabilities.window24h && (
               <span

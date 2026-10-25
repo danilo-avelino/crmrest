@@ -2,36 +2,50 @@
 
 import type { IfoodReviewPeriod, RatingsReportDto, ReportPeriod } from "@dishdesk/shared";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { AlertCircleIcon, StarIcon } from "lucide-react";
-import Link from "next/link";
+import { InfoIcon } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
 import { TenantPicker } from "@/components/auth/tenant-picker";
-import { Button } from "@/components/ui/button";
 import { useNow } from "@/hooks/use-now";
-import { count, dayTime, responseTime, score } from "@/lib/format";
+import { count, score } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { AiEvaluations } from "./ai-evaluations";
 import { IfoodReviews } from "./ifood-reviews";
+import {
+  AverageScore,
+  BlockTitle,
+  ConversationLink,
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  Metric,
+  Pill,
+  plural,
+  Row,
+  ScoreBadge,
+  SectionLabel,
+  Table,
+  when,
+} from "./report-ui";
 
 const PERIODS: { value: ReportPeriod; label: string }[] = [
   { value: "today", label: "Hoje" },
-  { value: "7d", label: "Últimos 7 dias" },
-  { value: "30d", label: "Últimos 30 dias" },
+  { value: "7d", label: "7 dias" },
+  { value: "30d", label: "30 dias" },
 ];
 
 const IFOOD_PERIODS: { value: IfoodReviewPeriod; label: string }[] = [
-  { value: "7d", label: "Últimos 7 dias" },
-  { value: "30d", label: "Últimos 30 dias" },
-  { value: "90d", label: "Últimos 90 dias" },
+  { value: "7d", label: "7 dias" },
+  { value: "30d", label: "30 dias" },
+  { value: "90d", label: "90 dias" },
 ];
 
 type Tab = "team" | "ifood";
 
 /**
- * Aba Avaliações (versão simples; o design ainda não tem este board), em duas partes: as notas e o tempo de resposta
- * da equipe e as avaliações das lojas do iFood. Cabeçalho do board Clientes. Só administradores; no painel master, um
- * seletor escolhe o restaurante. Desktop no MVP.
+ * Aba Avaliações (board "Avaliações · Atendimento · iFood · Estados"): na aba Atendimento, a avaliação da IA (módulo
+ * Atendimento com IA) e a dos clientes e da equipe; na aba iFood, as avaliações das lojas. Só administradores; no
+ * painel master, a barra do topo escolhe o restaurante. Desktop no MVP.
  */
 export function RatingsReport() {
   const { request, session } = useAuth();
@@ -51,19 +65,29 @@ export function RatingsReport() {
   });
   if (!tenant) return null;
   const data = report.data;
+  const hint = period === "30d" ? undefined : "Tente 30 dias para ver mais resultados.";
 
   return (
-    <main className="flex min-w-0 flex-1 flex-col overflow-hidden bg-surface">
-      <header className="shrink-0 border-b border-rule-soft px-7 pt-5">
-        <div className="mb-3">
-          <div className="mb-[3px] flex items-center gap-3">
-            <h1 className="font-heading text-[21px] leading-tight font-bold tracking-[-0.3px]">Avaliações</h1>
-            <TenantPicker tenants={adminTenants} tenant={tenant} onChange={setTenantId} />
+    <main className="flex min-w-0 flex-1 flex-col overflow-hidden bg-paper">
+      <div className="flex h-[52px] shrink-0 items-center gap-3 border-b border-rule-soft bg-surface px-6">
+        <TenantPicker tenants={adminTenants} tenant={tenant} onChange={setTenantId} />
+        <span className="text-xs text-ink-3">{adminTenants.length > 1 ? `Painel master · ${plural(adminTenants.length, "restaurante", "restaurantes")}` : tenant.name}</span>
+      </div>
+
+      <div className="flex-1 overflow-y-auto">
+        <div className="max-w-[1380px] px-14 pt-8 pb-12">
+          <div className="mb-1.5 flex items-end justify-between gap-4">
+            <div>
+              <h1 className="text-[21px] leading-tight font-bold">Avaliações</h1>
+              <p className="mt-1 text-[13px] text-ink-3">Como os clientes e a IA avaliam o atendimento do restaurante</p>
+            </div>
+            {tab === "team" ? (
+              <PeriodPicker options={PERIODS} value={period} onChange={setPeriod} />
+            ) : (
+              <PeriodPicker options={IFOOD_PERIODS} value={ifoodPeriod} onChange={setIfoodPeriod} />
+            )}
           </div>
-          <span className="text-xs text-ink-3">{adminTenants.length > 1 ? "Painel master" : tenant.name}</span>
-        </div>
-        <div className="flex items-end justify-between gap-4">
-          <div role="tablist" aria-label="Avaliações" className="-mb-px flex">
+          <div role="tablist" aria-label="Avaliações" className="mt-[18px] mb-7 flex border-b border-rule-soft">
             <TabButton active={tab === "team"} onClick={() => setTab("team")}>
               Atendimento
             </TabButton>
@@ -71,166 +95,142 @@ export function RatingsReport() {
               iFood
             </TabButton>
           </div>
-          {tab === "team" ? (
-            <PeriodPicker options={PERIODS} value={period} onChange={setPeriod} />
-          ) : (
-            <PeriodPicker options={IFOOD_PERIODS} value={ifoodPeriod} onChange={setIfoodPeriod} />
-          )}
-        </div>
-      </header>
 
-      {tab === "ifood" ? (
-        <IfoodReviews tenantId={tenant.id} period={ifoodPeriod} />
-      ) : (
-        <div className="flex-1 overflow-y-auto bg-paper px-7 py-6">
-          {report.isPending ? (
-            <p className="text-[13px] text-ink-3" aria-busy>
-              Carregando…
-            </p>
+          {tab === "ifood" ? (
+            <IfoodReviews tenantId={tenant.id} period={ifoodPeriod} />
+          ) : report.isPending ? (
+            <LoadingState />
           ) : report.isError ? (
-            <div className="flex max-w-lg items-start gap-3 rounded-xl border border-tomate-line bg-tomate-lt p-5">
-              <AlertCircleIcon className="mt-px size-[18px] shrink-0 text-tomate" aria-hidden />
-              <div>
-                <div className="mb-1 text-[13px] font-medium">Não foi possível carregar as avaliações</div>
-                <div className="mb-2.5 text-xs text-ink-3">Verifique sua conexão e tente novamente.</div>
-                <Button variant="outline" size="sm" onClick={() => report.refetch()}>
-                  Tentar novamente
-                </Button>
-              </div>
-            </div>
+            <ErrorState title="Não foi possível carregar as avaliações." onRetry={() => report.refetch()} />
           ) : (
-            <div className="flex max-w-[1100px] flex-col gap-6">
-              <div className="grid grid-cols-4 gap-3">
-                <Metric
-                  label="Nota média"
-                  value={data!.summary.averageScore === null ? "—" : score(data!.summary.averageScore)}
-                  detail={plural(data!.summary.ratings, "avaliação", "avaliações")}
-                  star={data!.summary.averageScore !== null}
-                />
-                <Metric
-                  label="Tempo médio da 1ª resposta"
-                  value={data!.summary.averageResponseSeconds === null ? "—" : responseTime(data!.summary.averageResponseSeconds)}
-                  detail={`desde que a automação chamou a equipe · ${plural(data!.summary.answered, "atendimento", "atendimentos")}`}
-                />
-                <Metric
-                  label="Atendimentos passados à equipe"
-                  value={count(data!.summary.handoffs)}
-                  detail={`${count(data!.summary.handoffs - data!.summary.answered)} sem resposta da equipe`}
-                />
-                <Metric
-                  label="Sem resposta no fim do dia"
-                  value={count(data!.unanswered.length)}
-                  detail={period === "today" ? "chamadas de hoje ainda sem resposta (até agora)" : "chamadas que terminaram o dia sem resposta"}
-                />
-              </div>
-
-              <Section title="Por atendente" note="A nota vai para quem respondeu por último; o tempo, para quem deu a primeira resposta.">
-                {data!.agents.length === 0 ? (
-                  <p className="px-5 py-6 text-[13px] text-ink-3">Nenhum atendimento no período.</p>
-                ) : (
-                  <table className="w-full border-collapse">
-                    <thead>
-                      <tr className="bg-paper">
-                        <Th>Atendente</Th>
-                        <Th align="right">Avaliações</Th>
-                        <Th align="right">Nota média</Th>
-                        <Th align="right">Atendimentos respondidos</Th>
-                        <Th align="right">Tempo médio da 1ª resposta</Th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {data!.agents.map((agent) => (
-                        <tr key={agent.userId ?? "none"} className="border-b border-rule-soft last:border-0">
-                          <Td className={cn("font-medium", agent.userId === null && "font-normal text-ink-3 italic")}>{agent.name}</Td>
-                          <Td align="right">{count(agent.ratings)}</Td>
-                          <Td align="right">{agent.averageScore === null ? "—" : <Stars value={agent.averageScore} />}</Td>
-                          <Td align="right">{count(agent.answered)}</Td>
-                          <Td align="right">{agent.averageResponseSeconds === null ? "—" : responseTime(agent.averageResponseSeconds)}</Td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-              </Section>
-
-              <Section
-                title="Sem resposta no fim do dia"
-                note="Atendimentos passados à equipe (ou recebidos fora do horário) em que ninguém da equipe respondeu até 23:59."
-              >
-                {data!.unanswered.length === 0 ? (
-                  <p className="px-5 py-6 text-[13px] text-ink-3">Nenhuma conversa ficou sem resposta no período.</p>
-                ) : (
-                  <table className="w-full border-collapse">
-                    <thead>
-                      <tr className="bg-paper">
-                        <Th>Cliente</Th>
-                        <Th>Chamado em</Th>
-                        <Th>Motivo</Th>
-                        <Th />
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {data!.unanswered.slice(0, 50).map((item) => (
-                        <tr key={`${item.conversationId}-${item.calledAt}`} className="border-b border-rule-soft last:border-0">
-                          <Td className="font-medium">{item.contactName ?? "Cliente sem nome"}</Td>
-                          <Td className="text-ink-3">{dayTime(item.calledAt, now)}</Td>
-                          <Td>{item.afterHours ? "Chegou fora do horário" : "Passado à equipe pela automação"}</Td>
-                          <Td align="right">
-                            <Link href={`/inbox?conversa=${item.conversationId}`} className="text-xs text-tomate underline underline-offset-2">
-                              Ver conversa
-                            </Link>
-                          </Td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-              </Section>
-
-              <Section title="Últimas avaliações">
-                {data!.recent.length === 0 ? (
-                  <p className="px-5 py-6 text-[13px] text-ink-3">Nenhuma avaliação no período.</p>
-                ) : (
-                  <table className="w-full border-collapse">
-                    <thead>
-                      <tr className="bg-paper">
-                        <Th>Nota</Th>
-                        <Th>Cliente</Th>
-                        <Th>Atendente</Th>
-                        <Th>Pedido</Th>
-                        <Th>Quando</Th>
-                        <Th />
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {data!.recent.map((rating) => (
-                        <tr key={rating.id} className="border-b border-rule-soft last:border-0">
-                          <Td>
-                            <Stars value={rating.score} />
-                          </Td>
-                          <Td className="font-medium">{rating.contactName ?? "Cliente sem nome"}</Td>
-                          <Td className={cn(!rating.agentName && "text-ink-3 italic")}>{rating.agentName ?? "Sem resposta da equipe"}</Td>
-                          <Td>{rating.orderCode ? `#${rating.orderCode}` : "—"}</Td>
-                          <Td className="text-ink-3">{dayTime(rating.createdAt, now)}</Td>
-                          <Td align="right">
-                            <Link href={`/inbox?conversa=${rating.conversationId}`} className="text-xs text-tomate underline underline-offset-2">
-                              Ver conversa
-                            </Link>
-                          </Td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-              </Section>
-
-              {data!.ai && <AiEvaluations ai={data!.ai} now={now} />}
-            </div>
+            <>
+              {data!.ai && (
+                <>
+                  <AiEvaluations ai={data!.ai} now={now} hint={hint} />
+                  <div className="mt-11 mb-9 h-px bg-rule-soft" />
+                </>
+              )}
+              <TeamRatings data={data!} now={now} hint={hint} />
+            </>
           )}
         </div>
-      )}
+      </div>
     </main>
   );
+}
+
+/** Avaliação dos clientes (pesquisa no WhatsApp) e os números da equipe. */
+function TeamRatings({ data, now, hint }: { data: RatingsReportDto; now: number; hint?: string }) {
+  const { summary, agents, unanswered, recent } = data;
+  const response = summary.averageResponseSeconds === null ? null : responseParts(summary.averageResponseSeconds);
+  const afterHours = unanswered.filter((item) => item.afterHours).length;
+  return (
+    <>
+      <BlockTitle
+        title="Avaliação dos clientes e da equipe"
+        note="Nota da pesquisa enviada pelo WhatsApp no fim de um atendimento com pedido do dia, de 1 a 5."
+      />
+      <div className="mb-5 grid grid-cols-4 gap-3">
+        <Metric
+          label="Nota média dos clientes"
+          value={summary.averageScore === null ? "—" : score(summary.averageScore)}
+          suffix={summary.averageScore === null ? undefined : "/ 5"}
+          detail={plural(summary.ratings, "avaliação", "avaliações")}
+        />
+        <Metric
+          label="Tempo médio da 1ª resposta"
+          value={response?.value ?? "—"}
+          suffix={response?.unit}
+          detail="desde que a automação chamou a equipe"
+        />
+        <Metric
+          label="Passados à equipe"
+          value={count(summary.handoffs)}
+          detail={`${count(summary.handoffs - summary.answered)} ${summary.handoffs - summary.answered === 1 ? "ficou" : "ficaram"} sem resposta`}
+        />
+        <Metric
+          label="Sem resposta no fim do dia"
+          value={count(unanswered.length)}
+          tone={unanswered.length ? "danger" : "ink"}
+          detail={`${count(afterHours)} ${afterHours === 1 ? "chegou" : "chegaram"} fora do horário`}
+        />
+      </div>
+
+      <div className="mb-5 grid grid-cols-2 items-start gap-3">
+        <div>
+          <SectionLabel>Por atendente</SectionLabel>
+          <Table
+            cols="minmax(0,1.3fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) minmax(0,1fr)"
+            head={["Atendente", "Avaliações", "Nota média", "Respondidos", "1ª resposta"]}
+            empty={<EmptyState title="Nenhum atendimento neste período." hint={hint} />}
+          >
+            {agents.map((agent) => (
+              <Row key={agent.userId ?? "none"}>
+                <span className={cn(agent.userId === null && "text-ink-2")}>{agent.name}</span>
+                <span className="tabular-nums">{count(agent.ratings)}</span>
+                <AverageScore value={agent.averageScore} />
+                <span className="tabular-nums">{count(agent.answered)}</span>
+                <span className="tabular-nums">{agent.averageResponseSeconds === null ? "—" : responseShort(agent.averageResponseSeconds)}</span>
+              </Row>
+            ))}
+          </Table>
+          <div className="mt-2.5 flex items-start gap-2.5 rounded-[10px] border border-dashed border-rule bg-paper/50 px-3.5 py-3 text-[12.5px] text-ink-2">
+            <InfoIcon className="mt-px size-[15px] shrink-0 text-ink-3" aria-hidden />
+            <span>A nota vai para quem respondeu por último na conversa. O tempo da 1ª resposta conta para quem respondeu primeiro.</span>
+          </div>
+        </div>
+        <div>
+          <SectionLabel>Sem resposta no fim do dia</SectionLabel>
+          <Table
+            cols="minmax(0,1fr) 100px minmax(0,1.6fr) 100px"
+            head={["Cliente", "Chamado em", "Motivo", ""]}
+            empty={<EmptyState title="Nenhuma conversa ficou sem resposta." />}
+          >
+            {unanswered.slice(0, 50).map((item) => (
+              <Row key={`${item.conversationId}-${item.calledAt}`}>
+                <span className="block truncate">{item.contactName ?? "Cliente sem nome"}</span>
+                <span className="whitespace-nowrap">{when(item.calledAt, now)}</span>
+                {item.afterHours ? <Pill tone="neutral">Chegou fora do horário</Pill> : <Pill tone="warning">Passado à equipe pela automação</Pill>}
+                <ConversationLink id={item.conversationId} />
+              </Row>
+            ))}
+          </Table>
+        </div>
+      </div>
+
+      <SectionLabel>Últimas avaliações dos clientes</SectionLabel>
+      <Table
+        cols="44px minmax(0,1.3fr) minmax(0,1.2fr) minmax(0,0.8fr) minmax(0,0.9fr) 100px"
+        head={["Nota", "Cliente", "Atendente", "Pedido", "Quando", ""]}
+        empty={<EmptyState title="Nenhuma avaliação neste período." hint={hint} />}
+      >
+        {recent.map((rating) => (
+          <Row key={rating.id}>
+            <ScoreBadge value={rating.score} />
+            <b className="block truncate font-semibold">{rating.contactName ?? "Cliente sem nome"}</b>
+            {rating.agentName ?? <span className="text-tomate">Sem resposta da equipe</span>}
+            <span className="tabular-nums">{rating.orderCode ? `#${rating.orderCode}` : "—"}</span>
+            <span className="whitespace-nowrap text-ink-2">{when(rating.createdAt, now)}</span>
+            <ConversationLink id={rating.conversationId} />
+          </Row>
+        ))}
+      </Table>
+    </>
+  );
+}
+
+/** Tempo da 1ª resposta no cartão: "2:40" min, "0:45" min ou "1:05" h. */
+function responseParts(seconds: number): { value: string; unit: string } {
+  const total = Math.round(seconds);
+  if (total < 3600) return { value: `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`, unit: "min" };
+  const minutes = Math.round(total / 60);
+  return { value: `${Math.floor(minutes / 60)}:${String(minutes % 60).padStart(2, "0")}`, unit: "h" };
+}
+
+/** Na tabela: "1:55" (minutos) ou "1:05 h". */
+function responseShort(seconds: number): string {
+  const { value, unit } = responseParts(seconds);
+  return unit === "h" ? `${value} h` : value;
 }
 
 function TabButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: ReactNode }) {
@@ -241,8 +241,8 @@ function TabButton({ active, onClick, children }: { active: boolean; onClick: ()
       aria-selected={active}
       onClick={onClick}
       className={cn(
-        "border-b-2 px-[11px] py-[7px] text-[12px]",
-        active ? "border-ink font-medium text-ink" : "border-transparent text-ink-3 hover:text-ink-2",
+        "-mb-px mr-6 border-b-2 px-0.5 py-2.5 text-sm",
+        active ? "border-ink font-semibold text-ink" : "border-transparent font-medium text-ink-2 hover:text-ink",
       )}
     >
       {children}
@@ -252,7 +252,7 @@ function TabButton({ active, onClick, children }: { active: boolean; onClick: ()
 
 function PeriodPicker<T extends string>({ options, value, onChange }: { options: { value: T; label: string }[]; value: T; onChange: (value: T) => void }) {
   return (
-    <div className="flex gap-1.5 pb-2.5" role="group" aria-label="Período">
+    <div className="flex gap-0.5 rounded-xl bg-surface-2 p-[3px]" role="group" aria-label="Período">
       {options.map((item) => (
         <button
           key={item.value}
@@ -260,72 +260,13 @@ function PeriodPicker<T extends string>({ options, value, onChange }: { options:
           aria-pressed={value === item.value}
           onClick={() => onChange(item.value)}
           className={cn(
-            "inline-flex h-[30px] items-center rounded-md border px-3 text-xs whitespace-nowrap",
-            value === item.value ? "border-ink bg-ink text-paper" : "border-rule bg-surface text-ink-2 hover:bg-paper",
+            "rounded-lg px-3.5 py-1.5 text-[12.5px] whitespace-nowrap",
+            value === item.value ? "bg-surface font-semibold text-ink shadow-[0_1px_2px_rgba(26,24,20,.12)]" : "font-medium text-ink-2 hover:text-ink",
           )}
         >
           {item.label}
         </button>
       ))}
     </div>
-  );
-}
-
-export function plural(value: number, one: string, many: string): string {
-  return `${count(value)} ${value === 1 ? one : many}`;
-}
-
-export function Metric({ label, value, detail, star }: { label: string; value: string; detail: string; star?: boolean }) {
-  return (
-    <div className="rounded-xl border border-rule bg-surface px-5 py-4">
-      <div className="mb-2 text-[11px] font-medium tracking-[0.05em] text-ink-3 uppercase">{label}</div>
-      <div className="flex items-center gap-1.5 font-heading text-[28px] leading-none font-bold tracking-[-0.5px] tabular-nums">
-        {value}
-        {star && <StarIcon className="size-5 fill-warning text-warning" aria-hidden />}
-      </div>
-      <div className="mt-2 text-xs text-ink-3">{detail}</div>
-    </div>
-  );
-}
-
-export function Section({ title, note, children }: { title: string; note?: string; children: ReactNode }) {
-  return (
-    <section className="overflow-hidden rounded-xl border border-rule bg-surface">
-      <div className="border-b border-rule-soft px-5 py-3.5">
-        <h2 className="font-heading text-title font-semibold">{title}</h2>
-        {note && <p className="mt-0.5 text-xs text-ink-3">{note}</p>}
-      </div>
-      {children}
-    </section>
-  );
-}
-
-export function Stars({ value }: { value: number }) {
-  return (
-    <span className="inline-flex items-center gap-1 tabular-nums" aria-label={`Nota ${score(value)} de 5`}>
-      <StarIcon className="size-3.5 fill-warning text-warning" aria-hidden />
-      {Number.isInteger(value) ? value : score(value)}
-    </span>
-  );
-}
-
-export function Th({ children, align = "left" }: { children?: ReactNode; align?: "left" | "right" }) {
-  return (
-    <th
-      className={cn(
-        "border-b border-rule-soft px-3 py-2.5 text-[11px] font-medium tracking-[0.05em] whitespace-nowrap text-ink-3 uppercase first:pl-5 last:pr-5",
-        align === "right" ? "text-right" : "text-left",
-      )}
-    >
-      {children}
-    </th>
-  );
-}
-
-export function Td({ children, className, align = "left" }: { children?: ReactNode; className?: string; align?: "left" | "right" }) {
-  return (
-    <td className={cn("px-3 py-2.5 text-[13px] tabular-nums first:pl-5 last:pr-5", align === "right" && "text-right", className)}>
-      {children}
-    </td>
   );
 }

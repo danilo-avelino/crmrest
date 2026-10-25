@@ -195,6 +195,13 @@ describe("atendimento com IA: resposta, revisão e avaliação", () => {
           createdAt: message.createdAt.toISOString(),
         },
       ]);
+      // Revisão automática: uma resposta reescrita e uma mantida, com a reescrita como exemplo.
+      expect(body.ai.reviews).toEqual([{ userId: fx.user.id, name: "Atendente Pipeline", rewritten: 1, kept: 1 }]);
+      expect(body.ai.rewriteExample).toMatchObject({
+        agentName: "Atendente Pipeline",
+        original: "claro, chega as 20:40",
+        text: "Claro! Seu pedido chega às 20:40.",
+      });
     } finally {
       await admin.tenantMember.updateMany({ where: { tenantId: fx.tenant.id, userId: fx.user.id }, data: { role } });
     }
@@ -268,7 +275,7 @@ describe("atendimento com IA: resposta, revisão e avaliação", () => {
     let conversation = await conversationOf("5511980000010");
     expect(conversation.messages.map((m) => m.content as Content).slice(-2)).toMatchObject([
       { text: notice, aiReply: true },
-      { event: "awaiting_agent", text: expect.stringContaining("não há atendente online") },
+      { event: "awaiting_agent", waitingReason: "offline", text: expect.stringContaining("não há atendente online") },
     ]);
     expect(conversation).toMatchObject({ status: "PENDING", awaitingAgentSince: null, automationState: { ai: "on", aiWaiting: true } });
 
@@ -374,14 +381,14 @@ describe("atendimento com IA: resposta, revisão e avaliação", () => {
     expect(scheduled).toHaveLength(1);
     await scheduled[0]!.remove();
 
-    answers.avaliacao = { resolved: true, satisfaction: "satisfeito", score: 5, summary: "Cliente perguntou o horário e agradeceu." };
+    answers.avaliacao = { resolved: true, satisfaction: "satisfeito", score: 5, summary: "Cliente perguntou o horário e agradeceu.", teamReason: "atraso" };
     const evaluation = app.get(AiEvaluationService);
     await evaluation.evaluate(fx.tenant.id, id);
     await evaluation.evaluate(fx.tenant.id, id); // nada novo do cliente: não avalia de novo
 
     const rows = await admin.conversationEvaluation.findMany({ where: { conversationId: id } });
     expect(rows).toMatchObject([
-      { resolved: true, satisfied: true, score: 5, summary: "Cliente perguntou o horário e agradeceu.", userId: fx.user.id, model: "gemma4:12b" },
+      { resolved: true, satisfied: true, score: 5, summary: "Cliente perguntou o horário e agradeceu.", teamReason: "atraso", userId: fx.user.id, model: "gemma4:12b" },
     ]);
     const conversation = (llmCalls("avaliacao").at(-1)!.body as LlmBody).messages[1]!.content;
     expect(conversation).toMatch(/^\[\d\d:\d\d\] Cliente: Que horas vocês abrem\?/);

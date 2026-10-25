@@ -1,3 +1,4 @@
+import { TEAM_REASONS, type TeamReason } from "@dishdesk/shared";
 import { Injectable } from "@nestjs/common";
 import type { Queue } from "bullmq";
 import { z } from "zod";
@@ -17,6 +18,7 @@ export const Evaluation = z.object({
   satisfaction: z.enum(["satisfeito", "insatisfeito", "sem_reacao"]),
   score: z.number().int().min(1).max(5),
   summary: z.string().trim().min(1).max(400).describe("O que o cliente queria e como terminou, em uma ou duas frases."),
+  teamReason: z.enum([...(Object.keys(TEAM_REASONS) as [TeamReason, ...TeamReason[]]), "sem_equipe"]),
 });
 
 export const SYSTEM_PROMPT = `Você avalia atendimentos de um restaurante a clientes, lendo a conversa inteira. Seja justo e objetivo.
@@ -30,7 +32,16 @@ Na conversa, "Restaurante (automação)" são mensagens automáticas; "(IA)", do
   3 = resolvido em parte, demorado ou não dá para saber;
   2 = não resolvido ou cliente insatisfeito;
   1 = cliente muito insatisfeito ou atendimento ruim (grosseria, informação errada, cliente sem resposta).
-- summary: em português, uma ou duas frases: o que o cliente queria e como terminou.`;
+- summary: em português, uma ou duas frases: o que o cliente queria e como terminou.
+- teamReason: se alguém da equipe "(atendente)" respondeu, o principal motivo de o atendimento precisar da equipe:
+  atraso = reclamação de atraso do pedido;
+  problema_pedido = item errado, faltando ou com problema de qualidade;
+  troca_reembolso = pediu troca, reembolso ou cancelamento;
+  fora_do_cardapio = pergunta que a IA não soube responder;
+  pediu_pessoa = o cliente pediu para falar com uma pessoa;
+  pedido_grande = encomenda, pedido grande ou evento;
+  outro = outro motivo.
+  Sem nenhuma mensagem "(atendente)" na conversa: sem_equipe.`;
 
 /** Agenda a avaliação de um atendimento que acabou de ser resolvido (o job confere se o restaurante tem o módulo). */
 export async function scheduleEvaluation(queue: Queue<AiJob>, tenantId: string, conversationId: string): Promise<void> {
@@ -89,6 +100,7 @@ export class AiEvaluationService {
           satisfied: result.satisfaction === "sem_reacao" ? null : result.satisfaction === "satisfeito",
           score: result.score,
           summary: result.summary,
+          teamReason: attendance.userId && result.teamReason !== "sem_equipe" ? result.teamReason : null,
           model: this.llm.model,
         },
       }),

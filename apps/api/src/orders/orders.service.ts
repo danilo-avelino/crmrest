@@ -10,6 +10,7 @@ import {
   type OrderCustomerChat,
   type OrderListQuery,
   type OrderPage,
+  type OrderStageCounts,
 } from "@dishdesk/shared";
 import { Inject, Injectable, Logger, NotFoundException, UnprocessableEntityException } from "@nestjs/common";
 import type { RequestAuth } from "../auth/auth.decorators.js";
@@ -58,7 +59,7 @@ export class OrdersService {
           where,
           include: {
             items: true,
-            channel: { select: { type: true } },
+            channel: { select: { type: true, name: true } },
             tenant: { select: { id: true, name: true } },
             contact: { select: { id: true, name: true, phone: true, cpfHash: true, email: true } },
             events: { orderBy: { occurredAt: "asc" }, select: { code: true, occurredAt: true, metadata: true } },
@@ -99,6 +100,7 @@ export class OrdersService {
         return {
           ...toOrderDto(order),
           tenant: order.tenant,
+          store: order.channel.name,
           contact: { id: order.contact.id, name: order.contact.name },
           history: histories.get(order.contact.id)!,
           events: order.events.map((event) => ({ code: event.code, occurredAt: event.occurredAt.toISOString(), detail: eventDetail(event) })),
@@ -116,6 +118,21 @@ export class OrdersService {
       page: query.page,
       pageSize: PAGE_SIZE,
     };
+  }
+
+  /** Pedidos de hoje por etapa: em produção, prontos, em rota (já saíram do restaurante) e entregues. */
+  async stages(auth: RequestAuth, now = new Date()): Promise<OrderStageCounts> {
+    const rows = await this.db.withTenants(auth.scope, (tx) =>
+      tx.order.findMany({ where: { placedAt: { gte: periodStart("today", now) } }, select: { status: true, dispatchedAt: true } }),
+    );
+    const counts: OrderStageCounts = { production: 0, ready: 0, dispatched: 0, delivered: 0 };
+    for (const { status, dispatchedAt } of rows) {
+      if (status === "DELIVERED") counts.delivered++;
+      else if (status === "DISPATCHED" || (dispatchedAt && IN_PRODUCTION.includes(status))) counts.dispatched++;
+      else if (status === "READY") counts.ready++;
+      else if (IN_PRODUCTION.includes(status)) counts.production++;
+    }
+    return counts;
   }
 
   /** Botão do card/painel: o texto que o atendente confere antes de mandar (saída ou previsão; null: nada a dizer). */

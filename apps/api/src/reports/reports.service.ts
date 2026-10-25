@@ -1,4 +1,4 @@
-import type { AgentMetrics, MessageContent, RatingsReportDto, ReportPeriod } from "@dishdesk/shared";
+import { type AgentMetrics, type MessageContent, type RatingsReportDto, type ReportPeriod, TEAM_REASONS, type TeamReason } from "@dishdesk/shared";
 import { Injectable } from "@nestjs/common";
 import type { RequestAuth } from "../auth/auth.decorators.js";
 import { localDate } from "../automations/automation.js";
@@ -18,6 +18,8 @@ type RatingRow = {
   order_code: string | null;
   user_id: string | null;
 };
+type ReviewRow = { user_id: string; review: "rewritten" | "kept"; total: number };
+type WaitingRow = { reason: string; total: number };
 
 /**
  * Aba Avaliações: notas e tempo de resposta da equipe. O tempo conta do evento "handoff" (a automação passou o
@@ -114,6 +116,31 @@ export class ReportsService {
             select: { id: true, conversationId: true, content: true, sentByUserId: true, createdAt: true, conversation: { select: { contact: { select: { name: true } } } } },
           })
         : [];
+      // Revisão automática: respostas de cada atendente reescritas pela IA e mantidas.
+      const reviews = aiModule
+        ? await tx.$queryRaw<ReviewRow[]>`
+            SELECT sent_by_user_id AS user_id, content->>'aiReview' AS review, count(*)::int AS total
+            FROM messages
+            WHERE tenant_id = ${tenantId}::uuid AND created_at >= ${from} AND sent_by_user_id IS NOT NULL
+              AND content->>'aiReview' IN ('rewritten', 'kept')
+            GROUP BY 1, 2`
+        : [];
+      const rewriteExample = aiModule
+        ? await tx.message.findFirst({
+            where: { tenantId, createdAt: { gte: from }, content: { path: ["aiReview"], equals: "rewritten" } },
+            orderBy: { createdAt: "desc" },
+            select: { content: true, sentByUserId: true, createdAt: true },
+          })
+        : null;
+      // Vezes que a IA precisou da equipe sem haver atendente, por motivo.
+      const waiting = aiModule
+        ? await tx.$queryRaw<WaitingRow[]>`
+            SELECT content->>'waitingReason' AS reason, count(*)::int AS total
+            FROM messages
+            WHERE tenant_id = ${tenantId}::uuid AND created_at >= ${from} AND type = 'SYSTEM'
+              AND content->>'event' = 'awaiting_agent' AND content->>'waitingReason' IS NOT NULL
+            GROUP BY 1`
+        : [];
 
       const userIds = [
         ...new Set(
@@ -121,6 +148,8 @@ export class ReportsService {
             ...[...handoffs, ...ratings].map((row) => row.user_id),
             ...evaluations.map((row) => row.userId),
             ...misconduct.map((row) => row.sentByUserId),
+            ...reviews.map((row) => row.user_id),
+            rewriteExample?.sentByUserId ?? null,
           ].flatMap((userId) => (userId ? [userId] : [])),
         ),
       ];
@@ -166,6 +195,32 @@ export class ReportsService {
         ai: aiModule
           ? {
               ...evaluationMetrics(evaluations),
+              resolved: evaluations.filter((row) => row.resolved).length,
+              reacted: evaluations.filter((row) => row.satisfied !== null).length,
+              satisfied: evaluations.filter((row) => row.satisfied).length,
+              lowScores: evaluations.filter((row) => row.score <= 2).length,
+              onlyAi: evaluations.filter((row) => row.userId === null).length,
+              teamReasons: Object.keys(TEAM_REASONS)
+                .map((reason) => ({ reason: reason as TeamReason, count: evaluations.filter((row) => row.teamReason === reason).length }))
+                .filter((row) => row.count > 0)
+                .sort((a, b) => b.count - a.count),
+              waiting: {
+                closed: waiting.find((row) => row.reason === "closed")?.total ?? 0,
+                full_auto: waiting.find((row) => row.reason === "full_auto")?.total ?? 0,
+                offline: waiting.find((row) => row.reason === "offline")?.total ?? 0,
+              },
+              reviews: [...new Set(reviews.map((row) => row.user_id))]
+                .map((userId) => {
+                  const total = (review: string) => reviews.find((row) => row.user_id === userId && row.review === review)?.total ?? 0;
+                  return { userId, name: nameOf(userId)!, rewritten: total("rewritten"), kept: total("kept") };
+                })
+                .sort((a, b) => a.name.localeCompare(b.name, "pt-BR")),
+              rewriteExample: rewriteExample && {
+                agentName: nameOf(rewriteExample.sentByUserId),
+                original: (rewriteExample.content as MessageContent).original ?? "",
+                text: (rewriteExample.content as MessageContent).text ?? "",
+                createdAt: rewriteExample.createdAt.toISOString(),
+              },
               agents: [...new Set(evaluations.map((row) => row.userId))]
                 .map((userId) => {
                   const rows = evaluations.filter((row) => row.userId === userId);
@@ -176,6 +231,7 @@ export class ReportsService {
                 id: row.id,
                 conversationId: row.conversationId,
                 contactName: row.conversation.contact.name,
+                userId: row.userId,
                 agentName: nameOf(row.userId),
                 score: row.score,
                 resolved: row.resolved,
@@ -202,13 +258,10 @@ export class ReportsService {
   }
 }
 
-function evaluationMetrics(rows: { score: number; resolved: boolean; satisfied: boolean | null }[]) {
-  const rate = (values: boolean[]) => (values.length ? values.filter(Boolean).length / values.length : null);
+function evaluationMetrics(rows: { score: number }[]) {
   return {
     evaluations: rows.length,
     averageScore: rows.length ? rows.reduce((sum, row) => sum + row.score, 0) / rows.length : null,
-    resolvedRate: rate(rows.map((row) => row.resolved)),
-    satisfiedRate: rate(rows.flatMap((row) => (row.satisfied === null ? [] : [row.satisfied]))),
   };
 }
 

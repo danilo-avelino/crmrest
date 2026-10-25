@@ -92,6 +92,8 @@ export type AnswerDisputeRequest = z.infer<typeof AnswerDisputeRequest>;
 
 export type OrderListItem = OrderDto & {
   tenant: { id: string; name: string };
+  /** Loja de origem do pedido: o nome da integração (Configurações → Integrações) por onde ele chegou. */
+  store: string;
   contact: { id: string; name: string | null };
   /** Linha do tempo informada pela plataforma (iFood): código do evento, quando aconteceu e o motivo, se houver. */
   events: { code: string; occurredAt: string; detail: string | null }[];
@@ -119,6 +121,9 @@ export type OrderListItem = OrderDto & {
 };
 
 export type OrderPage = { items: OrderListItem[]; total: number; page: number; pageSize: number };
+
+/** Pedidos de hoje em cada etapa (faixa recolhida da Inbox), sem os cancelados. */
+export type OrderStageCounts = { production: number; ready: number; dispatched: number; delivered: number };
 
 /**
  * Pedido ligado ao cliente da conversa (painel lateral da Inbox): o mais recente de hoje ou de ontem, achado pelo

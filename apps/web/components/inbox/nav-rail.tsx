@@ -42,7 +42,7 @@ const PLATFORM_ITEMS = [
 const ITEM_CLASS = "mt-1 flex size-9 items-center justify-center rounded-lg first-of-type:mt-0";
 
 /** Navegação lateral escura de 56px (boards Inbox e Clientes). */
-export function NavRail() {
+export function NavRail({ onHome }: { onHome?: () => void }) {
   const { session, logout, switchContext } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
@@ -53,13 +53,19 @@ export function NavRail() {
 
   return (
     <nav className="flex w-14 shrink-0 flex-col items-center gap-0.5 border-r border-[#2D2A24] bg-ink py-4">
-      <div className="mb-5 flex size-8 items-center justify-center rounded-lg bg-tomate">
+      <Link
+        href="/inbox"
+        onClick={onHome}
+        aria-label="Início da Inbox"
+        title="Início"
+        className="mb-5 flex size-8 items-center justify-center rounded-lg bg-tomate"
+      >
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
           <rect x="3" y="4" width="10" height="1.5" rx="0.75" className="fill-paper" />
           <rect x="3" y="7.25" width="7" height="1.5" rx="0.75" className="fill-paper" />
           <rect x="3" y="10.5" width="4.5" height="1.5" rx="0.75" className="fill-ink" />
         </svg>
-      </div>
+      </Link>
 
       {ITEMS.filter((item) => isAdmin || !item.adminOnly).map(({ label, icon: Icon, href }) => {
         if (!href) {

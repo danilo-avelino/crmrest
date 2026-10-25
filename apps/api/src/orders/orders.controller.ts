@@ -7,6 +7,7 @@ import {
   type OrderCustomerChat,
   OrderListQuery,
   type OrderPage,
+  type OrderStageCounts,
 } from "@dishdesk/shared";
 import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Post, Query } from "@nestjs/common";
 import { z } from "zod";
@@ -23,6 +24,12 @@ export class OrdersController {
   @Get()
   list(@Query(new ZodPipe(OrderListQuery)) query: OrderListQuery, @CurrentAuth() auth: RequestAuth): Promise<OrderPage> {
     return this.orders.list(auth, query);
+  }
+
+  /** Antes de ":id": pedidos de hoje por etapa (faixa recolhida da Inbox). */
+  @Get("stages")
+  stages(@CurrentAuth() auth: RequestAuth): Promise<OrderStageCounts> {
+    return this.orders.stages(auth);
   }
 
   /** Antes de ":id": pedido ligado ao cliente da conversa (painel lateral da Inbox). */

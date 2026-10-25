@@ -1,3 +1,4 @@
+import type { OrderStageCounts } from "@dishdesk/shared";
 import type { INestApplication } from "@nestjs/common";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -210,6 +211,28 @@ describe("previsão de saída do pedido (E26)", () => {
     expect(placed).toEqual([...placed].sort((a, b) => a - b));
     expect(items.find((item) => item.id === late.id)?.late).toBe(true);
     expect(items.find((item) => item.id === onTime.id)?.late).toBe(false);
+  });
+
+  it("faixa recolhida da Inbox: pedidos de hoje por etapa, sem os cancelados", async () => {
+    const stages = async () =>
+      (await request(app.getHttpServer()).get("/api/orders/stages").set("Authorization", `Bearer ${token}`).expect(200)).body as OrderStageCounts;
+    const before = await stages();
+    await order(1); // em produção
+    const ready = await order(1);
+    await admin.order.update({ where: { id: ready.id }, data: { status: "READY" } });
+    await order(5, 2); // saiu
+    const delivered = await order(5, 2);
+    await admin.order.update({ where: { id: delivered.id }, data: { status: "DELIVERED" } });
+    const canceled = await order(1);
+    await admin.order.update({ where: { id: canceled.id }, data: { status: "CANCELED" } });
+
+    const after = await stages();
+    expect({
+      production: after.production - before.production,
+      ready: after.ready - before.ready,
+      dispatched: after.dispatched - before.dispatched,
+      delivered: after.delivered - before.delivered,
+    }).toEqual({ production: 1, ready: 1, dispatched: 1, delivered: 1 });
   });
 
   it("retirada pronta: à espera do cliente, sem saída prevista nem atraso; o andamento para no pronto", async () => {

@@ -8,6 +8,7 @@ import {
   type IntegrationType,
   type OrderListItem,
   type OrderPage,
+  type OrderStageCounts,
 } from "@dishdesk/shared";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -307,12 +308,26 @@ export function TodayOrders({ collapsed, onToggle }: { collapsed?: boolean; onTo
     queryFn: () => request<OrderPage>(`/orders?${params}`),
     refetchInterval: 30_000, // os pedidos chegam pelo polling das integrações
   });
+  const stages = useQuery({
+    queryKey: ["orders", "stages"],
+    queryFn: () => request<OrderStageCounts>("/orders/stages"),
+    refetchInterval: 30_000,
+    enabled: Boolean(collapsed),
+  });
   const data = orders.data;
+  // Atrasados em produção e prontos (a lista de produção inclui os prontos que ainda não saíram).
   const late = data?.items.filter((order) => order.late).length ?? 0;
   // O modal acompanha a lista; o pedido que sai da produção (ex.: despachado) continua aberto como estava.
   const open = selected && (data?.items.find((order) => order.id === selected.id) ?? selected);
 
   if (collapsed) {
+    const strip = [
+      { label: "Em produção", value: stages.data?.production },
+      { label: "Atrasados", value: data && late, alert: late > 0 },
+      { label: "Prontos", value: stages.data?.ready },
+      { label: "Em rota", value: stages.data?.dispatched },
+      { label: "Entregues", value: stages.data?.delivered },
+    ];
     return (
       <aside aria-label="Pedidos em produção" className="flex w-11 shrink-0 flex-col items-center border-l border-rule bg-surface pt-2">
         <Button variant="ghost" size="icon-sm" onClick={onToggle} aria-label="Mostrar pedidos em produção" title="Mostrar pedidos em produção">
@@ -321,15 +336,21 @@ export function TodayOrders({ collapsed, onToggle }: { collapsed?: boolean; onTo
         <button
           type="button"
           onClick={onToggle}
-          className="mt-2 flex flex-col items-center gap-1.5 rounded-lg px-1 py-2 text-ink-3 hover:bg-paper hover:text-ink"
+          className="mt-1 flex flex-col items-center rounded-lg px-1 text-ink-3 hover:bg-paper hover:text-ink"
         >
-          <span className="text-[13px] font-semibold text-ink tabular-nums">{data ? count(data.total) : "–"}</span>
-          {late > 0 && (
-            <span className="rounded-full bg-tomate px-1.5 text-[10px] leading-4 font-semibold text-white tabular-nums" title="Atrasados">
-              {count(late)}
+          {strip.map((stage) => (
+            <span key={stage.label} className="flex w-full flex-col items-center gap-1.5 border-rule-soft py-2.5 [&+&]:border-t">
+              <span
+                className={cn(
+                  "font-semibold tabular-nums",
+                  stage.alert ? "rounded-full bg-tomate px-1.5 text-[11px] leading-5 text-white" : "text-[13px] text-ink",
+                )}
+              >
+                {stage.value === undefined ? "–" : count(stage.value)}
+              </span>
+              <span className={cn("text-[11px] font-medium [writing-mode:vertical-rl]", stage.alert && "text-tomate")}>{stage.label}</span>
             </span>
-          )}
-          <span className="text-[11px] font-medium [writing-mode:vertical-rl]">Em produção</span>
+          ))}
         </button>
       </aside>
     );
@@ -400,7 +421,7 @@ export function TodayOrders({ collapsed, onToggle }: { collapsed?: boolean; onTo
                   </div>
                   <div className="mt-1 flex items-center justify-between gap-2 pl-4">
                     <span className="truncate text-xs text-ink-3 tabular-nums">
-                      {currency(order.total)}
+                      {currency(order.total)} · {order.store}
                       {master && ` · ${order.tenant.name}`}
                     </span>
                     <span className="flex shrink-0 items-center gap-1">
@@ -438,7 +459,7 @@ export function TodayOrders({ collapsed, onToggle }: { collapsed?: boolean; onTo
                   <Link href={`/clientes/${open.contact.id}`} className="text-ink-2 hover:text-tomate hover:underline">
                     {open.contact.name ?? "Cliente sem nome"}
                   </Link>
-                  {` · feito às ${clock(open.placedAt)} (${ago(open.placedAt, now)}) · ${currency(open.total)}`}
+                  {` · ${open.store} · feito às ${clock(open.placedAt)} (${ago(open.placedAt, now)}) · ${currency(open.total)}`}
                   {master && ` · ${open.tenant.name}`}
                 </DialogDescription>
               </div>

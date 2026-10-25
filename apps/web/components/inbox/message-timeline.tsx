@@ -7,7 +7,6 @@ import {
   ClockIcon,
   MapPinIcon,
   SparklesIcon,
-  StarIcon,
   StickyNoteIcon,
   TriangleAlertIcon,
 } from "lucide-react";
@@ -17,6 +16,7 @@ import { useAuth } from "@/components/auth/auth-provider";
 import { Avatar } from "@/components/inbox/bits";
 import { MessageMedia } from "@/components/inbox/message-media";
 import { OrderCard } from "@/components/inbox/order-card";
+import { Pill, ScoreBadge } from "@/components/reports/report-ui";
 import { usePendingAction } from "@/hooks/use-pending-action";
 import { ApiError } from "@/lib/api";
 import { clock, weekdayClock } from "@/lib/format";
@@ -247,27 +247,24 @@ function Outbound({ message }: { message: MessageDto }) {
 
 /** Avaliação do atendimento pela IA, no ponto da conversa em que foi feita (só administradores recebem). */
 function Evaluation({ evaluation }: { evaluation: ConversationEvaluationDto }) {
-  const tone =
-    evaluation.score >= 4
-      ? "border-success-line bg-success-lt"
-      : evaluation.score <= 2
-        ? "border-tomate-line bg-tomate-lt"
-        : "border-warning-line bg-warning-lt";
-  const satisfaction = evaluation.satisfied === null ? "cliente sem reação" : evaluation.satisfied ? "cliente satisfeito" : "cliente insatisfeito";
   return (
-    <div className={cn("mx-auto my-1 max-w-[76%] rounded-[10px] border px-3.5 py-2.5", tone)}>
-      <div className="mb-1 flex items-center gap-[5px] text-[10.5px] font-semibold text-ink-2">
-        <SparklesIcon className="size-3" aria-hidden />
-        Avaliação da IA · <StarIcon className="size-3 fill-warning text-warning" aria-hidden />
-        <span className="tabular-nums">{evaluation.score}/5</span>
-        <span className="font-normal">
-          · {evaluation.resolved ? "problema resolvido" : "problema não resolvido"} · {satisfaction}
-        </span>
+    <div className="mx-auto my-1 w-full max-w-[76%] rounded-2xl border border-rule-soft bg-surface px-4 py-3.5">
+      <div className="flex items-center gap-2.5">
+        <ScoreBadge value={evaluation.score} />
+        <span className="text-[13px] font-semibold">Avaliação da IA</span>
+        <div className="flex-1" />
+        {evaluation.resolved ? <Pill tone="success">Resolvido</Pill> : <Pill tone="danger">Não resolvido</Pill>}
+        {evaluation.satisfied === null ? (
+          <Pill tone="neutral">Sem reação</Pill>
+        ) : evaluation.satisfied ? (
+          <Pill tone="success">Satisfeito</Pill>
+        ) : (
+          <Pill tone="danger">Insatisfeito</Pill>
+        )}
       </div>
-      <div className="text-[12.5px] leading-[1.45] text-ink-2">{evaluation.summary}</div>
-      <div className="mt-1 text-right text-[10px] text-ink-3 tabular-nums">
-        {clock(evaluation.createdAt)}
-        {evaluation.agentName ? ` · atendimento de ${evaluation.agentName.split(" ")[0]}` : " · só a IA atendeu"} · visível só para administradores
+      <div className="mt-2.5 text-[13px] leading-[1.5] text-ink-2">{evaluation.summary}</div>
+      <div className="mt-2 text-xs text-ink-3 tabular-nums">
+        {evaluation.agentName ? `Atendido por ${evaluation.agentName}` : "Só a IA atendeu"} · {clock(evaluation.createdAt)}
       </div>
     </div>
   );

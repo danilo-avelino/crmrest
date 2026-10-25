@@ -10,6 +10,7 @@ import type {
 } from "@dishdesk/database/enums";
 import { ConversationStatus as ConversationStatusEnum } from "@dishdesk/database/enums";
 import { z } from "zod";
+import type { WaitingReason } from "./reports.js";
 
 /** Conteúdo de uma mensagem, conforme o tipo (texto, mídia, evento do sistema, nota...). */
 export type MessageContent = {
@@ -78,6 +79,8 @@ export type MessageContent = {
   aiReview?: "pending" | "rewritten" | "kept" | "blocked";
   original?: string;
   misconduct?: string;
+  /** Evento `awaiting_agent`: por que não havia atendente (vai para as Avaliações). */
+  waitingReason?: WaitingReason;
 };
 
 /** Avaliação de um atendimento pela IA, feita quando a conversa é resolvida (só administradores veem). */

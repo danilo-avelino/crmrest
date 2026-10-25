@@ -33,6 +33,7 @@
   --color-success-ink: #1d5c33;
   --color-tag-line: #c4b8a0; /* borda tracejada das tags */
   --color-rule-soft: #e8e4de; /* separador entre itens da lista */
+  --color-star: #e8a317; /* estrelas das avaliações do iFood (board Avaliações) */
 
   /* Canais: só como indicador pontual (bolinha). */
   --color-whatsapp: #25d366;

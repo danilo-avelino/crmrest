@@ -339,7 +339,8 @@ export class AiAttendantService {
         const why = { closed: "o restaurante está fechado", full_auto: "o 100% automático está ligado", offline: "não há atendente online" }[attendance.reason];
         await systemEvent(tx, conversation, {
           event: "awaiting_agent",
-          text: `Cliente precisa da equipe${reason ? ` (${reason})` : ""}, mas ${why}: a conversa vai para a equipe quando houver atendente`,
+          waitingReason: attendance.reason,
+          text:`Cliente precisa da equipe${reason ? ` (${reason})` : ""}, mas ${why}: a conversa vai para a equipe quando houver atendente`,
         });
         // Pendente: não é encerrada por inatividade enquanto espera.
         await tx.conversation.update({ where: { id: conversationId }, data: { status: "PENDING" } });

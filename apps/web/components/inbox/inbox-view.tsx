@@ -47,7 +47,7 @@ export function InboxView() {
           </span>
         </div>
       )}
-      <NavRail />
+      <NavRail onHome={() => setSelectedId(null)} />
       <div className="flex min-w-0 flex-1 flex-col">
         <ChannelAlert />
         <IfoodExtensionAlert />

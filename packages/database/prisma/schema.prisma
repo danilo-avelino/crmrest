@@ -513,6 +513,7 @@ model ConversationEvaluation {
   satisfied      Boolean? // null = o cliente não reagiu
   score          Int // 1 a 5
   summary        String
+  teamReason     String?  @map("team_reason") // TeamReason: por que precisou da equipe; null = só a IA atendeu
   model          String
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
