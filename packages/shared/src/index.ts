@@ -1,3 +1,4 @@
+export * from "./agent.js";
 export * from "./auth.js";
 export * from "./billing.js";
 export * from "./channels.js";
@@ -5,6 +6,7 @@ export * from "./contacts.js";
 export * from "./conversations.js";
 export * from "./integrations.js";
 export * from "./messaging.js";
+export * from "./onboarding.js";
 export * from "./orders.js";
 export * from "./personalities.js";
 export * from "./platform.js";

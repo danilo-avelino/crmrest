@@ -1,5 +1,7 @@
 import type { Prisma } from "@dishdesk/database";
 import {
+  type AdminNotifications,
+  adminNotificationsOf,
   AUTOMATION_TEXT_KEYS,
   type AutomationMessages,
   automationTextsOf,
@@ -18,11 +20,12 @@ import {
 import { Injectable } from "@nestjs/common";
 import type { RequestAuth } from "../auth/auth.decorators.js";
 import { DatabaseService } from "../core/database.service.js";
+import { notificationChannelOf } from "../notifications/admin-notifications.service.js";
 import { isTenantAdmin, requireTenantAdmin } from "./tenant-admin.js";
 
 /**
  * Configurações do restaurante editadas pelo painel: links do menu, personalidade e mensagens automáticas, horário de
- * funcionamento.
+ * funcionamento, notificações ao administrador pelo WhatsApp.
  */
 @Injectable()
 export class SettingsService {
@@ -30,14 +33,15 @@ export class SettingsService {
 
   /** Um restaurante no modo restaurante; todos os do usuário no painel master. */
   async list(auth: RequestAuth): Promise<TenantSettingsDto[]> {
-    const tenants = await this.db.withTenants(auth.scope, (tx) =>
-      tx.tenant.findMany({
+    const tenants = await this.db.withTenants(auth.scope, async (tx) => {
+      const tenants = await tx.tenant.findMany({
         // A RLS também mostra os restaurantes de que o usuário é membro fora do contexto: filtra pelo contexto.
         where: { id: { in: auth.scope.tenantIds } },
         select: { id: true, name: true, settings: true },
         orderBy: { name: "asc" },
-      }),
-    );
+      });
+      return Promise.all(tenants.map(async (tenant) => ({ ...tenant, channel: await notificationChannelOf(tx, tenant.id) })));
+    });
     return tenants.map((tenant) => toDto(auth, tenant));
   }
 
@@ -55,6 +59,10 @@ export class SettingsService {
 
   updateOrderForecast(auth: RequestAuth, tenantId: string, body: OrderForecastSettings): Promise<TenantSettingsDto> {
     return this.merge(auth, tenantId, { orderForecast: body });
+  }
+
+  updateAdminNotifications(auth: RequestAuth, tenantId: string, body: AdminNotifications): Promise<TenantSettingsDto> {
+    return this.merge(auth, tenantId, { adminNotifications: body });
   }
 
   /**
@@ -86,17 +94,21 @@ export class SettingsService {
     const tenant = await this.db.withTenants({ tenantIds: [tenantId], userId: auth.userId }, async (tx) => {
       const { settings } = await tx.tenant.findUniqueOrThrow({ where: { id: tenantId }, select: { settings: true } });
       const current = settings && typeof settings === "object" && !Array.isArray(settings) ? settings : {};
-      return tx.tenant.update({
+      const tenant = await tx.tenant.update({
         where: { id: tenantId },
         data: { settings: { ...current, ...(typeof patch === "function" ? patch(current) : patch) } as Prisma.InputJsonObject },
         select: { id: true, name: true, settings: true },
       });
+      return { ...tenant, channel: await notificationChannelOf(tx, tenantId) };
     });
     return toDto(auth, tenant);
   }
 }
 
-function toDto(auth: RequestAuth, tenant: { id: string; name: string; settings: Prisma.JsonValue }): TenantSettingsDto {
+function toDto(
+  auth: RequestAuth,
+  tenant: { id: string; name: string; settings: Prisma.JsonValue; channel: { name: string } | null },
+): TenantSettingsDto {
   return {
     tenantId: tenant.id,
     tenantName: tenant.name,
@@ -106,5 +118,7 @@ function toDto(auth: RequestAuth, tenant: { id: string; name: string; settings: 
     automationTexts: automationTextsOf(tenant.settings),
     businessHours: businessHoursOf(tenant.settings),
     orderForecast: orderForecastOf(tenant.settings),
+    adminNotifications: adminNotificationsOf(tenant.settings),
+    notificationChannel: tenant.channel?.name ?? null,
   };
 }

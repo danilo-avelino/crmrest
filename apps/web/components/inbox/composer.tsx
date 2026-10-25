@@ -1,8 +1,16 @@
 "use client";
 
-import { CHANNEL_CAPABILITIES, CHANNEL_LABEL, type ConversationListItem, type QuickReplyDto } from "@dishdesk/shared";
+import {
+  type AiAttendanceDto,
+  CHANNEL_CAPABILITIES,
+  CHANNEL_LABEL,
+  type ConversationListItem,
+  type ConversationMessages,
+  type QuickReplyDto,
+  type ReplySuggestionDto,
+} from "@dishdesk/shared";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ClockIcon, SendIcon, StickyNoteIcon } from "lucide-react";
+import { AlertTriangleIcon, ClockIcon, SendIcon, SparklesIcon, StickyNoteIcon, XIcon } from "lucide-react";
 import { type KeyboardEvent, useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
 import { useIfoodWidget } from "@/components/ifood-widget";
@@ -22,6 +30,8 @@ const LONG_COOLDOWN_MS = 30_000;
 const LONG_COOLDOWN_FROM = 3;
 // Por conversa: quantas respostas o atendente mandou e quando mandou a última. Fica fora do componente para valer ao trocar de conversa e voltar.
 const sentReplies = new Map<string, { count: number; at: number }>();
+/** A sugestão da IA lê as mensagens das últimas 12 horas (como a API). */
+const SUGGESTION_HISTORY_MS = 12 * 60 * 60 * 1000;
 
 /** Área de resposta (board Inbox → "Input área"). */
 export function Composer({ conversation }: { conversation: ConversationListItem }) {
@@ -33,6 +43,8 @@ export function Composer({ conversation }: { conversation: ConversationListItem 
   const [text, setText] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [highlight, setHighlight] = useState(0);
+  // O texto que veio da IA: enquanto o campo for igual a ele, a linha "Sugestão da IA" aparece.
+  const [suggested, setSuggested] = useState<string | null>(null);
 
   const capabilities = CHANNEL_CAPABILITIES[conversation.channel.type];
   // O iFood só aceita resposta com a trava do chat ligada: o painel digita a mensagem no widget, pela extensão.
@@ -72,6 +84,37 @@ export function Composer({ conversation }: { conversation: ConversationListItem 
           (reply) => reply.tenantId === conversation.tenant.id && reply.shortcut.toLowerCase().startsWith(slash),
         );
 
+  // Sugerir com IA (board Inbox · Composer · Sugerir com IA): só no restaurante com o Atendimento com IA (a mesma
+  // consulta do início da Inbox) e com mensagem do cliente para responder.
+  const ai = useQuery({ queryKey: ["ai-attendance"], queryFn: () => request<AiAttendanceDto[]>("/ai/attendance") });
+  const canSuggest = ai.data?.some((item) => item.tenantId === conversation.tenant.id) === true;
+  const messages = useQuery({
+    queryKey: ["messages", conversation.id],
+    queryFn: () => request<ConversationMessages>(`/conversations/${conversation.id}/messages`),
+    enabled: canSuggest,
+  });
+  const customerWrote = (messages.data?.messages ?? []).some(
+    (message) => message.direction === "INBOUND" && now - new Date(message.createdAt).getTime() < SUGGESTION_HISTORY_MS,
+  );
+  const showSuggestion = suggested !== null && text === suggested;
+
+  const [suggest, suggesting] = usePendingAction(async () => {
+    if (text.trim()) return;
+    setError(null);
+    try {
+      const suggestion = await request<ReplySuggestionDto>(`/conversations/${conversation.id}/suggestion`, { method: "POST" });
+      setText(suggestion.text);
+      setSuggested(suggestion.text);
+    } catch (failure) {
+      setError(failure instanceof ApiError ? failure.message : "A IA não conseguiu sugerir uma resposta agora. Tente de novo.");
+    }
+  });
+
+  const discard = () => {
+    setText("");
+    setSuggested(null);
+  };
+
   const [submit, submitting] = usePendingAction(async () => {
     const body = text.trim();
     if (!body || blocked || cooling) return;
@@ -82,6 +125,7 @@ export function Composer({ conversation }: { conversation: ConversationListItem 
         body: { text: body },
       });
       setText("");
+      setSuggested(null);
       if (mode === "reply") {
         sentReplies.set(conversation.id, { count: (sentReplies.get(conversation.id)?.count ?? 0) + 1, at: Date.now() });
         setSentTick((tick) => tick + 1);
@@ -176,11 +220,25 @@ export function Composer({ conversation }: { conversation: ConversationListItem 
           </ul>
         )}
 
+        {mode === "reply" && showSuggestion && (
+          <div className="flex items-center gap-[7px] text-[11px] text-ink-2">
+            <SparklesIcon className="size-3 shrink-0 text-tomate" aria-hidden />
+            <span>
+              <b className="font-semibold text-tomate">Sugestão da IA</b> · revise antes de enviar
+            </span>
+            <Button variant="ghost" size="xs" className="ml-auto" onClick={discard}>
+              <XIcon aria-hidden />
+              Descartar
+            </Button>
+          </div>
+        )}
+
         {blocked ? (
           <p className="min-h-16 rounded-lg border border-rule bg-surface-2 px-3 py-2.5 text-[12.5px] text-ink-3">{blocked}</p>
         ) : (
           <textarea
-            value={text}
+            value={suggesting ? "" : text}
+            disabled={suggesting}
             onChange={(event) => {
               setText(event.target.value);
               setHighlight(0);
@@ -189,13 +247,16 @@ export function Composer({ conversation }: { conversation: ConversationListItem 
             rows={3}
             aria-label={mode === "reply" ? "Mensagem para o cliente" : "Nota interna para a equipe"}
             placeholder={
-              mode === "reply"
-                ? "Escreva uma mensagem... / para respostas rápidas"
-                : "Escreva uma nota para a equipe (o cliente não vê)"
+              suggesting
+                ? "A IA está escrevendo uma sugestão…"
+                : mode === "reply"
+                  ? "Escreva uma mensagem... / para respostas rápidas"
+                  : "Escreva uma nota para a equipe (o cliente não vê)"
             }
             className={cn(
-              "min-h-16 resize-none rounded-lg border px-3 py-2.5 text-[13px] outline-none placeholder:text-ink-3 focus:border-ink focus:ring-3 focus:ring-ink/8",
+              "min-h-16 resize-none rounded-lg border px-3 py-2.5 text-[13px] outline-none placeholder:text-ink-3 focus:border-ink focus:ring-3 focus:ring-ink/8 disabled:bg-surface-2",
               mode === "note" ? "border-warning-line bg-warning-lt" : "border-rule bg-paper",
+              mode === "reply" && showSuggestion && "border-tomate-line ring-3 ring-tomate/8",
             )}
           />
         )}
@@ -208,7 +269,8 @@ export function Composer({ conversation }: { conversation: ConversationListItem 
         )}
 
         {error && (
-          <p role="alert" className="text-[11px] text-tomate">
+          <p role="alert" className="flex items-center gap-1.5 text-[11px] text-tomate">
+            <AlertTriangleIcon className="size-3 shrink-0" aria-hidden />
             {error}
           </p>
         )}
@@ -217,7 +279,32 @@ export function Composer({ conversation }: { conversation: ConversationListItem 
           <div className="flex items-center gap-1">
             {/* Templates são da API oficial do WhatsApp, a única com janela de 24h; pelo QR Code, a resposta é sempre livre. */}
             {conversation.channel.type === "WHATSAPP" && capabilities.window24h && (
-              <TemplatePicker conversationId={conversation.id} emphasized={!windowOpen} />
+              <TemplatePicker conversationId={conversation.id} emphasized={!windowOpen} disabled={suggesting} />
+            )}
+            {mode === "reply" && canSuggest && (
+              // A dica explica o botão desabilitado sem mensagem do cliente (o hover vale no invólucro: o botão desabilitado não recebe o mouse).
+              <span className="group/suggest relative">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-[11.5px]"
+                  disabled={Boolean(blocked) || !customerWrote || text.trim() !== ""}
+                  loading={suggesting}
+                  onClick={() => suggest()}
+                >
+                  <SparklesIcon className="text-tomate group-data-disabled/button:text-ink-3" aria-hidden />
+                  Sugerir com IA
+                </Button>
+                {!customerWrote && !blocked && (
+                  <span
+                    role="tooltip"
+                    className="pointer-events-none invisible absolute bottom-10 left-1/2 z-10 w-[230px] -translate-x-1/2 rounded-lg bg-ink px-2.5 py-2 text-[11.5px] leading-[1.4] text-paper shadow-md group-hover/suggest:visible"
+                  >
+                    Sem mensagem do cliente para responder. A sugestão aparece quando ele escrever.
+                    <span className="absolute -bottom-1 left-1/2 size-2 -translate-x-1/2 rotate-45 bg-ink" aria-hidden />
+                  </span>
+                )}
+              </span>
             )}
             {capabilities.window24h && (
               <span
@@ -234,7 +321,7 @@ export function Composer({ conversation }: { conversation: ConversationListItem 
           <Button
             variant={mode === "reply" ? "accent" : "default"}
             className="h-8 rounded-md px-3.5 text-[12.5px]"
-            disabled={Boolean(blocked) || cooling || !text.trim()}
+            disabled={Boolean(blocked) || cooling || suggesting || !text.trim()}
             loading={submitting}
             onClick={() => submit()}
           >

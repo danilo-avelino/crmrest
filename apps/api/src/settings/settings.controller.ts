@@ -1,4 +1,5 @@
 import {
+  AdminNotifications,
   BusinessHours,
   OrderForecastSettings,
   type TenantSettingsDto,
@@ -6,14 +7,19 @@ import {
   UpdateOrderLinksRequest,
   UpdatePersonalityRequest,
 } from "@dishdesk/shared";
-import { Body, Controller, Get, Param, ParseUUIDPipe, Put } from "@nestjs/common";
+import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Post, Put } from "@nestjs/common";
 import { CurrentAuth, type RequestAuth } from "../auth/auth.decorators.js";
 import { ZodPipe } from "../common/zod.pipe.js";
+import { AdminNotificationsService } from "../notifications/admin-notifications.service.js";
 import { SettingsService } from "./settings.service.js";
+import { requireTenantAdmin } from "./tenant-admin.js";
 
 @Controller("settings")
 export class SettingsController {
-  constructor(private readonly settings: SettingsService) {}
+  constructor(
+    private readonly settings: SettingsService,
+    private readonly adminNotifications: AdminNotificationsService,
+  ) {}
 
   @Get()
   list(@CurrentAuth() auth: RequestAuth): Promise<TenantSettingsDto[]> {
@@ -54,6 +60,23 @@ export class SettingsController {
     @CurrentAuth() auth: RequestAuth,
   ): Promise<TenantSettingsDto> {
     return this.settings.updateBusinessHours(auth, tenantId, body);
+  }
+
+  @Put(":tenantId/admin-notifications")
+  updateAdminNotifications(
+    @Param("tenantId", ParseUUIDPipe) tenantId: string,
+    @Body(new ZodPipe(AdminNotifications)) body: AdminNotifications,
+    @CurrentAuth() auth: RequestAuth,
+  ): Promise<TenantSettingsDto> {
+    return this.settings.updateAdminNotifications(auth, tenantId, body);
+  }
+
+  /** Botão "Enviar relatório de teste": o relatório semanal agora, para os números salvos. */
+  @Post(":tenantId/admin-notifications/test")
+  @HttpCode(200)
+  async testAdminNotifications(@Param("tenantId", ParseUUIDPipe) tenantId: string, @CurrentAuth() auth: RequestAuth): Promise<{ sent: number }> {
+    requireTenantAdmin(auth, tenantId);
+    return { sent: await this.adminNotifications.weekly(tenantId, new Date(), true) };
   }
 
   @Put(":tenantId/order-forecast")

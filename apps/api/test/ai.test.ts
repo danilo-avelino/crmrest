@@ -527,6 +527,30 @@ describe("atendimento com IA: resposta, revisão e avaliação", () => {
     expect(promptOf()).toContain("(achado pelo número que ele informou; ainda não confirmado por ele):\n#5557");
   });
 
+  it("o atendente pede uma sugestão de resposta: nada é enviado e um dado inventado não vale", async () => {
+    const conversation = await conversationOf("5511980000005");
+    const sent = graph.requests.length;
+    const suggest = () =>
+      request(app.getHttpServer()).post(`/api/conversations/${conversation.id}/suggestion`).set("Authorization", `Bearer ${token}`);
+
+    answers.sugestao = { text: "O seu pedido #8765 já está com a gente!" };
+    const { body } = await suggest().expect(200);
+    expect(body).toEqual({ text: "O seu pedido #8765 já está com a gente!" });
+    const [system, user] = (llmCalls("sugestao").at(-1)!.body as LlmBody).messages;
+    expect(system!.content).toContain("Personalidade do atendimento: Cordial");
+    expect(user!.content).toContain("Pedido do cliente (ele confirmou que é dele):\n#8765");
+    expect(user!.content).toContain("Cliente: Obrigado");
+
+    // Um prazo que não está nos dados nem na conversa: a sugestão não vale.
+    answers.sugestao = { text: "Chega em 47 minutos!" };
+    await suggest().expect(503);
+    delete answers.sugestao;
+    await suggest().expect(503);
+
+    expect((await conversationOf("5511980000005")).messages).toHaveLength(conversation.messages.length);
+    expect(graph.requests.length).toBe(sent);
+  });
+
   it("restaurante sem o módulo continua com o menu de atendimento", async () => {
     const calls = llm.requests.length;
     await say("5511980000004", "wamid.AI-8", "Oi", withoutAi.whatsapp);
@@ -534,6 +558,10 @@ describe("atendimento com IA: resposta, revisão e avaliação", () => {
 
     const conversation = await conversationOf("5511980000004", withoutAi.tenant.id);
     expect(conversation.messages.map((m) => (m.content as Content).automation)).toContain("menu");
+    expect(llm.requests.length).toBe(calls);
+
+    const other = await accessTokenFor(app, withoutAi.user.email, withoutAi.tenant.id);
+    await request(app.getHttpServer()).post(`/api/conversations/${conversation.id}/suggestion`).set("Authorization", `Bearer ${other}`).expect(404);
     expect(llm.requests.length).toBe(calls);
   });
 });

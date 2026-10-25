@@ -3,7 +3,6 @@ import type { ChannelType } from "@dishdesk/database/enums";
 import {
   CHANNEL_CAPABILITIES,
   type ConversationCounts,
-  type ConversationEvaluationDto,
   type ConversationListQuery,
   type ConversationMessages,
   type ConversationPage,
@@ -37,7 +36,7 @@ import { type AiJob, type AutomationJob, type OutboundJob, QUEUES } from "../que
 import { withOrderTenants } from "../orders/order-scope.js";
 import { RealtimeEmitter } from "../realtime/realtime.emitter.js";
 import { isTenantAdmin } from "../settings/tenant-admin.js";
-import { conversationListInclude, toListItem, toMessageDto, toOrderDto, withoutRatingScores } from "./conversation.mapper.js";
+import { conversationListInclude, listEvaluations, toListItem, toMessageDto, toOrderDto, withoutRatingScores } from "./conversation.mapper.js";
 
 const PAGE_SIZE = 50;
 const MESSAGES_LIMIT = 200;
@@ -120,7 +119,7 @@ export class ConversationsService {
       // A nota da pesquisa de satisfação e a avaliação da IA são só do administrador do restaurante.
       const admin = isTenantAdmin(auth, conversation.tenantId);
       const messages = admin ? all : withoutRatingScores(all);
-      const evaluations = admin ? await this.evaluations(tx, conversation.tenantId, id) : [];
+      const evaluations = admin ? await listEvaluations(tx, conversation.tenantId, { conversationId: id }) : [];
       const orderIds = messages.flatMap((m) => (m.content.event === "order" && m.content.orderId ? [m.content.orderId] : []));
       // O card pode ser de um pedido de outro restaurante atendido pelo canal da conversa: ele leva o nome do restaurante.
       const orders = orderIds.length
@@ -137,25 +136,6 @@ export class ConversationsService {
       });
       return { messages, orders: Object.fromEntries(orders.map((order) => [order.id, toCard(order)])), evaluations };
     });
-  }
-
-  /** Avaliações da IA da conversa, com o nome de quem da equipe respondeu por último em cada atendimento. */
-  private async evaluations(tx: TenantTx, tenantId: string, conversationId: string): Promise<ConversationEvaluationDto[]> {
-    const rows = await tx.conversationEvaluation.findMany({ where: { conversationId }, orderBy: { createdAt: "asc" } });
-    const userIds = [...new Set(rows.flatMap((row) => (row.userId ? [row.userId] : [])))];
-    const members = userIds.length
-      ? await tx.tenantMember.findMany({ where: { tenantId, userId: { in: userIds } }, select: { user: { select: { id: true, name: true } } } })
-      : [];
-    const names = new Map(members.map((member) => [member.user.id, member.user.name]));
-    return rows.map((row) => ({
-      id: row.id,
-      resolved: row.resolved,
-      satisfied: row.satisfied,
-      score: row.score,
-      summary: row.summary,
-      agentName: row.userId ? (names.get(row.userId) ?? "Ex-atendente") : null,
-      createdAt: row.createdAt.toISOString(),
-    }));
   }
 
   /**

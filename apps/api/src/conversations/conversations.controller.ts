@@ -5,19 +5,24 @@ import {
   type ConversationMessages,
   type ConversationPage,
   type MessageDto,
+  type ReplySuggestionDto,
   SendMessageRequest,
   SendTemplateRequest,
   UpdateConversationRequest,
   type WhatsAppTemplate,
 } from "@dishdesk/shared";
 import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Query, StreamableFile } from "@nestjs/common";
+import { AiSuggestionService } from "../ai/ai-suggestion.service.js";
 import { CurrentAuth, type RequestAuth } from "../auth/auth.decorators.js";
 import { ZodPipe } from "../common/zod.pipe.js";
 import { ConversationsService } from "./conversations.service.js";
 
 @Controller("conversations")
 export class ConversationsController {
-  constructor(private readonly conversations: ConversationsService) {}
+  constructor(
+    private readonly conversations: ConversationsService,
+    private readonly suggestions: AiSuggestionService,
+  ) {}
 
   @Get()
   list(
@@ -95,6 +100,13 @@ export class ConversationsController {
     @CurrentAuth() auth: RequestAuth,
   ): Promise<MessageDto> {
     return this.conversations.sendTemplate(auth, id, body);
+  }
+
+  /** Atendimento com IA: uma resposta sugerida para o composer. Não envia nada. */
+  @Post(":id/suggestion")
+  @HttpCode(200)
+  suggest(@Param("id", ParseUUIDPipe) id: string, @CurrentAuth() auth: RequestAuth): Promise<ReplySuggestionDto> {
+    return this.suggestions.suggest(auth, id);
   }
 
   @Post(":id/notes")

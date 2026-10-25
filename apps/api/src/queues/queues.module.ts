@@ -25,6 +25,8 @@ export type OutboundJob = { tenantId: string; messageId: string };
 export type AutomationJob = { tenantId: string; conversationId: string; ifood?: { event: InboundEvent; orderId: string } };
 /** "ai-forward" (fila automations): as conversas que esperavam um atendente vão para a equipe, se houver alguém. */
 export type AiForwardJob = { tenantId: string };
+/** "admin-message" (fila automations): notificação ao administrador (alerta ou relatório) para um número dele. */
+export type AdminMessageJob = { tenantId: string; phone: string; text: string };
 /** Uma página da base de clientes do Cardápio Web; `imported` soma o que as páginas anteriores trouxeram. */
 export type CardapioWebImportJob = { tenantId: string; channelId: string; page: number; imported: number };
 /** "reply": a IA responde à última mensagem do cliente; "evaluate": a IA avalia o atendimento resolvido. */

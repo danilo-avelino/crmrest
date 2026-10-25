@@ -4,8 +4,11 @@ import { AiAttendantService } from "./ai/ai-attendant.service.js";
 import { AiEvaluationService } from "./ai/ai-evaluation.service.js";
 import { AiForwardService } from "./ai/ai-forward.service.js";
 import { AiReviewService } from "./ai/ai-review.service.js";
+import { AiSuggestionService } from "./ai/ai-suggestion.service.js";
 import { AiProcessor } from "./ai/ai.processor.js";
 import { LlmClient } from "./ai/llm.client.js";
+import { AgentController } from "./agent/agent.controller.js";
+import { AgentService } from "./agent/agent.service.js";
 import { TokensModule } from "./auth/tokens.module.js";
 import { AutomationsProcessor } from "./automations/automations.processor.js";
 import { CourierMenuService } from "./automations/courier-menu.service.js";
@@ -39,10 +42,13 @@ import { ReportsService } from "./reports/reports.service.js";
 import { IntegrationsController } from "./settings/integrations.controller.js";
 import { IntegrationsService } from "./settings/integrations.service.js";
 import { MembersController } from "./settings/members.controller.js";
+import { OnboardingController } from "./settings/onboarding.controller.js";
+import { OnboardingService } from "./settings/onboarding.service.js";
 import { QuickRepliesController } from "./settings/quick-replies.controller.js";
 import { SettingsController } from "./settings/settings.controller.js";
 import { SettingsService } from "./settings/settings.service.js";
 import { EvolutionWebhookController } from "./webhooks/evolution-webhook.controller.js";
+import { AdminNotificationsService } from "./notifications/admin-notifications.service.js";
 import { MetaWebhookController } from "./webhooks/meta-webhook.controller.js";
 import { StripeWebhookController } from "./webhooks/stripe-webhook.controller.js";
 
@@ -63,6 +69,8 @@ import { StripeWebhookController } from "./webhooks/stripe-webhook.controller.js
     OrdersController,
     PlatformController,
     AiAttendanceController,
+    OnboardingController,
+    AgentController,
   ],
   providers: [
     ConversationsService,
@@ -74,6 +82,10 @@ import { StripeWebhookController } from "./webhooks/stripe-webhook.controller.js
     IfoodReviewsService,
     OrdersService,
     LlmClient,
+    AiSuggestionService,
+    OnboardingService,
+    AgentService,
+    AdminNotificationsService,
   ],
 })
 export class ApiRoleModule {}
@@ -113,6 +125,8 @@ export class RealtimeRoleModule {}
     AiEvaluationService,
     AiForwardService,
     AiProcessor,
+    ReportsService,
+    AdminNotificationsService,
   ],
 })
 export class WorkerRoleModule {}

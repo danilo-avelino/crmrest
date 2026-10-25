@@ -27,6 +27,7 @@ import { ORDER_TONE } from "@/components/clients/client-detail";
 import { useIfoodWidget } from "@/components/ifood-widget";
 import { ChannelDot, StatusBadge } from "@/components/inbox/bits";
 import { ORDER_STATUS } from "@/components/inbox/order-card";
+import { SetupReminder } from "@/components/onboarding/setup-reminder";
 import { OrderDetails } from "@/components/orders/order-list";
 import {
   type Badge,
@@ -61,6 +62,7 @@ export function InboxHome() {
   return (
     <div className="flex min-w-0 flex-1 overflow-y-auto">
       <div className="m-auto w-full max-w-[460px] px-6 py-10">
+        <SetupReminder />
         <AiAttendance />
         <Integrations />
         <p className="mt-8 flex items-center justify-center gap-2 text-ink-3">

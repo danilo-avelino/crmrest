@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { toE164 } from "./contacts.js";
 import { type AutomationMessages, PERSONALITY_MESSAGES, Personality, personalityOf } from "./personalities.js";
 
 export const ORDER_LINKS_MAX = 5;
@@ -30,6 +31,9 @@ export type TenantSettingsDto = {
   automationTexts: AutomationTexts;
   businessHours: BusinessHours;
   orderForecast: OrderForecastSettings;
+  adminNotifications: AdminNotifications;
+  /** WhatsApp do restaurante por onde as notificações saem (null: nenhum conectado). */
+  notificationChannel: string | null;
 };
 
 /** Os links guardados em `tenant.settings` (um valor fora do formato conta como nenhum link). */
@@ -106,6 +110,35 @@ export type OrderForecastSettings = z.infer<typeof OrderForecastSettings>;
 export function orderForecastOf(settings: unknown): OrderForecastSettings {
   const saved = z.looseObject({ orderForecast: OrderForecastSettings.optional() }).safeParse(settings).data?.orderForecast;
   return saved ?? { showQueue: true };
+}
+
+// ---------- Notificações ao administrador pelo WhatsApp ----------
+
+export const ADMIN_PHONES_MAX = 5;
+
+const AdminPhone = z
+  .string()
+  .trim()
+  .refine((value) => toE164(value) !== null, "Informe um telefone válido, com DDD.")
+  .transform((value) => toE164(value)!);
+
+/**
+ * Números do administrador que recebem, pelo WhatsApp do próprio restaurante, o alerta de má conduta (na hora em que a
+ * revisão da IA bloqueia uma resposta) e o relatório semanal.
+ */
+export const AdminNotifications = z.object({
+  phones: z
+    .array(AdminPhone)
+    .max(ADMIN_PHONES_MAX, `No máximo ${ADMIN_PHONES_MAX} números.`)
+    .transform((phones) => [...new Set(phones)]),
+  misconduct: z.boolean(),
+  weeklyReport: z.boolean(),
+});
+export type AdminNotifications = z.infer<typeof AdminNotifications>;
+
+export function adminNotificationsOf(settings: unknown): AdminNotifications {
+  const saved = z.looseObject({ adminNotifications: AdminNotifications.optional() }).safeParse(settings).data?.adminNotifications;
+  return saved ?? { phones: [], misconduct: true, weeklyReport: true };
 }
 
 /** As opções do menu de atendimento: fixas, porque a automação lê a resposta pelo número. */

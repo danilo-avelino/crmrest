@@ -74,6 +74,8 @@ services:
     environment:
       # O modelo nunca sai da GPU (~8 GB de VRAM): carregar de novo leva ~100 s, mais que o AI_TIMEOUT_MS da API.
       OLLAMA_KEEP_ALIVE: "-1"
+      # O padrão (4096 tokens) corta o começo do prompt numa conversa longa ou numa página grande do agente da extensão.
+      OLLAMA_CONTEXT_LENGTH: "8192"
     gpus: all
     restart: unless-stopped # volta sozinho quando o Docker abre: a produção usa este Ollama (serviço ngrok abaixo)
     ports:

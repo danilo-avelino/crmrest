@@ -218,6 +218,17 @@ describe("Integrações (Configurações)", () => {
         "Não foi possível conectar o Instagram: Meta: Invalid authorization code (troca do código do login).",
       );
     });
+
+    it("aberto pelo assistente de configuração, volta para o assistente", async () => {
+      const { body } = await request(app.getHttpServer())
+        .get(`/api/integrations/${fx.tenant.id}/instagram/login?origem=assistente`)
+        .set("Authorization", `Bearer ${adminToken}`)
+        .expect(200);
+      const state = new URL(body.url).searchParams.get("state") ?? "";
+      const { headers } = await callback({ error: "access_denied", state });
+      expect(headers.location).toMatch(/^http:\/\/painel\.teste\/assistente\?/);
+      expect(backParams(headers.location)).toEqual({ restaurante: fx.tenant.id, instagram: "erro", motivo: "O login no Instagram foi cancelado." });
+    });
   });
 
   describe("cadastro incorporado do WhatsApp", () => {

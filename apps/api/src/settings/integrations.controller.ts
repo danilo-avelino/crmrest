@@ -58,8 +58,12 @@ export class IntegrationsController {
 
   /** Endereço da tela de login do Instagram, para o painel abrir. */
   @Get(":tenantId/instagram/login")
-  instagramLogin(@Param("tenantId", ParseUUIDPipe) tenantId: string, @CurrentAuth() auth: RequestAuth): { url: string } {
-    return this.integrations.instagramLoginUrl(auth, tenantId);
+  instagramLogin(
+    @Param("tenantId", ParseUUIDPipe) tenantId: string,
+    @Query("origem") origin: string | undefined,
+    @CurrentAuth() auth: RequestAuth,
+  ): { url: string } {
+    return this.integrations.instagramLoginUrl(auth, tenantId, origin === "assistente" ? "assistente" : undefined);
   }
 
   /** Volta do login do Instagram (sem sessão: quem pediu vem no `state` assinado); devolve o navegador ao painel. */

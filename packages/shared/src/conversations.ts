@@ -10,7 +10,7 @@ import type {
 } from "@dishdesk/database/enums";
 import { ConversationStatus as ConversationStatusEnum } from "@dishdesk/database/enums";
 import { z } from "zod";
-import type { WaitingReason } from "./reports.js";
+import type { TeamReason, WaitingReason } from "./reports.js";
 
 /** Conteúdo de uma mensagem, conforme o tipo (texto, mídia, evento do sistema, nota...). */
 export type MessageContent = {
@@ -86,6 +86,7 @@ export type MessageContent = {
 /** Avaliação de um atendimento pela IA, feita quando a conversa é resolvida (só administradores veem). */
 export type ConversationEvaluationDto = {
   id: string;
+  conversationId: string;
   resolved: boolean;
   /** null = o cliente não reagiu. */
   satisfied: boolean | null;
@@ -93,8 +94,15 @@ export type ConversationEvaluationDto = {
   summary: string;
   /** Quem da equipe respondeu por último; null = só a IA e as automações atenderam. */
   agentName: string | null;
+  /** Por que precisou da equipe; null = só a IA atendeu. */
+  teamReason: TeamReason | null;
+  /** Modelo de IA que avaliou. */
+  model: string;
   createdAt: string;
 };
+
+/** Conversa na aba do cliente: `evaluations` são as avaliações da IA (só administradores recebem). */
+export type ContactConversationItem = ConversationListItem & { evaluations: ConversationEvaluationDto[] };
 
 export type MessageDto = {
   id: string;
@@ -177,6 +185,9 @@ export type ConversationListQuery = z.infer<typeof ConversationListQuery>;
 
 export const SendMessageRequest = z.object({ text: z.string().trim().min(1).max(4096) });
 export type SendMessageRequest = z.infer<typeof SendMessageRequest>;
+
+/** Resposta sugerida pela IA para o atendente editar e enviar (E28). */
+export type ReplySuggestionDto = { text: string };
 
 /** Template aprovado na conta do WhatsApp; `variables` = quantos {{n}} o corpo tem. */
 export type WhatsAppTemplate = { name: string; language: string; category: string; body: string; variables: number };

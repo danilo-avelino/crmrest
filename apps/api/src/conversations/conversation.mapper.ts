@@ -1,6 +1,6 @@
-import type { Message, Order, OrderItem, Prisma } from "@dishdesk/database";
+import type { Message, Order, OrderItem, Prisma, TenantTx } from "@dishdesk/database";
 import type { ChannelType } from "@dishdesk/database/enums";
-import type { ConversationListItem, MessageContent, MessageDto, OrderDto } from "@dishdesk/shared";
+import type { ConversationEvaluationDto, ConversationListItem, MessageContent, MessageDto, OrderDto, TeamReason } from "@dishdesk/shared";
 import type { RequestAuth } from "../auth/auth.decorators.js";
 import { type AutomationState, RATING_ANSWER } from "../automations/automation.js";
 import { isTenantAdmin } from "../settings/tenant-admin.js";
@@ -116,7 +116,33 @@ const TYPE_PREVIEW: Partial<Record<Message["type"], string>> = {
   LOCATION: "Localização",
 };
 
-function preview(type: Message["type"], content: MessageContent): string {
+export function preview(type: Message["type"], content: MessageContent): string {
   if (content.event === "order") return "Pedido do iFood";
   return content.text ?? TYPE_PREVIEW[type] ?? "Mensagem";
+}
+
+/** Avaliações da IA (nome de quem da equipe respondeu por último incluído) das conversas que casam com `where`. */
+export async function listEvaluations(
+  tx: TenantTx,
+  tenantId: string,
+  where: Prisma.ConversationEvaluationWhereInput,
+): Promise<ConversationEvaluationDto[]> {
+  const rows = await tx.conversationEvaluation.findMany({ where, orderBy: { createdAt: "asc" } });
+  const userIds = [...new Set(rows.flatMap((row) => (row.userId ? [row.userId] : [])))];
+  const members = userIds.length
+    ? await tx.tenantMember.findMany({ where: { tenantId, userId: { in: userIds } }, select: { user: { select: { id: true, name: true } } } })
+    : [];
+  const names = new Map(members.map((member) => [member.user.id, member.user.name]));
+  return rows.map((row) => ({
+    id: row.id,
+    conversationId: row.conversationId,
+    resolved: row.resolved,
+    satisfied: row.satisfied,
+    score: row.score,
+    summary: row.summary,
+    agentName: row.userId ? (names.get(row.userId) ?? "Ex-atendente") : null,
+    teamReason: row.teamReason as TeamReason | null,
+    model: row.model,
+    createdAt: row.createdAt.toISOString(),
+  }));
 }

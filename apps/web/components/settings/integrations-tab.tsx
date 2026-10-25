@@ -107,6 +107,10 @@ const SYSTEMS: {
 
 type System = (typeof SYSTEMS)[number];
 
+export function systemOf(type: IntegrationType): System {
+  return SYSTEMS.find((system) => system.type === type)!;
+}
+
 export type Badge = { label: string; className: string; dot: string };
 
 export const STATUS: Record<IntegrationDto["status"], Badge> = {
@@ -694,23 +698,13 @@ function InstagramLogin({ tenantId, enabled, label }: { tenantId: string; enable
 }
 
 /**
- * WhatsApp por QR Code (Evolution API): o modal cria a tentativa de conexão, mostra o QR Code e confere a cada 2 s se
- * o número conectou. O QR Code vence em segundos e a API troca por outro; fechar sem conectar apaga a tentativa.
+ * WhatsApp por QR Code (Evolution API): `start` cria a tentativa de conexão; enquanto ela está ativa, confere a cada 2 s
+ * se o número conectou. O QR Code vence em segundos e a API troca por outro; `stop` sem conectar apaga a tentativa.
+ * Usado pelo modal de Integrações e pelo assistente de configuração.
  */
-function WhatsAppQr({
-  tenantId,
-  enabled,
-  label,
-  onConnected,
-}: {
-  tenantId: string;
-  enabled: boolean;
-  label: string;
-  onConnected?: (item: IntegrationDto) => void;
-}) {
+export function useWhatsAppQr(tenantId: string, onConnected: (item: IntegrationDto) => void) {
   const { request } = useAuth();
   const queryClient = useQueryClient();
-  const toast = useToast();
   const [open, setOpen] = useState(false);
   const [session, setSession] = useState<string | null>(null);
   const [qr, setQr] = useState<string | null>(null);
@@ -743,8 +737,7 @@ function WhatsAppQr({
           void queryClient.invalidateQueries({ queryKey: ["channels"] });
           setSession(null);
           setOpen(false);
-          toast("WhatsApp conectado");
-          onConnected?.(result.integration);
+          onConnected(result.integration);
           return;
         }
         setQr(result.qr);
@@ -767,11 +760,32 @@ function WhatsAppQr({
     };
   }, [open, session]);
 
-  function close() {
+  function stop() {
     if (session) void request(`/integrations/${tenantId}/whatsapp/qr/${session}`, { method: "DELETE" }).catch(() => undefined);
     setSession(null);
     setOpen(false);
   }
+
+  return { open, qr, failure, start, stop };
+}
+
+/** Modal "Conectar o WhatsApp" de Integrações: os passos no celular e o QR Code. */
+function WhatsAppQr({
+  tenantId,
+  enabled,
+  label,
+  onConnected,
+}: {
+  tenantId: string;
+  enabled: boolean;
+  label: string;
+  onConnected?: (item: IntegrationDto) => void;
+}) {
+  const toast = useToast();
+  const { open, qr, failure, start, stop: close } = useWhatsAppQr(tenantId, (item) => {
+    toast("WhatsApp conectado");
+    onConnected?.(item);
+  });
 
   return (
     <div>
@@ -1047,8 +1061,21 @@ const IFOOD_AUTHORIZATION_FIELD: Field = { name: "authorizationCode", label: "C�
 /**
  * Formulário de uma nova integração: a API confere a credencial no sistema antes de salvar. iFood distribuído
  * (`ifoodLinkCode`): antes dos campos, o código de vinculação que o responsável pela loja autoriza no Portal do Parceiro.
+ * `bare`: dentro de outra tela (o assistente de configuração), sem o espaçamento do modal e sem "Cancelar".
  */
-function IntegrationForm({ system, tenantId, ifoodLinkCode, onClose }: { system: System; tenantId: string; ifoodLinkCode: boolean; onClose: () => void }) {
+export function IntegrationForm({
+  system,
+  tenantId,
+  ifoodLinkCode,
+  onClose,
+  bare,
+}: {
+  system: System;
+  tenantId: string;
+  ifoodLinkCode: boolean;
+  onClose: () => void;
+  bare?: boolean;
+}) {
   const { request } = useAuth();
   const queryClient = useQueryClient();
   const toast = useToast();
@@ -1105,7 +1132,7 @@ function IntegrationForm({ system, tenantId, ifoodLinkCode, onClose }: { system:
   return (
     <form
       noValidate
-      className="flex flex-col gap-2.5 px-[26px] py-[22px]"
+      className={cn("flex flex-col gap-2.5", !bare && "px-[26px] py-[22px]")}
       onSubmit={(event) => {
         event.preventDefault();
         submit();
@@ -1143,9 +1170,11 @@ function IntegrationForm({ system, tenantId, ifoodLinkCode, onClose }: { system:
         </p>
       )}
       <div className="flex items-center justify-end gap-2">
-        <Button type="button" variant="ghost" size="sm" onClick={onClose}>
-          Cancelar
-        </Button>
+        {!bare && (
+          <Button type="button" variant="ghost" size="sm" onClick={onClose}>
+            Cancelar
+          </Button>
+        )}
         <Button type="submit" size="sm" loading={saving}>
           Conectar
         </Button>

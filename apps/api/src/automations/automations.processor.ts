@@ -2,8 +2,9 @@ import { Processor } from "@nestjs/bullmq";
 import type { Job } from "bullmq";
 import { AiForwardService } from "../ai/ai-forward.service.js";
 import { ContactTagsService } from "../contacts/contact-tags.service.js";
+import { AdminNotificationsService } from "../notifications/admin-notifications.service.js";
 import { JobProcessor } from "../queues/job-processor.js";
-import { type AiForwardJob, type AutomationJob, QUEUES } from "../queues/queues.module.js";
+import { type AdminMessageJob, type AiForwardJob, type AutomationJob, QUEUES } from "../queues/queues.module.js";
 import { IfoodAttendanceService } from "./ifood-attendance.service.js";
 import { InactivityService } from "./inactivity.service.js";
 import { PhoneCollectionService } from "./phone-collection.service.js";
@@ -11,7 +12,8 @@ import { SurveyService } from "./survey.service.js";
 
 /**
  * Etapas das automações: lembrete e desistência da coleta de telefone; pesquisa ao resolver; encerramento por inatividade;
- * mensagem do cliente no chat do iFood; conversas que esperavam um atendente. E, de hora em hora, as tags automáticas dos clientes.
+ * mensagem do cliente no chat do iFood; conversas que esperavam um atendente. E, de hora em hora, as tags automáticas dos clientes;
+ * as notificações ao administrador pelo WhatsApp e, toda segunda, o relatório semanal.
  */
 @Processor(QUEUES.automations)
 export class AutomationsProcessor extends JobProcessor {
@@ -22,12 +24,15 @@ export class AutomationsProcessor extends JobProcessor {
     private readonly ifoodAttendance: IfoodAttendanceService,
     private readonly contactTags: ContactTagsService,
     private readonly aiForward: AiForwardService,
+    private readonly adminNotifications: AdminNotificationsService,
   ) {
     super();
   }
 
-  async process(job: Job<AutomationJob | AiForwardJob>): Promise<void> {
+  async process(job: Job<AutomationJob | AiForwardJob | AdminMessageJob>): Promise<void> {
     if (job.name === "contact-tags") return this.contactTags.refreshAll();
+    if (job.name === "admin-weekly-report") return this.adminNotifications.weeklyAll();
+    if (job.name === "admin-message") return this.adminNotifications.send(job.data as AdminMessageJob);
     if (job.name === "ai-forward-sweep") return this.aiForward.sweep();
     if (job.name === "ai-forward") return this.aiForward.forward(job.data.tenantId);
     const data = job.data as AutomationJob;

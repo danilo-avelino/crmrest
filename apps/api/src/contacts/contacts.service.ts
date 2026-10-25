@@ -6,8 +6,8 @@ import {
   type ContactFilterOptions,
   type ContactListQuery,
   type ContactPage,
+  type ContactConversationItem,
   type ContactSummary,
-  type ConversationListItem,
   type DuplicatePair,
   type DuplicateSide,
   INACTIVE_AFTER_DAYS,
@@ -27,10 +27,11 @@ import {
 } from "@nestjs/common";
 import type { RequestAuth } from "../auth/auth.decorators.js";
 import { ENV, type Env } from "../config/env.js";
-import { conversationListInclude, toListItem, toOrderDto } from "../conversations/conversation.mapper.js";
+import { conversationListInclude, listEvaluations, toListItem, toOrderDto } from "../conversations/conversation.mapper.js";
 import { DatabaseService } from "../core/database.service.js";
 import { customerHistory, linkedOrdersWhere } from "../orders/customer-history.js";
 import { RealtimeEmitter } from "../realtime/realtime.emitter.js";
+import { isTenantAdmin } from "../settings/tenant-admin.js";
 import { findDuplicatePairs } from "./contact-duplicates.js";
 import { mergeContacts } from "./contact-merge.js";
 import { contactSearch } from "./contact-search.js";
@@ -191,8 +192,8 @@ export class ContactsService {
     return this.db.withTenants(auth.scope, (tx) => this.load(tx, id));
   }
 
-  /** Aba Conversas: todas as conversas do cliente, em todos os canais. */
-  conversations(auth: RequestAuth, id: string): Promise<ConversationListItem[]> {
+  /** Aba Conversas: todas as conversas do cliente, em todos os canais, com as avaliações da IA (só para administradores). */
+  conversations(auth: RequestAuth, id: string): Promise<ContactConversationItem[]> {
     return this.db.withTenants(auth.scope, async (tx) => {
       await this.requireContact(tx, id);
       const rows = await tx.conversation.findMany({
@@ -200,7 +201,14 @@ export class ContactsService {
         include: conversationListInclude,
         orderBy: [{ lastMessageAt: { sort: "desc", nulls: "last" } }, { createdAt: "desc" }],
       });
-      return rows.map((row) => toListItem(row, auth));
+      const tenantIds = [...new Set(rows.map((row) => row.tenantId))].filter((tenantId) => isTenantAdmin(auth, tenantId));
+      const evaluations = (
+        await Promise.all(tenantIds.map((tenantId) => listEvaluations(tx, tenantId, { tenantId, conversationId: { in: rows.map((row) => row.id) } })))
+      ).flat();
+      return rows.map((row) => ({
+        ...toListItem(row, auth),
+        evaluations: evaluations.filter((evaluation) => evaluation.conversationId === row.id),
+      }));
     });
   }
 

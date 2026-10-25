@@ -205,7 +205,7 @@ O WhatsApp vem primeiro porque é o único canal que não depende de aprovação
 - Como admin de um restaurante novo, quero um **assistente passo a passo** no primeiro acesso, que me ensine a configurar o sistema até a primeira mensagem chegar na Inbox.
 - **Regra obrigatória:** antes de cada integração, o assistente **pergunta se o restaurante vai usar aquele sistema** ("Você atende pelo WhatsApp?", "Você vende pelo iFood?"). Com "sim", abre o passo a passo daquela integração. Com "não" ou "agora não", pula para a próxima. Nenhuma integração é obrigatória.
 - Integrações, nesta ordem:
-  - **WhatsApp:** explica o cadastro na Meta exigido pela API oficial (conta do WhatsApp Business, verificação da empresa e um número dedicado, que não pode estar em uso no aplicativo do WhatsApp) e conecta o número pelo Embedded Signup (E14).
+  - **WhatsApp:** conecta o número pelo QR Code (Evolution API, como no WhatsApp Web), que substituiu a API oficial em 21/10/2026.
   - **Instagram:** explica que a conta precisa ser Profissional e vinculada a uma Página, e conecta pelo login da Meta.
   - **iFood:** conecta a loja (merchant) para os pedidos e ensina a instalar a extensão do Chrome que leva o chat do iFood para a Inbox.
   - **Cardápio Web:** mostra onde gerar a chave no Portal (Configurações → Integrações → API) e onde colá-la.
@@ -215,11 +215,9 @@ O WhatsApp vem primeiro porque é o único canal que não depende de aprovação
 - Como admin, quero ver o progresso, **sair e continuar depois** de onde parei, e reabrir o assistente em Configurações (por exemplo, para ligar uma integração que pulei).
 - Como plataforma, quero que o assistente **reutilize** as telas e as validações de Configurações → Integrações (E14) e de Configurações (E15), sem duplicar formulários.
 - Ao concluir uma integração, oferecer a **importação dos contatos** daquele sistema, quando ele permitir (CLAUDE.md §9).
-- ⚠️ O assistente ainda não tem design. As telas precisam ser desenhadas antes da implementação.
-- A definir na implementação:
-  - se o assistente abre sozinho no primeiro login do admin ou só por um aviso na Inbox ("Termine a configuração");
-  - se o que depende de aprovação de terceiros (verificação da empresa na Meta, homologação do iFood) deixa o passo "em andamento" e avisa o admin quando sair;
-  - se os atendentes (`AGENT`) veem um tour curto da Inbox ou se o assistente é só do admin.
+- **Feito em 25/10/2026** (board "Configurações · Assistente de configuração"): tela `/assistente`, aviso "Termine a configuração" na Inbox (abre sozinho no 1º acesso) e entrada em Configurações → Links de pedido. Os passos usam as próprias abas de Configurações e a conexão de Integrações (QR Code no próprio passo; o login do Instagram volta ao assistente). Ajuste: a base do Cardápio Web já é importada ao conectar, então o passo avisa em vez de perguntar.
+- **Decidido em 25/10/2026:** o assistente abre sozinho no primeiro login do admin e, até terminar, a Inbox mostra o aviso "Termine a configuração"; o que depende de terceiros deixa o passo "em andamento" e avisa o admin quando sair; é só do admin (atendentes sem tour).
+- **API pronta (25/10/2026):** `GET /onboarding/:tenantId` (o progresso vem do que o restaurante tem: integrações conectadas, configurações salvas, primeira mensagem de cliente), `PUT /onboarding/:tenantId/steps/:step` (pular, manter o padrão, em andamento) e `POST /onboarding/:tenantId/opened`. Faltam as telas e o aviso ao admin quando um passo em andamento terminar.
 
 ### Ordem sugerida (Fase 2)
 `E14 Canais → E17 Estados de erro → E15 Configurações → E30 Assistente de configuração → E13 Clientes/merge → E18 Tablet → E16 Super Admin`
@@ -274,8 +272,6 @@ Objetivo: o restaurante usa IA para atender o cliente de duas formas, **atendime
 
 Vale para os três épicos:
 - A IA segue a **personalidade do atendimento** escolhida pelo restaurante (Configurações → Mensagens automáticas, CLAUDE.md §10), a mesma das mensagens automáticas.
-- As conversas têm dados pessoais e passam a ser enviadas a um provedor de LLM. Antes de ligar em produção: atualizar a política de privacidade, nunca enviar CPF nem dados de pagamento ao modelo e registrar o uso por tenant (LGPD).
-- O consumo de IA é medido por tenant desde o primeiro épico, para dar base à decisão de cobrança.
 
 #### E27 — Atendimento 100% com IA · **G** · depende de: E8, E15, E7 (busca do pedido)
 - Como restaurante, quero que a IA responda sozinha às conversas, no tom da personalidade do atendimento.
@@ -284,13 +280,10 @@ Vale para os três épicos:
 - Como restaurante, quero que a IA **transfira para um atendente** quando não souber responder, quando o cliente reclamar ou quando o assunto estiver fora do que ela pode resolver (ex.: reembolso, cancelamento).
 - Como atendente, quero assumir uma conversa que está com a IA. A partir daí a IA para de responder nessa conversa.
 - Como atendente, quero ver na conversa quais mensagens foram escritas pela IA.
-- Como admin, quero ligar e desligar o atendimento com IA por canal e definir em que horário ele vale (sempre, ou só fora do horário de funcionamento).
 - **Regra obrigatória:** a IA só afirma o que está nos dados do restaurante (cardápio, horários, pedido). Nunca inventa preço, prazo, promoção ou política. Sem a informação, ela transfere.
 - A IA respeita a janela de 24h e o opt-out, como qualquer mensagem enviada.
-- **Primeira versão (24/10/2026, módulo `AI` ligado pela plataforma):** a IA atende no lugar do menu do WhatsApp e do Instagram (o entregador continua com o menu dele), com horário, links para pedir e o pedido recente do cliente; não anota pedidos; transfere com o restaurante fechado deixando a conversa pendente; até 8 respostas por atendimento; sem a LLM, chama a equipe. O atendente que responde tira a IA da conversa até o próximo atendimento. Ainda não há liga/desliga por canal nem por horário.
+- **Primeira versão (24/10/2026, módulo `AI` ligado pela plataforma):** a IA atende no lugar do menu do WhatsApp e do Instagram (o entregador continua com o menu dele), com horário, links para pedir e o pedido recente do cliente; não anota pedidos; transfere com o restaurante fechado deixando a conversa pendente; até 8 respostas por atendimento; sem a LLM, chama a equipe. O atendente que responde tira a IA da conversa até o próximo atendimento.
 - A definir na implementação:
-  - de onde vem o cardápio (Cardápio Web, iFood ou cadastro próprio);
-  - se a IA pode **anotar pedidos** ou só informa e tira dúvidas;
   - ~~o que acontece quando a IA transfere e não há atendente online~~ **Decidido em 24/10/2026:** sem atendente (restaurante fechado, ninguém com o Dish Desk aberto ou o **100% automático** ligado pelo administrador na tela inicial da Inbox), a IA responde tudo e não chama a equipe; quando o cliente precisa de alguém, ela avisa que no momento não há atendentes e que a conversa vai para um assim que houver. A conversa fica pendente, esperando; quando o restaurante abre, alguém abre o Dish Desk ou o 100% automático é desligado, ela vai para a equipe com o alarme de sempre;
   - os limites por conversa (nº de mensagens da IA antes de transferir).
 
@@ -298,11 +291,10 @@ Vale para os três épicos:
 - Como atendente, quero escrever a resposta do meu jeito e pedir para a IA **ler a conversa e adaptar o meu texto** para a linguagem e a personalidade do restaurante.
 - Como atendente, quero ver o texto adaptado antes de enviar e poder aceitar, editar ou manter o meu original. Nada é enviado sem a minha confirmação.
 - Como restaurante, quero que a IA corrija ortografia, clareza e tom, **sem mudar o conteúdo**: valores, prazos e promessas ficam como o atendente escreveu.
-- Como admin, quero ligar e desligar a revisão por IA no restaurante.
 - ⚠️ O design do composer ainda não tem a revisão por IA. A tela precisa ser desenhada antes da implementação.
 - **Decidido em 24/10/2026 (teste com LLM local):** a revisão é **automática a cada envio**, sem prévia: o texto revisado sai direto e o original fica visível só para a equipe ("ver original" no balão). Se a revisão mudar ou acrescentar um número, horário, valor, link ou @, sai o texto do atendente. Isso substitui o "nada é enviado sem a minha confirmação" acima.
-- A definir na implementação:
-  - se a IA também **sugere uma resposta** quando o atendente ainda não escreveu nada.
+- Como atendente, quero pedir à IA uma **sugestão de resposta** quando ainda não escrevi nada: o texto entra no composer, eu edito e envio (a revisão vale como para qualquer resposta). Nada é enviado sozinho.
+  - **Decidido em 25/10/2026:** botão "Sugerir com IA" no composer, ativo com o campo vazio. A sugestão só usa os dados do restaurante e da conversa; com um número, horário, valor, link ou @ que não está neles, ela é descartada. API (`POST /conversations/:id/suggestion`) e tela (board "Inbox · Composer · Sugerir com IA") feitas.
 
 #### E29 — Avaliação automática da conversa · **M** · depende de: E8
 - Como plataforma, quero que uma LLM leia a conversa quando ela for resolvida e registre:
@@ -313,10 +305,8 @@ Vale para os três épicos:
 - Como admin, quero ver a nota média por atendente e por período. A avaliação vale tanto para o atendimento humano quanto para o da IA (E27).
 - Como plataforma, quero a avaliação rodando em **job assíncrono** (fila própria no `worker`), fora do caminho do atendimento. Uma falha na avaliação nunca atrasa nem bloqueia a conversa.
 - **Primeira versão (24/10/2026):** roda 5 minutos depois de resolvida (ou encerrada por inatividade) e avalia o que veio depois da última avaliação da conversa; reaberta antes disso, espera a próxima resolução. Nota de 1 a 5, resolvido, satisfeito (ou sem reação) e um resumo; aparece na conversa e na aba Avaliações, só para administradores. Modelo em teste: Gemma 4 12B local (Ollama).
-- **Modelo:** preferência por um modelo aberto e barato, **Gemma ou Llama**, se a qualidade permitir. Validar antes com uma amostra de conversas reais em português, comparando com a avaliação de uma pessoa. Se não atingir a qualidade, usar outro modelo.
 - A definir na implementação:
   - a escala da nota (ex.: 1 a 5) e os critérios de cada nível;
-  - onde o modelo roda (provedor de inferência ou servidor próprio);
   - o que fazer com conversas sem reação do cliente (ex.: cliente que parou de responder);
   - se a conversa reaberta é avaliada de novo.
 
@@ -333,11 +323,9 @@ Vale para os três épicos:
 - Como plataforma, quero que cada integração conferida pela IA passe pela mesma conferência de Configurações → Integrações (E14) antes de dar o passo como concluído.
 - A IA também oferece a **importação dos contatos** de cada sistema conectado, quando ele permitir (CLAUDE.md §9).
 - As capturas de tela e o conteúdo das páginas vão para o provedor de LLM e podem ter dados do restaurante e dos clientes: entra na política de privacidade e no registro de uso por tenant (LGPD), como os outros épicos desta fase.
-- ⚠️ O painel da IA na extensão ainda não tem design. A tela precisa ser desenhada antes da implementação.
+- **Decidido em 25/10/2026:** o modelo é o mesmo do atendimento (Gemma 4 local), lendo a árvore da página, sem capturas de tela; a extensão é a mesma do chat do iFood, com um painel lateral; quando a IA se perde (a página mudou ou ela errou várias vezes seguidas), ela para e oferece tentar de novo ou falar com o suporte humano. O E30 vem antes.
+- **Motor pronto (25/10/2026):** sessões e registro de cada passo (`agent_sessions`, `agent_events`), `POST /agent/sessions`, `/turn` e `/handoff`, travas no código ([agent-guard.ts](apps/api/src/agent/agent-guard.ts)), conferência do passo pelo progresso do E30, painel lateral e leitura da página na extensão 0.4.0 e o ciclo no painel web ([agent-driver.ts](apps/web/lib/agent-driver.ts)). Testado com o Gemma 4 local. Tela `/extensao/agente` (board "Extensão do Chrome · Agente de implantação e suporte") e indicador na página (faixa, contorno, pausa quando o parceiro mexe na aba) feitos na extensão 0.5.0. Depois da transferência, o parceiro escreve no painel e as respostas da equipe aparecem nele (`/agent/sessions/:id/messages`, eventos `support`). **Falta** a tela da equipe Dish Desk que lê e responde essas conversas (sem board); horário do suporte provisório em `SUPPORT_HOURS` (seg–sex, 9h–18h).
 - A definir na implementação:
-  - o modelo e o tipo de controle (uso de computador com capturas de tela, leitura da árvore da página ou os dois);
-  - se a extensão de implantação é a mesma do chat do iFood ou uma separada (permissões diferentes na Chrome Web Store);
-  - o que fazer quando o painel de terceiros muda de layout e a IA se perde (transferir para o suporte humano?);
   - se o agente é gratuito na implantação ou entra na cobrança da IA;
   - onde fica o suporte humano que recebe as transferências (a própria Inbox do Dish Desk, como um tenant interno, ou outra ferramenta) e o horário de atendimento dele;
   - se o suporte também fica disponível fora da extensão (no Dish Desk web, para quem não usa Chrome).
@@ -348,8 +336,6 @@ Vale para os três épicos:
 A avaliação vem primeiro porque não envia nada ao cliente (o risco é o menor) e porque cria a medida que vai dizer se os outros dois funcionam. A revisão vem em seguida porque mantém o atendente no controle. O atendimento 100% com IA fica por último: é o de maior risco e só deve ser ligado quando a nota do E29 mostrar que a IA atende tão bem quanto a equipe.
 
 O **E31 (agente de implantação e suporte)** não depende dos outros três e pode correr em paralelo, assim que o assistente de configuração (E30) estiver pronto.
-
-Decidir antes: a IA entra no plano ou é um módulo pago como o Campanhas (`TenantModule`, E19)?
 
 ---
 

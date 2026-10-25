@@ -5,7 +5,7 @@ import {
   type ContactPage,
   type ContactSummary,
   ContactPairRequest,
-  type ConversationListItem,
+  type ContactConversationItem,
   type DuplicatePair,
   type OrderDto,
   UpdateContactRequest,
@@ -69,7 +69,7 @@ export class ContactsController {
   }
 
   @Get(":id/conversations")
-  conversations(@Param("id", ParseUUIDPipe) id: string, @CurrentAuth() auth: RequestAuth): Promise<ConversationListItem[]> {
+  conversations(@Param("id", ParseUUIDPipe) id: string, @CurrentAuth() auth: RequestAuth): Promise<ContactConversationItem[]> {
     return this.contacts.conversations(auth, id);
   }
 

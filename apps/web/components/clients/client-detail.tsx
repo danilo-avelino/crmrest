@@ -2,10 +2,12 @@
 
 import {
   CHANNEL_LABEL,
+  type ContactConversationItem,
   type ContactDetail,
-  type ConversationListItem,
+  type ConversationEvaluationDto,
   formatPhone,
   type OrderDto,
+  TEAM_REASONS,
   toE164,
   type UpdateContactRequest,
 } from "@dishdesk/shared";
@@ -20,6 +22,7 @@ import { CHANNEL_DOT, StatusBadge } from "@/components/inbox/bits";
 import { Cpf, linkedChannels, Tags } from "@/components/inbox/client-panel";
 import { ORDER_STATUS } from "@/components/inbox/order-card";
 import { ItemOptions } from "@/components/orders/item-options";
+import { Pill, ScoreBadge } from "@/components/reports/report-ui";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -512,7 +515,7 @@ function ConversationsTab({ contactId, now }: { contactId: string; now: number }
   const { request } = useAuth();
   const conversations = useQuery({
     queryKey: ["contact-conversations", contactId],
-    queryFn: () => request<ConversationListItem[]>(`/contacts/${contactId}/conversations`),
+    queryFn: () => request<ContactConversationItem[]>(`/contacts/${contactId}/conversations`),
   });
 
   if (!conversations.data) return <TabState query={conversations} />;
@@ -527,11 +530,11 @@ function ConversationsTab({ contactId, now }: { contactId: string; now: number }
             key={conversation.id}
             href={`/inbox?conversa=${conversation.id}`}
             className={cn(
-              "flex items-center gap-3 rounded-xl border border-rule-soft bg-surface px-4 py-3.5 hover:bg-[#F7F6F4]",
+              "flex items-start gap-3 rounded-xl border border-rule-soft bg-surface px-4 py-3.5 hover:bg-[#F7F6F4]",
               open && "border-l-[3px] border-l-tomate",
             )}
           >
-            <span className={cn("size-2 shrink-0 rounded-full", CHANNEL_DOT[conversation.channel.type])} title={CHANNEL_LABEL[conversation.channel.type]} />
+            <span className={cn("mt-[18px] size-2 shrink-0 rounded-full", CHANNEL_DOT[conversation.channel.type])} title={CHANNEL_LABEL[conversation.channel.type]} />
             <div className="min-w-0 flex-1">
               <div className="mb-[3px] flex items-center gap-2 text-[11px] text-ink-3">
                 <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
@@ -541,11 +544,39 @@ function ConversationsTab({ contactId, now }: { contactId: string; now: number }
               <div className={cn("truncate text-[12.5px]", open ? "text-ink-2" : "text-ink-3")}>
                 {conversation.lastMessage?.preview ?? "Sem mensagens"}
               </div>
+              {conversation.evaluations.map((evaluation) => (
+                <EvaluationLog key={evaluation.id} evaluation={evaluation} now={now} />
+              ))}
             </div>
-            <ChevronRightIcon className="size-3 shrink-0 text-rule" aria-hidden />
+            <ChevronRightIcon className="mt-[18px] size-3 shrink-0 text-rule" aria-hidden />
           </Link>
         );
       })}
+    </div>
+  );
+}
+
+/** Avaliação da IA do atendimento: nota, resolução, reação do cliente, resumo, quem atendeu e o motivo de ter precisado da equipe. */
+function EvaluationLog({ evaluation, now }: { evaluation: ConversationEvaluationDto; now: number }) {
+  return (
+    <div className="mt-2.5 rounded-lg border border-rule-soft bg-paper px-3 py-2.5">
+      <div className="flex flex-wrap items-center gap-2">
+        <ScoreBadge value={evaluation.score} />
+        <span className="text-[12px] font-semibold text-ink">Avaliação da IA</span>
+        {evaluation.resolved ? <Pill tone="success">Resolvido</Pill> : <Pill tone="danger">Não resolvido</Pill>}
+        {evaluation.satisfied === null ? (
+          <Pill tone="neutral">Sem reação</Pill>
+        ) : evaluation.satisfied ? (
+          <Pill tone="success">Satisfeito</Pill>
+        ) : (
+          <Pill tone="danger">Insatisfeito</Pill>
+        )}
+        {evaluation.teamReason && <Pill tone="warning">{TEAM_REASONS[evaluation.teamReason]}</Pill>}
+      </div>
+      <p className="mt-2 text-[12.5px] leading-[1.5] text-ink-2">{evaluation.summary}</p>
+      <div className="mt-1.5 text-[11px] text-ink-3 tabular-nums">
+        {evaluation.agentName ? `Atendido por ${evaluation.agentName}` : "Só a IA atendeu"} · {dayTime(evaluation.createdAt, now)} · {evaluation.model}
+      </div>
     </div>
   );
 }

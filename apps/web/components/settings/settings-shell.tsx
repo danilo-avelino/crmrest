@@ -17,6 +17,7 @@ const TABS = [
   { href: "/configuracoes/mensagens", label: "Mensagens automáticas" },
   { href: "/configuracoes/horario", label: "Horário" },
   { href: "/configuracoes/respostas-rapidas", label: "Respostas rápidas" },
+  { href: "/configuracoes/notificacoes", label: "Notificações" },
   { href: "/configuracoes/integracoes", label: "Integrações" },
   { href: "/configuracoes/usuarios", label: "Usuários" },
   { href: "/configuracoes/pagamento", label: "Pagamento" },
@@ -35,6 +36,11 @@ function useSettingsTenants(): SettingsTenants {
 /** O restaurante cujas configurações estão na tela (no painel master, o escolhido no seletor). */
 export function useSettingsTenant(): SettingsTenant {
   return useSettingsTenants().tenant;
+}
+
+/** As abas de Configurações fora do <SettingsShell> (o assistente de configuração), para um restaurante só. */
+export function SettingsTenantProvider({ tenant, children }: { tenant: SettingsTenant; children: ReactNode }) {
+  return <SettingsTenantContext value={{ tenant, tenants: [tenant], choose: () => undefined }}>{children}</SettingsTenantContext>;
 }
 
 /** O seletor de restaurante do painel master, para a aba que o põe ao lado do próprio título. */

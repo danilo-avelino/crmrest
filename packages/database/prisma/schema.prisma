@@ -73,6 +73,8 @@ model Tenant {
   orderEvents         OrderEvent[]
   ratings             Rating[]
   evaluations         ConversationEvaluation[]
+  agentSessions       AgentSession[]
+  agentEvents         AgentEvent[]
   quickReplies        QuickReply[]
   auditLogs           AuditLog[]
   modules             TenantModule[]
@@ -106,6 +108,7 @@ model User {
   assignedConversations Conversation[]
   sentMessages          Message[]
   auditLogs             AuditLog[]
+  agentSessions         AgentSession[]
 
   @@map("users")
 }
@@ -523,6 +526,59 @@ model ConversationEvaluation {
   @@index([tenantId, createdAt])
   @@index([conversationId])
   @@map("conversation_evaluations")
+}
+
+// ---------- Agente de implantação e suporte na extensão do Chrome (E31) ----------
+
+enum AgentSessionKind {
+  SETUP // implantação: os passos do assistente de configuração (E30)
+  SUPPORT // dúvidas e problemas do parceiro
+}
+
+enum AgentSessionStatus {
+  ACTIVE
+  DONE
+  HANDED_OFF // passou para o suporte humano
+}
+
+model AgentSession {
+  id            String             @id @default(uuid(7)) @db.Uuid
+  tenantId      String             @map("tenant_id") @db.Uuid
+  userId        String             @map("user_id") @db.Uuid
+  kind          AgentSessionKind
+  status        AgentSessionStatus @default(ACTIVE)
+  // Sites fora da lista que o parceiro permitiu nesta sessão.
+  grantedHosts  String[]           @map("granted_hosts")
+  // Ações seguidas que falharam: na terceira, a IA para ("se perdeu").
+  failures      Int                @default(0)
+  handoffReason String?            @map("handoff_reason")
+  createdAt     DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  tenant Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  events AgentEvent[]
+
+  @@index([tenantId, createdAt])
+  @@index([status, updatedAt])
+  @@map("agent_sessions")
+}
+
+// O registro da sessão: o que o parceiro pediu, o que a IA disse e fez e o resultado de cada ação.
+model AgentEvent {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  sessionId String   @map("session_id") @db.Uuid
+  // AgentEventKind (@dishdesk/shared): partner, agent, result.
+  kind      String
+  content   Json
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  tenant  Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  session AgentSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, createdAt])
+  @@map("agent_events")
 }
 
 // ---------- Auditoria ----------

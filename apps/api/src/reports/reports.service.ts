@@ -1,4 +1,5 @@
 import { type AgentMetrics, type MessageContent, type RatingsReportDto, type ReportPeriod, TEAM_REASONS, type TeamReason } from "@dishdesk/shared";
+import type { TenantScope } from "@dishdesk/database";
 import { Injectable } from "@nestjs/common";
 import type { RequestAuth } from "../auth/auth.decorators.js";
 import { localDate } from "../automations/automation.js";
@@ -31,8 +32,12 @@ export class ReportsService {
 
   async ratings(auth: RequestAuth, tenantId: string, period: ReportPeriod, now = new Date()): Promise<RatingsReportDto> {
     requireTenantAdmin(auth, tenantId);
-    const from = periodStart(period, now);
-    return this.db.withTenants({ tenantIds: [tenantId], userId: auth.userId }, async (tx) => {
+    return this.report({ tenantIds: [tenantId], userId: auth.userId }, tenantId, periodStart(period, now));
+  }
+
+  /** O relatório desde `from`, sem conferir quem pede (também o relatório semanal pelo WhatsApp). */
+  report(scope: TenantScope, tenantId: string, from: Date): Promise<RatingsReportDto> {
+    return this.db.withTenants(scope, async (tx) => {
       // Cada passagem à equipe e a primeira resposta de uma pessoa depois dela (antes da próxima passagem na conversa).
       const handoffs = await tx.$queryRaw<HandoffRow[]>`
         SELECT h.created_at AS handed_at, r.created_at AS replied_at, r.sent_by_user_id AS user_id

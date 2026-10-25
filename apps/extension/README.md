@@ -53,3 +53,34 @@ Quando o widget carrega e a extensão não responde, a Inbox mostra um aviso. O 
 - Com a trava ligada, as abas Notificações e Tracking do widget ficam fora de alcance neste computador, porque o widget fica invisível.
 - Numa aba do Chrome em segundo plano o navegador atrasa os temporizadores: a cópia fica mais lenta (até um minuto).
 - O iFood pede que o widget seja controlado só pela API JavaScript oficial. Ler e escrever no iframe foge disso: é uma decisão do produto, com risco de o iFood barrar na homologação ou depois.
+
+## Assistente de implantação e suporte (E31)
+
+**Estado (25/10/2026):** versão 0.5.0. O ícone da extensão abre o **painel lateral** ([panel.html](panel.html)), que carrega a página `/extensao/agente` do Dish Desk num iframe (board "Extensão do Chrome · Agente de implantação e suporte"). Enquanto a IA age, a aba mostra a faixa "O Dish Desk está controlando esta aba" e o contorno no elemento ("IA clicando", "IA preenchendo"; "Sua vez" em âmbar no campo do parceiro). Se o parceiro clica ou digita na página durante uma ação, a IA pausa sozinha.
+
+Como funciona:
+
+- A página do Dish Desk no painel tem o login e conduz o ciclo ([agent-driver.ts](../web/lib/agent-driver.ts)): lê a aba, manda para a API (`POST /api/agent/sessions/:id/turn`), executa a ação que voltou e repete até a IA precisar do parceiro.
+- [panel.js](panel.js) é a ponte entre a página e a aba que o parceiro está vendo, por `postMessage` (tag `agent-bridge`). Ele injeta [agent-page.js](agent-page.js) na aba só quando precisa.
+- [agent-page.js](agent-page.js) lê a árvore dos elementos com que dá para interagir (cada um com um número, `data-dd-ref`), sem capturas de tela, e executa clique, preenchimento e escolha de opção. Valor de senha, código e cartão nunca sai da página.
+- As regras obrigatórias ficam na API ([agent-guard.ts](../api/src/agent/agent-guard.ts)): a IA só age nos sites da lista (`AGENT_HOSTS`), nunca preenche senha, código de verificação nem cartão, pede confirmação antes do que não dá para desfazer e não preenche nada que o parceiro não disse ou que não apareceu nas páginas.
+
+| Operação | Pedido | Resposta |
+|---|---|---|
+| `ping` | — | `version` |
+| `snapshot` | — | `page`: endereço, título, elementos e texto da aba |
+| `act` | `action`: `click`, `fill`, `select` (com `ref`) ou `navigate` (com `url`) | — (espera a página carregar) |
+| `focus` | `ref` | — (rola até o campo e põe o foco, para o parceiro digitar) |
+| `permission` | `host` | `granted`: o Chrome perguntou ao parceiro e ele permitiu |
+| `indicate` | `indicator`: `state` (`controlling`, `paused`, `waiting`, `off`), `ref` e `mark` (`your_turn`) | — (a faixa e o contorno na aba) |
+
+Da aba para a página (sem `id`, com `event`): `user-input` (o parceiro mexeu na página enquanto a IA agia), `pause` e `resume` (os links da faixa).
+
+Painel local em dev: no console da extensão (chrome://extensions → Dish Desk → "service worker"), `chrome.storage.local.set({ dishdeskOrigin: "http://localhost:3000" })` e reabrir o painel.
+
+A confirmar no Chrome de verdade, quando a tela existir:
+
+- **Login dentro do painel:** o cookie da sessão é `SameSite=Lax`, e a página roda num iframe dentro da extensão. O Chrome costuma tratar como do mesmo site o iframe de um site para o qual a extensão tem permissão, mas isso precisa ser testado.
+- **Permissão de site:** `chrome.permissions.request` exige um clique do parceiro; o clique no iframe deveria valer para o painel.
+- **Atualização:** a versão 0.4.0 pede permissões novas (abas, scripts e os sites da implantação). Ao atualizar, o Chrome desliga a extensão até o parceiro aceitar.
+- **Cabeçalhos de segurança:** quando o painel ganhar `frame-ancestors`/`X-Frame-Options` (pendência de produção), liberar `chrome-extension://<id da extensão>` para `/extensao/agente`.

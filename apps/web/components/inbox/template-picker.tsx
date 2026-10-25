@@ -14,7 +14,7 @@ import { ApiError } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 /** Botão "Template" do composer: escolhe um template aprovado do WhatsApp e preenche as variáveis. */
-export function TemplatePicker({ conversationId, emphasized }: { conversationId: string; emphasized: boolean }) {
+export function TemplatePicker({ conversationId, emphasized, disabled }: { conversationId: string; emphasized: boolean; disabled?: boolean }) {
   const { request } = useAuth();
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
@@ -61,6 +61,7 @@ export function TemplatePicker({ conversationId, emphasized }: { conversationId:
       }}
     >
       <PopoverTrigger
+        disabled={disabled}
         render={<Button variant="outline" size="sm" className={cn("text-[11.5px]", emphasized && "border-ink text-ink")} />}
       >
         Template

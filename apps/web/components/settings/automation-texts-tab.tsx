@@ -54,6 +54,15 @@ export function AutomationTextsTab() {
   );
 }
 
+/** Só a personalidade (o passo do assistente de configuração). */
+export function PersonalityTab() {
+  const { request } = useAuth();
+  const tenant = useSettingsTenant();
+  const settings = useQuery({ queryKey: ["settings"], queryFn: () => request<TenantSettingsDto[]>("/settings") });
+  const current = settings.data?.find((item) => item.tenantId === tenant.id);
+  return current ? <PersonalityForm key={current.tenantId} settings={current} /> : <TabLoading failed={settings.isError} />;
+}
+
 /** Personalidade: o tom de todas as mensagens automáticas, com uma prévia antes de salvar. */
 function PersonalityForm({ settings }: { settings: TenantSettingsDto }) {
   const { request } = useAuth();

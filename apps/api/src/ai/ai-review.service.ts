@@ -2,6 +2,7 @@ import type { MessageContent } from "@dishdesk/shared";
 import { Injectable, Logger } from "@nestjs/common";
 import { z } from "zod";
 import { DatabaseService } from "../core/database.service.js";
+import { AdminNotificationsService } from "../notifications/admin-notifications.service.js";
 import { RealtimeEmitter } from "../realtime/realtime.emitter.js";
 import { LlmClient } from "./llm.client.js";
 import { toneOf, transcript, WRITING_RULES } from "./prompts.js";
@@ -35,7 +36,7 @@ Regras obrigatórias:
 
 // Números (valores, horários, quantidades), links, e-mails e @: o que a revisão nunca pode mudar.
 const FACT = /https?:\/\/[^\s]+|[\w.+-]+@[\w-]+\.[\w.]+|@\w+|\d+(?:[.,:]\d+)*/g;
-const factsOf = (text: string) => (text.match(FACT) ?? []).map((fact) => fact.replace(/[.,;:!?)]+$/, ""));
+export const factsOf = (text: string) => (text.match(FACT) ?? []).map((fact) => fact.replace(/[.,;:!?)]+$/, ""));
 
 /** A reescrita traz todos os dados do original e nenhum dado novo. */
 export function keepsFacts(original: string, rewritten: string): boolean {
@@ -57,6 +58,7 @@ export class AiReviewService {
     private readonly db: DatabaseService,
     private readonly realtime: RealtimeEmitter,
     private readonly llm: LlmClient,
+    private readonly adminNotifications: AdminNotificationsService,
   ) {}
 
   async review(tenantId: string, messageId: string): Promise<void> {
@@ -93,7 +95,8 @@ export class AiReviewService {
       this.logger.warn(`Revisão da mensagem ${messageId} indisponível: ${error instanceof Error ? error.message : String(error)}`);
     }
 
-    // Má conduta: a mensagem não sai. Vira um alerta interno para o atendente, que vai para as Avaliações do gestor.
+    // Má conduta: a mensagem não sai. Vira um alerta interno para o atendente, que vai para as Avaliações do gestor e,
+    // se ele quiser, para o WhatsApp dele (Configurações → Notificações).
     if (misconduct) {
       const { text: _, ...rest } = content;
       await this.db.withTenants(scope, (tx) =>
@@ -103,6 +106,10 @@ export class AiReviewService {
         }),
       );
       this.realtime.inboxChanged(tenantId, context.message.conversationId);
+      // O alerta pelo WhatsApp do administrador não segura a fila de envio: uma falha fica só no log.
+      await this.adminNotifications.misconduct(tenantId, messageId).catch((error: unknown) => {
+        this.logger.warn(`Alerta de má conduta da mensagem ${messageId} não agendado: ${error instanceof Error ? error.message : String(error)}`);
+      });
       return;
     }
     const next: MessageContent =
