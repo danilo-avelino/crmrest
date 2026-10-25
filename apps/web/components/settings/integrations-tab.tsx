@@ -343,7 +343,13 @@ function IntegrationCard({ system, data, onOpen }: { system: System; data: Integ
         )}
       </div>
       {/* Só contas desconectadas: o modal abre nelas (para reconectar ou excluir), não direto na nova conexão. */}
-      <Button variant="outline" size="sm" className="text-ink-2" onClick={() => onOpen(items.length === 0)}>
+      <Button
+        variant="outline"
+        size="sm"
+        className="text-ink-2"
+        aria-label={`${items.length > 0 ? "Gerenciar" : "Conectar"} ${CHANNEL_LABEL[system.type]}`}
+        onClick={() => onOpen(items.length === 0)}
+      >
         {items.length > 0 ? "Gerenciar" : "Conectar"}
       </Button>
     </section>
@@ -659,7 +665,19 @@ function Failure({ children }: { children: ReactNode }) {
   );
 }
 
-/** Instagram: o botão abre a tela de login do Instagram; a volta (pela API) traz o resultado no endereço. */
+const INSTAGRAM_CHANNEL = "dishdesk-instagram-login";
+const INSTAGRAM_POPUP_KEY = "dishdesk-instagram-popup";
+
+/** Um popup do login foi aberto há pouco (o Chrome zera o nome da janela ao passar pelo Instagram, então a marca fica no storage). */
+function popupPending() {
+  try {
+    return Date.now() - Number(localStorage.getItem(INSTAGRAM_POPUP_KEY)) < 5 * 60_000;
+  } catch {
+    return false;
+  }
+}
+
+/** Instagram: o botão abre o login do Instagram num popup; a volta (pela API) traz o resultado no endereço. */
 function InstagramLogin({ tenantId, enabled, label }: { tenantId: string; enabled: boolean; label: string }) {
   const { request } = useAuth();
   const toast = useToast();
@@ -672,16 +690,42 @@ function InstagramLogin({ tenantId, enabled, label }: { tenantId: string; enable
 
   useEffect(() => {
     if (!result) return;
+    // Voltou dentro do popup do login: avisa a aba que o abriu e fecha, sem trocar a tela dela por esta.
+    if (popupPending()) {
+      const channel = new BroadcastChannel(INSTAGRAM_CHANNEL);
+      channel.postMessage(window.location.search);
+      channel.close();
+      window.close();
+    }
     window.history.replaceState(null, "", window.location.pathname);
     if (result === "conectado") toast("Instagram conectado");
   }, []);
 
+  // A aba que abriu o popup recebe o resultado e mostra o modal do Instagram, como na volta pela mesma aba.
+  useEffect(() => {
+    const channel = new BroadcastChannel(INSTAGRAM_CHANNEL);
+    channel.onmessage = (event) => {
+      try {
+        localStorage.removeItem(INSTAGRAM_POPUP_KEY);
+      } catch {}
+      window.location.assign(`${window.location.pathname}${event.data}`);
+    };
+    return () => channel.close();
+  }, []);
+
   async function login() {
     setFailure(null);
+    // O popup abre já no clique (senão o navegador bloqueia) e vai para o Instagram quando a API devolve o endereço.
+    const popup = window.open("about:blank", "instagram-login", "popup,width=520,height=760");
     try {
       const { url } = await request<{ url: string }>(`/integrations/${tenantId}/instagram/login`);
-      window.location.assign(url);
+      if (!popup) return window.location.assign(url);
+      try {
+        localStorage.setItem(INSTAGRAM_POPUP_KEY, String(Date.now()));
+      } catch {}
+      popup.location.href = url;
     } catch (error) {
+      popup?.close();
       setFailure(error instanceof ApiError ? error.message : "Não foi possível abrir o login do Instagram.");
     }
   }

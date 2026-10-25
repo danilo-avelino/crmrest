@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "oxlint --type-aware src/ test/",
     "test": "vitest run",
+    "sim:agent": "vitest run --config vitest.sim.config.ts",
     "simulate:whatsapp": "node scripts/simulate-whatsapp.mjs",
     "simulate:ifood-chat": "node scripts/simulate-ifood-chat.mjs",
     "channel:add": "node scripts/channel-add.mjs",

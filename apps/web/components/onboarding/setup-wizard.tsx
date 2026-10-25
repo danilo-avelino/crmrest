@@ -25,7 +25,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
 import { LogoMark } from "@/components/brand/logo-mark";
 import { useIfoodWidget } from "@/components/ifood-widget";
@@ -103,6 +103,8 @@ function Wizard({ tenant, showName }: { tenant: Tenant; showName: boolean }) {
   const pathname = usePathname();
   const [index, setIndex] = useState<number | null>(() => (params.has("instagram") ? ONBOARDING_STEPS.indexOf("instagram") : null));
   const [failure, setFailure] = useState<string | null>(null);
+  // A tela de abertura (instalar a extensão) só aparece para quem ainda não começou e não voltou do login do Instagram.
+  const [intro, setIntro] = useState(() => !params.has("instagram"));
   // Volta do login do Instagram (?instagram=erro&motivo=…): o passo do Instagram mostra o motivo.
   const [instagramFailure] = useState(() =>
     params.get("instagram") === "erro" ? (params.get("motivo") ?? "Não foi possível conectar o Instagram.") : null,
@@ -149,6 +151,7 @@ function Wizard({ tenant, showName }: { tenant: Tenant; showName: boolean }) {
   const step = ONBOARDING_STEPS[current]!;
   const item = data.steps[current]!;
   const done = doneCount(data);
+  const showIntro = intro && index === null && done === 0;
 
   const go = (target: number) => {
     setFailure(null);
@@ -207,6 +210,13 @@ function Wizard({ tenant, showName }: { tenant: Tenant; showName: boolean }) {
         </Link>
       </header>
 
+      {showIntro ? (
+        <main className="min-w-0 flex-1 overflow-y-auto px-14 py-10">
+          <div className="mx-auto max-w-[900px]">
+            <ExtensionIntro onManual={() => setIntro(false)} />
+          </div>
+        </main>
+      ) : (
       <div className="flex min-h-0 flex-1">
         <nav aria-label="Passos da configuração" className="w-[300px] shrink-0 overflow-y-auto border-r border-rule bg-surface py-5">
           <StepGroup title="Integrações" steps={data.steps.slice(0, 4)} offset={0} current={current} onPick={go} />
@@ -240,7 +250,95 @@ function Wizard({ tenant, showName }: { tenant: Tenant; showName: boolean }) {
           </div>
         </main>
       </div>
+      )}
     </div>
+  );
+}
+
+const noSubscribe = () => () => {};
+
+function isChrome(): boolean {
+  const brands = (navigator as Navigator & { userAgentData?: { brands: { brand: string }[] } }).userAgentData?.brands;
+  return brands ? brands.some((item) => item.brand === "Google Chrome") : /Chrome\//.test(navigator.userAgent) && !/Edg\/|OPR\//.test(navigator.userAgent);
+}
+
+/**
+ * Abertura do assistente: o jeito recomendado de configurar é pela extensão do Dish Desk no Chrome (o assistente da
+ * extensão guia a implantação nas telas do iFood, Instagram e Cardápio Web). Quem não está no Chrome baixa o Chrome
+ * primeiro; "Configurar sem a extensão" segue para os passos manuais.
+ */
+function ExtensionIntro({ onManual }: { onManual: () => void }) {
+  const storeUrl = useIfoodWidget().data?.extensionUrl;
+  // Null até montar: o navegador só é conhecido no cliente.
+  const chrome = useSyncExternalStore(noSubscribe, isChrome, () => null);
+
+  return (
+    <StepFrame
+      eyebrow="Antes de começar"
+      title={chrome === false ? "Use o Google Chrome para configurar" : "Instale a extensão do Dish Desk"}
+      description={
+        chrome === false
+          ? "A configuração é guiada pela extensão do Dish Desk, que só funciona no Google Chrome. Baixe o Chrome, abra o Dish Desk nele e siga pela extensão."
+          : "A extensão abre um assistente ao lado da tela e guia você, passo a passo, para conectar o WhatsApp, o Instagram, o iFood e o Cardápio Web."
+      }
+      footer={
+        <>
+          <Link href="/inbox" className={buttonVariants({ variant: "ghost", size: "sm" })}>
+            Sair e continuar depois
+          </Link>
+          <span className="flex-1" />
+          <Button variant="outline" onClick={onManual}>
+            Configurar sem a extensão
+          </Button>
+        </>
+      }
+    >
+      {chrome === null ? null : chrome ? (
+        <>
+          <Instructions
+            items={[
+              storeUrl ? (
+                <>
+                  Clique em <b>Adicionar ao Chrome</b> e confirme a instalação.
+                </>
+              ) : (
+                "Peça ao suporte do Dish Desk o link da extensão e instale no Chrome."
+              ),
+              <>
+                Clique no ícone de quebra-cabeça do Chrome e fixe a extensão <b>Dish Desk</b>.
+              </>,
+              <>
+                Clique no ícone da extensão e escolha <b>Configurar o Dish Desk</b>.
+              </>,
+            ]}
+          />
+          {storeUrl && (
+            <a href={storeUrl} target="_blank" rel="noreferrer" className={cn(buttonVariants(), "mt-5")}>
+              <DownloadIcon aria-hidden />
+              Adicionar ao Chrome
+            </a>
+          )}
+        </>
+      ) : (
+        <>
+          <Instructions
+            items={[
+              <>
+                Baixe e instale o <b>Google Chrome</b>.
+              </>,
+              <>
+                Abra o Chrome e entre de novo no Dish Desk (<b>{window.location.host}</b>).
+              </>,
+              "Instale a extensão do Dish Desk e siga o assistente dela.",
+            ]}
+          />
+          <a href="https://www.google.com/chrome/" target="_blank" rel="noreferrer" className={cn(buttonVariants(), "mt-5")}>
+            <DownloadIcon aria-hidden />
+            Baixar o Google Chrome
+          </a>
+        </>
+      )}
+    </StepFrame>
   );
 }
 

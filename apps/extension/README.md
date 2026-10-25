@@ -69,7 +69,7 @@ Como funciona:
 |---|---|---|
 | `ping` | — | `version` |
 | `snapshot` | — | `page`: endereço, título, elementos e texto da aba |
-| `act` | `action`: `click`, `fill`, `select` (com `ref`) ou `navigate` (com `url`) | — (espera a página carregar) |
+| `act` | `action`: `click`, `fill`, `select` (com `ref`), `navigate` (com `url`; `newTab: true` abre numa aba nova, que fica ativa) ou `switch` (com `host`: volta a uma aba já aberta, sem recarregar) | — (espera a página carregar) |
 | `focus` | `ref` | — (rola até o campo e põe o foco, para o parceiro digitar) |
 | `permission` | `host` | `granted`: o Chrome perguntou ao parceiro e ele permitiu |
 | `indicate` | `indicator`: `state` (`controlling`, `paused`, `waiting`, `off`), `ref` e `mark` (`your_turn`) | — (a faixa e o contorno na aba) |

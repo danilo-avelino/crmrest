@@ -311,6 +311,15 @@ function Conversation({ tenantId, admin }: { tenantId: string; admin: boolean })
           ...(next.ref !== null && { ref: next.ref }),
           mark: "your_turn",
         });
+      case "login":
+        push({ kind: "card", card: { type: "your_turn", say: next.say } });
+        setPhase("waiting");
+        // A aba nova fica ativa; a faixa "esperando você" aparece nela quando a página carrega.
+        void agentBridge
+          .act({ type: "navigate", url: next.url, newTab: true })
+          .then(() => indicate({ state: "waiting", mark: "your_turn" }))
+          .catch(() => push({ kind: "agent", text: "Não consegui abrir a aba. Abra o portal você mesmo e clique em Login feito." }));
+        return;
       case "permission":
         push({ kind: "agent", text: next.say }, { kind: "card", card: { type: "permission", host: next.host } });
         return waiting();
@@ -757,7 +766,10 @@ function EntryView({
           {active && (
             <CardButtons>
               <Button size="xs" onClick={on(() => handlers.message("Pronto, terminei."))}>
-                Pronto
+                Login feito
+              </Button>
+              <Button variant="outline" size="xs" onClick={on(() => handlers.message("Não consegui. Não deu certo, me ajude ou passe para outro passo."))}>
+                Não consegui
               </Button>
             </CardButtons>
           )}
@@ -905,6 +917,7 @@ function describeAction(action: AgentPageAction, future = false): ReactNode {
     const name = HOSTS.find(([pattern]) => pattern.test(host))?.[1] ?? host;
     return future ? `Abrir ${name}.` : `Abrindo ${name}`;
   }
+  if (action.type === "switch") return future ? `Voltar para ${action.host}.` : `Voltando para ${action.host}`;
   const label = <b className="font-semibold">{action.label}</b>;
   if (action.type === "click")
     return future ? <>Clicar em {label}. Isso fala em nome do restaurante e não dá para desfazer.</> : <>Clicando em {label}</>;

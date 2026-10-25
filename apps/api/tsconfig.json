@@ -10,5 +10,5 @@
     "sourceMap": true,
     "incremental": true
   },
-  "include": ["src", "test", "vitest.config.ts"]
+  "include": ["src", "test", "sim", "vitest.config.ts", "vitest.sim.config.ts"]
 }

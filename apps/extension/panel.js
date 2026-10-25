@@ -71,9 +71,19 @@ const OPERATIONS = {
   ping: () => ({ version: chrome.runtime.getManifest().version }),
   snapshot: async () => ({ page: await inPage(await currentTab(), "snapshot") }),
   act: async ({ action }) => {
-    const tab = await currentTab();
-    if (action.type === "navigate") await chrome.tabs.update(tab.id, { url: action.url });
-    else {
+    // Voltar para uma aba já aberta (ex.: o Dish Desk, depois de autorizar no portal), sem recarregar: o que estava na tela continua.
+    if (action.type === "switch") {
+      const { id: windowId } = await chrome.windows.getCurrent();
+      const found = (await chrome.tabs.query({ windowId })).findLast((tab) => new URL(tab.url ?? "about:blank").hostname.endsWith(action.host));
+      if (!found) throw new Error(`Não há aba aberta em ${action.host}.`);
+      await chrome.tabs.update(found.id, { active: true });
+      return {};
+    }
+    // Aba nova (login em painel de fora): fica ativa, então as próximas leituras e ações são nela.
+    const tab = action.newTab ? await chrome.tabs.create({ url: action.url, active: true }) : await currentTab();
+    if (action.type === "navigate") {
+      if (!action.newTab) await chrome.tabs.update(tab.id, { url: action.url });
+    } else {
       await inPage(tab, "highlight", action.ref, action.type === "click" ? "click" : "fill");
       await new Promise((resolve) => setTimeout(resolve, HIGHLIGHT_MS));
       await inPage(tab, "act", action);

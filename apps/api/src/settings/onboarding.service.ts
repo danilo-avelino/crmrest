@@ -39,13 +39,8 @@ export class OnboardingService {
   }
 
   async mark(auth: RequestAuth, tenantId: string, step: OnboardingStep, mark: OnboardingMark | null): Promise<OnboardingDto> {
-    if (mark && !(isIntegration(step) ? INTEGRATION_MARKS : step === "first_message" ? [] : SETTING_MARKS).includes(mark)) {
-      throw new UnprocessableEntityException("Este passo não aceita essa resposta.");
-    }
-    return this.update(auth, tenantId, (state) => {
-      const { [step]: _, ...marks } = state.marks ?? {};
-      return { ...state, marks: mark ? { ...marks, [step]: mark } : marks };
-    });
+    if (mark && !markAccepted(step, mark)) throw new UnprocessableEntityException("Este passo não aceita essa resposta.");
+    return this.update(auth, tenantId, (state) => withMark(state, step, mark));
   }
 
   /** O admin abriu o assistente: ele não abre mais sozinho (continua pelo aviso na Inbox e por Configurações). */
@@ -55,16 +50,33 @@ export class OnboardingService {
 
   private update(auth: RequestAuth, tenantId: string, change: (state: OnboardingState) => OnboardingState): Promise<OnboardingDto> {
     requireTenantAdmin(auth, tenantId);
-    return this.db.withTenants({ tenantIds: [tenantId], userId: auth.userId }, async (tx) => {
-      const { settings } = await tx.tenant.findUniqueOrThrow({ where: { id: tenantId }, select: { settings: true } });
-      const current = settings && typeof settings === "object" && !Array.isArray(settings) ? settings : {};
-      await tx.tenant.update({
-        where: { id: tenantId },
-        data: { settings: { ...current, onboarding: change(onboardingStateOf(current)) } as Prisma.InputJsonObject },
-      });
-      return onboardingOf(tx, tenantId);
-    });
+    return this.db.withTenants({ tenantIds: [tenantId], userId: auth.userId }, (tx) => updateOnboarding(tx, tenantId, change));
   }
+}
+
+/** O passo aceita essa resposta? Integração: pular ou em andamento; configuração: pular ou manter o padrão. */
+export function markAccepted(step: OnboardingStep, mark: OnboardingMark): boolean {
+  return (isIntegration(step) ? INTEGRATION_MARKS : step === "first_message" ? [] : SETTING_MARKS).includes(mark);
+}
+
+function withMark(state: OnboardingState, step: OnboardingStep, mark: OnboardingMark | null): OnboardingState {
+  const { [step]: _, ...marks } = state.marks ?? {};
+  return { ...state, marks: mark ? { ...marks, [step]: mark } : marks };
+}
+
+async function updateOnboarding(tx: TenantTx, tenantId: string, change: (state: OnboardingState) => OnboardingState): Promise<OnboardingDto> {
+  const { settings } = await tx.tenant.findUniqueOrThrow({ where: { id: tenantId }, select: { settings: true } });
+  const current = settings && typeof settings === "object" && !Array.isArray(settings) ? settings : {};
+  await tx.tenant.update({
+    where: { id: tenantId },
+    data: { settings: { ...current, onboarding: change(onboardingStateOf(current)) } as Prisma.InputJsonObject },
+  });
+  return onboardingOf(tx, tenantId);
+}
+
+/** O agente da extensão (E31) marca o passo que o parceiro respondeu (ex.: "não uso o Instagram"). */
+export function markOnboardingStep(tx: TenantTx, tenantId: string, step: OnboardingStep, mark: OnboardingMark): Promise<OnboardingDto> {
+  return updateOnboarding(tx, tenantId, (state) => withMark(state, step, mark));
 }
 
 /** O progresso do assistente. Também serve ao agente da extensão (E31), que segue os mesmos passos. */

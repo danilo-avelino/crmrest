@@ -3,6 +3,7 @@ import type { INestApplication } from "@nestjs/common";
 import request from "supertest";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { type Decision, guard } from "../src/agent/agent-guard.js";
+import { FIRST_QUESTION } from "../src/agent/agent.service.js";
 import { accessTokenFor, admin, createAuthFixture, createTestApp, startMockGraph } from "./helpers.js";
 
 type LlmBody = { response_format: { json_schema: { name: string } }; messages: { role: string; content: string }[] };
@@ -36,6 +37,23 @@ describe("agente da extensão: travas", () => {
     expect(guard(decision({ action: "navigate", value: "javascript:alert(1)" }), undefined, ALLOWED)).toHaveProperty("invalid");
   });
 
+  it("'cardápio' não é dado de cartão (a trava não pode travar o campo do link do cardápio)", () => {
+    const links = page("https://www.dishdesk.com.br/configuracoes", [
+      { ref: 1, role: "campo", name: "Link do cardápio digital" },
+      { ref: 2, role: "campo", name: "Número do cartão" },
+    ]);
+    expect(guard(decision({ action: "fill", ref: 1, value: "https://a.com" }), links, ["dishdesk.com.br"], "https://a.com")).toMatchObject({ next: { type: "act" } });
+    expect(guard(decision({ action: "fill", ref: 2, value: "4111" }), links, ["dishdesk.com.br"], "4111")).toMatchObject({ next: { type: "your_turn", field: "card" } });
+  });
+
+  it("login: abre o painel de fora numa aba nova e espera o parceiro entrar", () => {
+    expect(guard(decision({ action: "login", value: "https://portal.ifood.com.br" }), undefined, ALLOWED)).toMatchObject({
+      next: { type: "login", url: "https://portal.ifood.com.br/" },
+    });
+    expect(guard(decision({ action: "login", value: "https://exemplo.com" }), undefined, ALLOWED)).toMatchObject({ next: { type: "permission", host: "exemplo.com" } });
+    expect(guard(decision({ action: "login", value: "ifood" }), undefined, ALLOWED)).toHaveProperty("invalid");
+  });
+
   it("nunca preenche senha nem código de verificação: a vez é do parceiro", () => {
     expect(guard(decision({ action: "fill", ref: 3, value: "123456" }), portal, ALLOWED)).toMatchObject({ next: { type: "your_turn", ref: 3, field: "password" } });
     expect(guard(decision({ action: "fill", ref: 4, value: "999" }), portal, ALLOWED)).toMatchObject({ next: { type: "your_turn", ref: 4, field: "code" } });
@@ -52,7 +70,11 @@ describe("agente da extensão: travas", () => {
 
   it("pede confirmação antes do que não dá para desfazer, mesmo que a LLM não marque", () => {
     expect(guard(decision({ ref: 5 }), portal, ALLOWED)).toMatchObject({ next: { type: "confirm", action: { type: "click", ref: 5 } } });
-    expect(guard(decision({ action: "fill", ref: 2, value: "a@b.com", irreversible: true }), portal, ALLOWED, "a@b.com")).toMatchObject({ next: { type: "confirm" } });
+    expect(guard(decision({ action: "click", ref: 1, irreversible: true }), portal, ALLOWED)).toMatchObject({ next: { type: "confirm" } });
+    expect(guard(decision({ action: "fill", ref: 2, value: "a@b.com", irreversible: true }), portal, ALLOWED, "a@b.com")).toMatchObject({ next: { type: "act" } });
+    // Conectar e salvar são o que o parceiro pediu: sem confirmação, mesmo que a LLM marque irreversible.
+    const save = page("https://www.dishdesk.com.br/configuracoes", [{ ref: 1, role: "botão", name: "Conectar iFood" }]);
+    expect(guard(decision({ action: "click", ref: 1, irreversible: true }), save, ["dishdesk.com.br"])).toMatchObject({ next: { type: "act" } });
   });
 
   it("elemento que não existe ou desabilitado não serve", () => {
@@ -114,7 +136,7 @@ describe("agente da extensão: sessões", () => {
   it("a IA lê o progresso, a página e o histórico e faz uma ação por vez, registrando tudo", async () => {
     const { body: session } = await start(fx.b.id, "SETUP").expect(201);
     answer({ say: "Vou abrir as Integrações.", action: "click", ref: 1 });
-    const { body } = await turn(session.id, { message: "Conecta o meu WhatsApp", page: dishDesk });
+    const { body } = await turn(session.id, { message: "Conecta o meu WhatsApp?", page: dishDesk });
     expect(body).toMatchObject({
       status: "ACTIVE",
       next: { type: "act", say: "Vou abrir as Integrações.", action: { type: "click", ref: 1, label: "Integrações" } },
@@ -124,7 +146,8 @@ describe("agente da extensão: sessões", () => {
     expect(system!.content).toContain("GUIA DO DISH DESK");
     expect(user!.content).toContain("- whatsapp (WhatsApp): a fazer");
     expect(user!.content).toContain('[1] link "Integrações"');
-    expect(user!.content).toContain("Parceiro: Conecta o meu WhatsApp");
+    expect(user!.content).toContain("Parceiro: Conecta o meu WhatsApp?");
+    expect(user!.content).toContain("PRÓXIMO PASSO: whatsapp (WhatsApp)");
 
     // A ação que a LLM não marcou como irreversível, mas é: o parceiro confirma antes.
     answer({ say: "Vou desconectar.", action: "click", ref: 2 });
@@ -135,15 +158,48 @@ describe("agente da extensão: sessões", () => {
     expect(events.map((item) => item.kind)).toEqual(["partner", "agent", "result", "agent"]);
   });
 
+  it("a primeira volta da implantação é a pergunta inicial, sem LLM; a resposta dele já marca o que ele não usa", async () => {
+    const { body: session } = await start(fx.b.id, "SETUP").expect(201);
+    const { settings } = await admin.tenant.findUniqueOrThrow({ where: { id: fx.b.id }, select: { settings: true } });
+    const before = llm.requests.length;
+    const { body: first } = await turn(session.id, { message: "Quero configurar o Dish Desk", page: dishDesk });
+    expect(first.next).toEqual({ type: "reply", say: FIRST_QUESTION });
+    expect(llm.requests.length).toBe(before);
+
+    // A resposta é lida uma vez (a LLM classifica) e vira marcação; depois a IA decide com ela sempre à vista.
+    answers.push({ whatsapp: "usa", instagram: "nao_usa", ifood: "nao_usa", cardapio_web: "nao_usa", business_hours: "padrao", personality: "informou", order_links: "depois", members: "nao_disse" });
+    answer({ say: "Vou abrir as Integrações.", action: "click", ref: 1 });
+    const { body } = await turn(session.id, { message: "Só uso o WhatsApp. Horário padrão, personalidade Descontraído, link depois.", page: dishDesk });
+    const status = Object.fromEntries(body.progress.steps.map((item: { step: string; status: string }) => [item.step, item.status]));
+    expect(status).toMatchObject({ whatsapp: "todo", instagram: "skipped", ifood: "skipped", cardapio_web: "skipped", business_hours: "done", order_links: "skipped", members: "todo" });
+    const prompt = (llm.requests.at(-1)!.body as LlmBody).messages[1]!.content;
+    expect(prompt).toContain("RESPOSTAS DO PARCEIRO");
+    expect(prompt).toContain("Só uso o WhatsApp");
+    expect(prompt).toContain("PRÓXIMO PASSO: whatsapp (WhatsApp)");
+
+    // A leitura não se repete na volta seguinte.
+    answer({ say: "Vou abrir.", action: "reply" });
+    const calls = llm.requests.length;
+    await turn(session.id, { result: { ok: true }, page: dishDesk });
+    expect(llm.requests.length).toBe(calls + 1);
+
+    await admin.tenant.update({ where: { id: fx.b.id }, data: { settings: settings as object } });
+  });
+
   it("um passo só termina com a conferência do Dish Desk", async () => {
     const { body: session } = await start(fx.b.id, "SETUP").expect(201);
+    // A IA diz que terminou, a API devolve a decisão (faltam passos) e, insistindo, a conferência do Dish Desk fala mais alto.
     answer({ say: "Pronto, o WhatsApp está conectado!", action: "done", step: "whatsapp" });
-    const { body } = await turn(session.id, { message: "Já escaneei", page: dishDesk });
+    answer({ say: "Pronto, o WhatsApp está conectado!", action: "done", step: "whatsapp" });
+    const { body } = await turn(session.id, { message: "Já escaneei, e agora?", page: dishDesk });
     expect(body).toMatchObject({ status: "ACTIVE", next: { type: "reply", say: "Ainda não vejo WhatsApp concluído no Dish Desk. Vamos conferir em Configurações → Integrações?" } });
 
     await admin.channel.create({
       data: { tenantId: fx.b.id, type: "WHATSAPP", name: "+55 11 90000-0000", externalId: `wa-${fx.b.id}`, credentials: new Uint8Array(), status: "CONNECTED" },
     });
+    // (a primeira resposta do parceiro, "E agora?", é lida uma vez pela LLM: uma resposta a mais na fila)
+    answers.push({});
+    answer({ say: "Pronto, o WhatsApp está conectado!", action: "done", step: "whatsapp" });
     answer({ say: "Pronto, o WhatsApp está conectado!", action: "done", step: "whatsapp" });
     const { body: checked } = await turn(session.id, { message: "E agora?", page: dishDesk });
     // Conferido, mas a implantação continua: os outros passos ainda estão a fazer.
@@ -157,7 +213,7 @@ describe("agente da extensão: sessões", () => {
     answer({ say: "Vou abrir as Integrações.", action: "click", ref: 1 });
     const { body } = await turn(session.id, { message: "Meu WhatsApp parou", page: dishDesk });
     expect(body.next).toMatchObject({ type: "act", action: { ref: 1 } });
-    expect((llm.requests.at(-1)!.body as LlmBody).messages[1]!.content).toContain("ATENÇÃO: a sua última decisão não serve: O elemento [42] não está na PÁGINA.");
+    expect((llm.requests.at(-1)!.body as LlmBody).messages[1]!.content).toContain("ATENÇÃO: a sua última decisão não serve: O elemento [42] não está na PÁGINA (a aba atual é localhost)");
 
     answer({ action: "click", ref: 1 });
     answer({ action: "click", ref: 1 });

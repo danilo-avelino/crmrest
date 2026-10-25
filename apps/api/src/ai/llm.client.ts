@@ -24,7 +24,7 @@ export class LlmClient {
     return !!module;
   }
 
-  async json<T>(name: string, schema: z.ZodType<T>, messages: LlmMessage[]): Promise<T> {
+  async json<T>(name: string, schema: z.ZodType<T>, messages: LlmMessage[], temperature = 0.3): Promise<T> {
     if (!this.env.AI_BASE_URL) throw new Error("IA desligada: falta AI_BASE_URL.");
     const { $schema: _, ...jsonSchema } = z.toJSONSchema(schema);
     const response = await fetch(`${this.env.AI_BASE_URL.replace(/\/$/, "")}/chat/completions`, {
@@ -33,7 +33,7 @@ export class LlmClient {
       body: JSON.stringify({
         model: this.env.AI_MODEL,
         messages,
-        temperature: 0.3,
+        temperature,
         // Sem raciocínio: no Gemma 4 local ele multiplica o tempo por 8 sem melhorar as respostas curtas.
         reasoning_effort: "none",
         response_format: { type: "json_schema", json_schema: { name, strict: true, schema: jsonSchema } },

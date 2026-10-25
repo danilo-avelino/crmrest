@@ -10,6 +10,7 @@ import {
   type AgentTurnRequest,
   ONBOARDING_STEPS,
   type OnboardingDto,
+  OnboardingMark,
   type OnboardingStep,
   type PageSnapshot,
 } from "@dishdesk/shared";
@@ -19,28 +20,40 @@ import type { RequestAuth } from "../auth/auth.decorators.js";
 import { ENV, type Env } from "../config/env.js";
 import { DatabaseService } from "../core/database.service.js";
 import { LlmClient } from "../ai/llm.client.js";
-import { onboardingOf } from "../settings/onboarding.service.js";
+import { markAccepted, markOnboardingStep, onboardingOf } from "../settings/onboarding.service.js";
 import { isTenantAdmin } from "../settings/tenant-admin.js";
 import { type Decision, guard } from "./agent-guard.js";
 import { GUIDE, STEP_LABEL } from "./guide.js";
+import { extrasOf, INTAKE_PROMPT, Intake, intakeMarks } from "./intake.js";
 
 /** Ações seguidas que falharam até a IA parar ("se perdeu"). */
 export const MAX_FAILURES = 3;
 /** Eventos da sessão que a IA relê a cada volta (os mais recentes). */
 const HISTORY_LIMIT = 12;
 /** A árvore da página divide o contexto da LLM (8k no Ollama) com o guia e o histórico. */
-const ELEMENTS_CHARS = 3500;
+const ELEMENTS_CHARS = 5000;
 const TEXT_CHARS = 1200;
+/** A primeira volta da implantação: tudo que a IA precisa saber numa pergunta só (o modelo local corta o texto longo). */
+export const FIRST_QUESTION =
+  "Vou configurar tudo com você. Responda de uma vez só: 1) quais destes você usa: WhatsApp, Instagram, iFood, Cardápio Web; 2) horário de funcionamento; 3) personalidade do atendimento (Cordial, Formal, Jovial, Descontraído, Acolhedor ou Direto); 4) link do cardápio; 5) nome e e-mail de quem vai atender. Pode responder \"padrão\" ou \"depois\" em qualquer item.";
+/** Uma ação de navegador pede a mesma resposta para a mesma tela: temperatura baixa (o padrão da conversa é 0,3). */
+const AGENT_TEMPERATURE = 0.1;
+/** Marcações seguidas (passos pulados) que a IA faz numa volta antes de agir na página. */
+const MAX_MARKS = 5;
+const MARK_LABEL: Record<OnboardingMark, string> = { skipped: "pulado", confirmed: "padrão mantido", in_progress: "em andamento" };
 /** O texto de cada página guardado na sessão (para o que a IA pode preencher depois). */
 const SEEN_CHARS = 2000;
 
 export const AgentDecision = z.object({
-  say: z.string().trim().min(1).max(400).describe("O que você diz ao parceiro, curto."),
-  action: z.enum(["click", "fill", "select", "navigate", "reply", "done", "handoff"]),
+  say: z.string().trim().min(1).max(700).describe("O que você diz ao parceiro, curto."),
+  action: z.enum(["click", "fill", "select", "navigate", "login", "switch", "mark", "reply", "done", "handoff"]),
   ref: z.number().int().min(0).describe("O número [ref] do elemento da PÁGINA; 0 quando a ação não usa elemento."),
-  value: z.string().max(500).describe('fill e select: o texto ou a opção; navigate: o endereço; senão, "".'),
+  value: z
+    .string()
+    .max(500)
+    .describe('fill e select: o texto ou a opção; navigate e login: o endereço; switch: o site da aba (ex.: www.dishdesk.com.br); mark: skipped (o restaurante não usa ou não quer agora), confirmed (manter o padrão) ou in_progress (esperando um terceiro); senão, "".'),
   irreversible: z.boolean().describe("A ação não dá para desfazer ou fala em nome do restaurante."),
-  step: z.enum([...ONBOARDING_STEPS, "none"]).describe('done na implantação: o passo do PROGRESSO que terminou; senão, "none".'),
+  step: z.enum([...ONBOARDING_STEPS, "none"]).describe('done e mark na implantação: o passo do PROGRESSO; senão, "none".'),
   reason: z.string().max(200).describe('handoff: por que passou para o suporte; senão, "".'),
 });
 type AgentDecision = z.infer<typeof AgentDecision>;
@@ -48,17 +61,26 @@ type AgentDecision = z.infer<typeof AgentDecision>;
 export function systemPrompt(restaurant: string, kind: AgentSessionKind, panel: string): string {
   const task =
     kind === "SETUP"
-      ? "implantar o Dish Desk no restaurante, seguindo a ordem do GUIA. Antes de cada integração, pergunte se o restaurante usa aquele sistema; o PROGRESSO diz o que já está feito, pulado ou em andamento. Quando um passo aparecer como feito no PROGRESSO, use action = done com o step dele."
+      ? "implantar o Dish Desk no restaurante, seguindo a ordem do GUIA, pedindo o mínimo possível ao parceiro. O PROGRESSO diz o que já está feito, pulado ou em andamento. Use action = done só quando todos os passos do PROGRESSO estiverem feitos ou pulados."
       : "tirar dúvidas sobre o Dish Desk e resolver problemas (canal desconectado, mensagem que não chegou, configuração errada), investigando na tela dele. Quando o problema estiver resolvido, use action = done.";
   return `Você é o assistente do Dish Desk dentro da extensão do Chrome e ajuda o parceiro (o dono ou o gerente do restaurante ${restaurant}) a ${task}
 O painel do Dish Desk fica em ${panel} (as telas do GUIA ficam nele).
-Você vê a página aberta no navegador dele (PÁGINA) e faz uma ação por vez nela: click, fill (preencher um campo), select (escolher uma opção) ou navigate (abrir um endereço). Depois de cada ação, você recebe a página de novo.
+Você vê a página aberta no navegador dele (PÁGINA) e faz uma ação por vez: click, fill (preencher um campo), select (escolher uma opção), navigate (abrir um endereço: no mesmo site, na aba atual; em outro site, numa aba nova, e a atual continua aberta), login (abrir um painel de fora numa aba nova e esperar o parceiro entrar), switch (voltar a uma aba já aberta), mark (marcar um passo do PROGRESSO) ou reply (conversar). Depois de cada ação, você recebe a página de novo.
 
 Regras obrigatórias:
+- Para entrar num painel de fora (Portal do Parceiro do iFood, Portal do Cardápio Web, Instagram), use action = login com o endereço dele: a extensão abre uma aba nova, o parceiro digita usuário e senha e clica em "Login feito" (ou "Não consegui"), e você continua. Use login uma vez por site: se ele está em ABAS ABERTAS, volte a ele com switch; se a PÁGINA já mostra o painel logado, siga sem login.
+- As RESPOSTAS DO PARCEIRO valem para a implantação toda: use-as nos campos (horário, personalidade, link, nome e e-mail dos atendentes) e não pergunte de novo. O que ele não usa ou deixou no padrão já está marcado no PROGRESSO.
+- Faça você mesma tudo que a PÁGINA permite: clicar, copiar o que aparece na tela, preencher e conectar. Nunca peça ao parceiro para ir a uma tela, clicar, copiar ou procurar algo, nem para informar um código, id ou chave que está num painel (abra o painel e leia você mesma): depois do "Login feito" ele não faz mais nada, é você que navega, clica e copia. Em say, diga o que você vai fazer ("Vou abrir Integrações e autorizar.").
+- Use reply só quando precisa de uma resposta dele ou quando só ele pode agir (QR Code, senha). Nunca use reply para anunciar o que vai fazer ou o que está procurando: faça a ação.
+- Abra cada tela pelo endereço direto do GUIA (navigate), sem clicar em menus. Faça sozinho tudo que a PÁGINA permite; só o parceiro faz o que depende dele (QR Code, senha, código de verificação).
+- Cada aba tem a sua PÁGINA. Depois de pegar o que precisa num painel de fora, volte à aba do Dish Desk com action = switch (value = o site, ex.: www.dishdesk.com.br) ANTES de preencher o campo dele: a aba continua como estava, não recarregue.
+- Quando só o parceiro pode agir, use reply e diga em say o que ele faz, em passos curtos, e que depois é só escrever "pronto". Ao terminar um passo, vá direto ao próximo, sem perguntar "posso continuar?" nem resumir.
+- mark: se ele disser depois que não usa um sistema ou quer o padrão: value = skipped (ou confirmed numa configuração) e o step dele.
+- Não repita uma ação que o HISTÓRICO mostra que já deu certo: avance para o próximo passo do GUIA.
 - Use só os elementos da PÁGINA, pelo número [ref]. Se o que você procura não está nela, navegue até a tela certa.
 - Só afirme o que está no GUIA, no PROGRESSO e na PÁGINA. Sem a informação, passe para o suporte (handoff).
 - Nunca preencha senha, código de verificação nem dados de cartão, e nunca peça esses dados na conversa: o parceiro digita direto na página.
-- irreversible = true em toda ação que não dá para desfazer ou que fala em nome do restaurante: aceitar termos, enviar documentos, publicar, pagar, apagar, desconectar.
+- irreversible = true só num click que não dá para desfazer ou que fala em nome do restaurante: aceitar termos, enviar documentos, publicar, pagar, apagar, desconectar. Preencher, salvar e conectar uma integração NÃO são irreversíveis.
 - Passe para o suporte humano (handoff) quando o parceiro pedir, quando o assunto for cobrança, pagamento ou conta, ou quando você não souber resolver.
 - Nunca invente o que preencher (usuário, e-mail, nome, chave): use só o que o parceiro disse ou o que apareceu na PÁGINA. Sem isso, pergunte a ele (reply).
 - Se o parceiro já pediu uma integração, ele usa aquele sistema: não pergunte de novo.
@@ -107,10 +129,30 @@ export function progressText(progress: OnboardingDto | null, partner: string[] =
     const note = asked ? " (o parceiro pediu: ele usa, não pergunte; siga o passo a passo)" : "";
     return `- ${item.step} (${STEP_LABEL[item.step]}): ${status[item.status]}${item.detail ? `, ${item.detail}` : ""}${note}`;
   });
-  return `PROGRESSO (conferido no Dish Desk)\n${lines.join("\n")}\n\n`;
+  // O modelo local segue a ordem do GUIA e ignora o que já está pulado: a API diz qual é o passo da vez.
+  const upcoming = progress.steps.find((item) => item.status === "todo" || item.status === "error");
+  const turn = upcoming ? `PRÓXIMO PASSO: ${upcoming.step} (${STEP_LABEL[upcoming.step]}). Os feitos e os pulados, não faça.` : "PRÓXIMO PASSO: nenhum, todos feitos ou pulados.";
+  return `PROGRESSO (conferido no Dish Desk)\n${lines.join("\n")}\n${turn}\n\n`;
 }
 
 type EventRow = { kind: string; content: Prisma.JsonValue };
+
+export type DecideContext = {
+  session: { id: string; kind: AgentSessionKind };
+  restaurant: string;
+  events: EventRow[];
+  progress: OnboardingDto | null;
+  /** Implantação: a primeira resposta do parceiro, se ela já foi lida (`intakeDone`) e os sites em que ele já entrou. */
+  answers: string | null;
+  intakeDone: boolean;
+  opened: string[];
+};
+
+/** O que `decideWithMarks` grava: a marcação de um passo (com a fala da IA, se foi ela que decidiu) e a leitura da resposta inicial. */
+export type MarkStore = {
+  mark(step: OnboardingStep, mark: OnboardingMark, summary: { summary: string }, said?: { next: AgentAction }): Promise<OnboardingDto>;
+  intakeDone(): Promise<void>;
+};
 
 /** O histórico da sessão para a LLM: o que o parceiro pediu, o que a IA disse e fez e o resultado. */
 export function historyText(events: EventRow[]): string {
@@ -119,14 +161,15 @@ export function historyText(events: EventRow[]): string {
     if (kind === "partner") return `Parceiro: ${String(value.text)}`;
     if (kind === "result") return `Resultado: ${String(value.summary)}`;
     const next = value.next as AgentAction;
-    const action = "action" in next ? ` (${describe(next.action)})` : "";
+    const action = "action" in next ? ` (${describe(next.action)})` : next.type === "login" ? ` (login ${next.url})` : "";
     return `Você: ${next.say}${action}`;
   });
   return `HISTÓRICO\n${lines.join("\n") || "início da sessão"}`;
 }
 
-function describe(action: { type: string; ref?: number; label?: string; value?: string; url?: string }): string {
+function describe(action: { type: string; ref?: number; label?: string; value?: string; url?: string; host?: string }): string {
   if (action.type === "navigate") return `navigate ${action.url}`;
+  if (action.type === "switch") return `switch ${action.host}`;
   return `${action.type} [${action.ref}] "${action.label}"${action.value ? ` = "${action.value}"` : ""}`;
 }
 
@@ -160,7 +203,7 @@ export class AgentService {
       const session = await this.requireSession(tx, auth, sessionId);
       // O texto da página fica no evento da volta: o que apareceu nela (ex.: o código de autorização do iFood) pode ser
       // preenchido depois, em outra página.
-      const seen = body.page ? { seen: body.page.text.slice(0, SEEN_CHARS) } : {};
+      const seen = body.page ? { seen: seenOf(body.page) } : {};
       if (body.message) await event(tx, session, "partner", { text: body.message, ...seen });
       const summary = resultSummary(body);
       if (summary) {
@@ -173,26 +216,30 @@ export class AgentService {
       const updated = await tx.agentSession.update({ where: { id: session.id }, data: { failures, grantedHosts } });
       const events = (await tx.agentEvent.findMany({ where: { sessionId }, orderBy: { createdAt: "desc" }, take: HISTORY_LIMIT })).reverse();
       const progress = session.kind === "SETUP" ? await onboardingOf(tx, session.tenantId) : null;
-      return { session: updated, restaurant: session.tenant.name, events, progress };
+      const extras = session.kind === "SETUP" ? await sessionExtras(tx, sessionId) : { answers: null, intakeDone: false, opened: [] };
+      return { session: updated, restaurant: session.tenant.name, events, progress, ...extras };
     });
-    const { session, progress } = context;
+    const { session } = context;
+    let { progress } = context;
 
     let next: AgentAction;
     let finished: { status: "DONE" | "HANDED_OFF"; reason?: string } | null = null;
     if (session.failures >= MAX_FAILURES) {
       next = { type: "lost", say: "Não estou conseguindo fazer isso nesta página. Quer que eu tente de novo ou prefere falar com o suporte?" };
     } else {
-      const decided = await this.decide(context, body.page, [...AGENT_HOSTS, new URL(this.env.WEB_ORIGIN).hostname, ...session.grantedHosts]);
+      const allowed = [...AGENT_HOSTS, new URL(this.env.WEB_ORIGIN).hostname, ...session.grantedHosts];
+      const decided = await this.decideWithMarks(context, body.page, allowed, {
+        mark: (step, mark, summary, said) =>
+          this.db.withTenants(scope, async (tx) => {
+            const updated = await markOnboardingStep(tx, session.tenantId, step, mark);
+            if (said) await event(tx, session, "agent", said);
+            await event(tx, session, "result", summary);
+            return updated;
+          }),
+        intakeDone: () => this.db.withTenants(scope, async (tx) => void (await event(tx, session, "result", { intake: true }))),
+      });
+      progress = decided.progress;
       next = decided.next;
-      // Na implantação, um passo só termina com a conferência do Dish Desk, e a sessão só quando todos terminarem.
-      if (next.type === "done" && session.kind === "SETUP") {
-        const step = decided.step;
-        if (step && progress?.steps.find((item) => item.step === step)?.status !== "done") {
-          next = { type: "reply", say: `Ainda não vejo ${STEP_LABEL[step]} concluído no Dish Desk. Vamos conferir em Configurações → Integrações?` };
-        } else if (!progress?.completed) {
-          next = { type: "reply", say: next.say };
-        }
-      }
       if (next.type === "done") finished = { status: "DONE" };
       if (next.type === "handoff") finished = { status: "HANDED_OFF", reason: next.reason };
     }
@@ -246,15 +293,67 @@ export class AgentService {
     return session;
   }
 
-  /** A LLM decide e as travas conferem; uma ação que não serve (ex.: elemento que não existe) volta para a LLM uma vez. */
-  private async decide(
-    context: { session: { id: string; kind: AgentSessionKind }; restaurant: string; events: EventRow[]; progress: OnboardingDto | null },
+  /**
+   * Uma volta da IA. Marcar um passo (pulado, padrão) é feito na API, sem a extensão (`saveMark` grava e devolve o
+   * progresso): a IA já decide a próxima ação na mesma volta, até `MAX_MARKS` marcações seguidas.
+   */
+  async decideWithMarks(
+    context: DecideContext,
     page: PageSnapshot | undefined,
     allowed: string[],
-  ): Promise<{ next: AgentAction; step?: OnboardingStep }> {
+    store: MarkStore,
+  ): Promise<{ next: AgentAction; step?: OnboardingStep; progress: OnboardingDto | null }> {
+    if (context.session.kind === "SETUP" && !context.events.some((item) => item.kind === "agent") && !askedSomething(context.events)) {
+      return { next: { type: "reply", say: FIRST_QUESTION }, progress: context.progress };
+    }
+    const apply = async (step: OnboardingStep, mark: OnboardingMark, said?: { next: AgentAction }) => {
+      const summary = { summary: `o passo ${step} (${STEP_LABEL[step]}) foi marcado como ${MARK_LABEL[mark]}.` };
+      context.progress = await store.mark(step, mark, summary, said);
+      context.events = [...context.events, ...(said ? [{ kind: "agent", content: said }] : []), { kind: "result", content: summary }].slice(-HISTORY_LIMIT);
+    };
+    if (context.session.kind === "SETUP" && context.answers && !context.intakeDone) {
+      const intake = await this.llm
+        .json("resposta_inicial", Intake, [
+          { role: "system", content: INTAKE_PROMPT },
+          { role: "user", content: `Pergunta: ${FIRST_QUESTION}\n\nResposta do parceiro: ${context.answers}` },
+        ])
+        .catch((error) => {
+          this.logger.warn(`Resposta inicial não lida na sessão ${context.session.id}: ${error instanceof Error ? error.message : String(error)}`);
+          return null;
+        });
+      for (const { step, mark } of intake ? intakeMarks(intake) : []) {
+        if (context.progress?.steps.find((item) => item.step === step)?.status === "todo") await apply(step, mark);
+      }
+      await store.intakeDone();
+      context.intakeDone = true;
+    }
+    let decided = await this.decide(context, page, allowed);
+    for (let marks = 0; decided.mark && marks < MAX_MARKS; marks++) {
+      await apply(decided.mark.step, decided.mark.mark, { next: decided.next });
+      decided = await this.decide(context, page, allowed);
+    }
+    // Na implantação, um passo só termina com a conferência do Dish Desk, e a sessão só quando todos terminarem.
+    let { next } = decided;
+    if (next.type === "done" && context.session.kind === "SETUP") {
+      const { step } = decided;
+      if (step && context.progress?.steps.find((item) => item.step === step)?.status !== "done") {
+        next = { type: "reply", say: `Ainda não vejo ${STEP_LABEL[step]} concluído no Dish Desk. Vamos conferir em Configurações → Integrações?` };
+      } else if (!context.progress?.completed) {
+        next = { type: "reply", say: pendingSay(context.progress, next.say) };
+      }
+    }
+    return { next, step: decided.step, progress: context.progress };
+  }
+
+  /** A LLM decide e as travas conferem; uma ação que não serve (ex.: elemento que não existe) volta para a LLM uma vez. */
+  private async decide(
+    context: DecideContext,
+    page: PageSnapshot | undefined,
+    allowed: string[],
+  ): Promise<{ next: AgentAction; step?: OnboardingStep; mark?: { step: OnboardingStep; mark: OnboardingMark } }> {
     const partner = context.events.flatMap((item) => (item.kind === "partner" ? [String((item.content as { text: unknown }).text)] : []));
-    const user = `${progressText(context.progress, partner)}${pageText(page)}\n\n${historyText(context.events)}`;
-    const known = knownText(context.events, page);
+    const user = `${progressText(context.progress, partner)}${answersText(context)}${pageText(page)}${previousText(context.events, page)}\n\n${historyText(context.events)}`;
+    const known = `${knownText(context.events, page)}\n${context.answers ?? ""}`;
     let note = "";
     for (let attempt = 0; attempt < 2; attempt++) {
       let decision: AgentDecision;
@@ -262,13 +361,43 @@ export class AgentService {
         decision = await this.llm.json("agente", AgentDecision, [
           { role: "system", content: systemPrompt(context.restaurant, context.session.kind, this.env.WEB_ORIGIN) },
           { role: "user", content: `${user}${note}` },
-        ]);
+        ], AGENT_TEMPERATURE);
       } catch (error) {
         this.logger.warn(`Agente sem resposta na sessão ${context.session.id}: ${error instanceof Error ? error.message : String(error)}`);
         return { next: { type: "unavailable", say: "O assistente do Dish Desk está fora do ar agora. Quer falar com o suporte?" } };
       }
+      if (decision.action === "mark") {
+        const mark = OnboardingMark.safeParse(decision.value);
+        if (context.session.kind !== "SETUP" || decision.step === "none" || !mark.success || !markAccepted(decision.step, mark.data)) {
+          note = `\n\nATENÇÃO: a sua última decisão não serve: mark precisa de um step do PROGRESSO e de value skipped (integração ou configuração), confirmed (só configuração) ou in_progress (só integração). Decida de novo.`;
+          continue;
+        }
+        const status = context.progress?.steps.find((item) => item.step === decision.step)?.status;
+        if (status && status !== "todo" && status !== "error") {
+          note = `\n\nATENÇÃO: o passo ${decision.step} já está ${status === "done" ? "feito" : "marcado"} no PROGRESSO. Siga para o que ainda está a fazer.`;
+          continue;
+        }
+        return { next: { type: "reply", say: decision.say }, mark: { step: decision.step, mark: mark.data } };
+      }
+      if (decision.action === "done" && context.session.kind === "SETUP" && context.progress && !context.progress.completed && attempt === 0) {
+        const pending = context.progress.steps.filter((item) => item.status === "todo" || item.status === "error").map((item) => STEP_LABEL[item.step]);
+        note = `\n\nATENÇÃO: ainda faltam passos no PROGRESSO: ${pending.join(", ")}. Não use done: faça o próximo passo; se só o parceiro pode agir, use reply com a instrução.`;
+        continue;
+      }
+      // Um site já aberto não se abre de novo: volta-se à aba dele (o Dish Desk, onde o parceiro abriu o painel, sempre está aberta).
+      const target = decision.action === "login" || decision.action === "navigate" ? hostOf(decision.value) : null;
+      const open = [new URL(this.env.WEB_ORIGIN).hostname, ...context.opened];
+      const current = page ? hostOf(page.url) : null;
+      const tab = target && open.find((host) => target === host || target.endsWith(`.${host}`));
+      if (tab && (decision.action === "login" || target !== current)) decision = { ...decision, action: "switch", value: tab };
       const guarded = guard(decision as Decision, page, allowed, known);
+      if ("next" in guarded && repeatsLast(context.events, guarded.next)) {
+        this.logger.debug(`Ação repetida na sessão ${context.session.id}: ${JSON.stringify(guarded.next)}`);
+        note = "\n\nATENÇÃO: você acabou de fazer exatamente essa ação e ela deu certo; a PÁGINA já mostra o resultado. Faça o próximo passo do GUIA, ou, se só o parceiro pode agir agora, use reply com a instrução.";
+        continue;
+      }
       if ("next" in guarded) return { next: guarded.next, step: decision.step === "none" ? undefined : decision.step };
+      this.logger.debug(`Decisão recusada na sessão ${context.session.id}: ${guarded.invalid} | ${JSON.stringify(decision)}`);
       note = `\n\nATENÇÃO: a sua última decisão não serve: ${guarded.invalid} Decida de novo.`;
     }
     return { next: { type: "lost", say: "Não encontrei o que procurava nesta página. Quer que eu tente de novo ou prefere falar com o suporte?" } };
@@ -288,7 +417,7 @@ export function knownText(events: EventRow[], page: PageSnapshot | undefined): s
     const value = content as Record<string, unknown>;
     return [value.text, value.seen].filter((item): item is string => typeof item === "string");
   });
-  const current = page ? [page.text, ...page.elements.flatMap((element) => [element.name, element.value ?? ""])] : [];
+  const current = page ? [page.url, page.text, ...page.elements.flatMap((element) => [element.name, element.value ?? ""])] : [];
   return [...said, ...current].join("\n");
 }
 
@@ -313,4 +442,80 @@ function resultSummary(body: AgentTurnRequest): string | null {
 
 function event(tx: TenantTx, session: { id: string; tenantId: string }, kind: AgentEventKind, content: Prisma.InputJsonObject) {
   return tx.agentEvent.create({ data: { tenantId: session.tenantId, sessionId: session.id, kind, content } });
+}
+
+/** O parceiro fez uma pergunta (e não só pediu a implantação): a IA responde a ela, em vez da pergunta inicial. */
+function askedSomething(events: EventRow[]): boolean {
+  return events.some(({ kind, content }) => kind === "partner" && String((content as { text?: unknown }).text).includes("?"));
+}
+
+/** A resposta inicial do parceiro e os sites em que ele já entrou: ficam à vista da IA em toda volta, além do histórico recente. */
+function answersText({ answers, opened }: DecideContext): string {
+  const said = answers ? `RESPOSTAS DO PARCEIRO (à pergunta inicial; use nos campos, não pergunte de novo)\n${answers.slice(0, 800)}\n\n` : "";
+  const tabs = opened.length ? `ABAS ABERTAS (já abertas nesta sessão: volte com switch, sem abrir nem fazer login de novo)\n${opened.join(", ")}\n\n` : "";
+  return said + tabs;
+}
+
+/** Do registro todo da sessão, só o que o prompt precisa sempre: a primeira fala da IA, a resposta do parceiro, a leitura dela e os logins. */
+async function sessionExtras(tx: TenantTx, sessionId: string) {
+  const first = await tx.agentEvent.findFirst({ where: { sessionId, kind: "agent" }, orderBy: { createdAt: "asc" } });
+  if (!first) return extrasOf([]);
+  const [answer, intake, logins, tabs] = await Promise.all([
+    tx.agentEvent.findFirst({ where: { sessionId, kind: "partner", createdAt: { gte: first.createdAt } }, orderBy: { createdAt: "asc" } }),
+    tx.agentEvent.findFirst({ where: { sessionId, kind: "result", content: { path: ["intake"], equals: true } } }),
+    tx.agentEvent.findMany({ where: { sessionId, kind: "agent", content: { path: ["next", "type"], equals: "login" } } }),
+    tx.agentEvent.findMany({ where: { sessionId, kind: "agent", content: { path: ["next", "action", "newTab"], equals: true } } }),
+  ]);
+  const rows = [first, ...(answer ? [answer] : []), ...(intake ? [intake] : []), ...logins, ...tabs].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+  return extrasOf(rows);
+}
+
+function hostOf(value: string): string | null {
+  try {
+    return new URL(value).hostname;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * O texto da página de antes da última ação: ao voltar para outra aba (switch), o que apareceu na anterior (ex.: o código
+ * de autorização do iFood) ainda está à vista da IA para copiar. O histórico só guarda o que foi dito e feito.
+ */
+function previousText(events: EventRow[], page: PageSnapshot | undefined): string {
+  const current = page ? seenOf(page) : undefined;
+  const host = page ? hostOf(page.url) : null;
+  const texts = events.flatMap(({ content }) => {
+    const text = (content as { seen?: unknown }).seen;
+    return typeof text === "string" && text !== current ? [text] : [];
+  });
+  // De preferência a última página de outro site: depois de preencher um campo no Dish Desk, o que foi copiado do portal continua à vista.
+  const seen = texts.findLast((text) => hostOf(text.match(/^Endereço: (\S+)/)?.[1] ?? "") !== host) ?? texts.at(-1);
+  return seen ? `\n\nPÁGINA ANTERIOR (só o texto e os campos, para copiar o que apareceu nela)\n${seen.slice(0, 1200)}` : "";
+}
+
+/** O que fica guardado de uma página para a IA copiar depois: o endereço (às vezes traz o código da loja), os valores dos campos e o texto. */
+function seenOf(page: PageSnapshot): string {
+  const values = page.elements.filter((element) => element.value && !element.sensitive).map((element) => `${element.name || element.role}: ${element.value}`);
+  return [`Endereço: ${page.url}`, ...values, page.text].join("\n").slice(0, SEEN_CHARS);
+}
+
+/** A ação é igual à última que a IA fez e a anterior deu certo: ela está repetindo (ex.: abrir o mesmo endereço de novo). */
+function repeatsLast(events: EventRow[], next: AgentAction): boolean {
+  if (next.type !== "act" && next.type !== "confirm") return false;
+  const last = events.findLast((item) => item.kind === "agent");
+  const lastNext = (last?.content as { next?: AgentAction } | undefined)?.next;
+  if (!last || (lastNext?.type !== "act" && lastNext?.type !== "confirm")) return false;
+  const after = events.slice(events.indexOf(last) + 1).findLast((item) => item.kind === "result");
+  const worked = (after?.content as { ok?: unknown } | undefined)?.ok !== false && /deu certo/.test(String((after?.content as { summary?: unknown } | undefined)?.summary));
+  return worked && JSON.stringify(lastNext.action) === JSON.stringify(next.action);
+}
+
+/** O que dizer ao parceiro quando a IA quis encerrar mas falta passo: só a mensagem de teste pede a ação dele, com a instrução pronta. */
+function pendingSay(progress: OnboardingDto | null, said: string): string {
+  const pending = progress?.steps.filter((item) => item.status === "todo" || item.status === "error") ?? [];
+  if (pending.length === 1 && pending[0]!.step === "first_message") {
+    return "Falta só um teste: de outro celular, mande uma mensagem para o WhatsApp do restaurante que acabamos de conectar. Quando ela chegar na Inbox, a implantação termina. Escreva \"pronto\" depois de enviar.";
+  }
+  return said;
 }

@@ -86,11 +86,17 @@
 
   let nextRef = 1;
 
+  function onScreen(element) {
+    const rect = element.getBoundingClientRect();
+    return rect.bottom > 0 && rect.right > 0 && rect.top < innerHeight && rect.left < innerWidth;
+  }
+
   function snapshot() {
     const elements = [];
-    for (const element of document.querySelectorAll(`${INTERACTIVE}, ${HEADINGS}`)) {
+    // O que está na tela vem antes (ex.: a gaveta aberta por cima de uma lista longa): a IA lê a lista cortada no fim.
+    const found = [...document.querySelectorAll(`${INTERACTIVE}, ${HEADINGS}`)].filter(visible);
+    for (const element of [...found.filter(onScreen), ...found.filter((item) => !onScreen(item))]) {
       if (elements.length >= MAX_ELEMENTS) break;
-      if (!visible(element)) continue;
       // O mesmo elemento mantém o número entre as leituras (a IA pode citar o de antes).
       let ref = Number(element.dataset.ddRef);
       if (!ref) {
@@ -113,7 +119,9 @@
       if (element.disabled || element.getAttribute("aria-disabled") === "true") item.disabled = true;
       elements.push(item);
     }
-    const text = (document.body?.innerText ?? "").replace(/\s+/g, " ").trim().slice(0, MAX_TEXT);
+    // Um modal ou uma gaveta aberta: o texto dela vem antes do resto da página.
+    const overlay = [...document.querySelectorAll('[role="dialog"], [aria-modal="true"], dialog[open]')].filter(visible).at(-1);
+    const text = `${overlay ? `${overlay.innerText} | ` : ""}${document.body?.innerText ?? ""}`.replace(/\s+/g, " ").trim().slice(0, MAX_TEXT);
     return { url: location.href, title: document.title.slice(0, 300), elements, text };
   }
 
@@ -123,10 +131,32 @@
     return element;
   }
 
+  function setValue(element, value) {
+    Object.getOwnPropertyDescriptor(Object.getPrototypeOf(element), "value").set.call(element, value);
+    element.dispatchEvent(new Event("input", { bubbles: true }));
+    element.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+
+  /** Código em caixinhas (uma letra por campo): a partir da caixa dada, põe uma letra em cada campo livre, pulando o "-" fixo. */
+  function fillSegmented(first, value) {
+    let box = first.parentElement;
+    while (box && box.querySelectorAll('input[maxlength="1"]').length < 4) box = box.parentElement;
+    if (!box) return false;
+    const boxes = [...box.querySelectorAll('input[maxlength="1"]')].filter((item) => !item.disabled && !item.readOnly && item.value !== "-");
+    const chars = value.replace(/[^0-9a-z]/gi, "").split("");
+    boxes.slice(boxes.indexOf(first)).forEach((item, index) => {
+      if (index >= chars.length) return;
+      item.focus();
+      setValue(item, chars[index]);
+    });
+    return true;
+  }
+
   /** Escreve como se fosse digitado: o React só enxerga o valor posto pelo setter nativo, seguido do evento. */
   function fill(element, value) {
     if (sensitiveOf(element)) throw new Error("A IA não preenche senha, código nem cartão.");
     element.focus();
+    if (element.maxLength === 1 && fillSegmented(element, value)) return;
     if (element.isContentEditable) {
       document.execCommand("selectAll");
       document.execCommand("insertText", false, value);
