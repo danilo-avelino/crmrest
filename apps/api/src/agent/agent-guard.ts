@@ -33,6 +33,8 @@ export function sensitiveOf(element: PageElement): SensitiveField | null {
 /** A IA pedindo ao parceiro o que ela mesma faz na página (ir a uma tela, clicar, copiar); só o que é no celular fica com ele. */
 const ASKS_PARTNER_TO_ACT = /\b(v[áa] (em|para|até)|clique|copie|cole|acesse|procure|navegue)\b/i;
 const ON_PHONE = /celular|\bqr\b|aplicativo|\bapp\b|aparelho/i;
+/** O que a IA diz enquanto age: uma frase sobre o que está fazendo. */
+const ACTION_SAY_MAX = 200;
 
 const FIELD_SAY:Record<SensitiveField, string> = {
   password: "Essa parte é com você: digite a sua senha na página e clique em Login feito quando terminar.",
@@ -72,7 +74,8 @@ export function guard(decision: Decision, page: PageSnapshot | undefined, allowe
     const host = (parseUrl(decision.value)?.hostname ?? decision.value.trim()).toLowerCase();
     if (!/^[a-z0-9.-]+$/.test(host)) return { invalid: `"${decision.value}" não é um site.` };
     if (!hostAllowed(host, allowed)) return { next: permission(host) };
-    return { next: { type: "act", say, action: { type: "switch", host } } };
+    const action: AgentPageAction = { type: "switch", host };
+    return { next: { type: "act", say: sayOf(say, action), action } };
   }
 
   if (decision.action === "navigate") {
@@ -87,7 +90,7 @@ export function guard(decision: Decision, page: PageSnapshot | undefined, allowe
     // Outro site abre numa aba nova: a aba atual (o Dish Desk, quase sempre) fica aberta para a IA voltar com switch.
     const current = page ? new URL(page.url).hostname : null;
     const action: AgentPageAction = { type: "navigate", url: url.toString(), ...(current && current !== url.hostname && { newTab: true }) };
-    return { next: { type: "act", say, action } };
+    return { next: { type: "act", say: sayOf(say, action), action } };
   }
 
   if (!page) return { invalid: "Não há página aberta para agir." };
@@ -115,7 +118,19 @@ export function guard(decision: Decision, page: PageSnapshot | undefined, allowe
     decision.action === "click" ? { type: "click", ref: element.ref, label } : { type: decision.action, ref: element.ref, label, value: decision.value };
   // Só um clique não dá para desfazer: preencher e escolher mudam o que está na tela, não o que o restaurante já fez.
   const confirm = decision.action === "click" && (IRREVERSIBLE.test(label) || (decision.irreversible && !ROUTINE.test(label)));
-  return { next: confirm ? { type: "confirm", say, action } : { type: "act", say, action } };
+  return { next: confirm ? { type: "confirm", say: sayOf(say, action), action } : { type: "act", say: sayOf(say, action), action } };
+}
+
+/** Numa ação, a IA diz o que está fazendo, curto; um texto longo ou que manda o parceiro agir vira a descrição da própria ação. */
+function sayOf(say: string, action: AgentPageAction): string {
+  if (say.length <= ACTION_SAY_MAX && !ASKS_PARTNER_TO_ACT.test(say)) return say;
+  if (action.type === "switch") return `Vou voltar para ${action.host}.`;
+  if (action.type === "navigate") {
+    const url = new URL(action.url);
+    return `Vou abrir ${url.hostname}${url.pathname === "/" ? "" : url.pathname}.`;
+  }
+  if (action.type === "click") return `Vou clicar em ${action.label}.`;
+  return action.type === "fill" ? `Vou preencher ${action.label || "o campo"}.` : `Vou escolher ${action.value}.`;
 }
 
 function parseUrl(text: string): URL | null {

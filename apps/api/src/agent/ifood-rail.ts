@@ -1,0 +1,76 @@
+import type { PageElement, PageSnapshot } from "@dishdesk/shared";
+import type { Decision } from "./agent-guard.js";
+
+/**
+ * O caminho do iFood, sem a LLM: o modelo local erra a página do portal (abre menus, vai para o Financeiro, pede ao
+ * parceiro para procurar). No portal: /apps → "Ativar integração por código" → o código de vinculação do Dish Desk nas
+ * caixinhas → Continuar; com o código de autorização na tela, volta ao Dish Desk, cola e conecta. O que não se encaixa
+ * aqui (ex.: um "Autorizar" no meio) fica com a LLM.
+ */
+export const IFOOD_PORTAL = "portal.ifood.com.br";
+const APPS_URL = `https://${IFOOD_PORTAL}/apps`;
+/** Os códigos do iFood (vinculação e autorização): quatro letras ou números, hífen, mais quatro. */
+const CODE = /\b[A-Z0-9]{4}-[A-Z0-9]{4}\b/g;
+/** O texto do modal do iFood no Dish Desk, logo antes do código de vinculação (integrations-tab.tsx). */
+export const LINK_CODE_HINT = "confira este código";
+
+/** O código de vinculação que o Dish Desk mostrou: o primeiro depois do texto do modal. */
+export function linkCodeOf(text: string | null | undefined): string | null {
+  const at = text?.indexOf(LINK_CODE_HINT) ?? -1;
+  return at === -1 ? null : (text!.slice(at).match(CODE)?.[0] ?? null);
+}
+
+/** O código de autorização que o portal mostrou: um código diferente do de vinculação. */
+export function authCodeOf(portalText: string | null | undefined, linkCode: string | null): string | null {
+  return portalText?.match(CODE)?.find((code) => code !== linkCode) ?? null;
+}
+
+type Rail = {
+  page: PageSnapshot | undefined;
+  panelHost: string;
+  linkCode: string | null;
+  authCode: string | null;
+  /** Os sites já abertos nesta sessão (o portal: volta com switch, sem login de novo). */
+  opened: string[];
+  /** A IA já clicou em Continuar no modal do portal (não abre o modal de novo). */
+  submitted: boolean;
+};
+
+export function ifoodRail({ page, panelHost, linkCode, authCode, opened, submitted }: Rail): Decision | null {
+  if (!page) return null;
+  const url = new URL(page.url);
+  if (url.hostname === IFOOD_PORTAL) {
+    if (authCode) return decision("switch", `O iFood gerou o código de autorização. Vou voltar ao Dish Desk para concluir.`, { value: panelHost });
+    if (!url.pathname.startsWith("/apps")) return decision("navigate", "Vou abrir a página de integrações do Portal do Parceiro.", { value: APPS_URL });
+    if (!linkCode) return null;
+    if (/ativar uma integra[çc][ãa]o|c[óo]digo de ativa[çc][ãa]o/i.test(page.text)) {
+      const boxes = page.elements.filter((element) => element.role === "campo" && !element.disabled && !/buscar|pesquis|search/i.test(element.name));
+      if (boxes.length && !submitted && boxes.some((box) => !box.value)) {
+        return decision("fill", `Vou digitar o código de vinculação do Dish Desk (${linkCode}).`, { ref: boxes[0]!.ref, value: linkCode });
+      }
+      const next = button(page, /^continuar$/i);
+      return next && !submitted ? decision("click", "Vou continuar a ativação.", { ref: next.ref }) : null;
+    }
+    const open = button(page, /ativar integra[çc][ãa]o por c[óo]digo/i);
+    return open && !submitted ? decision("click", "Vou clicar em Ativar integração por código.", { ref: open.ref }) : null;
+  }
+  if (url.hostname !== panelHost || !page.text.includes(LINK_CODE_HINT)) return null;
+  const field = page.elements.find((element) => /c[óo]digo de autoriza[çc][ãa]o/i.test(element.name));
+  if (!field) return null;
+  if (authCode) {
+    if (!field.value) return decision("fill", "Vou colar o código de autorização do iFood.", { ref: field.ref, value: authCode });
+    const connect = button(page, /^conectar$/i);
+    return connect ? decision("click", "Vou clicar em Conectar para concluir a integração do iFood.", { ref: connect.ref }) : null;
+  }
+  if (!linkCode) return null;
+  const say = "Vou ao Portal do Parceiro do iFood ativar a integração com o código do Dish Desk.";
+  return opened.includes(IFOOD_PORTAL) ? decision("switch", say, { value: IFOOD_PORTAL }) : decision("login", say, { value: APPS_URL });
+}
+
+function button(page: PageSnapshot, name: RegExp): PageElement | undefined {
+  return page.elements.find((element) => element.role !== "campo" && !element.disabled && name.test(element.name));
+}
+
+function decision(action: Decision["action"], say: string, extra: { ref?: number; value?: string }): Decision {
+  return { say, action, ref: extra.ref ?? 0, value: extra.value ?? "", irreversible: false, reason: "" };
+}

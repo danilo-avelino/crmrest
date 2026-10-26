@@ -4,6 +4,7 @@ import request from "supertest";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { type Decision, guard } from "../src/agent/agent-guard.js";
 import { FIRST_QUESTION } from "../src/agent/agent.service.js";
+import { authCodeOf, ifoodRail, linkCodeOf } from "../src/agent/ifood-rail.js";
 import { INTAKE_INTRO, INTAKE_QUESTIONS } from "../src/agent/intake.js";
 import { accessTokenFor, admin, createAuthFixture, createTestApp, startMockGraph } from "./helpers.js";
 
@@ -83,6 +84,73 @@ describe("agente da extensão: travas", () => {
     expect(guard(decision({ ref: 6 }), portal, ALLOWED)).toHaveProperty("invalid");
     expect(guard(decision({ ref: 1 }), undefined, ALLOWED)).toHaveProperty("invalid");
   });
+
+  it("numa ação, a IA diz o que está fazendo: instruções ao parceiro viram a descrição da ação", () => {
+    const say = "Agora que você está logado, siga estes passos: 1. Clique no botão Integrações. 2. Copie o código e cole aqui.";
+    expect(guard(decision({ say, ref: 1 }), portal, ALLOWED)).toMatchObject({ next: { type: "act", say: "Vou clicar em Aplicativos." } });
+    expect(guard(decision({ say, action: "navigate", value: "https://portal.ifood.com.br/apps" }), portal, ALLOWED)).toMatchObject({
+      next: { say: "Vou abrir portal.ifood.com.br/apps." },
+    });
+    expect(guard(decision({ say: "Vou abrir os aplicativos.", ref: 1 }), portal, ALLOWED)).toMatchObject({ next: { say: "Vou abrir os aplicativos." } });
+  });
+});
+
+describe("agente da extensão: o caminho do iFood", () => {
+  const panelHost = "www.dishdesk.com.br";
+  const at = (url: string, elements: PageSnapshot["elements"], text = ""): PageSnapshot => ({ url, title: "Página", elements, text });
+  const rail = (page: PageSnapshot, patch: Partial<Parameters<typeof ifoodRail>[0]> = {}) =>
+    ifoodRail({ page, panelHost, linkCode: "KMQP-JDRF", authCode: null, opened: [], submitted: false, ...patch });
+  const boxes = (values: string[]) => values.map((value, index) => ({ ref: 10 + index, role: "campo", name: "", ...(value && { value }) }));
+
+  it("lê os códigos: o de vinculação no modal do Dish Desk e o de autorização no portal", () => {
+    expect(linkCodeOf("Exemplo ABCD-EFGH. Abra o Portal e confira este código. Clique em Autorizar. KMQP-JDRF Abrir o Portal")).toBe("KMQP-JDRF");
+    expect(linkCodeOf("Integrações")).toBeNull();
+    expect(authCodeOf("Código KMQP-JDRF autorizado. Código de autorização: LHQX-ZZZZ", "KMQP-JDRF")).toBe("LHQX-ZZZZ");
+    expect(authCodeOf("Código KMQP-JDRF", "KMQP-JDRF")).toBeNull();
+  });
+
+  it("no portal: abre /apps, clica em Ativar integração por código, digita o código e continua", () => {
+    expect(rail(at("https://portal.ifood.com.br/integracoes", [{ ref: 1, role: "link", name: "Financeiro" }]))).toMatchObject({
+      action: "navigate",
+      value: "https://portal.ifood.com.br/apps",
+    });
+    const apps = at("https://portal.ifood.com.br/apps", [
+      { ref: 1, role: "link", name: "Financeiro" },
+      { ref: 2, role: "botão", name: "Ativar integração por código" },
+      { ref: 3, role: "campo", name: "Buscar uma integração" },
+    ]);
+    expect(rail(apps)).toMatchObject({ action: "click", ref: 2 });
+    expect(rail(apps, { submitted: true })).toBeNull();
+
+    const modal = (values: string[], disabled = true) =>
+      at("https://portal.ifood.com.br/apps", [...boxes(values), { ref: 20, role: "botão", name: "Continuar", disabled }, ...apps.elements], "Ativar uma integração | Digite aqui o código de ativação");
+    expect(rail(modal(["", "", "", "", "-", "", "", "", ""]))).toMatchObject({ action: "fill", ref: 10, value: "KMQP-JDRF" });
+    expect(rail(modal(["K", "M", "Q", "P", "-", "J", "D", "R", "F"], false))).toMatchObject({ action: "click", ref: 20 });
+    expect(rail(modal(["K", "M", "Q", "P", "-", "J", "D", "R", "F"], false), { submitted: true })).toBeNull();
+    // Sem o código de vinculação, a LLM decide.
+    expect(rail(modal(["", "", "", "", "-", "", "", "", ""]), { linkCode: null })).toBeNull();
+
+    // Com o código de autorização na tela, volta ao Dish Desk.
+    expect(rail(apps, { authCode: "LHQX-ZZZZ" })).toMatchObject({ action: "switch", value: panelHost });
+  });
+
+  it("no Dish Desk: vai ao portal com o código; com o código de autorização, cola e conecta", () => {
+    const form = (value?: string) =>
+      at(
+        "https://www.dishdesk.com.br/configuracoes/integracoes?conectar=IFOOD",
+        [
+          { ref: 1, role: "campo", name: "Código de autorização", ...(value && { value }) },
+          { ref: 2, role: "botão", name: "Conectar" },
+        ],
+        "iFood. Abra o Portal do Parceiro e confira este código. KMQP-JDRF",
+      );
+    expect(rail(form())).toMatchObject({ action: "login", value: "https://portal.ifood.com.br/apps" });
+    expect(rail(form(), { opened: ["portal.ifood.com.br"] })).toMatchObject({ action: "switch", value: "portal.ifood.com.br" });
+    expect(rail(form(), { authCode: "LHQX-ZZZZ" })).toMatchObject({ action: "fill", ref: 1, value: "LHQX-ZZZZ" });
+    expect(rail(form("LHQX-ZZZZ"), { authCode: "LHQX-ZZZZ" })).toMatchObject({ action: "click", ref: 2 });
+    // Outra tela do Dish Desk: a LLM decide.
+    expect(rail(at("https://www.dishdesk.com.br/configuracoes/horario", []))).toBeNull();
+  });
 });
 
 describe("agente da extensão: sessões", () => {
@@ -99,7 +167,8 @@ describe("agente da extensão: sessões", () => {
     llm.reply(() => {
       const answer = answers.shift();
       if (answer === undefined) return { status: 500, body: {} };
-      return { status: 200, body: { choices: [{ message: { content: JSON.stringify(answer) } }] } };
+      // Texto: a resposta crua da LLM (ex.: um JSON quebrado).
+      return { status: 200, body: { choices: [{ message: { content: typeof answer === "string" ? answer : JSON.stringify(answer) } }] } };
     });
     app = await createTestApp({ AI_BASE_URL: llm.url });
     fx = await createAuthFixture();
@@ -227,6 +296,14 @@ describe("agente da extensão: sessões", () => {
     // Conferido, mas a implantação continua: os outros passos ainda estão a fazer.
     expect(checked).toMatchObject({ status: "ACTIVE", next: { type: "reply", say: "Pronto, o WhatsApp está conectado!" } });
     expect(checked.progress.steps[0]).toEqual({ step: "whatsapp", status: "done", detail: "+55 11 90000-0000" });
+  });
+
+  it("um JSON quebrado da LLM é pedido de novo, sem dizer que a IA está fora do ar", async () => {
+    const { body: session } = await start(fx.b.id, "SUPPORT").expect(201);
+    answers.push('{"say": "Vou abrir.", "action": "click",\n}');
+    answer({ say: "Vou abrir as Integrações.", action: "click", ref: 1 });
+    const { body } = await turn(session.id, { message: "Meu WhatsApp parou", page: dishDesk });
+    expect(body.next).toMatchObject({ type: "act", action: { ref: 1 } });
   });
 
   it("um elemento que não existe volta para a LLM; três ações seguidas que falham, a IA para", async () => {

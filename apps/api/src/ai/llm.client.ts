@@ -5,6 +5,9 @@ import { ENV, type Env } from "../config/env.js";
 
 export type LlmMessage = { role: "system" | "user"; content: string };
 
+/** Respostas fora do formato (JSON inválido ou fora do schema) antes de desistir. */
+const PARSE_ATTEMPTS = 2;
+
 /**
  * LLM do módulo Atendimento com IA (AI_BASE_URL), no formato da OpenAI: o Ollama local ou um provedor. A resposta vem
  * em JSON no formato do schema e é validada por ele.
@@ -25,9 +28,22 @@ export class LlmClient {
   }
 
   async json<T>(name: string, schema: z.ZodType<T>, messages: LlmMessage[], temperature = 0.3): Promise<T> {
-    if (!this.env.AI_BASE_URL) throw new Error("IA desligada: falta AI_BASE_URL.");
+    const base = this.env.AI_BASE_URL;
+    if (!base) throw new Error("IA desligada: falta AI_BASE_URL.");
     const { $schema: _, ...jsonSchema } = z.toJSONSchema(schema);
-    const response = await fetch(`${this.env.AI_BASE_URL.replace(/\/$/, "")}/chat/completions`, {
+    // O modelo local às vezes devolve um JSON quebrado (vírgula sobrando, texto cortado): pede de novo antes de desistir.
+    for (let attempt = 1; ; attempt++) {
+      const content = await this.complete(base, name, jsonSchema, messages, temperature);
+      try {
+        return schema.parse(JSON.parse(content));
+      } catch (error) {
+        if (attempt >= PARSE_ATTEMPTS) throw error;
+      }
+    }
+  }
+
+  private async complete(base: string, name: string, jsonSchema: Record<string, unknown>, messages: LlmMessage[], temperature: number): Promise<string> {
+    const response = await fetch(`${base.replace(/\/$/, "")}/chat/completions`, {
       method: "POST",
       headers: { "content-type": "application/json", ...(this.env.AI_API_KEY && { authorization: `Bearer ${this.env.AI_API_KEY}` }) },
       body: JSON.stringify({
@@ -44,6 +60,6 @@ export class LlmClient {
     const body = (await response.json()) as { choices?: { message?: { content?: string | null } }[] };
     const content = body.choices?.[0]?.message?.content;
     if (!content) throw new Error("A LLM não respondeu.");
-    return schema.parse(JSON.parse(content));
+    return content;
   }
 }
