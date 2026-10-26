@@ -18,10 +18,9 @@ export function cardapioWebRail({ page, panelHost }: { page: PageSnapshot | unde
   }
   const api = find(page, /api de integra[çc][ãa]o/i);
   if (api) return decision("click", "Vou abrir a API de integração.", { ref: api.ref });
-  if (url.pathname.startsWith("/configuracoes")) {
-    const integrations = find(page, /integra[çc][õo]es$/i);
-    return integrations ? decision("click", "Vou abrir Integrações nas configurações da loja.", { ref: integrations.ref }) : null;
-  }
+  // Pelo menu, não pelo endereço: o das Configurações não é um caminho conhecido.
+  const integrations = find(page, /integra[çc][õo]es$/i);
+  if (integrations) return decision("click", "Vou abrir Integrações nas configurações da loja.", { ref: integrations.ref });
   const settings = find(page, /configura[çc][õo]es$/i);
   return settings ? decision("click", "Vou abrir as Configurações da loja.", { ref: settings.ref }) : null;
 }

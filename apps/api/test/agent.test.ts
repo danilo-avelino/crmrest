@@ -106,7 +106,8 @@ describe("agente da extensão: o caminho do Cardápio Web", () => {
 
   it("Configurações → Integrações → API de integração → volta ao Dish Desk, sem clicar de novo em Configurações", () => {
     expect(rail(at("/", menu))).toMatchObject({ action: "click", ref: 2 });
-    const settings = at("/configuracoes/geral", [...menu, { ref: 3, role: "link", name: "Geral" }, { ref: 4, role: "link", name: "Integrações" }]);
+    // O menu das Configurações (itens de div, que a extensão lê pelo cursor), em qualquer endereço.
+    const settings = at("/settings", [...menu, { ref: 3, role: "botão", name: "Geral" }, { ref: 4, role: "botão", name: "Integrações" }]);
     expect(rail(settings)).toMatchObject({ action: "click", ref: 4 });
     expect(rail(at("/configuracoes/integracoes", [...menu, { ref: 5, role: "botão", name: "API de integração" }]))).toMatchObject({ action: "click", ref: 5 });
     const drawer = at("/configuracoes/integracoes", [

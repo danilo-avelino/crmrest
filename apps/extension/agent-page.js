@@ -91,10 +91,27 @@
     return rect.bottom > 0 && rect.right > 0 && rect.top < innerHeight && rect.left < innerWidth;
   }
 
+  /**
+   * Itens de menu feitos de div com evento de clique, sem link nem botão (ex.: o menu das Configurações do Cardápio Web):
+   * o cursor de mão os denuncia. O cursor passa para os filhos, então fica só o de fora; e o que está dentro de um link ou
+   * botão, ou tem um, já entra pelo INTERACTIVE.
+   */
+  function clickables() {
+    const items = [];
+    for (const element of document.body?.querySelectorAll("div, li, span") ?? []) {
+      if (getComputedStyle(element).cursor !== "pointer") continue;
+      if (element.parentElement && getComputedStyle(element.parentElement).cursor === "pointer") continue;
+      if (element.closest(INTERACTIVE) || element.querySelector(INTERACTIVE)) continue;
+      if (clean(element.innerText)) items.push(element);
+    }
+    return items;
+  }
+
   function snapshot() {
     const elements = [];
+    const extra = new Set(clickables());
     // O que está na tela vem antes (ex.: a gaveta aberta por cima de uma lista longa): a IA lê a lista cortada no fim.
-    const found = [...document.querySelectorAll(`${INTERACTIVE}, ${HEADINGS}`)].filter(visible);
+    const found = [...document.querySelectorAll(`${INTERACTIVE}, ${HEADINGS}`), ...extra].filter(visible);
     for (const element of [...found.filter(onScreen), ...found.filter((item) => !onScreen(item))]) {
       if (elements.length >= MAX_ELEMENTS) break;
       // O mesmo elemento mantém o número entre as leituras (a IA pode citar o de antes).
@@ -103,7 +120,7 @@
         ref = nextRef++;
         element.dataset.ddRef = String(ref);
       }
-      const role = roleOf(element);
+      const role = extra.has(element) ? "botão" : roleOf(element);
       const sensitive = sensitiveOf(element);
       const item = { ref, role, name: nameOf(element) };
       if (sensitive) item.sensitive = sensitive;
