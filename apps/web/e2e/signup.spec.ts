@@ -96,7 +96,7 @@ test("cadastro pelo site entra na Inbox em teste; com o teste encerrado, cai na 
 test("conectar um canal que já passou por outro teste grátis encerra o teste e leva à tela de pagamento", async ({ page }) => {
   await page.goto("/cadastro");
   await fillSignup(page, `Cantina Repetida ${suffix}`, emails.repeated, "123.456.789-09");
-  // No primeiro acesso a Inbox abre o assistente sozinho: a corrida entre os dois destinos n�o importa aqui.
+  // No primeiro acesso a Inbox abre o assistente sozinho: a corrida entre os dois destinos não importa aqui.
   await expect(page).toHaveURL(/\/(inbox|assistente)/);
 
   await page.goto("/configuracoes/integracoes");
