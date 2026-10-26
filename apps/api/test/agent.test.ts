@@ -127,6 +127,9 @@ describe("agente da extensão: o caminho do iFood", () => {
     expect(rail(modal(["", "", "", "", "-", "", "", "", ""]))).toMatchObject({ action: "fill", ref: 10, value: "KMQP-JDRF" });
     expect(rail(modal(["K", "M", "Q", "P", "-", "J", "D", "R", "F"], false))).toMatchObject({ action: "click", ref: 20 });
     expect(rail(modal(["K", "M", "Q", "P", "-", "J", "D", "R", "F"], false), { submitted: true })).toBeNull();
+    // O texto da página longa vem cortado antes do modal: os elementos dele bastam (não clica de novo em Ativar).
+    const cut = at("https://portal.ifood.com.br/apps", [...boxes(["", "", "", "", "-", "", "", "", ""]), { ref: 20, role: "botão", name: "Continuar", disabled: true }, ...apps.elements]);
+    expect(rail(cut)).toMatchObject({ action: "fill", ref: 10, value: "KMQP-JDRF" });
     // Sem o código de vinculação, a LLM decide.
     expect(rail(modal(["", "", "", "", "-", "", "", "", ""]), { linkCode: null })).toBeNull();
 

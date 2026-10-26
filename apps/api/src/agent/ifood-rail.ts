@@ -43,8 +43,10 @@ export function ifoodRail({ page, panelHost, linkCode, authCode, opened, submitt
     if (authCode) return decision("switch", `O iFood gerou o código de autorização. Vou voltar ao Dish Desk para concluir.`, { value: panelHost });
     if (!url.pathname.startsWith("/apps")) return decision("navigate", "Vou abrir a página de integrações do Portal do Parceiro.", { value: APPS_URL });
     if (!linkCode) return null;
-    if (/ativar uma integra[çc][ãa]o|c[óo]digo de ativa[çc][ãa]o/i.test(page.text)) {
-      const boxes = page.elements.filter((element) => element.role === "campo" && !element.disabled && !/buscar|pesquis|search/i.test(element.name));
+    const boxes = page.elements.filter((element) => element.role === "campo" && !element.disabled && !/buscar|pesquis|search/i.test(element.name));
+    // O modal aberto: pelo texto ou pelos elementos dele (o texto da página longa é cortado antes do modal, que fica no fim).
+    const modal = /ativar uma integra[çc][ãa]o|c[óo]digo de ativa[çc][ãa]o/i.test(page.text) || page.elements.some((element) => /^continuar$/i.test(element.name)) || boxes.length >= 4;
+    if (modal) {
       if (boxes.length && !submitted && boxes.some((box) => !box.value)) {
         return decision("fill", `Vou digitar o código de vinculação do Dish Desk (${linkCode}).`, { ref: boxes[0]!.ref, value: linkCode });
       }
