@@ -56,8 +56,12 @@ test("cadastro pelo site entra na Inbox em teste; com o teste encerrado, cai na 
   await page.screenshot({ path: "test-results/cadastro.png" });
 
   await page.getByLabel("CPF ou CNPJ").fill("123.456.789-09");
+  // No primeiro acesso a Inbox abre o assistente sozinha; abrir uma vez basta para ela não abrir mais.
+  const opened = page.waitForResponse((response) => response.url().endsWith("/opened") && response.request().method() === "POST");
   await page.getByRole("button", { name: "Criar conta e começar o teste" }).click();
-  await expect(page).toHaveURL(/\/inbox$/);
+  await expect(page).toHaveURL(/\/assistente\?restaurante=/);
+  await opened;
+  await page.goto("/inbox");
   await expect(page.getByRole("heading", { name: "Inbox" })).toBeVisible();
 
   // O teste acaba: no próximo carregamento o restaurante não entra mais e a tela de pagamento aparece.
