@@ -3,9 +3,9 @@ import type { Decision } from "./agent-guard.js";
 
 /**
  * O caminho do iFood, sem a LLM: o modelo local erra a página do portal (abre menus, vai para o Financeiro, pede ao
- * parceiro para procurar). No portal: /apps → "Ativar integração por código" → o código de vinculação do Dish Desk nas
- * caixinhas → Continuar; com o código de autorização na tela, volta ao Dish Desk, cola e conecta. O que não se encaixa
- * aqui (ex.: um "Autorizar" no meio) fica com a LLM.
+ * parceiro para procurar). No portal: /apps → "Ativar integração por código" → o parceiro cola o código de vinculação do
+ * Dish Desk nas caixinhas → Continuar; com o código de autorização na tela ("Integração autorizada"), volta ao Dish Desk,
+ * o parceiro cola o código e a IA conecta. O que não se encaixa aqui fica com a LLM.
  */
 export const IFOOD_PORTAL = "portal.ifood.com.br";
 const APPS_URL = `https://${IFOOD_PORTAL}/apps`;
@@ -14,9 +14,14 @@ const CODE = /\b[A-Z0-9]{4}-[A-Z0-9]{4}\b/g;
 /** O texto do modal do iFood no Dish Desk, logo antes do código de vinculação (integrations-tab.tsx). */
 export const LINK_CODE_HINT = "confira este código";
 
-/** As caixinhas do iFood são campo de código (a IA não preenche): o parceiro cola o código que o painel mostra com o botão Copiar. */
-export const IFOOD_PASTE_SAY =
-  'O iFood pede que você mesmo coloque o código de ativação. Clique em Copiar aqui embaixo, depois na primeira caixinha do iFood, e cole (Ctrl+V). Em seguida clique em Pronto que eu continuo.';
+/**
+ * Os códigos o parceiro cola, com o botão Copiar do painel (o `fill` do caminho vira o cartão "Sua vez" com o código): as
+ * caixinhas do iFood são campo de código, que a IA não preenche, e no Dish Desk o parceiro cola o que o iFood devolveu.
+ */
+const PASTE_LINK_CODE_SAY =
+  "O iFood pede que você mesmo coloque o código de ativação. Clique em Copiar aqui embaixo, depois na primeira caixinha do iFood, e cole (Ctrl+V). Em seguida clique em Continuar no iFood e em Pronto aqui, que eu continuo.";
+const PASTE_AUTH_CODE_SAY =
+  "O iFood autorizou e devolveu o código de autorização. Clique em Copiar aqui embaixo e cole no campo Código de autorização do Dish Desk (Ctrl+V). Depois clique em Pronto que eu conecto.";
 
 /** O código de vinculação que o Dish Desk mostrou: o primeiro depois do texto do modal. */
 export function linkCodeOf(text: string | null | undefined): string | null {
@@ -24,10 +29,16 @@ export function linkCodeOf(text: string | null | undefined): string | null {
   return at === -1 ? null : (text!.slice(at).match(CODE)?.[0] ?? null);
 }
 
-/** O código de autorização que o portal mostrou: um código diferente do de vinculação. */
-export function authCodeOf(portalText: string | null | undefined, linkCode: string | null): string | null {
-  // Só um código logo depois de "autorização": outro código da página (ou o de vinculação) não serve.
-  for (const near of portalText?.matchAll(/autoriza[çc][ãa]o.{0,120}/gis) ?? []) {
+/**
+ * O código de autorização que o portal mostrou (diferente do de vinculação): no campo do modal "Integração autorizada"
+ * (os valores dos campos são as linhas do meio do que foi guardado da página; o texto, cortado antes do modal, é a
+ * última) ou no texto, logo depois de "autorização". Outro código da página não serve.
+ */
+export function authCodeOf(portalSeen: string | null | undefined, linkCode: string | null): string | null {
+  const values = portalSeen?.split("\n").slice(1, -1).join("\n");
+  const inField = values?.match(CODE)?.find((item) => item !== linkCode);
+  if (inField) return inField;
+  for (const near of portalSeen?.matchAll(/autoriza[çc][ãa]o.{0,120}/gis) ?? []) {
     const code = near[0].match(CODE)?.find((item) => item !== linkCode);
     if (code) return code;
   }
@@ -38,7 +49,7 @@ export function authCodeOf(portalText: string | null | undefined, linkCode: stri
 export type IfoodState = {
   linkCode: string | null;
   authCode: string | null;
-  /** A IA já clicou em Continuar no modal do portal com este código (não abre o modal de novo). */
+  /** O código já foi para o iFood (o cartão de colar apareceu ou a IA clicou em Continuar): não abre o modal de novo. */
   submitted: boolean;
   /** Houve um Conectar com este código: um erro na tela é dele, e um novo código recomeça. */
   connected: boolean;
@@ -62,11 +73,11 @@ export function ifoodRail({ page, panelHost, linkCode, authCode, opened, submitt
     // O modal aberto: pelo texto ou pelos elementos dele (o texto da página longa é cortado antes do modal, que fica no fim).
     const modal = /ativar uma integra[çc][ãa]o|c[óo]digo de ativa[çc][ãa]o/i.test(page.text) || page.elements.some((element) => /^continuar$/i.test(element.name)) || boxes.length >= 4;
     if (modal) {
-      if (submitted) return null;
       // O Continuar só habilita com o código completo (as caixinhas são campo de código: a extensão não manda o valor delas).
       const next = button(page, /^continuar$/i);
       if (next) return decision("click", "Vou continuar a ativação.", { ref: next.ref });
-      return boxes.length ? decision("fill", `Vou digitar o código de vinculação do Dish Desk (${linkCode}).`, { ref: boxes[0]!.ref, value: linkCode }) : null;
+      if (submitted) return null;
+      return boxes.length ? decision("fill", PASTE_LINK_CODE_SAY, { ref: boxes[0]!.ref, value: linkCode }) : null;
     }
     const open = button(page, /ativar integra[çc][ãa]o por c[óo]digo/i);
     return open && !submitted ? decision("click", "Vou clicar em Ativar integração por código.", { ref: open.ref }) : null;
@@ -80,7 +91,7 @@ export function ifoodRail({ page, panelHost, linkCode, authCode, opened, submitt
   const field = page.elements.find((element) => /c[óo]digo de autoriza[çc][ãa]o/i.test(element.name));
   if (!field) return null;
   if (authCode) {
-    if (field.value !== authCode) return decision("fill", "Vou colar o código de autorização do iFood.", { ref: field.ref, value: authCode });
+    if (field.value !== authCode) return decision("fill", PASTE_AUTH_CODE_SAY, { ref: field.ref, value: authCode });
     const connect = button(page, /^conectar$/i);
     return connect ? decision("click", "Vou clicar em Conectar para concluir a integração do iFood.", { ref: connect.ref }) : null;
   }

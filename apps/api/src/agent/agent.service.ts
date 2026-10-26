@@ -25,7 +25,7 @@ import { isTenantAdmin } from "../settings/tenant-admin.js";
 import { type Decision, guard } from "./agent-guard.js";
 import { GUIDE, STEP_LABEL } from "./guide.js";
 import { cardapioWebRail } from "./cardapio-web-rail.js";
-import { authCodeOf, IFOOD_PASTE_SAY, IFOOD_PORTAL, type IfoodState, ifoodRail, LINK_CODE_HINT, linkCodeOf } from "./ifood-rail.js";
+import { authCodeOf, IFOOD_PORTAL, type IfoodState, ifoodRail, LINK_CODE_HINT, linkCodeOf } from "./ifood-rail.js";
 import { extrasOf, INTAKE_INTRO, INTAKE_PROMPT, INTAKE_QUESTIONS, Intake, intakeMarks, nextQuestion } from "./intake.js";
 
 /** Ações seguidas que falharam até a IA parar ("se perdeu"). */
@@ -372,8 +372,10 @@ export class AgentService {
     const railed = this.railIfood(context, page) ?? this.railCardapioWeb(context, page);
     if (railed) {
       let guarded = guard(railed.decision, page, allowed, known);
-      if ("next" in guarded && guarded.next.type === "your_turn" && railed.decision.action === "fill") {
-        guarded = { next: { ...guarded.next, say: IFOOD_PASTE_SAY, copy: railed.decision.value } };
+      // iFood: o parceiro cola os códigos (o de vinculação nas caixinhas do portal, o de autorização no Dish Desk) com o botão Copiar.
+      if ("next" in guarded && railed.step === "ifood" && railed.decision.action === "fill") {
+        const { say, ref, value } = railed.decision;
+        guarded = { next: { type: "your_turn", say, ref, field: "code", copy: value } };
       }
       if ("next" in guarded && !repeatsLast(context.events, guarded.next)) return { next: guarded.next, step: railed.step };
     }
@@ -529,15 +531,17 @@ async function ifoodState(tx: TenantTx, sessionId: string, linkSeen: string | nu
   const since = { gt: first.createdAt };
   const clicked = (label: string) =>
     tx.agentEvent.findFirst({ where: { sessionId, kind: "agent", createdAt: since, content: { path: ["next", "action", "label"], equals: label } }, select: { id: true } });
-  const [portal, submitted, connected] = await Promise.all([
+  const [portal, continued, pasted, connected] = await Promise.all([
     tx.agentEvent.findFirst({
       where: { sessionId, createdAt: since, content: { path: ["seen"], string_starts_with: `Endereço: https://${IFOOD_PORTAL}` } },
       orderBy: { createdAt: "desc" },
     }),
     clicked("Continuar"),
+    // O cartão de colar o código de vinculação: quem clica em Continuar no iFood pode ser o parceiro.
+    tx.agentEvent.findFirst({ where: { sessionId, kind: "agent", createdAt: since, content: { path: ["next", "copy"], equals: linkCode } }, select: { id: true } }),
     clicked("Conectar"),
   ]);
-  return { linkCode, authCode: authCodeOf(seenIn(portal), linkCode), submitted: !!submitted, connected: !!connected };
+  return { linkCode, authCode: authCodeOf(seenIn(portal), linkCode), submitted: !!continued || !!pasted, connected: !!connected };
 }
 
 /** Na implantação, o passo ainda está a fazer (ou com erro): os caminhos fixos dos portais só valem aí. */

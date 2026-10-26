@@ -135,6 +135,8 @@ describe("agente da extensão: o caminho do iFood", () => {
     expect(authCodeOf("Código KMQP-JDRF", "KMQP-JDRF")).toBeNull();
     // Um código longe de "autorização" (ex.: outro código da página) não é o de autorização.
     expect(authCodeOf("Pedido ABCD-1234 entregue. Integrações ativas.", "KMQP-JDRF")).toBeNull();
+    // O modal "Integração autorizada" do portal: o código vem no campo, e o texto da página é cortado antes do modal.
+    expect(authCodeOf("Endereço: https://portal.ifood.com.br/apps\ncampo: JPVM-MVWN\nIntegrações Minhas integrações Dish Desk", "KMQP-JDRF")).toBe("JPVM-MVWN");
   });
 
   it("no portal: abre /apps, clica em Ativar integração por código, digita o código e continua", () => {
@@ -154,7 +156,9 @@ describe("agente da extensão: o caminho do iFood", () => {
       at("https://portal.ifood.com.br/apps", [...boxes(values), { ref: 20, role: "botão", name: "Continuar", disabled }, ...apps.elements], "Ativar uma integração | Digite aqui o código de ativação");
     expect(rail(modal(["", "", "", "", "-", "", "", "", ""]))).toMatchObject({ action: "fill", ref: 10, value: "KMQP-JDRF" });
     expect(rail(modal(["K", "M", "Q", "P", "-", "J", "D", "R", "F"], false))).toMatchObject({ action: "click", ref: 20 });
-    expect(rail(modal(["K", "M", "Q", "P", "-", "J", "D", "R", "F"], false), { submitted: true })).toBeNull();
+    // O parceiro colou e não clicou em Continuar: a IA clica (com o código já enviado, não pede para colar de novo).
+    expect(rail(modal(["K", "M", "Q", "P", "-", "J", "D", "R", "F"], false), { submitted: true })).toMatchObject({ action: "click", ref: 20 });
+    expect(rail(modal(["", "", "", "", "-", "", "", "", ""]), { submitted: true })).toBeNull();
     // O texto da página longa vem cortado antes do modal: os elementos dele bastam (não clica de novo em Ativar).
     const cut = at("https://portal.ifood.com.br/apps", [...boxes(["", "", "", "", "-", "", "", "", ""]), { ref: 20, role: "botão", name: "Continuar", disabled: true }, ...apps.elements]);
     expect(rail(cut)).toMatchObject({ action: "fill", ref: 10, value: "KMQP-JDRF" });
@@ -354,6 +358,16 @@ describe("agente da extensão: sessões", () => {
     const { body } = await turn(session.id, { result: { ok: true }, page: modal });
     expect(body.next).toMatchObject({ type: "your_turn", ref: 10, field: "code", copy: "KMQP-JDRF" });
     expect(llm.requests.length).toBe(calls);
+
+    // O parceiro colou e clicou em Continuar no iFood: o modal "Integração autorizada" traz o código num campo (o texto vem
+    // cortado antes do modal). A IA volta ao Dish Desk, sem clicar de novo em "Ativar integração por código".
+    const authorized = page("https://portal.ifood.com.br/apps", [
+      { ref: 30, role: "campo", name: "", value: "JPVM-MVWN" },
+      { ref: 31, role: "link", name: "Copiar" },
+      { ref: 32, role: "botão", name: "Ativar integração por código" },
+    ]);
+    const { body: back } = await turn(session.id, { message: "Pronto, terminei.", page: { ...authorized, text: "Integrações Minhas integrações" } });
+    expect(back.next).toMatchObject({ type: "act", action: { type: "switch", host: "localhost" } });
   });
 
   it("iFood: código recusado ao conectar → gera outro e volta ao portal sem reaproveitar o código de autorização antigo", async () => {
@@ -374,7 +388,8 @@ describe("agente da extensão: sessões", () => {
     answer({ say: "Vou ver.", action: "reply" });
     await turn(session.id, { message: "Como conecto o iFood?", page: form("KMQP-JDRF", null) });
     expect((await turn(session.id, { ...ok, page: portal })).body.next).toMatchObject({ type: "act", action: { type: "switch", host: "localhost" } });
-    expect((await turn(session.id, { ...ok, page: form("KMQP-JDRF", null) })).body.next).toMatchObject({ action: { type: "fill", value: "LHQX-ZZZZ" } });
+    // O parceiro cola o código de autorização no Dish Desk, com o botão Copiar do painel.
+    expect((await turn(session.id, { ...ok, page: form("KMQP-JDRF", null) })).body.next).toMatchObject({ type: "your_turn", ref: 1, copy: "LHQX-ZZZZ" });
     expect((await turn(session.id, { ...ok, page: form("KMQP-JDRF", "LHQX-ZZZZ") })).body.next).toMatchObject({ action: { type: "click", label: "Conectar" } });
     const refused = form("KMQP-JDRF", "LHQX-ZZZZ", "Não foi possível conectar o iFood: o código de autorização não foi aceito (gere um novo código de vinculação).");
     expect((await turn(session.id, { ...ok, page: refused })).body.next).toMatchObject({ action: { type: "click", label: "Gerar outro" } });
