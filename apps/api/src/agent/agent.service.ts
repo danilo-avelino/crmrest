@@ -24,7 +24,7 @@ import { markAccepted, markOnboardingStep, onboardingOf } from "../settings/onbo
 import { isTenantAdmin } from "../settings/tenant-admin.js";
 import { type Decision, guard } from "./agent-guard.js";
 import { GUIDE, STEP_LABEL } from "./guide.js";
-import { extrasOf, INTAKE_PROMPT, INTAKE_QUESTIONS, Intake, intakeMarks } from "./intake.js";
+import { extrasOf, INTAKE_INTRO, INTAKE_PROMPT, INTAKE_QUESTIONS, Intake, intakeMarks, nextQuestion } from "./intake.js";
 
 /** Ações seguidas que falharam até a IA parar ("se perdeu"). */
 export const MAX_FAILURES = 3;
@@ -33,8 +33,8 @@ const HISTORY_LIMIT = 12;
 /** A árvore da página divide o contexto da LLM (8k no Ollama) com o guia e o histórico. */
 const ELEMENTS_CHARS = 5000;
 const TEXT_CHARS = 1200;
-/** A primeira volta da implantação: a primeira das perguntas, uma por tópico (INTAKE_QUESTIONS). */
-export const FIRST_QUESTION = INTAKE_QUESTIONS[0]!.say;
+/** A primeira volta da implantação num restaurante sem nada feito: a primeira das perguntas, uma por tópico (INTAKE_QUESTIONS). */
+export const FIRST_QUESTION = INTAKE_INTRO + INTAKE_QUESTIONS[0]!.say;
 /** Uma ação de navegador pede a mesma resposta para a mesma tela: temperatura baixa (o padrão da conversa é 0,3). */
 const AGENT_TEMPERATURE = 0.1;
 /** Marcações seguidas (passos pulados) que a IA faz numa volta antes de agir na página. */
@@ -144,6 +144,8 @@ export type DecideContext = {
   /** Implantação: as respostas do parceiro às perguntas (`replies`, e `answers` com o tópico de cada uma), se elas já foram lidas (`intakeDone`) e os sites em que ele já entrou. */
   answers: string | null;
   replies: string[];
+  /** Os tópicos já perguntados, na ordem das respostas. */
+  asked: OnboardingStep[];
   /** A sessão começou pelas perguntas, uma por vez. */
   asking: boolean;
   intakeDone: boolean;
@@ -218,7 +220,7 @@ export class AgentService {
       const updated = await tx.agentSession.update({ where: { id: session.id }, data: { failures, grantedHosts } });
       const events = (await tx.agentEvent.findMany({ where: { sessionId }, orderBy: { createdAt: "desc" }, take: HISTORY_LIMIT })).reverse();
       const progress = session.kind === "SETUP" ? await onboardingOf(tx, session.tenantId) : null;
-      const extras = session.kind === "SETUP" ? await sessionExtras(tx, sessionId) : { answers: null, replies: [], asking: false, intakeDone: false, opened: [] };
+      const extras = session.kind === "SETUP" ? await sessionExtras(tx, sessionId) : { answers: null, replies: [], asked: [], asking: false, intakeDone: false, opened: [] };
       return { session: updated, restaurant: session.tenant.name, events, progress, ...extras };
     });
     const { session } = context;
@@ -306,7 +308,9 @@ export class AgentService {
     store: MarkStore,
   ): Promise<{ next: AgentAction; step?: OnboardingStep; progress: OnboardingDto | null }> {
     if (context.session.kind === "SETUP" && !context.events.some((item) => item.kind === "agent") && !askedSomething(context.events)) {
-      return { next: { type: "reply", say: FIRST_QUESTION }, progress: context.progress };
+      // O que já está feito no Dish Desk não é perguntado; sem nada a perguntar, a IA segue direto para o que falta.
+      const first = nextQuestion(context.progress, []);
+      if (first) return { next: { type: "reply", say: INTAKE_INTRO + first.say }, progress: context.progress };
     }
     const apply = async (step: OnboardingStep, mark: OnboardingMark, said?: { next: AgentAction }) => {
       const summary = { summary: `o passo ${step} (${STEP_LABEL[step]}) foi marcado como ${MARK_LABEL[mark]}.` };
@@ -314,11 +318,9 @@ export class AgentService {
       context.events = [...context.events, ...(said ? [{ kind: "agent", content: said }] : []), { kind: "result", content: summary }].slice(-HISTORY_LIMIT);
     };
     if (context.session.kind === "SETUP" && context.asking && !context.intakeDone) {
-      // Uma pergunta por vez, até as oito respostas; se o parceiro perguntar algo no meio, as perguntas param e a IA responde.
-      const { replies } = context;
-      if (replies.length < INTAKE_QUESTIONS.length && !replies.at(-1)?.includes("?")) {
-        return { next: { type: "reply", say: INTAKE_QUESTIONS[replies.length]!.say }, progress: context.progress };
-      }
+      // Uma pergunta por vez, até acabarem as que faltam; se o parceiro perguntar algo no meio, as perguntas param e a IA responde.
+      const upcoming = context.replies.at(-1)?.includes("?") ? undefined : nextQuestion(context.progress, context.asked);
+      if (upcoming) return { next: { type: "reply", say: upcoming.say }, progress: context.progress };
     }
     if (context.session.kind === "SETUP" && context.asking && !context.intakeDone) {
       const intake = await this.llm
@@ -467,7 +469,9 @@ function answersText({ answers, opened }: DecideContext): string {
 
 /** Do registro todo da sessão, só o que o prompt precisa sempre: a primeira fala da IA, a resposta do parceiro, a leitura dela e os logins. */
 async function sessionExtras(tx: TenantTx, sessionId: string) {
-  const first = await tx.agentEvent.findFirst({ where: { sessionId, kind: "agent" }, orderBy: { createdAt: "asc" } });
+  // As primeiras falas da IA são as perguntas (uma por tópico, no máximo INTAKE_QUESTIONS.length).
+  const spoken = await tx.agentEvent.findMany({ where: { sessionId, kind: "agent" }, orderBy: { createdAt: "asc" }, take: INTAKE_QUESTIONS.length + 1 });
+  const first = spoken[0];
   if (!first) return extrasOf([]);
   const [answers, intake, logins, tabs] = await Promise.all([
     tx.agentEvent.findMany({ where: { sessionId, kind: "partner", createdAt: { gte: first.createdAt } }, orderBy: { createdAt: "asc" }, take: INTAKE_QUESTIONS.length }),
@@ -475,7 +479,9 @@ async function sessionExtras(tx: TenantTx, sessionId: string) {
     tx.agentEvent.findMany({ where: { sessionId, kind: "agent", content: { path: ["next", "type"], equals: "login" } } }),
     tx.agentEvent.findMany({ where: { sessionId, kind: "agent", content: { path: ["next", "action", "newTab"], equals: true } } }),
   ]);
-  const rows = [first, ...answers, ...(intake ? [intake] : []), ...logins, ...tabs].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+  const rows = [...new Map([...spoken, ...answers, ...(intake ? [intake] : []), ...logins, ...tabs].map((row) => [row.id, row])).values()].sort(
+    (a, b) => a.createdAt.getTime() - b.createdAt.getTime(),
+  );
   return extrasOf(rows);
 }
 

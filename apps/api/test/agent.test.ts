@@ -4,7 +4,7 @@ import request from "supertest";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { type Decision, guard } from "../src/agent/agent-guard.js";
 import { FIRST_QUESTION } from "../src/agent/agent.service.js";
-import { INTAKE_QUESTIONS } from "../src/agent/intake.js";
+import { INTAKE_INTRO, INTAKE_QUESTIONS } from "../src/agent/intake.js";
 import { accessTokenFor, admin, createAuthFixture, createTestApp, startMockGraph } from "./helpers.js";
 
 type LlmBody = { response_format: { json_schema: { name: string } }; messages: { role: string; content: string }[] };
@@ -193,6 +193,21 @@ describe("agente da extensão: sessões", () => {
     expect(llm.requests.length).toBe(calls + 1);
 
     await admin.tenant.update({ where: { id: fx.b.id }, data: { settings: settings as object } });
+  });
+
+  it("a implantação não pergunta o que já está feito no Dish Desk", async () => {
+    const channel = await admin.channel.create({
+      data: { tenantId: fx.b.id, type: "WHATSAPP", name: "+55 11 90000-0001", externalId: `wa-pergunta-${fx.b.id}`, credentials: new Uint8Array(), status: "CONNECTED" },
+    });
+    try {
+      const { body: session } = await start(fx.b.id, "SETUP").expect(201);
+      const { body: first } = await turn(session.id, { message: "Quero configurar o Dish Desk", page: dishDesk });
+      expect(first.next).toEqual({ type: "reply", say: INTAKE_INTRO + INTAKE_QUESTIONS[1]!.say });
+      const { body: second } = await turn(session.id, { message: "Sim", page: dishDesk });
+      expect(second.next).toEqual({ type: "reply", say: INTAKE_QUESTIONS[2]!.say });
+    } finally {
+      await admin.channel.delete({ where: { id: channel.id } });
+    }
   });
 
   it("um passo só termina com a conferência do Dish Desk", async () => {

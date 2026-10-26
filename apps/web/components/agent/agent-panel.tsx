@@ -855,7 +855,10 @@ function EntryView({
           Não consigo mexer no navegador neste momento. A equipe de suporte pode ajudar você.
           {active && (
             <CardButtons>
-              <Button size="xs" onClick={on(handlers.support)}>
+              <Button size="xs" onClick={on(() => handlers.message("Tente de novo."))}>
+                Tentar de novo
+              </Button>
+              <Button variant="outline" size="xs" onClick={on(handlers.support)}>
                 Falar com o suporte
               </Button>
             </CardButtons>

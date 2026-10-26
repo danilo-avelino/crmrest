@@ -5,6 +5,7 @@ name: comanda
 services:
   postgres:
     image: postgres:18-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_USER: comanda
       POSTGRES_PASSWORD: comanda
@@ -23,6 +24,7 @@ services:
 
   redis:
     image: redis:8-alpine
+    restart: unless-stopped
     ports:
       - "127.0.0.1:6381:6379"
     volumes:
@@ -37,6 +39,7 @@ services:
   # o painel da própria Evolution fica em http://localhost:8085/manager. Os webhooks vão para a API de dev no host.
   evolution:
     image: evoapicloud/evolution-api:v2.3.7
+    restart: unless-stopped
     depends_on:
       postgres:
         condition: service_healthy

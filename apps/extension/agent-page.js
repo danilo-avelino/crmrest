@@ -288,6 +288,25 @@
     mark(ref, kind);
   }
 
+  /** Espera a página parar de mudar (dados que chegam depois do carregamento, como o código do modal do iFood): sem mudança por `idleMs`, ou no máximo `maxMs`. */
+  function quiet(idleMs, maxMs) {
+    return new Promise((resolve) => {
+      let idle = setTimeout(done, idleMs);
+      const limit = setTimeout(done, maxMs);
+      const observer = new MutationObserver(() => {
+        clearTimeout(idle);
+        idle = setTimeout(done, idleMs);
+      });
+      observer.observe(document.documentElement, { childList: true, subtree: true, characterData: true });
+      function done() {
+        observer.disconnect();
+        clearTimeout(idle);
+        clearTimeout(limit);
+        resolve();
+      }
+    });
+  }
+
   addEventListener("scroll", place, true);
   addEventListener("resize", place);
   // O parceiro clicou ou digitou na página enquanto a IA agia: ela pausa (as ações da IA não são "isTrusted").
@@ -302,5 +321,5 @@
     );
   }
 
-  window.__dishdeskAgent = { snapshot, act, focus, indicate, highlight };
+  window.__dishdeskAgent = { snapshot, act, focus, indicate, highlight, quiet };
 })();

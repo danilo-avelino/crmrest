@@ -9,6 +9,9 @@ const PAGE_PATH = "/extensao/agente";
 const LOAD_TIMEOUT_MS = 15_000;
 /** O contorno "IA clicando" fica na tela este tempo antes da ação, para o parceiro ver onde a IA vai mexer. */
 const HIGHLIGHT_MS = 500;
+/** Depois de carregar, a página fica quieta por QUIET_MS (no máximo QUIET_MAX_MS) antes de a IA ler. */
+const QUIET_MS = 700;
+const QUIET_MAX_MS = 4000;
 
 // Em dev, o painel local: chrome.storage.local.set({ dishdeskOrigin: "http://localhost:3000" }) no console da extensão.
 chrome.storage.local.get("dishdeskOrigin").then(({ dishdeskOrigin }) => {
@@ -89,6 +92,8 @@ const OPERATIONS = {
       await inPage(tab, "act", action);
     }
     await settled(tab.id);
+    // A página carregou, mas o conteúdo pode chegar depois (ex.: o código do modal do iFood): espera parar de mudar antes de a IA ler.
+    await inPage(tab, "quiet", QUIET_MS, QUIET_MAX_MS).catch(() => undefined);
     return {};
   },
   focus: async ({ ref }) => {
