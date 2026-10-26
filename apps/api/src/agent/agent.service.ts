@@ -377,6 +377,8 @@ export class AgentService {
         const { say, ref, value } = railed.decision;
         guarded = { next: { type: "your_turn", say, ref, field: "code", copy: value } };
       }
+      // Uma escolha do restaurante (ex.: quais lojas do iFood conectar): o caminho pede a confirmação dele.
+      if ("next" in guarded && guarded.next.type === "act" && railed.decision.irreversible) guarded = { next: { ...guarded.next, type: "confirm" } };
       if ("next" in guarded && !repeatsLast(context.events, guarded.next)) return { next: guarded.next, step: railed.step };
     }
     let note = "";

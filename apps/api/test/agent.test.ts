@@ -196,6 +196,22 @@ describe("agente da extensão: o caminho do iFood", () => {
     expect(rail(refused, { authCode: null, connected: false })).toMatchObject({ action: "login" });
     // Outra tela do Dish Desk: a LLM decide.
     expect(rail(at("https://www.dishdesk.com.br/configuracoes/horario", []))).toBeNull();
+
+    // O "Conectar" da lista atrás do modal (mais antigo) não é o do modal.
+    const behind = { ...form("LHQX-ZZZZ"), elements: [{ ref: 0, role: "botão", name: "Conectar" }, ...form("LHQX-ZZZZ").elements] };
+    expect(rail(behind, { authCode: "LHQX-ZZZZ" })).toMatchObject({ action: "click", ref: 2 });
+
+    // A autorização trouxe várias lojas: conecta as marcadas, com a confirmação do parceiro (pode ter adiantado etapas no portal).
+    const stores = at(
+      "https://www.dishdesk.com.br/configuracoes/integracoes?conectar=IFOOD",
+      [
+        { ref: 0, role: "botão", name: "Conectar" },
+        { ref: 40, role: "caixa de seleção", name: "Loja do iFood", checked: true },
+        { ref: 41, role: "botão", name: "Conectar 3 lojas" },
+      ],
+      "iFood. Nova integração. A autorização do iFood trouxe 4 lojas. Marque as que vão ser conectadas a este restaurante.",
+    );
+    expect(rail(stores, { authCode: "LHQX-ZZZZ" })).toMatchObject({ action: "click", ref: 41, irreversible: true });
   });
 });
 
@@ -395,6 +411,15 @@ describe("agente da extensão: sessões", () => {
     expect((await turn(session.id, { ...ok, page: refused })).body.next).toMatchObject({ action: { type: "click", label: "Gerar outro" } });
     // Código novo: o de autorização antigo não serve; volta ao portal.
     expect((await turn(session.id, { ...ok, page: form("WXYZ-2345", "LHQX-ZZZZ") })).body.next).toMatchObject({ type: "login", url: "https://portal.ifood.com.br/apps" });
+
+    // Várias lojas na autorização: o Conectar das lojas pede a confirmação do parceiro.
+    const stores = {
+      url: "http://localhost:3000/configuracoes/integracoes?conectar=IFOOD",
+      title: "Dish Desk",
+      elements: [{ ref: 41, role: "botão", name: "Conectar 3 lojas" }],
+      text: "iFood. A autorização do iFood trouxe 4 lojas. Marque as que vão ser conectadas a este restaurante.",
+    };
+    expect((await turn(session.id, { ...ok, page: stores })).body.next).toMatchObject({ type: "confirm", action: { type: "click", ref: 41 } });
   });
 
   it("um JSON quebrado da LLM é pedido de novo, sem dizer que a IA está fora do ar", async () => {

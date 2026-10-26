@@ -82,7 +82,15 @@ export function ifoodRail({ page, panelHost, linkCode, authCode, opened, submitt
     const open = button(page, /ativar integra[çc][ãa]o por c[óo]digo/i);
     return open && !submitted ? decision("click", "Vou clicar em Ativar integração por código.", { ref: open.ref }) : null;
   }
-  if (url.hostname !== panelHost || !page.text.includes(LINK_CODE_HINT)) return null;
+  if (url.hostname !== panelHost) return null;
+  // A autorização trouxe mais de uma loja: conecta as marcadas (todas, por padrão), com a confirmação do parceiro.
+  const stores = button(page, /^conectar (\d+) lojas?$/i);
+  if (stores && /ifood/i.test(page.text)) {
+    const count = stores.name.match(/\d+/)![0];
+    const say = `Vou conectar ${count === "1" ? "a loja marcada" : `as ${count} lojas marcadas`}. Se alguma não for deste restaurante, desmarque na tela antes de confirmar.`;
+    return { ...decision("click", say, { ref: stores.ref }), irreversible: true };
+  }
+  if (!page.text.includes(LINK_CODE_HINT)) return null;
   // O iFood recusou o código (errado ou vencido): um código de vinculação novo e a ativação de novo.
   const again = button(page, /gerar outro/i);
   if (connected && again && /n[ãa]o foi aceito|c[óo]digo de vincula[çc][ãa]o n[ãa]o [ée] v[áa]lido/i.test(page.text)) {
@@ -100,8 +108,13 @@ export function ifoodRail({ page, panelHost, linkCode, authCode, opened, submitt
   return opened.includes(IFOOD_PORTAL) ? decision("switch", say, { value: IFOOD_PORTAL }) : decision("login", say, { value: APPS_URL });
 }
 
+/**
+ * O botão com esse nome; com mais de um (ex.: o "Conectar" do modal e o das linhas da lista atrás dele), o mais novo: a
+ * extensão numera os elementos na ordem em que aparecem, e o modal aparece depois da página.
+ */
 function button(page: PageSnapshot, name: RegExp): PageElement | undefined {
-  return page.elements.find((element) => element.role !== "campo" && !element.disabled && name.test(element.name));
+  const found = page.elements.filter((element) => element.role !== "campo" && !element.disabled && name.test(element.name));
+  return found.reduce<PageElement | undefined>((newest, element) => (!newest || element.ref > newest.ref ? element : newest), undefined);
 }
 
 function decision(action: Decision["action"], say: string, extra: { ref?: number; value?: string }): Decision {
