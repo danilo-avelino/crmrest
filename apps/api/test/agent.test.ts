@@ -4,6 +4,7 @@ import request from "supertest";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { type Decision, guard } from "../src/agent/agent-guard.js";
 import { FIRST_QUESTION } from "../src/agent/agent.service.js";
+import { INTAKE_QUESTIONS } from "../src/agent/intake.js";
 import { accessTokenFor, admin, createAuthFixture, createTestApp, startMockGraph } from "./helpers.js";
 
 type LlmBody = { response_format: { json_schema: { name: string } }; messages: { role: string; content: string }[] };
@@ -158,7 +159,7 @@ describe("agente da extensão: sessões", () => {
     expect(events.map((item) => item.kind)).toEqual(["partner", "agent", "result", "agent"]);
   });
 
-  it("a primeira volta da implantação é a pergunta inicial, sem LLM; a resposta dele já marca o que ele não usa", async () => {
+  it("a implantação pergunta um tópico por vez, sem LLM; as respostas dele já marcam o que ele não usa", async () => {
     const { body: session } = await start(fx.b.id, "SETUP").expect(201);
     const { settings } = await admin.tenant.findUniqueOrThrow({ where: { id: fx.b.id }, select: { settings: true } });
     const before = llm.requests.length;
@@ -166,15 +167,23 @@ describe("agente da extensão: sessões", () => {
     expect(first.next).toEqual({ type: "reply", say: FIRST_QUESTION });
     expect(llm.requests.length).toBe(before);
 
-    // A resposta é lida uma vez (a LLM classifica) e vira marcação; depois a IA decide com ela sempre à vista.
+    // Uma pergunta por tópico, cada uma depois da resposta anterior, sem LLM.
+    const replies = ["Sim", "Não", "Não", "Não", "padrão", "Descontraído", "depois"];
+    for (const [index, reply] of replies.entries()) {
+      const { body: asked } = await turn(session.id, { message: reply, page: dishDesk });
+      expect(asked.next).toEqual({ type: "reply", say: INTAKE_QUESTIONS[index + 1]!.say });
+    }
+    expect(llm.requests.length).toBe(before);
+
+    // Com a última resposta, as oito são lidas uma vez (a LLM classifica) e viram marcação; depois a IA decide com elas sempre à vista.
     answers.push({ whatsapp: "usa", instagram: "nao_usa", ifood: "nao_usa", cardapio_web: "nao_usa", business_hours: "padrao", personality: "informou", order_links: "depois", members: "nao_disse" });
     answer({ say: "Vou abrir as Integrações.", action: "click", ref: 1 });
-    const { body } = await turn(session.id, { message: "Só uso o WhatsApp. Horário padrão, personalidade Descontraído, link depois.", page: dishDesk });
+    const { body } = await turn(session.id, { message: "depois", page: dishDesk });
     const status = Object.fromEntries(body.progress.steps.map((item: { step: string; status: string }) => [item.step, item.status]));
     expect(status).toMatchObject({ whatsapp: "todo", instagram: "skipped", ifood: "skipped", cardapio_web: "skipped", business_hours: "done", order_links: "skipped", members: "todo" });
     const prompt = (llm.requests.at(-1)!.body as LlmBody).messages[1]!.content;
     expect(prompt).toContain("RESPOSTAS DO PARCEIRO");
-    expect(prompt).toContain("Só uso o WhatsApp");
+    expect(prompt).toContain("Personalidade do atendimento: Descontraído");
     expect(prompt).toContain("PRÓXIMO PASSO: whatsapp (WhatsApp)");
 
     // A leitura não se repete na volta seguinte.
@@ -197,8 +206,6 @@ describe("agente da extensão: sessões", () => {
     await admin.channel.create({
       data: { tenantId: fx.b.id, type: "WHATSAPP", name: "+55 11 90000-0000", externalId: `wa-${fx.b.id}`, credentials: new Uint8Array(), status: "CONNECTED" },
     });
-    // (a primeira resposta do parceiro, "E agora?", é lida uma vez pela LLM: uma resposta a mais na fila)
-    answers.push({});
     answer({ say: "Pronto, o WhatsApp está conectado!", action: "done", step: "whatsapp" });
     answer({ say: "Pronto, o WhatsApp está conectado!", action: "done", step: "whatsapp" });
     const { body: checked } = await turn(session.id, { message: "E agora?", page: dishDesk });

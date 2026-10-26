@@ -24,7 +24,7 @@ import { markAccepted, markOnboardingStep, onboardingOf } from "../settings/onbo
 import { isTenantAdmin } from "../settings/tenant-admin.js";
 import { type Decision, guard } from "./agent-guard.js";
 import { GUIDE, STEP_LABEL } from "./guide.js";
-import { extrasOf, INTAKE_PROMPT, Intake, intakeMarks } from "./intake.js";
+import { extrasOf, INTAKE_PROMPT, INTAKE_QUESTIONS, Intake, intakeMarks } from "./intake.js";
 
 /** Ações seguidas que falharam até a IA parar ("se perdeu"). */
 export const MAX_FAILURES = 3;
@@ -33,9 +33,8 @@ const HISTORY_LIMIT = 12;
 /** A árvore da página divide o contexto da LLM (8k no Ollama) com o guia e o histórico. */
 const ELEMENTS_CHARS = 5000;
 const TEXT_CHARS = 1200;
-/** A primeira volta da implantação: tudo que a IA precisa saber numa pergunta só (o modelo local corta o texto longo). */
-export const FIRST_QUESTION =
-  "Vou configurar tudo com você. Responda de uma vez só: 1) quais destes você usa: WhatsApp, Instagram, iFood, Cardápio Web; 2) horário de funcionamento; 3) personalidade do atendimento (Cordial, Formal, Jovial, Descontraído, Acolhedor ou Direto); 4) link do cardápio; 5) nome e e-mail de quem vai atender. Pode responder \"padrão\" ou \"depois\" em qualquer item.";
+/** A primeira volta da implantação: a primeira das perguntas, uma por tópico (INTAKE_QUESTIONS). */
+export const FIRST_QUESTION = INTAKE_QUESTIONS[0]!.say;
 /** Uma ação de navegador pede a mesma resposta para a mesma tela: temperatura baixa (o padrão da conversa é 0,3). */
 const AGENT_TEMPERATURE = 0.1;
 /** Marcações seguidas (passos pulados) que a IA faz numa volta antes de agir na página. */
@@ -142,8 +141,11 @@ export type DecideContext = {
   restaurant: string;
   events: EventRow[];
   progress: OnboardingDto | null;
-  /** Implantação: a primeira resposta do parceiro, se ela já foi lida (`intakeDone`) e os sites em que ele já entrou. */
+  /** Implantação: as respostas do parceiro às perguntas (`replies`, e `answers` com o tópico de cada uma), se elas já foram lidas (`intakeDone`) e os sites em que ele já entrou. */
   answers: string | null;
+  replies: string[];
+  /** A sessão começou pelas perguntas, uma por vez. */
+  asking: boolean;
   intakeDone: boolean;
   opened: string[];
 };
@@ -216,7 +218,7 @@ export class AgentService {
       const updated = await tx.agentSession.update({ where: { id: session.id }, data: { failures, grantedHosts } });
       const events = (await tx.agentEvent.findMany({ where: { sessionId }, orderBy: { createdAt: "desc" }, take: HISTORY_LIMIT })).reverse();
       const progress = session.kind === "SETUP" ? await onboardingOf(tx, session.tenantId) : null;
-      const extras = session.kind === "SETUP" ? await sessionExtras(tx, sessionId) : { answers: null, intakeDone: false, opened: [] };
+      const extras = session.kind === "SETUP" ? await sessionExtras(tx, sessionId) : { answers: null, replies: [], asking: false, intakeDone: false, opened: [] };
       return { session: updated, restaurant: session.tenant.name, events, progress, ...extras };
     });
     const { session } = context;
@@ -311,11 +313,18 @@ export class AgentService {
       context.progress = await store.mark(step, mark, summary, said);
       context.events = [...context.events, ...(said ? [{ kind: "agent", content: said }] : []), { kind: "result", content: summary }].slice(-HISTORY_LIMIT);
     };
-    if (context.session.kind === "SETUP" && context.answers && !context.intakeDone) {
+    if (context.session.kind === "SETUP" && context.asking && !context.intakeDone) {
+      // Uma pergunta por vez, até as oito respostas; se o parceiro perguntar algo no meio, as perguntas param e a IA responde.
+      const { replies } = context;
+      if (replies.length < INTAKE_QUESTIONS.length && !replies.at(-1)?.includes("?")) {
+        return { next: { type: "reply", say: INTAKE_QUESTIONS[replies.length]!.say }, progress: context.progress };
+      }
+    }
+    if (context.session.kind === "SETUP" && context.asking && !context.intakeDone) {
       const intake = await this.llm
         .json("resposta_inicial", Intake, [
           { role: "system", content: INTAKE_PROMPT },
-          { role: "user", content: `Pergunta: ${FIRST_QUESTION}\n\nResposta do parceiro: ${context.answers}` },
+          { role: "user", content: `Respostas do parceiro:\n${context.answers}` },
         ])
         .catch((error) => {
           this.logger.warn(`Resposta inicial não lida na sessão ${context.session.id}: ${error instanceof Error ? error.message : String(error)}`);
@@ -451,7 +460,7 @@ function askedSomething(events: EventRow[]): boolean {
 
 /** A resposta inicial do parceiro e os sites em que ele já entrou: ficam à vista da IA em toda volta, além do histórico recente. */
 function answersText({ answers, opened }: DecideContext): string {
-  const said = answers ? `RESPOSTAS DO PARCEIRO (à pergunta inicial; use nos campos, não pergunte de novo)\n${answers.slice(0, 800)}\n\n` : "";
+  const said = answers ? `RESPOSTAS DO PARCEIRO (às perguntas iniciais, por tópico; use nos campos, não pergunte de novo)\n${answers.slice(0, 800)}\n\n` : "";
   const tabs = opened.length ? `ABAS ABERTAS (já abertas nesta sessão: volte com switch, sem abrir nem fazer login de novo)\n${opened.join(", ")}\n\n` : "";
   return said + tabs;
 }
@@ -460,13 +469,13 @@ function answersText({ answers, opened }: DecideContext): string {
 async function sessionExtras(tx: TenantTx, sessionId: string) {
   const first = await tx.agentEvent.findFirst({ where: { sessionId, kind: "agent" }, orderBy: { createdAt: "asc" } });
   if (!first) return extrasOf([]);
-  const [answer, intake, logins, tabs] = await Promise.all([
-    tx.agentEvent.findFirst({ where: { sessionId, kind: "partner", createdAt: { gte: first.createdAt } }, orderBy: { createdAt: "asc" } }),
+  const [answers, intake, logins, tabs] = await Promise.all([
+    tx.agentEvent.findMany({ where: { sessionId, kind: "partner", createdAt: { gte: first.createdAt } }, orderBy: { createdAt: "asc" }, take: INTAKE_QUESTIONS.length }),
     tx.agentEvent.findFirst({ where: { sessionId, kind: "result", content: { path: ["intake"], equals: true } } }),
     tx.agentEvent.findMany({ where: { sessionId, kind: "agent", content: { path: ["next", "type"], equals: "login" } } }),
     tx.agentEvent.findMany({ where: { sessionId, kind: "agent", content: { path: ["next", "action", "newTab"], equals: true } } }),
   ]);
-  const rows = [first, ...(answer ? [answer] : []), ...(intake ? [intake] : []), ...logins, ...tabs].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+  const rows = [first, ...answers, ...(intake ? [intake] : []), ...logins, ...tabs].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
   return extrasOf(rows);
 }
 

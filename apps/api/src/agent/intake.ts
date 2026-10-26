@@ -1,10 +1,29 @@
 import type { OnboardingMark, OnboardingStep } from "@dishdesk/shared";
 import { z } from "zod";
+import { STEP_LABEL } from "./guide.js";
 
 /**
- * A primeira resposta do parceiro na implantação (à FIRST_QUESTION), lida uma vez por uma chamada só à LLM: o que ele não
- * usa ou deixou no padrão já vira marcação do passo, antes de a IA agir; o resto fica à vista da IA em toda volta.
+ * As perguntas da implantação, uma por vez e sem LLM (a API fala, o parceiro responde). Terminadas as oito respostas, ou
+ * se ele perguntar algo no meio, elas são lidas uma vez por uma chamada só à LLM: o que ele não usa ou deixou no padrão já
+ * vira marcação do passo, antes de a IA agir; o resto fica à vista da IA em toda volta.
  */
+export const INTAKE_QUESTIONS: { step: OnboardingStep; say: string }[] = [
+  { step: "whatsapp", say: "Vou configurar o Dish Desk com você, uma pergunta de cada vez. Primeiro: você atende pelo WhatsApp?" },
+  { step: "instagram", say: "Você atende pelo Instagram?" },
+  { step: "ifood", say: "Você vende pelo iFood?" },
+  { step: "cardapio_web", say: "Você vende pelo Cardápio Web?" },
+  { step: "business_hours", say: 'Qual o horário de funcionamento do restaurante? Pode responder "padrão" ou "depois".' },
+  { step: "personality", say: 'Qual personalidade de atendimento você prefere: Cordial, Formal, Jovial, Descontraído, Acolhedor ou Direto? (ou "padrão" / "depois")' },
+  { step: "order_links", say: 'Qual o link do cardápio para o cliente fazer pedido? (ou "depois")' },
+  { step: "members", say: 'Quem vai atender no Dish Desk? Informe o nome e o e-mail de cada pessoa (ou "depois").' },
+];
+
+/** As respostas, cada uma sob o nome do tópico perguntado: o texto que a LLM classifica e que a IA relê. */
+export function answersOf(replies: string[]): string | null {
+  const lines = replies.map((reply, index) => `${STEP_LABEL[INTAKE_QUESTIONS[index]!.step]}: ${reply}`);
+  return lines.length ? lines.join("\n") : null;
+}
+
 const Uses = z.enum(["usa", "nao_usa", "nao_disse"]);
 const Setting = z.enum(["informou", "padrao", "depois", "nao_disse"]);
 
@@ -20,7 +39,7 @@ export const Intake = z.object({
 });
 export type Intake = z.infer<typeof Intake>;
 
-export const INTAKE_PROMPT = `Você lê a resposta de um dono de restaurante à pergunta de implantação do Dish Desk e classifica cada item.
+export const INTAKE_PROMPT = `Você lê as respostas de um dono de restaurante às perguntas de implantação do Dish Desk (uma linha por tópico: "Tópico: resposta") e classifica cada item. Tópico sem linha é nao_disse.
 Sistemas (whatsapp, instagram, ifood, cardapio_web): usa (ele disse que usa ou citou como usado), nao_usa (disse que não usa ou não tem) ou nao_disse.
 Configurações (business_hours, personality, order_links, members): informou (ele deu o dado), padrao (pediu o padrão), depois (deixou para depois) ou nao_disse.
 Classifique só pelo que ele escreveu.`;
@@ -37,24 +56,27 @@ export function intakeMarks(intake: Intake): { step: OnboardingStep; mark: Onboa
 type Row = { kind: string; content: unknown };
 
 /**
- * Do registro da sessão: a primeira resposta do parceiro depois da primeira fala da IA, se ela já foi lida (`intakeDone`)
- * e os sites abertos em aba nova (`login` ou navigate para outro site), para a IA voltar a eles com switch em vez de abrir de novo.
+ * Do registro da sessão: se a sessão começou pelas perguntas (`asking`), as respostas do parceiro a elas (`replies`, até
+ * a leitura em `intakeDone`) e os sites abertos em aba nova (`login` ou navigate para outro site), para a IA voltar a eles
+ * com switch em vez de abrir de novo.
  */
-export function extrasOf(events: Row[]): { answers: string | null; intakeDone: boolean; opened: string[] } {
+export function extrasOf(events: Row[]): { answers: string | null; replies: string[]; asking: boolean; intakeDone: boolean; opened: string[] } {
   let spoke = false;
-  let answers: string | null = null;
+  let asking = false;
+  const replies: string[] = [];
   let intakeDone = false;
   const opened: string[] = [];
   for (const { kind, content } of events) {
     const value = content as Record<string, unknown>;
     if (kind === "agent") {
+      if (!spoke) asking = (value.next as { say?: string } | undefined)?.say === INTAKE_QUESTIONS[0]!.say;
       spoke = true;
       const next = value.next as { type?: string; url?: string; action?: { url?: string; newTab?: boolean } } | undefined;
       const url = next?.type === "login" ? next.url : next?.action?.newTab ? next.action.url : undefined;
       const host = url ? new URL(url).hostname : null;
       if (host && !opened.includes(host)) opened.push(host);
-    } else if (kind === "partner" && spoke && answers === null) answers = String(value.text);
+    } else if (kind === "partner" && spoke && asking && !intakeDone && replies.length < INTAKE_QUESTIONS.length) replies.push(String(value.text));
     else if (kind === "result" && value.intake === true) intakeDone = true;
   }
-  return { answers, intakeDone, opened };
+  return { answers: answersOf(replies), replies, asking, intakeDone, opened };
 }
