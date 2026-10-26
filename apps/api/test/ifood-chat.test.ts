@@ -357,8 +357,9 @@ describe("Chat do iFood na Inbox (trava IFOOD_CHAT_BRIDGE ligada)", () => {
         orderCode: "6580",
         messages: [shown("INBOUND", "Esqueci de pedir guardanapo", minutesAgo(30)), shown("INBOUND", "Alguém aí?", new Date())],
       }).expect(200);
+      // A fila pode estar vazia antes de o job da mensagem nova entrar: espera o resultado, não só a fila.
+      await until(async () => expect((await admin.conversation.findUniqueOrThrow({ where: { id: chat.id } })).awaitingAgentSince).not.toBeNull());
       await settle();
-      expect((await admin.conversation.findUniqueOrThrow({ where: { id: chat.id } })).awaitingAgentSince).not.toBeNull();
       await typeOutbox();
     } finally {
       await admin.channel.update({ where: { id: fx.ifood.id }, data: { connectedAt: null } });
