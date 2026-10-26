@@ -21,7 +21,7 @@ export const LINK_CODE_HINT = "confira este código";
 const PASTE_LINK_CODE_SAY =
   "O iFood pede que você mesmo coloque o código de ativação. Clique em Copiar aqui embaixo, depois na primeira caixinha do iFood, e cole (Ctrl+V). Em seguida clique em Continuar no iFood e em Pronto aqui, que eu continuo.";
 const PASTE_AUTH_CODE_SAY =
-  "O iFood autorizou e devolveu o código de autorização. Clique em Copiar aqui embaixo e cole no campo Código de autorização do Dish Desk (Ctrl+V). Depois clique em Pronto que eu conecto.";
+  "O iFood autorizou e devolveu o código de autorização. Clique em Copiar aqui embaixo e cole no campo Código de autorização do Dish Desk (Ctrl+V). No campo Nome, escreva o nome da loja que você está integrando (ex.: Loja Centro). Depois clique em Pronto que eu conecto.";
 
 /** O código de vinculação que o Dish Desk mostrou: o primeiro depois do texto do modal. */
 export function linkCodeOf(text: string | null | undefined): string | null {
@@ -69,6 +69,12 @@ export function ifoodRail({ page, panelHost, linkCode, authCode, opened, submitt
     if (authCode) return decision("switch", `O iFood gerou o código de autorização. Vou voltar ao Dish Desk para concluir.`, { value: panelHost });
     if (!url.pathname.startsWith("/apps")) return decision("navigate", "Vou abrir a página de integrações do Portal do Parceiro.", { value: APPS_URL });
     if (!linkCode) return null;
+    // "Permitir integração", depois do código: o restaurante autoriza e aceita os termos do iFood (o guard pede a confirmação).
+    // Vem antes das caixinhas: as do modal anterior continuam na página.
+    const authorize = button(page, /^autorizar$/i);
+    if (authorize) {
+      return decision("click", "Vou autorizar o Dish Desk no iFood (acesso a pedidos, avaliações e eventos). Ao autorizar, o restaurante aceita os Termos de Uso de Integrações do iFood.", { ref: authorize.ref });
+    }
     const boxes = page.elements.filter((element) => element.role === "campo" && !element.disabled && !/buscar|pesquis|search/i.test(element.name));
     // O modal aberto: pelo texto ou pelos elementos dele (o texto da página longa é cortado antes do modal, que fica no fim).
     const modal = /ativar uma integra[çc][ãa]o|c[óo]digo de ativa[çc][ãa]o/i.test(page.text) || page.elements.some((element) => /^continuar$/i.test(element.name)) || boxes.length >= 4;

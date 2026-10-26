@@ -165,6 +165,11 @@ describe("agente da extensão: o caminho do iFood", () => {
     // Sem o código de vinculação, a LLM decide.
     expect(rail(modal(["", "", "", "", "-", "", "", "", ""]), { linkCode: null })).toBeNull();
 
+    // "Permitir integração" depois do código (as caixinhas do modal anterior continuam na página): autoriza, não volta a elas.
+    const allow = at("https://portal.ifood.com.br/apps", [...boxes(["", "", "", "", "-", "", "", "", ""]), { ref: 21, role: "botão", name: "Cancelar" }, { ref: 22, role: "botão", name: "Autorizar" }]);
+    expect(rail(allow, { submitted: true })).toMatchObject({ action: "click", ref: 22 });
+    expect(guard(rail(allow, { submitted: true })!, allow, ALLOWED)).toMatchObject({ next: { type: "confirm", action: { ref: 22 } } });
+
     // Com o código de autorização na tela, volta ao Dish Desk.
     expect(rail(apps, { authCode: "LHQX-ZZZZ" })).toMatchObject({ action: "switch", value: panelHost });
   });
