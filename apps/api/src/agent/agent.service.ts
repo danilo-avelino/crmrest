@@ -24,7 +24,8 @@ import { markAccepted, markOnboardingStep, onboardingOf } from "../settings/onbo
 import { isTenantAdmin } from "../settings/tenant-admin.js";
 import { type Decision, guard } from "./agent-guard.js";
 import { GUIDE, STEP_LABEL } from "./guide.js";
-import { authCodeOf, IFOOD_PORTAL, ifoodRail, LINK_CODE_HINT, linkCodeOf } from "./ifood-rail.js";
+import { cardapioWebRail } from "./cardapio-web-rail.js";
+import { authCodeOf, IFOOD_PASTE_SAY, IFOOD_PORTAL, type IfoodState, ifoodRail, LINK_CODE_HINT, linkCodeOf } from "./ifood-rail.js";
 import { extrasOf, INTAKE_INTRO, INTAKE_PROMPT, INTAKE_QUESTIONS, Intake, intakeMarks, nextQuestion } from "./intake.js";
 
 /** Ações seguidas que falharam até a IA parar ("se perdeu"). */
@@ -151,9 +152,8 @@ export type DecideContext = {
   asking: boolean;
   intakeDone: boolean;
   opened: string[];
-  /** iFood: a última página do Dish Desk com o código de vinculação e a última do Portal do Parceiro (o caminho em ifood-rail). */
-  linkSeen?: string | null;
-  portalSeen?: string | null;
+  /** iFood: o código de vinculação atual e o que a sessão já fez com ele (o caminho em ifood-rail). */
+  ifood?: IfoodState;
 };
 
 /** O que `decideWithMarks` grava: a marcação de um passo (com a fala da IA, se foi ela que decidiu) e a leitura da resposta inicial. */
@@ -369,10 +369,13 @@ export class AgentService {
     const partner = context.events.flatMap((item) => (item.kind === "partner" ? [String((item.content as { text: unknown }).text)] : []));
     const user = `${progressText(context.progress, partner)}${answersText(context)}${pageText(page)}${previousText(context.events, page)}\n\n${historyText(context.events)}`;
     const known = `${knownText(context.events, page)}\n${context.answers ?? ""}`;
-    const railed = this.railIfood(context, page);
+    const railed = this.railIfood(context, page) ?? this.railCardapioWeb(context, page);
     if (railed) {
-      const guarded = guard(railed, page, allowed, known);
-      if ("next" in guarded && !repeatsLast(context.events, guarded.next)) return { next: guarded.next, step: "ifood" };
+      let guarded = guard(railed.decision, page, allowed, known);
+      if ("next" in guarded && guarded.next.type === "your_turn" && railed.decision.action === "fill") {
+        guarded = { next: { ...guarded.next, say: IFOOD_PASTE_SAY, copy: railed.decision.value } };
+      }
+      if ("next" in guarded && !repeatsLast(context.events, guarded.next)) return { next: guarded.next, step: railed.step };
     }
     let note = "";
     for (let attempt = 0; attempt < 2; attempt++) {
@@ -424,24 +427,17 @@ export class AgentService {
   }
 
   /** Na implantação, com o iFood a fazer: o caminho fixo do portal (ifood-rail), antes da LLM. */
-  private railIfood(context: DecideContext, page: PageSnapshot | undefined): Decision | null {
-    const status = context.progress?.steps.find((item) => item.step === "ifood")?.status;
-    if (context.session.kind !== "SETUP" || (status !== "todo" && status !== "error")) return null;
-    const host = page ? hostOf(page.url) : null;
-    const current = page ? seenOf(page) : null;
-    const linkCode = linkCodeOf(host === this.panelHost && current?.includes(LINK_CODE_HINT) ? current : context.linkSeen);
-    const submitted = context.events.some(({ kind, content }) => {
-      const next = (content as { next?: AgentAction } | null)?.next;
-      return kind === "agent" && next?.type === "act" && next.action.type === "click" && /^continuar$/i.test(next.action.label);
-    });
-    return ifoodRail({
-      page,
-      panelHost: this.panelHost,
-      linkCode,
-      authCode: authCodeOf(host === IFOOD_PORTAL ? current : context.portalSeen, linkCode),
-      opened: context.opened,
-      submitted,
-    });
+  private railIfood(context: DecideContext, page: PageSnapshot | undefined): { decision: Decision; step: OnboardingStep } | null {
+    if (!pendingStep(context, "ifood") || !context.ifood) return null;
+    const decision = ifoodRail({ page, panelHost: this.panelHost, opened: context.opened, ...context.ifood });
+    return decision && { decision, step: "ifood" };
+  }
+
+  /** Na implantação, com o Cardápio Web a fazer: o caminho fixo do portal até a API de integração (cardapio-web-rail). */
+  private railCardapioWeb(context: DecideContext, page: PageSnapshot | undefined): { decision: Decision; step: OnboardingStep } | null {
+    if (!pendingStep(context, "cardapio_web")) return null;
+    const decision = cardapioWebRail({ page, panelHost: this.panelHost });
+    return decision && { decision, step: "cardapio_web" };
   }
 
   private get panelHost(): string {
@@ -507,24 +503,50 @@ async function sessionExtras(tx: TenantTx, sessionId: string) {
   const spoken = await tx.agentEvent.findMany({ where: { sessionId, kind: "agent" }, orderBy: { createdAt: "asc" }, take: INTAKE_QUESTIONS.length + 1 });
   const first = spoken[0];
   if (!first) return extrasOf([]);
-  const [answers, intake, logins, tabs, link, portal] = await Promise.all([
+  const [answers, intake, logins, tabs, link] = await Promise.all([
     tx.agentEvent.findMany({ where: { sessionId, kind: "partner", createdAt: { gte: first.createdAt } }, orderBy: { createdAt: "asc" }, take: INTAKE_QUESTIONS.length }),
     tx.agentEvent.findFirst({ where: { sessionId, kind: "result", content: { path: ["intake"], equals: true } } }),
     tx.agentEvent.findMany({ where: { sessionId, kind: "agent", content: { path: ["next", "type"], equals: "login" } } }),
     tx.agentEvent.findMany({ where: { sessionId, kind: "agent", content: { path: ["next", "action", "newTab"], equals: true } } }),
     tx.agentEvent.findFirst({ where: { sessionId, content: { path: ["seen"], string_contains: LINK_CODE_HINT } }, orderBy: { createdAt: "desc" } }),
-    tx.agentEvent.findFirst({
-      where: { sessionId, content: { path: ["seen"], string_starts_with: `Endereço: https://${IFOOD_PORTAL}` } },
-      orderBy: { createdAt: "desc" },
-    }),
   ]);
   const rows = [...new Map([...spoken, ...answers, ...(intake ? [intake] : []), ...logins, ...tabs].map((row) => [row.id, row])).values()].sort(
     (a, b) => a.createdAt.getTime() - b.createdAt.getTime(),
   );
-  return { ...extrasOf(rows), linkSeen: seenIn(link), portalSeen: seenIn(portal) };
+  return { ...extrasOf(rows), ifood: await ifoodState(tx, sessionId, seenIn(link)) };
 }
 
-function seenIn(row: { content: Prisma.JsonValue } | null): string | null {
+/**
+ * O código de vinculação atual (a última página do Dish Desk com ele) e o que a sessão fez depois que ele apareceu: o
+ * código de autorização do portal, o Continuar e o Conectar de um código recusado ou vencido não contam para o novo.
+ */
+async function ifoodState(tx: TenantTx, sessionId: string, linkSeen: string | null): Promise<IfoodState> {
+  const linkCode = linkCodeOf(linkSeen);
+  const first = linkCode
+    ? await tx.agentEvent.findFirst({ where: { sessionId, content: { path: ["seen"], string_contains: linkCode } }, orderBy: { createdAt: "asc" }, select: { createdAt: true } })
+    : null;
+  if (!linkCode || !first) return { linkCode: null, authCode: null, submitted: false, connected: false };
+  const since = { gt: first.createdAt };
+  const clicked = (label: string) =>
+    tx.agentEvent.findFirst({ where: { sessionId, kind: "agent", createdAt: since, content: { path: ["next", "action", "label"], equals: label } }, select: { id: true } });
+  const [portal, submitted, connected] = await Promise.all([
+    tx.agentEvent.findFirst({
+      where: { sessionId, createdAt: since, content: { path: ["seen"], string_starts_with: `Endereço: https://${IFOOD_PORTAL}` } },
+      orderBy: { createdAt: "desc" },
+    }),
+    clicked("Continuar"),
+    clicked("Conectar"),
+  ]);
+  return { linkCode, authCode: authCodeOf(seenIn(portal), linkCode), submitted: !!submitted, connected: !!connected };
+}
+
+/** Na implantação, o passo ainda está a fazer (ou com erro): os caminhos fixos dos portais só valem aí. */
+function pendingStep(context: DecideContext, step: OnboardingStep): boolean {
+  const status = context.progress?.steps.find((item) => item.step === step)?.status;
+  return context.session.kind === "SETUP" && (status === "todo" || status === "error");
+}
+
+function seenIn(row:{ content: Prisma.JsonValue } | null): string | null {
   const seen = (row?.content as { seen?: unknown } | null)?.seen;
   return typeof seen === "string" ? seen : null;
 }

@@ -20,6 +20,7 @@ import {
   ChevronDownIcon,
   ChevronUpIcon,
   ClockIcon,
+  CopyIcon,
   GlobeIcon,
   LoaderCircleIcon,
   LockIcon,
@@ -45,7 +46,7 @@ import { cn } from "@/lib/utils";
 
 type Card =
   | { type: "confirm"; action: AgentPageAction; say: string }
-  | { type: "your_turn"; say: string }
+  | { type: "your_turn"; say: string; copy?: string }
   | { type: "permission"; host: string }
   | { type: "paused"; auto: boolean }
   | { type: "lost"; say: string }
@@ -303,7 +304,7 @@ function Conversation({ tenantId, admin }: { tenantId: string; admin: boolean })
         });
         return waiting("ref" in next.action ? next.action.ref : undefined);
       case "your_turn":
-        push({ kind: "card", card: { type: "your_turn", say: next.say } });
+        push({ kind: "card", card: { type: "your_turn", say: next.say, ...(next.copy && { copy: next.copy }) } });
         if (next.ref !== null) void agentBridge.focus(next.ref).catch(() => undefined);
         setPhase("waiting");
         return indicate({
@@ -762,11 +763,12 @@ function EntryView({
     case "your_turn":
       return (
         <CardBox tone="warning" icon={<LockIcon aria-hidden />} title="Sua vez">
-          {card.say} Eu não vejo o que você digita.
+          {card.copy ? card.say : `${card.say} Eu não vejo o que você digita.`}
+          {card.copy && <CopyCode text={card.copy} />}
           {active && (
             <CardButtons>
               <Button size="xs" onClick={on(() => handlers.message("Pronto, terminei."))}>
-                Login feito
+                {card.copy ? "Pronto" : "Login feito"}
               </Button>
               <Button variant="outline" size="xs" onClick={on(() => handlers.message("Não consegui. Não deu certo, me ajude ou passe para outro passo."))}>
                 Não consegui
@@ -866,6 +868,27 @@ function EntryView({
         </CardBox>
       );
   }
+}
+
+/** O texto que o parceiro cola na página (ex.: o código de vinculação nas caixinhas do iFood), com o botão Copiar. */
+function CopyCode({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <span className="mt-2 flex items-center justify-between gap-2 rounded-lg border border-rule bg-surface px-3 py-1.5">
+      <span className="font-heading text-[20px] font-bold tracking-[1px] text-ink tabular-nums">{text}</span>
+      <Button
+        variant="outline"
+        size="xs"
+        onClick={async () => {
+          await navigator.clipboard.writeText(text);
+          setCopied(true);
+        }}
+      >
+        {copied ? <CheckIcon aria-hidden /> : <CopyIcon aria-hidden />}
+        {copied ? "Copiado" : "Copiar"}
+      </Button>
+    </span>
+  );
 }
 
 function Bubble({ from, children }: { from: "partner" | "agent"; children: ReactNode }) {

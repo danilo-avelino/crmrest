@@ -14,6 +14,10 @@ const CODE = /\b[A-Z0-9]{4}-[A-Z0-9]{4}\b/g;
 /** O texto do modal do iFood no Dish Desk, logo antes do código de vinculação (integrations-tab.tsx). */
 export const LINK_CODE_HINT = "confira este código";
 
+/** As caixinhas do iFood são campo de código (a IA não preenche): o parceiro cola o código que o painel mostra com o botão Copiar. */
+export const IFOOD_PASTE_SAY =
+  'O iFood pede que você mesmo coloque o código de ativação. Clique em Copiar aqui embaixo, depois na primeira caixinha do iFood, e cole (Ctrl+V). Em seguida clique em Pronto que eu continuo.';
+
 /** O código de vinculação que o Dish Desk mostrou: o primeiro depois do texto do modal. */
 export function linkCodeOf(text: string | null | undefined): string | null {
   const at = text?.indexOf(LINK_CODE_HINT) ?? -1;
@@ -22,21 +26,32 @@ export function linkCodeOf(text: string | null | undefined): string | null {
 
 /** O código de autorização que o portal mostrou: um código diferente do de vinculação. */
 export function authCodeOf(portalText: string | null | undefined, linkCode: string | null): string | null {
-  return portalText?.match(CODE)?.find((code) => code !== linkCode) ?? null;
+  // Só um código logo depois de "autorização": outro código da página (ou o de vinculação) não serve.
+  for (const near of portalText?.matchAll(/autoriza[çc][ãa]o.{0,120}/gis) ?? []) {
+    const code = near[0].match(CODE)?.find((item) => item !== linkCode);
+    if (code) return code;
+  }
+  return null;
 }
 
-type Rail = {
-  page: PageSnapshot | undefined;
-  panelHost: string;
+/** O que a sessão já fez com o código de vinculação atual (o de antes não conta: o iFood recusou ou venceu). */
+export type IfoodState = {
   linkCode: string | null;
   authCode: string | null;
-  /** Os sites já abertos nesta sessão (o portal: volta com switch, sem login de novo). */
-  opened: string[];
-  /** A IA já clicou em Continuar no modal do portal (não abre o modal de novo). */
+  /** A IA já clicou em Continuar no modal do portal com este código (não abre o modal de novo). */
   submitted: boolean;
+  /** Houve um Conectar com este código: um erro na tela é dele, e um novo código recomeça. */
+  connected: boolean;
 };
 
-export function ifoodRail({ page, panelHost, linkCode, authCode, opened, submitted }: Rail): Decision | null {
+type Rail = IfoodState & {
+  page: PageSnapshot | undefined;
+  panelHost: string;
+  /** Os sites já abertos nesta sessão (o portal: volta com switch, sem login de novo). */
+  opened: string[];
+};
+
+export function ifoodRail({ page, panelHost, linkCode, authCode, opened, submitted, connected }: Rail): Decision | null {
   if (!page) return null;
   const url = new URL(page.url);
   if (url.hostname === IFOOD_PORTAL) {
@@ -47,20 +62,25 @@ export function ifoodRail({ page, panelHost, linkCode, authCode, opened, submitt
     // O modal aberto: pelo texto ou pelos elementos dele (o texto da página longa é cortado antes do modal, que fica no fim).
     const modal = /ativar uma integra[çc][ãa]o|c[óo]digo de ativa[çc][ãa]o/i.test(page.text) || page.elements.some((element) => /^continuar$/i.test(element.name)) || boxes.length >= 4;
     if (modal) {
-      if (boxes.length && !submitted && boxes.some((box) => !box.value)) {
-        return decision("fill", `Vou digitar o código de vinculação do Dish Desk (${linkCode}).`, { ref: boxes[0]!.ref, value: linkCode });
-      }
+      if (submitted) return null;
+      // O Continuar só habilita com o código completo (as caixinhas são campo de código: a extensão não manda o valor delas).
       const next = button(page, /^continuar$/i);
-      return next && !submitted ? decision("click", "Vou continuar a ativação.", { ref: next.ref }) : null;
+      if (next) return decision("click", "Vou continuar a ativação.", { ref: next.ref });
+      return boxes.length ? decision("fill", `Vou digitar o código de vinculação do Dish Desk (${linkCode}).`, { ref: boxes[0]!.ref, value: linkCode }) : null;
     }
     const open = button(page, /ativar integra[çc][ãa]o por c[óo]digo/i);
     return open && !submitted ? decision("click", "Vou clicar em Ativar integração por código.", { ref: open.ref }) : null;
   }
   if (url.hostname !== panelHost || !page.text.includes(LINK_CODE_HINT)) return null;
+  // O iFood recusou o código (errado ou vencido): um código de vinculação novo e a ativação de novo.
+  const again = button(page, /gerar outro/i);
+  if (connected && again && /n[ãa]o foi aceito|c[óo]digo de vincula[çc][ãa]o n[ãa]o [ée] v[áa]lido/i.test(page.text)) {
+    return decision("click", "O iFood não aceitou o código. Vou gerar um novo código de vinculação e refazer a ativação.", { ref: again.ref });
+  }
   const field = page.elements.find((element) => /c[óo]digo de autoriza[çc][ãa]o/i.test(element.name));
   if (!field) return null;
   if (authCode) {
-    if (!field.value) return decision("fill", "Vou colar o código de autorização do iFood.", { ref: field.ref, value: authCode });
+    if (field.value !== authCode) return decision("fill", "Vou colar o código de autorização do iFood.", { ref: field.ref, value: authCode });
     const connect = button(page, /^conectar$/i);
     return connect ? decision("click", "Vou clicar em Conectar para concluir a integração do iFood.", { ref: connect.ref }) : null;
   }

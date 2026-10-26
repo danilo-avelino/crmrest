@@ -4,6 +4,7 @@ import request from "supertest";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { type Decision, guard } from "../src/agent/agent-guard.js";
 import { FIRST_QUESTION } from "../src/agent/agent.service.js";
+import { cardapioWebRail } from "../src/agent/cardapio-web-rail.js";
 import { authCodeOf, ifoodRail, linkCodeOf } from "../src/agent/ifood-rail.js";
 import { INTAKE_INTRO, INTAKE_QUESTIONS } from "../src/agent/intake.js";
 import { accessTokenFor, admin, createAuthFixture, createTestApp, startMockGraph } from "./helpers.js";
@@ -95,11 +96,36 @@ describe("agente da extensão: travas", () => {
   });
 });
 
+describe("agente da extensão: o caminho do Cardápio Web", () => {
+  const at = (path: string, elements: PageSnapshot["elements"]): PageSnapshot => ({ url: `https://portal.cardapioweb.com${path}`, title: "Cardápio Web", elements, text: "" });
+  const menu = [
+    { ref: 1, role: "link", name: "CW App Store" },
+    { ref: 2, role: "link", name: "settings Configurações" },
+  ];
+  const rail = (page: PageSnapshot) => cardapioWebRail({ page, panelHost: "www.dishdesk.com.br" });
+
+  it("Configurações → Integrações → API de integração → volta ao Dish Desk, sem clicar de novo em Configurações", () => {
+    expect(rail(at("/", menu))).toMatchObject({ action: "click", ref: 2 });
+    const settings = at("/configuracoes/geral", [...menu, { ref: 3, role: "link", name: "Geral" }, { ref: 4, role: "link", name: "Integrações" }]);
+    expect(rail(settings)).toMatchObject({ action: "click", ref: 4 });
+    expect(rail(at("/configuracoes/integracoes", [...menu, { ref: 5, role: "botão", name: "API de integração" }]))).toMatchObject({ action: "click", ref: 5 });
+    const drawer = at("/configuracoes/integracoes", [
+      { ref: 6, role: "campo", name: "Código da loja", value: "13047" },
+      { ref: 7, role: "botão", name: "Copiar token" },
+      { ref: 8, role: "botão", name: "Gerar um novo token" },
+      ...menu,
+    ]);
+    expect(rail(drawer)).toMatchObject({ action: "switch", value: "www.dishdesk.com.br" });
+    // Fora do portal, a LLM decide.
+    expect(rail({ ...at("/", menu), url: "https://www.dishdesk.com.br/configuracoes" })).toBeNull();
+  });
+});
+
 describe("agente da extensão: o caminho do iFood", () => {
   const panelHost = "www.dishdesk.com.br";
   const at = (url: string, elements: PageSnapshot["elements"], text = ""): PageSnapshot => ({ url, title: "Página", elements, text });
   const rail = (page: PageSnapshot, patch: Partial<Parameters<typeof ifoodRail>[0]> = {}) =>
-    ifoodRail({ page, panelHost, linkCode: "KMQP-JDRF", authCode: null, opened: [], submitted: false, ...patch });
+    ifoodRail({ page, panelHost, linkCode: "KMQP-JDRF", authCode: null, opened: [], submitted: false, connected: false, ...patch });
   const boxes = (values: string[]) => values.map((value, index) => ({ ref: 10 + index, role: "campo", name: "", ...(value && { value }) }));
 
   it("lê os códigos: o de vinculação no modal do Dish Desk e o de autorização no portal", () => {
@@ -107,6 +133,8 @@ describe("agente da extensão: o caminho do iFood", () => {
     expect(linkCodeOf("Integrações")).toBeNull();
     expect(authCodeOf("Código KMQP-JDRF autorizado. Código de autorização: LHQX-ZZZZ", "KMQP-JDRF")).toBe("LHQX-ZZZZ");
     expect(authCodeOf("Código KMQP-JDRF", "KMQP-JDRF")).toBeNull();
+    // Um código longe de "autorização" (ex.: outro código da página) não é o de autorização.
+    expect(authCodeOf("Pedido ABCD-1234 entregue. Integrações ativas.", "KMQP-JDRF")).toBeNull();
   });
 
   it("no portal: abre /apps, clica em Ativar integração por código, digita o código e continua", () => {
@@ -151,6 +179,17 @@ describe("agente da extensão: o caminho do iFood", () => {
     expect(rail(form(), { opened: ["portal.ifood.com.br"] })).toMatchObject({ action: "switch", value: "portal.ifood.com.br" });
     expect(rail(form(), { authCode: "LHQX-ZZZZ" })).toMatchObject({ action: "fill", ref: 1, value: "LHQX-ZZZZ" });
     expect(rail(form("LHQX-ZZZZ"), { authCode: "LHQX-ZZZZ" })).toMatchObject({ action: "click", ref: 2 });
+    // O campo com o código de uma tentativa anterior: troca pelo novo.
+    expect(rail(form("OLDX-CODE"), { authCode: "LHQX-ZZZZ" })).toMatchObject({ action: "fill", ref: 1, value: "LHQX-ZZZZ" });
+
+    // O iFood recusou o código depois do Conectar: gera um novo código de vinculação (o erro antigo não repete o clique).
+    const refused = {
+      ...form("LHQX-ZZZZ"),
+      elements: [...form("LHQX-ZZZZ").elements, { ref: 3, role: "botão", name: "Gerar outro" }],
+      text: "iFood. Abra o Portal e confira este código. KMQP-JDRF Não foi possível conectar o iFood: o código de autorização não foi aceito (gere um novo código de vinculação).",
+    };
+    expect(rail(refused, { authCode: "LHQX-ZZZZ", connected: true })).toMatchObject({ action: "click", ref: 3 });
+    expect(rail(refused, { authCode: null, connected: false })).toMatchObject({ action: "login" });
     // Outra tela do Dish Desk: a LLM decide.
     expect(rail(at("https://www.dishdesk.com.br/configuracoes/horario", []))).toBeNull();
   });
@@ -299,6 +338,48 @@ describe("agente da extensão: sessões", () => {
     // Conferido, mas a implantação continua: os outros passos ainda estão a fazer.
     expect(checked).toMatchObject({ status: "ACTIVE", next: { type: "reply", say: "Pronto, o WhatsApp está conectado!" } });
     expect(checked.progress.steps[0]).toEqual({ step: "whatsapp", status: "done", detail: "+55 11 90000-0000" });
+  });
+
+  it("iFood: as caixinhas são campo de código; o parceiro cola o código de vinculação que o painel mostra com Copiar", async () => {
+    const { body: session } = await start(fx.b.id, "SETUP").expect(201);
+    const form = { ...page("http://localhost:3000/configuracoes/integracoes?conectar=IFOOD", []), text: "iFood. Abra o Portal e confira este código. KMQP-JDRF" };
+    answer({ say: "Vou abrir o portal.", action: "reply" });
+    await turn(session.id, { message: "Como conecto o iFood?", page: form });
+
+    const modal = page("https://portal.ifood.com.br/apps", [
+      ...Array.from({ length: 9 }, (_, index) => ({ ref: 10 + index, role: "campo", name: "", sensitive: "code" as const })),
+      { ref: 20, role: "botão", name: "Continuar", disabled: true },
+    ]);
+    const calls = llm.requests.length;
+    const { body } = await turn(session.id, { result: { ok: true }, page: modal });
+    expect(body.next).toMatchObject({ type: "your_turn", ref: 10, field: "code", copy: "KMQP-JDRF" });
+    expect(llm.requests.length).toBe(calls);
+  });
+
+  it("iFood: código recusado ao conectar → gera outro e volta ao portal sem reaproveitar o código de autorização antigo", async () => {
+    const { body: session } = await start(fx.b.id, "SETUP").expect(201);
+    const form = (code: string, value: string | null, error = "") => ({
+      url: "http://localhost:3000/configuracoes/integracoes?conectar=IFOOD",
+      title: "Dish Desk",
+      elements: [
+        { ref: 1, role: "campo", name: "Código de autorização", ...(value && { value }) },
+        { ref: 2, role: "botão", name: "Conectar" },
+        { ref: 3, role: "botão", name: "Gerar outro" },
+      ],
+      text: `iFood. Abra o Portal e confira este código. ${code} ${error}`,
+    });
+    const portal = { ...page("https://portal.ifood.com.br/apps", []), text: "Integração ativada. Código de autorização: LHQX-ZZZZ" };
+    const ok = { result: { ok: true } };
+
+    answer({ say: "Vou ver.", action: "reply" });
+    await turn(session.id, { message: "Como conecto o iFood?", page: form("KMQP-JDRF", null) });
+    expect((await turn(session.id, { ...ok, page: portal })).body.next).toMatchObject({ type: "act", action: { type: "switch", host: "localhost" } });
+    expect((await turn(session.id, { ...ok, page: form("KMQP-JDRF", null) })).body.next).toMatchObject({ action: { type: "fill", value: "LHQX-ZZZZ" } });
+    expect((await turn(session.id, { ...ok, page: form("KMQP-JDRF", "LHQX-ZZZZ") })).body.next).toMatchObject({ action: { type: "click", label: "Conectar" } });
+    const refused = form("KMQP-JDRF", "LHQX-ZZZZ", "Não foi possível conectar o iFood: o código de autorização não foi aceito (gere um novo código de vinculação).");
+    expect((await turn(session.id, { ...ok, page: refused })).body.next).toMatchObject({ action: { type: "click", label: "Gerar outro" } });
+    // Código novo: o de autorização antigo não serve; volta ao portal.
+    expect((await turn(session.id, { ...ok, page: form("WXYZ-2345", "LHQX-ZZZZ") })).body.next).toMatchObject({ type: "login", url: "https://portal.ifood.com.br/apps" });
   });
 
   it("um JSON quebrado da LLM é pedido de novo, sem dizer que a IA está fora do ar", async () => {

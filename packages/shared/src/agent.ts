@@ -77,7 +77,8 @@ export type AgentPageAction =
  * O que a IA faz agora. `say` é o que ela diz ao parceiro no painel.
  * - `act`: executar a ação e voltar com o resultado;
  * - `confirm`: mostrar o cartão "Confirmar ação" (ação que não dá para desfazer ou fala em nome do restaurante);
- * - `your_turn`: o parceiro preenche (senha, código, cartão) e clica em "Pronto";
+ * - `your_turn`: o parceiro preenche (senha, código, cartão) e clica em "Pronto"; com `copy`, o painel mostra esse texto
+ *   com o botão Copiar, para ele colar no campo (ex.: o código de vinculação do Dish Desk nas caixinhas do iFood);
  * - `login`: abrir o painel de fora (ex.: Portal do Parceiro do iFood) numa aba nova e esperar o parceiro entrar com o
  *   usuário e a senha dele e clicar em "Pronto";
  * - `permission`: pedir para agir num site fora da lista;
@@ -90,7 +91,7 @@ export type AgentPageAction =
 export type AgentAction =
   | { type: "act"; say: string; action: AgentPageAction }
   | { type: "confirm"; say: string; action: AgentPageAction }
-  | { type: "your_turn"; say: string; ref: number | null; field: SensitiveField }
+  | { type: "your_turn"; say: string; ref: number | null; field: SensitiveField; copy?: string }
   | { type: "login"; say: string; url: string }
   | { type: "permission"; say: string; host: string }
   | { type: "reply"; say: string }
