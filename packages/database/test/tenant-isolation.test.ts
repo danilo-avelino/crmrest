@@ -39,6 +39,7 @@ const tenantTables: Record<string, (db: TenantTx) => Promise<Row[]>> = {
   tenant_modules: (db) => db.tenantModule.findMany({ select: { id: true, tenantId: true } }),
   agent_sessions: (db) => db.agentSession.findMany({ select: { id: true, tenantId: true } }),
   agent_events: (db) => db.agentEvent.findMany({ select: { id: true, tenantId: true } }),
+  product_suggestions: (db) => db.productSuggestion.findMany({ select: { id: true, tenantId: true } }),
 };
 
 type Seeded = { tenantId: string; userId: string; email: string; contactId: string };
@@ -124,6 +125,7 @@ async function seedTenant(label: string): Promise<Seeded> {
   await admin.agentSession.create({
     data: { tenantId, userId: user.id, kind: "SETUP", events: { create: { tenantId, kind: "partner", content: { text: "Conecta o meu WhatsApp" } } } },
   });
+  await admin.productSuggestion.create({ data: { tenantId, userId: user.id, text: "Modo escuro" } });
   await admin.auditLog.create({
     data: { tenantId, userId: user.id, action: "contact.cpf_viewed", entity: "contact", entityId: contact.id },
   });
