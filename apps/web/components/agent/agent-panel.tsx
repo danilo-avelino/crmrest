@@ -176,7 +176,7 @@ function Conversation({ tenantId, admin }: { tenantId: string; admin: boolean })
 
   useEffect(() => {
     scroller.current?.scrollTo({ top: scroller.current.scrollHeight });
-  }, [entries, support, phase]);
+  }, [entries, support, phase, busy]);
 
   // A faixa na aba: Pausar e Continuar, e o parceiro mexendo na página enquanto a IA age (pausa sozinha).
   const handlers = useRef({
@@ -475,6 +475,10 @@ function Conversation({ tenantId, admin }: { tenantId: string; admin: boolean })
   const status = statusOf(phase, supportOpen);
   const controls = sessionId && (phase === "working" || phase === "waiting" || phase === "paused");
   const agentName = support.findLast((message) => message.from === "support")?.author ?? null;
+  // A IA decide o próximo passo (a resposta da API ainda não chegou): "Pensando…" no fim da conversa, como uma etapa.
+  // Enquanto uma ação roda na página, a linha dela (a última) já mostra o andamento.
+  const last = entries.at(-1);
+  const thinking = (phase === "working" || (busy && phase !== "support")) && !(last?.kind === "action" && last.state === "running");
 
   return (
     <div className="flex h-full flex-col bg-paper">
@@ -546,6 +550,12 @@ function Conversation({ tenantId, admin }: { tenantId: string; admin: boolean })
               ) : (
                 <SupportBubble key={message.id} author={message.author} text={message.text} />
               ),
+            )}
+            {thinking && (
+              <div role="status" className="ml-[9px] flex items-center gap-2 border-l border-rule py-1 pl-4 text-[12px] text-ink-2">
+                <LoaderCircleIcon className="size-3 shrink-0 animate-spin text-tomate" aria-hidden />
+                Pensando…
+              </div>
             )}
           </div>
         )}
