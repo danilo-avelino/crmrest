@@ -1,9 +1,9 @@
-import type { PageSnapshot } from "@dishdesk/shared";
+import { ONBOARDING_STEPS, type OnboardingDto, type OnboardingStepStatus, type PageSnapshot } from "@dishdesk/shared";
 import type { INestApplication } from "@nestjs/common";
 import request from "supertest";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { type Decision, guard } from "../src/agent/agent-guard.js";
-import { FIRST_QUESTION } from "../src/agent/agent.service.js";
+import { FIRST_QUESTION, firstMessageTurn } from "../src/agent/agent.service.js";
 import { type CardapioWebCredentials, cardapioWebRail, credentialsOf } from "../src/agent/cardapio-web-rail.js";
 import { authCodeOf, ifoodRail, linkCodeOf } from "../src/agent/ifood-rail.js";
 import { INTAKE_INTRO, INTAKE_QUESTIONS } from "../src/agent/intake.js";
@@ -245,6 +245,35 @@ describe("agente da extensão: o caminho do iFood", () => {
       "iFood. Nova integração. A autorização do iFood trouxe 4 lojas. Marque as que vão ser conectadas a este restaurante.",
     );
     expect(rail(stores, { authCode: "LHQX-ZZZZ" })).toMatchObject({ action: "click", ref: 41, irreversible: true });
+  });
+});
+
+describe("agente da extensão: a mensagem de teste", () => {
+  const progress = (status: Partial<Record<string, OnboardingStepStatus>>): OnboardingDto => {
+    const steps = ONBOARDING_STEPS.map((step) => ({ step, status: status[step] ?? "skipped", detail: null }));
+    return { tenantId: "t", steps, firstMessage: null, completed: steps.every((item) => item.status !== "todo" && item.status !== "error"), autoOpen: false };
+  };
+  const partner = (text: string) => ({ kind: "partner", content: { text } });
+  const agent = (say: string) => ({ kind: "agent", content: { next: { type: "reply", say } } });
+  const waiting = progress({ whatsapp: "done", first_message: "todo" });
+
+  it("só falta a mensagem de teste: pede ao parceiro, sem a LLM; ainda não chegou, avisa; chegou, termina", () => {
+    const said = [partner("Quero configurar o Dish Desk."), agent("Vou realizar o teste da primeira mensagem."), partner("ok")];
+    const asked = firstMessageTurn("SETUP", waiting, said);
+    expect(asked).toMatchObject({ type: "reply", say: expect.stringMatching(/^Falta só um teste: de outro celular, mande uma mensagem para o WhatsApp/) });
+
+    const after = [...said, agent(asked!.say), partner("pronto")];
+    expect(firstMessageTurn("SETUP", waiting, after)).toMatchObject({ type: "reply", say: expect.stringContaining("Ainda não chegou") });
+    expect(firstMessageTurn("SETUP", progress({ whatsapp: "done", first_message: "done" }), after)).toMatchObject({ type: "done" });
+  });
+
+  it("sem WhatsApp, a instrução é pelo Instagram; com outro passo a fazer, com uma pergunta ou no suporte, a LLM decide", () => {
+    expect(firstMessageTurn("SETUP", progress({ instagram: "done", first_message: "todo" }), [])).toMatchObject({
+      say: expect.stringContaining("mensagem direta para o Instagram"),
+    });
+    expect(firstMessageTurn("SETUP", progress({ members: "todo", first_message: "todo" }), [])).toBeNull();
+    expect(firstMessageTurn("SETUP", waiting, [partner("Posso testar do meu próprio número?")])).toBeNull();
+    expect(firstMessageTurn("SUPPORT", waiting, [])).toBeNull();
   });
 });
 

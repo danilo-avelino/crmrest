@@ -344,6 +344,8 @@ export class AgentService {
       await store.intakeDone();
       context.intakeDone = true;
     }
+    const test = firstMessageTurn(context.session.kind, context.progress, context.events);
+    if (test) return { next: test, step: "first_message", progress: context.progress };
     let decided = await this.decide(context, page, allowed);
     for (let marks = 0; decided.mark && marks < MAX_MARKS; marks++) {
       await apply(decided.mark.step, decided.mark.mark, { next: decided.next });
@@ -606,9 +608,44 @@ function repeatsLast(events: EventRow[], next: AgentAction): boolean {
 
 /** O que dizer ao parceiro quando a IA quis encerrar mas falta passo: só a mensagem de teste pede a ação dele, com a instrução pronta. */
 function pendingSay(progress: OnboardingDto | null, said: string): string {
-  const pending = progress?.steps.filter((item) => item.status === "todo" || item.status === "error") ?? [];
-  if (pending.length === 1 && pending[0]!.step === "first_message") {
-    return "Falta só um teste: de outro celular, mande uma mensagem para o WhatsApp do restaurante que acabamos de conectar. Quando ela chegar na Inbox, a implantação termina. Escreva \"pronto\" depois de enviar.";
+  return progress && onlyFirstMessage(progress) ? firstMessageSay(progress) : said;
+}
+
+const FIRST_MESSAGE_SAY = "Falta só um teste";
+
+function onlyFirstMessage(progress: OnboardingDto): boolean {
+  const pending = progress.steps.filter((item) => item.status === "todo" || item.status === "error");
+  return pending.length === 1 && pending[0]!.step === "first_message";
+}
+
+/** A instrução da mensagem de teste, pelo canal que o restaurante conectou. */
+function firstMessageSay(progress: OnboardingDto): string {
+  const connected = (step: OnboardingStep) => progress.steps.find((item) => item.step === step)?.status === "done";
+  const send = connected("whatsapp")
+    ? "de outro celular, mande uma mensagem para o WhatsApp do restaurante que acabamos de conectar"
+    : connected("instagram")
+      ? "de outra conta, mande uma mensagem direta para o Instagram do restaurante que acabamos de conectar"
+      : "mande uma mensagem de cliente para um dos canais conectados";
+  return `${FIRST_MESSAGE_SAY}: ${send}. Quando ela chegar na Inbox, a implantação termina. Escreva "pronto" depois de enviar.`;
+}
+
+/**
+ * Na implantação, com só a mensagem de teste a fazer: a instrução é fixa, sem a LLM (ela anunciava "vou realizar o
+ * teste" e parava, sem pedir nada ao parceiro). Pedida a mensagem: se ainda não chegou, avisa; chegou, a implantação
+ * termina. Uma pergunta do parceiro vai para a LLM.
+ */
+export function firstMessageTurn(kind: AgentSessionKind, progress: OnboardingDto | null, events: EventRow[]): AgentAction | null {
+  if (kind !== "SETUP" || !progress) return null;
+  const text = (value: unknown) => (typeof value === "string" ? value : "");
+  const last = events.findLast((item) => item.kind === "partner" || item.kind === "agent");
+  if (last?.kind === "partner" && text((last.content as { text?: unknown }).text).includes("?")) return null;
+  const asked = events.some((item) => item.kind === "agent" && text((item.content as { next?: { say?: unknown } }).next?.say).startsWith(FIRST_MESSAGE_SAY));
+  if (onlyFirstMessage(progress)) {
+    if (!asked) return { type: "reply", say: firstMessageSay(progress) };
+    return {
+      type: "reply",
+      say: 'Ainda não chegou mensagem de cliente na Inbox. Confira se ela saiu de outro número (não do próprio restaurante) e escreva "pronto" de novo.',
+    };
   }
-  return said;
+  return asked && progress.completed ? { type: "done", say: "Chegou! A primeira mensagem de um cliente está na Inbox, e a implantação terminou." } : null;
 }
