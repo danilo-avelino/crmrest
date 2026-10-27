@@ -219,8 +219,8 @@ function Wizard({ tenant, showName }: { tenant: Tenant; showName: boolean }) {
       ) : (
       <div className="flex min-h-0 flex-1">
         <nav aria-label="Passos da configuração" className="w-[300px] shrink-0 overflow-y-auto border-r border-rule bg-surface py-5">
-          <StepGroup title="Integrações" steps={data.steps.slice(0, 4)} offset={0} current={current} onPick={go} />
-          <StepGroup title="Seu atendimento" steps={data.steps.slice(4)} offset={4} current={current} onPick={go} />
+          <StepGroup title="Seu atendimento" steps={data.steps.slice(0, 4)} offset={0} current={current} onPick={go} />
+          <StepGroup title="Integrações" steps={data.steps.slice(4)} offset={4} current={current} onPick={go} />
         </nav>
 
         <main className="min-w-0 flex-1 overflow-y-auto px-14 py-10">

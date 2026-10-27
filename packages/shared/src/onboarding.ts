@@ -1,16 +1,16 @@
 import type { ChannelType } from "@dishdesk/database/enums";
 import { z } from "zod";
 
-/** Passos do assistente de configuração (E30), na ordem: as integrações e, depois, o resto da configuração. */
+/** Passos do assistente de configuração (E30), na ordem: as configurações do atendimento e, depois, as integrações. */
 export const ONBOARDING_STEPS = [
-  "whatsapp",
-  "instagram",
-  "ifood",
-  "cardapio_web",
   "business_hours",
   "personality",
   "order_links",
   "members",
+  "whatsapp",
+  "instagram",
+  "ifood",
+  "cardapio_web",
   "first_message",
 ] as const;
 export type OnboardingStep = (typeof ONBOARDING_STEPS)[number];

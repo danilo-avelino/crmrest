@@ -8,14 +8,14 @@ import { STEP_LABEL } from "./guide.js";
  * vira marcação do passo, antes de a IA agir; o resto fica à vista da IA em toda volta.
  */
 export const INTAKE_QUESTIONS: { step: OnboardingStep; say: string }[] = [
-  { step: "whatsapp", say: "Você atende pelo WhatsApp?" },
-  { step: "instagram", say: "Você atende pelo Instagram?" },
-  { step: "ifood", say: "Você vende pelo iFood?" },
-  { step: "cardapio_web", say: "Você vende pelo Cardápio Web?" },
   { step: "business_hours", say: 'Qual o horário de funcionamento do restaurante? Pode responder "padrão" ou "depois".' },
   { step: "personality", say: 'Qual personalidade de atendimento você prefere: Cordial, Formal, Jovial, Descontraído, Acolhedor ou Direto? (ou "padrão" / "depois")' },
   { step: "order_links", say: 'Qual o link do cardápio para o cliente fazer pedido? (ou "depois")' },
   { step: "members", say: 'Quem vai atender no Dish Desk? Informe o nome e o e-mail de cada pessoa (ou "depois").' },
+  { step: "whatsapp", say: "Você atende pelo WhatsApp?" },
+  { step: "instagram", say: "Você atende pelo Instagram?" },
+  { step: "ifood", say: "Você vende pelo iFood?" },
+  { step: "cardapio_web", say: "Você vende pelo Cardápio Web?" },
 ];
 
 /** Vai antes da primeira pergunta de verdade (que varia: o que já está feito no Dish Desk não é perguntado). */

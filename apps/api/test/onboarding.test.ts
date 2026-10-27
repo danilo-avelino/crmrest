@@ -30,14 +30,14 @@ describe("assistente de configuração (E30)", () => {
     const { body } = await api().get(`/api/onboarding/${fx.b.id}`).set("Authorization", `Bearer ${token}`).expect(200);
     expect(body).toMatchObject({ tenantId: fx.b.id, completed: false, autoOpen: true });
     expect(body.steps.map((item: Steps[number]) => item.step)).toEqual([
-      "whatsapp",
-      "instagram",
-      "ifood",
-      "cardapio_web",
       "business_hours",
       "personality",
       "order_links",
       "members",
+      "whatsapp",
+      "instagram",
+      "ifood",
+      "cardapio_web",
       "first_message",
     ]);
     expect(new Set(Object.values(statuses(body.steps)))).toEqual(new Set(["todo"]));

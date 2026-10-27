@@ -341,7 +341,7 @@ describe("agente da extensão: sessões", () => {
     expect(user!.content).toContain("- whatsapp (WhatsApp): a fazer");
     expect(user!.content).toContain('[1] link "Integrações"');
     expect(user!.content).toContain("Parceiro: Conecta o meu WhatsApp?");
-    expect(user!.content).toContain("PRÓXIMO PASSO: whatsapp (WhatsApp)");
+    expect(user!.content).toContain("PRÓXIMO PASSO: business_hours (Horário de funcionamento)");
 
     // A ação que a LLM não marcou como irreversível, mas é: o parceiro confirma antes.
     answer({ say: "Vou desconectar.", action: "click", ref: 2 });
@@ -361,7 +361,7 @@ describe("agente da extensão: sessões", () => {
     expect(llm.requests.length).toBe(before);
 
     // Uma pergunta por tópico, cada uma depois da resposta anterior, sem LLM.
-    const replies = ["Sim", "Não", "Não", "Não", "padrão", "Descontraído", "depois"];
+    const replies = ["padrão", "Descontraído", "depois", "depois", "Sim", "Não", "Não"];
     for (const [index, reply] of replies.entries()) {
       const { body: asked } = await turn(session.id, { message: reply, page: dishDesk });
       expect(asked.next).toEqual({ type: "reply", say: INTAKE_QUESTIONS[index + 1]!.say });
@@ -371,13 +371,13 @@ describe("agente da extensão: sessões", () => {
     // Com a última resposta, as oito são lidas uma vez (a LLM classifica) e viram marcação; depois a IA decide com elas sempre à vista.
     answers.push({ whatsapp: "usa", instagram: "nao_usa", ifood: "nao_usa", cardapio_web: "nao_usa", business_hours: "padrao", personality: "informou", order_links: "depois", members: "nao_disse" });
     answer({ say: "Vou abrir as Integrações.", action: "click", ref: 1 });
-    const { body } = await turn(session.id, { message: "depois", page: dishDesk });
+    const { body } = await turn(session.id, { message: "Não", page: dishDesk });
     const status = Object.fromEntries(body.progress.steps.map((item: { step: string; status: string }) => [item.step, item.status]));
     expect(status).toMatchObject({ whatsapp: "todo", instagram: "skipped", ifood: "skipped", cardapio_web: "skipped", business_hours: "done", order_links: "skipped", members: "todo" });
     const prompt = (llm.requests.at(-1)!.body as LlmBody).messages[1]!.content;
     expect(prompt).toContain("RESPOSTAS DO PARCEIRO");
     expect(prompt).toContain("Personalidade do atendimento: Descontraído");
-    expect(prompt).toContain("PRÓXIMO PASSO: whatsapp (WhatsApp)");
+    expect(prompt).toContain("PRÓXIMO PASSO: personality (Personalidade do atendimento)");
 
     // A leitura não se repete na volta seguinte.
     answer({ say: "Vou abrir.", action: "reply" });
@@ -395,9 +395,15 @@ describe("agente da extensão: sessões", () => {
     try {
       const { body: session } = await start(fx.b.id, "SETUP").expect(201);
       const { body: first } = await turn(session.id, { message: "Quero configurar o Dish Desk", page: dishDesk });
-      expect(first.next).toEqual({ type: "reply", say: INTAKE_INTRO + INTAKE_QUESTIONS[1]!.say });
-      const { body: second } = await turn(session.id, { message: "Sim", page: dishDesk });
-      expect(second.next).toEqual({ type: "reply", say: INTAKE_QUESTIONS[2]!.say });
+      expect(first.next).toEqual({ type: "reply", say: INTAKE_INTRO + INTAKE_QUESTIONS[0]!.say });
+      for (const index of [1, 2, 3]) {
+        const { body: asked } = await turn(session.id, { message: "depois", page: dishDesk });
+        expect(asked.next).toEqual({ type: "reply", say: INTAKE_QUESTIONS[index]!.say });
+      }
+      // O WhatsApp, já conectado, fica de fora: depois das configurações vem o Instagram.
+      expect(INTAKE_QUESTIONS[4]!.step).toBe("whatsapp");
+      const { body: next } = await turn(session.id, { message: "depois", page: dishDesk });
+      expect(next.next).toEqual({ type: "reply", say: INTAKE_QUESTIONS[5]!.say });
     } finally {
       await admin.channel.delete({ where: { id: channel.id } });
     }
@@ -419,7 +425,7 @@ describe("agente da extensão: sessões", () => {
     const { body: checked } = await turn(session.id, { message: "E agora?", page: dishDesk });
     // Conferido, mas a implantação continua: os outros passos ainda estão a fazer.
     expect(checked).toMatchObject({ status: "ACTIVE", next: { type: "reply", say: "Pronto, o WhatsApp está conectado!" } });
-    expect(checked.progress.steps[0]).toEqual({ step: "whatsapp", status: "done", detail: "+55 11 90000-0000" });
+    expect(checked.progress.steps.find((item: { step: string }) => item.step === "whatsapp")).toEqual({ step: "whatsapp", status: "done", detail: "+55 11 90000-0000" });
   });
 
   it("iFood: as caixinhas são campo de código; o parceiro cola o código de vinculação que o painel mostra com Copiar", async () => {
