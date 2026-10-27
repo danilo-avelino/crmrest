@@ -1188,10 +1188,12 @@ export function IntegrationForm({
           <Label htmlFor={`${id}-${field.name}`}>{field.label}</Label>
           <Input
             id={`${id}-${field.name}`}
-            type={field.secret ? "password" : "text"}
+            // A chave fica mascarada pelo CSS, não por type="password": o assistente da extensão não preenche senha, mas
+            // cola a chave que leu no portal. Credenciais não devem ser lembradas pelo navegador.
+            type="text"
+            className={field.secret ? "[-webkit-text-security:disc]" : undefined}
             inputMode={field.numeric ? "numeric" : undefined}
-            // Credenciais não devem ser lembradas pelo navegador.
-            autoComplete={field.secret ? "new-password" : "off"}
+            autoComplete="off"
             placeholder={field.placeholder}
             value={values[field.name] ?? ""}
             aria-invalid={Boolean(errors[field.name]) || undefined}

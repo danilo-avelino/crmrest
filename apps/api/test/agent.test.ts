@@ -4,7 +4,7 @@ import request from "supertest";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { type Decision, guard } from "../src/agent/agent-guard.js";
 import { FIRST_QUESTION } from "../src/agent/agent.service.js";
-import { cardapioWebRail } from "../src/agent/cardapio-web-rail.js";
+import { type CardapioWebCredentials, cardapioWebRail, credentialsOf } from "../src/agent/cardapio-web-rail.js";
 import { authCodeOf, ifoodRail, linkCodeOf } from "../src/agent/ifood-rail.js";
 import { INTAKE_INTRO, INTAKE_QUESTIONS } from "../src/agent/intake.js";
 import { accessTokenFor, admin, createAuthFixture, createTestApp, startMockGraph } from "./helpers.js";
@@ -102,7 +102,34 @@ describe("agente da extensão: o caminho do Cardápio Web", () => {
     { ref: 1, role: "link", name: "CW App Store" },
     { ref: 2, role: "link", name: "settings Configurações" },
   ];
-  const rail = (page: PageSnapshot) => cardapioWebRail({ page, panelHost: "www.dishdesk.com.br" });
+  const rail = (page: PageSnapshot, credentials: CardapioWebCredentials | null = null) => cardapioWebRail({ page, panelHost: "www.dishdesk.com.br", credentials });
+  const TOKEN = "1hd0B9TykVb2JPVPCAnLnGWqoLcnvXyZ0123456789abcdefABCDEF012345";
+
+  it("lê o código da loja e o token inteiro no texto da gaveta", () => {
+    const text = `Terra Querida Configurações Geral Integrações API de integração Utilize o Token abaixo. Código da loja 69156 Copiar ${TOKEN} Copiar token GERAR UM NOVO TOKEN`;
+    expect(credentialsOf(text)).toEqual({ storeId: "69156", apiKey: TOKEN });
+    expect(credentialsOf("Código da loja 69156 Copiar")).toBeNull();
+  });
+
+  it("no Dish Desk, preenche o código da loja e o token no modal e clica no Conectar dele", () => {
+    const credentials = { storeId: "69156", apiKey: TOKEN };
+    const modal = (store: string, key: string): PageSnapshot => ({
+      url: "https://www.dishdesk.com.br/configuracoes?tab=integracoes",
+      title: "Dish Desk",
+      text: "Cardápio Web Nova integração Código da loja Chave de API | Integrações",
+      elements: [
+        { ref: 3, role: "botão", name: "Conectar" },
+        { ref: 20, role: "campo", name: "Código da loja", ...(store && { value: store }) },
+        { ref: 21, role: "campo", name: "Chave de API", ...(key && { value: key }) },
+        { ref: 22, role: "botão", name: "Conectar" },
+      ],
+    });
+    expect(rail(modal("9", ""), credentials)).toMatchObject({ action: "fill", ref: 20, value: "69156" });
+    expect(rail(modal("69156", ""), credentials)).toMatchObject({ action: "fill", ref: 21, value: TOKEN });
+    expect(rail(modal("69156", TOKEN), credentials)).toMatchObject({ action: "click", ref: 22 });
+    // Sem o que foi lido no portal, a LLM decide.
+    expect(rail(modal("", ""))).toBeNull();
+  });
 
   it("Configurações → Integrações → API de integração → volta ao Dish Desk, sem clicar de novo em Configurações", () => {
     expect(rail(at("/", menu))).toMatchObject({ action: "click", ref: 2 });

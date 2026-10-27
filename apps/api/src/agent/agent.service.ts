@@ -24,7 +24,7 @@ import { markAccepted, markOnboardingStep, onboardingOf } from "../settings/onbo
 import { isTenantAdmin } from "../settings/tenant-admin.js";
 import { type Decision, guard } from "./agent-guard.js";
 import { GUIDE, STEP_LABEL } from "./guide.js";
-import { cardapioWebRail } from "./cardapio-web-rail.js";
+import { CARDAPIO_WEB_CREDENTIALS, type CardapioWebCredentials, cardapioWebRail, credentialsOf } from "./cardapio-web-rail.js";
 import { authCodeOf, IFOOD_PORTAL, type IfoodState, ifoodRail, LINK_CODE_HINT, linkCodeOf } from "./ifood-rail.js";
 import { extrasOf, INTAKE_INTRO, INTAKE_PROMPT, INTAKE_QUESTIONS, Intake, intakeMarks, nextQuestion } from "./intake.js";
 
@@ -154,6 +154,8 @@ export type DecideContext = {
   opened: string[];
   /** iFood: o código de vinculação atual e o que a sessão já fez com ele (o caminho em ifood-rail). */
   ifood?: IfoodState;
+  /** Cardápio Web: o código da loja e o token lidos na gaveta "API de integração" do portal (o caminho em cardapio-web-rail). */
+  cardapioWeb?: CardapioWebCredentials | null;
 };
 
 /** O que `decideWithMarks` grava: a marcação de um passo (com a fala da IA, se foi ela que decidiu) e a leitura da resposta inicial. */
@@ -368,7 +370,8 @@ export class AgentService {
   ): Promise<{ next: AgentAction; step?: OnboardingStep; mark?: { step: OnboardingStep; mark: OnboardingMark } }> {
     const partner = context.events.flatMap((item) => (item.kind === "partner" ? [String((item.content as { text: unknown }).text)] : []));
     const user = `${progressText(context.progress, partner)}${answersText(context)}${pageText(page)}${previousText(context.events, page)}\n\n${historyText(context.events)}`;
-    const known = `${knownText(context.events, page)}\n${context.answers ?? ""}`;
+    const read = context.cardapioWeb ? `\n${context.cardapioWeb.storeId}\n${context.cardapioWeb.apiKey}` : "";
+    const known = `${knownText(context.events, page)}\n${context.answers ?? ""}${read}`;
     const railed = this.railIfood(context, page) ?? this.railCardapioWeb(context, page);
     if (railed) {
       let guarded = guard(railed.decision, page, allowed, known);
@@ -437,10 +440,10 @@ export class AgentService {
     return decision && { decision, step: "ifood" };
   }
 
-  /** Na implantação, com o Cardápio Web a fazer: o caminho fixo do portal até a API de integração (cardapio-web-rail). */
+  /** Na implantação, com o Cardápio Web a fazer: o caminho fixo do portal até a API de integração e o modal do Dish Desk (cardapio-web-rail). */
   private railCardapioWeb(context: DecideContext, page: PageSnapshot | undefined): { decision: Decision; step: OnboardingStep } | null {
     if (!pendingStep(context, "cardapio_web")) return null;
-    const decision = cardapioWebRail({ page, panelHost: this.panelHost });
+    const decision = cardapioWebRail({ page, panelHost: this.panelHost, credentials: context.cardapioWeb ?? null });
     return decision && { decision, step: "cardapio_web" };
   }
 
@@ -507,17 +510,18 @@ async function sessionExtras(tx: TenantTx, sessionId: string) {
   const spoken = await tx.agentEvent.findMany({ where: { sessionId, kind: "agent" }, orderBy: { createdAt: "asc" }, take: INTAKE_QUESTIONS.length + 1 });
   const first = spoken[0];
   if (!first) return extrasOf([]);
-  const [answers, intake, logins, tabs, link] = await Promise.all([
+  const [answers, intake, logins, tabs, link, drawer] = await Promise.all([
     tx.agentEvent.findMany({ where: { sessionId, kind: "partner", createdAt: { gte: first.createdAt } }, orderBy: { createdAt: "asc" }, take: INTAKE_QUESTIONS.length }),
     tx.agentEvent.findFirst({ where: { sessionId, kind: "result", content: { path: ["intake"], equals: true } } }),
     tx.agentEvent.findMany({ where: { sessionId, kind: "agent", content: { path: ["next", "type"], equals: "login" } } }),
     tx.agentEvent.findMany({ where: { sessionId, kind: "agent", content: { path: ["next", "action", "newTab"], equals: true } } }),
     tx.agentEvent.findFirst({ where: { sessionId, content: { path: ["seen"], string_contains: LINK_CODE_HINT } }, orderBy: { createdAt: "desc" } }),
+    tx.agentEvent.findFirst({ where: { sessionId, content: { path: ["seen"], string_contains: "Copiar token" } }, orderBy: { createdAt: "desc" } }),
   ]);
   const rows = [...new Map([...spoken, ...answers, ...(intake ? [intake] : []), ...logins, ...tabs].map((row) => [row.id, row])).values()].sort(
     (a, b) => a.createdAt.getTime() - b.createdAt.getTime(),
   );
-  return { ...extrasOf(rows), ifood: await ifoodState(tx, sessionId, seenIn(link)) };
+  return { ...extrasOf(rows), ifood: await ifoodState(tx, sessionId, seenIn(link)), cardapioWeb: credentialsOf(seenIn(drawer)) };
 }
 
 /**
@@ -584,7 +588,9 @@ function previousText(events: EventRow[], page: PageSnapshot | undefined): strin
 /** O que fica guardado de uma página para a IA copiar depois: o endereço (às vezes traz o código da loja), os valores dos campos e o texto. */
 function seenOf(page: PageSnapshot): string {
   const values = page.elements.filter((element) => element.value && !element.sensitive).map((element) => `${element.name || element.role}: ${element.value}`);
-  return [`Endereço: ${page.url}`, ...values, page.text].join("\n").slice(0, SEEN_CHARS);
+  // A gaveta da API do Cardápio Web fica no fim do texto, depois do corte: o código da loja e o token vão antes.
+  const credentials = page.text.match(CARDAPIO_WEB_CREDENTIALS)?.[0];
+  return [`Endereço: ${page.url}`, ...(credentials ? [credentials] : []), ...values, page.text].join("\n").slice(0, SEEN_CHARS);
 }
 
 /** A ação é igual à última que a IA fez e a anterior deu certo: ela está repetindo (ex.: abrir o mesmo endereço de novo). */
