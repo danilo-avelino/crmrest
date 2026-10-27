@@ -50,13 +50,13 @@ Pela Coexistência da Meta, o número continua funcionando no app do celular **e
 
 - Enquanto o app Dish Desk não passar pela **análise da Meta**, só quem tem papel no app (administrador, desenvolvedor ou testador) consegue concluir a conexão. Clientes reais só depois da aprovação.
 - Mensagens enviadas pelo **celular** e o **histórico antigo** ainda não aparecem na Inbox do Dish Desk.
-- Cada número só pode estar ligado a **um** restaurante.
+- Cada número só pode estar ligado a **um** restaurante. Conectar um número que está em outro restaurante o tira de lá (o outro fica com o histórico).
 
 ## Problemas comuns
 
 | Mensagem ou sintoma | O que fazer |
 |---|---|
-| "Esta conta já está conectada a outro restaurante" | O número já foi conectado em outro restaurante. Desconecte lá primeiro, ou fale com o suporte. |
+| "Esta conta já está conectada a outro restaurante" | O número foi conectado em outro restaurante ao mesmo tempo. Tente de novo. |
 | A janela da Meta não abre | Libere pop-ups para `dishdesk.com.br` e tente de novo. |
 | A janela abre, mas o número não aparece | O número ainda está num WhatsApp comum. Veja o Caso B. |
 | A mensagem do cliente chega, mas a resposta falha | Veja o motivo exato no balão da mensagem. Se for restrição por país, pode ser temporária. Tente de novo mais tarde. |

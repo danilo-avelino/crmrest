@@ -85,9 +85,10 @@ export class IfoodAuthService {
   /**
    * Lojas que um acesso recém-obtido enxerga, para o restaurante não precisar informar o ID: pela lista de lojas (exige
    * o módulo Merchant) ou pela claim `merchant_scope` do token ("<id>:<módulo>"). O acesso de quem responde por várias
-   * lojas traz todas elas; `connected` marca as que já estão no Dish Desk. Vazio quando nada diz (o motivo fica no log).
+   * lojas traz todas elas; `connected` marca as que já estão conectadas a este restaurante, e `elsewhere`, as que estão
+   * em outro. Vazio quando nada diz (o motivo fica no log).
    */
-  async storesOf(grant: IfoodGrant): Promise<(IfoodMerchant & { connected: boolean })[]> {
+  async storesOf(grant: IfoodGrant, tenantId: string): Promise<(IfoodMerchant & { connected: boolean; elsewhere: boolean })[]> {
     let listed: string;
     let stores: IfoodMerchant[] = [];
     try {
@@ -105,8 +106,11 @@ export class IfoodAuthService {
       this.logger.warn(`iFood: loja do acesso não identificada (lista de lojas: ${listed}; claims do token: ${Object.keys(claims ?? {}).join(", ") || "nenhuma"})`);
       return [];
     }
-    const connected = await this.db.client.$queryRaw<{ external_id: string }[]>`SELECT external_id FROM app.ifood_merchants()`;
-    return stores.map((store) => ({ ...store, connected: connected.some((other) => other.external_id === store.id) }));
+    const connected = await this.db.client.$queryRaw<{ tenant_id: string; external_id: string }[]>`SELECT tenant_id, external_id FROM app.ifood_merchants()`;
+    return stores.map((store) => {
+      const owners = connected.filter((other) => other.external_id === store.id).map((other) => other.tenant_id);
+      return { ...store, connected: owners.includes(tenantId), elsewhere: owners.some((owner) => owner !== tenantId) };
+    });
   }
 
   /** O canal deixou de valer (desconectado, conectado de novo): esquece o acesso guardado em memória. */

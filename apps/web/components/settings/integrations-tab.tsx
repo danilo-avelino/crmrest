@@ -1231,8 +1231,9 @@ export function IntegrationForm({
 
 /**
  * iFood: a autorização de quem responde por várias lojas traz todas elas. O restaurante marca quais conectar (todas as
- * que ainda não estão no Dish Desk vêm marcadas) e pode dar um nome a cada uma; a API não conta o nome sem o módulo
- * Merchant. Loja recusada fica na lista com o motivo; as outras são conectadas.
+ * que ainda não estão no Dish Desk vêm marcadas; a que está em outro restaurante vem desmarcada, e marcá-la a tira de
+ * lá) e pode dar um nome a cada uma; a API não conta o nome sem o módulo Merchant. Loja recusada fica na lista com o
+ * motivo; as outras são conectadas.
  */
 function IfoodStoreChoice({ tenantId, stores, selection, onClose }: { tenantId: string; stores: IfoodStoreDto[]; selection: string; onClose: () => void }) {
   const { request } = useAuth();
@@ -1240,7 +1241,7 @@ function IfoodStoreChoice({ tenantId, stores, selection, onClose }: { tenantId: 
   const toast = useToast();
   const id = useId();
   const [connected, setConnected] = useState(() => new Set(stores.filter((store) => store.connected).map((store) => store.id)));
-  const [checked, setChecked] = useState(() => new Set(stores.filter((store) => !store.connected).map((store) => store.id)));
+  const [checked, setChecked] = useState(() => new Set(stores.filter((store) => !store.connected && !store.elsewhere).map((store) => store.id)));
   const [names, setNames] = useState<Record<string, string>>({});
   const [failed, setFailed] = useState<Record<string, string>>({});
   const [failure, setFailure] = useState<string | null>(null);
@@ -1314,7 +1315,11 @@ function IfoodStoreChoice({ tenantId, stores, selection, onClose }: { tenantId: 
                   <span className="block truncate text-[11px] text-ink-3 tabular-nums">{store.id}</span>
                 </span>
                 {done && <span className="shrink-0 text-[11px] text-ink-3">Já conectada</span>}
+                {!done && store.elsewhere && <span className="shrink-0 text-[11px] text-warning">Em outro restaurante</span>}
               </label>
+              {on && store.elsewhere && (
+                <p className="mt-1.5 text-[11px] leading-normal text-warning">Ao conectar aqui, ela é desconectada do outro restaurante, que fica com o histórico.</p>
+              )}
               {on && (
                 <Input
                   id={`${id}-${store.id}`}

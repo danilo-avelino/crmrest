@@ -105,8 +105,11 @@ export type ServedTenantsRequest = z.infer<typeof ServedTenantsRequest>;
  */
 export type IfoodLinkCodeDto = { userCode: string; verificationUrl: string; expiresIn: number; state: string };
 
-/** Loja do iFood que veio na autorização. `connected`: já está no Dish Desk (aqui ou em outro restaurante). */
-export type IfoodStoreDto = { id: string; name: string | null; connected: boolean };
+/**
+ * Loja do iFood que veio na autorização. `connected`: já está conectada a este restaurante. `elsewhere`: está conectada
+ * a outro restaurante, e conectar aqui a tira de lá.
+ */
+export type IfoodStoreDto = { id: string; name: string | null; connected: boolean; elsewhere: boolean };
 
 /**
  * Resposta de "adicionar integração". iFood distribuído com mais de uma loja na autorização: em vez de conectar, devolve

@@ -245,6 +245,39 @@ describe("WhatsApp por QR Code (Evolution API)", () => {
     }
   });
 
+  it("QR Code de um número que está em outro restaurante: o número vem para cá e a instância de lá é apagada", async () => {
+    const owner = randomNumber();
+    const theirs = await admin.channel.create({
+      data: {
+        tenantId: fx.a.id,
+        type: "WHATSAPP",
+        name: "WhatsApp de lá",
+        externalId: owner,
+        credentials: encrypt(JSON.stringify({ accessToken: "token-antigo", instance: "instancia-de-la" }), parseEncryptionKey(process.env.ENCRYPTION_KEY ?? "")),
+        status: "CONNECTED",
+      },
+    });
+    evolution.reply((req) => {
+      if (req.path === "/instance/create") return { status: 201, body: { instance: {}, hash: "x", qrcode: { base64: "data:image/png;base64,QR1" } } };
+      if (req.path.startsWith("/instance/connectionState/")) return { status: 200, body: { instance: { state: "open" } } };
+      if (req.path.startsWith("/instance/fetchInstances")) return { status: 200, body: [{ ownerJid: `${owner}@s.whatsapp.net`, profileName: "Lanches QR" }] };
+      return defaultReply(req);
+    });
+    try {
+      const { body: started } = await api().post(`/api/integrations/${fx.b.id}/whatsapp/qr`).set("Authorization", `Bearer ${token}`).expect(201);
+      const { body: done } = await api().get(`/api/integrations/${fx.b.id}/whatsapp/qr/${started.session}`).set("Authorization", `Bearer ${token}`).expect(200);
+      expect(done).toMatchObject({ status: "connected", integration: { externalId: owner, status: "CONNECTED" } });
+      expect(await admin.channel.findUniqueOrThrow({ where: { id: theirs.id } })).toMatchObject({
+        tenantId: fx.a.id,
+        externalId: `${owner}#${theirs.id}`,
+        status: "DISCONNECTED",
+      });
+      expect(evolution.requests.some((r) => r.method === "DELETE" && r.path === "/instance/delete/instancia-de-la")).toBe(true);
+    } finally {
+      evolution.reply(defaultReply);
+    }
+  });
+
   it("QR Code: fechar sem conectar apaga a tentativa; tentativa de outro restaurante não é encontrada", async () => {
     const { body: started } = await api().post(`/api/integrations/${fx.b.id}/whatsapp/qr`).set("Authorization", `Bearer ${token}`).expect(201);
     await api().delete(`/api/integrations/${fx.b.id}/whatsapp/qr/${started.session}`).set("Authorization", `Bearer ${token}`).expect(204);

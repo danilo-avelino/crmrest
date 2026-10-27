@@ -60,7 +60,7 @@ const INSTAGRAM_TOKEN_LIFETIME_MS = 60 * 24 * 60 * 60 * 1000;
 class IfoodStoreChoice {
   constructor(
     readonly grant: IfoodGrant,
-    readonly stores: (IfoodMerchant & { connected: boolean })[],
+    readonly stores: (IfoodMerchant & { connected: boolean; elsewhere: boolean })[],
   ) {}
 }
 
@@ -172,11 +172,14 @@ export class IntegrationsService {
     requireTenantAdmin(auth, tenantId);
     let verified: VerifiedChannel;
     try {
-      verified = await this.verify(body);
+      verified = await this.verify(body, tenantId);
     } catch (error) {
       // iFood com várias lojas na autorização: o restaurante escolhe quais conectar (addIfoodStores).
       if (error instanceof IfoodStoreChoice) {
-        return { ifoodStores: error.stores.map(({ id, name, connected }) => ({ id, name: name ?? null, connected })), selection: this.sealSelection(tenantId, error) };
+        return {
+          ifoodStores: error.stores.map(({ id, name, connected, elsewhere }) => ({ id, name: name ?? null, connected, elsewhere })),
+          selection: this.sealSelection(tenantId, error),
+        };
       }
       throw error;
     }
@@ -190,7 +193,7 @@ export class IntegrationsService {
 
   /**
    * iFood distribuído: conecta as lojas escolhidas entre as que vieram na autorização, todas com o mesmo acesso. Uma
-   * loja recusada (já em outro restaurante, fora da autorização) não impede as outras.
+   * loja recusada (fora da autorização) não impede as outras.
    */
   async addIfoodStores(auth: RequestAuth, tenantId: string, body: IfoodStoresRequest): Promise<IfoodStoresResultDto> {
     requireTenantAdmin(auth, tenantId);
@@ -259,7 +262,7 @@ export class IntegrationsService {
     if (query.error || !query.code) return back({ motivo: "O login no Instagram foi cancelado." });
     try {
       const accessToken = await this.connectors.instagram.exchangeLoginCode(query.code, this.instagramRedirectUri());
-      const saved = await this.save(state.tenantId, state.userId, await this.verify({ type: "INSTAGRAM", accessToken }));
+      const saved = await this.save(state.tenantId, state.userId, await this.verify({ type: "INSTAGRAM", accessToken }, state.tenantId));
       // A conta conectada volta no endereço: o painel pergunta em seguida quais restaurantes ela atende.
       return back({ instagram: "conectado", canal: saved.id });
     } catch (error) {
@@ -464,17 +467,18 @@ export class IntegrationsService {
   }
 
   /**
-   * Conta que está em outro restaurante (app.claim_channel). Trava do teste grátis repetido: se este restaurante está
-   * em teste e a conta já passou por outro teste há menos de TRIAL_REUSE_DAYS dias, o teste daqui é encerrado. Roda
-   * numa transação própria: o bloqueio tem de ficar gravado mesmo com a conexão recusada.
+   * Conta que está em outro restaurante (app.claim_channel): fica com quem a autorizou por último, e o outro restaurante
+   * a perde (com o histórico). Trava do teste grátis repetido: se este restaurante está em teste e a conta já passou por
+   * outro teste há menos de TRIAL_REUSE_DAYS dias, o teste daqui é encerrado. Roda numa transação própria: o bloqueio tem
+   * de ficar gravado mesmo com a conexão recusada.
    */
   private async claim(tenantId: string, userId: string, verified: VerifiedChannel): Promise<void> {
     const empty = encrypt(JSON.stringify({}), this.key);
     const [claim] = await this.db.withTenants({ tenantIds: [tenantId], userId }, (tx) =>
-      tx.$queryRaw<{ result: "free" | "taken" | "trial_used" }[]>`
-        SELECT app.claim_channel(
+      tx.$queryRaw<{ result: "free" | "trial_used"; released: Uint8Array | null }[]>`
+        SELECT * FROM app.claim_channel(
           ${tenantId}::uuid, ${verified.type}::"ChannelType", ${verified.externalId}, ${TRIAL_REUSE_DAYS}::int, ${empty}::bytea
-        ) AS result`,
+        )`,
     );
     if (claim?.result === "trial_used") {
       throw new HttpException(
@@ -482,10 +486,12 @@ export class IntegrationsService {
         HttpStatus.PAYMENT_REQUIRED,
       );
     }
-    if (claim?.result === "taken") throw new ConflictException("Esta conta já está conectada a outro restaurante.");
+    // WhatsApp por QR Code tirado de outro restaurante: o aparelho antigo sai de "Aparelhos conectados" no celular.
+    const instance = claim?.released ? instanceOf(this.connectors, claim.released) : null;
+    if (instance) await this.dropInstance(instance);
   }
 
-  private async verify(body: AddIntegrationRequest): Promise<VerifiedChannel> {
+  private async verify(body: AddIntegrationRequest, tenantId: string): Promise<VerifiedChannel> {
     const tokenUpdatedAt = new Date().toISOString();
     try {
       switch (body.type) {
@@ -513,15 +519,15 @@ export class IntegrationsService {
         case "IFOOD": {
           // Centralizado: a credencial é da plataforma (IFOOD_CLIENT_ID/SECRET) e o restaurante informa o ID da loja.
           // Distribuído: o código de autorização do Portal do Parceiro vira o acesso, e a loja é a que esse acesso enxerga.
-          // Com mais de uma loja ainda fora do Dish Desk, o restaurante escolhe quais conectar (IfoodStoreChoice). O ID só é
-          // pedido quando o iFood não diz qual é.
+          // Com mais de uma loja ainda fora deste restaurante, o restaurante escolhe quais conectar (IfoodStoreChoice); a
+          // loja que está em outro restaurante sai de lá. O ID só é pedido quando o iFood não diz qual é.
           let grant: IfoodGrant | null = null;
           let merchant: IfoodMerchant | null = body.merchantId ? { id: body.merchantId } : null;
           if (this.ifood.configured && this.ifood.distributed) {
             if (!body.authorizationCode || !body.linkState) throw new Error("gere o código de vinculação e informe o código de autorização");
             grant = await this.ifood.authorize(body.authorizationCode, body.linkState);
             if (!merchant) {
-              const stores = await this.ifood.storesOf(grant);
+              const stores = await this.ifood.storesOf(grant, tenantId);
               const open = stores.filter((store) => !store.connected);
               merchant = (stores.length === 1 ? stores[0] : open.length === 1 ? open[0] : undefined) ?? null;
               if (!merchant && stores.length && !open.length) {

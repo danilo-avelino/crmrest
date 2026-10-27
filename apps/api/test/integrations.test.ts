@@ -350,9 +350,16 @@ describe("Integrações (Configurações)", () => {
     expect((await imports()).map((job) => job.data)).toEqual([{ tenantId: fx.tenant.id, channelId: body.id, page: 1, imported: 0 }]);
   });
 
-  it("conta já conectada a outro restaurante é recusada", async () => {
-    const { body } = await add({ type: "IFOOD", merchantId: other.ifood.externalId }).expect(409);
-    expect(body.message).toBe("Esta conta já está conectada a outro restaurante.");
+  it("conta conectada a outro restaurante fica com quem a conectou por último; o outro fica com o histórico", async () => {
+    const theirs = await admin.channel.create({
+      data: { tenantId: other.tenant.id, type: "IFOOD", name: "Loja", externalId: randomUUID(), credentials: Buffer.from("x"), status: "CONNECTED" },
+    });
+    const { body } = await add({ type: "IFOOD", merchantId: theirs.externalId }).expect(201);
+    expect(body).toMatchObject({ externalId: theirs.externalId, status: "CONNECTED" });
+    const released = await admin.channel.findUniqueOrThrow({ where: { id: theirs.id } });
+    expect(released).toMatchObject({ tenantId: other.tenant.id, externalId: `${theirs.externalId}#${theirs.id}`, status: "DISCONNECTED" });
+    // Fora dos testes seguintes, que contam as integrações daqui.
+    await admin.channel.update({ where: { id: body.id }, data: { status: "DISCONNECTED", deletedAt: new Date() } });
   });
 
   it("recusa dados fora do formato antes de falar com qualquer sistema", async () => {
@@ -474,18 +481,13 @@ describe("Integrações (Configurações)", () => {
       expect((await channel(store.id)).status).toBe("DISCONNECTED");
     });
 
-    it("conta em uso num teste em andamento continua do outro restaurante, mesmo para quem paga", async () => {
+    it("conta em uso num teste em andamento: quem paga e a conecta por último fica com ela", async () => {
       const store = await storeOf(other.tenant.id);
       await inTrial(other.tenant.id, days(5));
       await admin.tenant.update({ where: { id: fx.tenant.id }, data: { paidUntil: days(30) } });
 
-      const { body } = await add({ type: "IFOOD", merchantId: store.externalId }).expect(409);
-      expect(body.message).toBe("Esta conta já está conectada a outro restaurante.");
-      expect((await channel(store.id)).status).toBe("CONNECTED");
-
-      // Desconectada lá, pode ser conectada aqui.
-      await admin.channel.update({ where: { id: store.id }, data: { status: "DISCONNECTED" } });
       await add({ type: "IFOOD", merchantId: store.externalId }).expect(201);
+      expect(await channel(store.id)).toMatchObject({ externalId: `${store.externalId}#${store.id}`, status: "DISCONNECTED" });
     });
   });
 });

@@ -829,8 +829,8 @@ describe("iFood distribuído (cada loja autoriza com o código de vinculação)"
     ifood.state.noMerchantModule = true;
     const { body: choice } = await add({ authorizationCode: "DUAS-LOJA", linkState: code.state }).expect(201);
     expect(choice.ifoodStores).toEqual([
-      { id: merchantId, name: null, connected: false },
-      { id: expect.any(String), name: null, connected: false },
+      { id: merchantId, name: null, connected: false, elsewhere: false },
+      { id: expect.any(String), name: null, connected: false, elsewhere: false },
     ]);
     expect(choice.selection).not.toContain("token-ifood");
     expect(await admin.channel.count({ where: { tenantId: fx.tenant.id, type: "IFOOD", externalId: merchantId } })).toBe(0);
