@@ -541,8 +541,9 @@ describe("atendimento com IA: resposta, revisão e avaliação", () => {
     expect(user!.content).toContain("Pedido do cliente (ele confirmou que é dele):\n#8765");
     expect(user!.content).toContain("Cliente: Obrigado");
 
-    // Um prazo que não está nos dados nem na conversa: a sugestão não vale.
-    answers.sugestao = { text: "Chega em 47 minutos!" };
+    // Um prazo que não está nos dados nem na conversa: a sugestão não vale. Acima de 59, para não bater com o minuto do
+    // "Agora" dos DADOS.
+    answers.sugestao = { text: "Chega em 97 minutos!" };
     await suggest().expect(503);
     delete answers.sugestao;
     await suggest().expect(503);
