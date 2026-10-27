@@ -47,6 +47,8 @@ import { OnboardingService } from "./settings/onboarding.service.js";
 import { QuickRepliesController } from "./settings/quick-replies.controller.js";
 import { SettingsController } from "./settings/settings.controller.js";
 import { SettingsService } from "./settings/settings.service.js";
+import { SuggestionsController } from "./suggestions/suggestions.controller.js";
+import { SuggestionsService } from "./suggestions/suggestions.service.js";
 import { EvolutionWebhookController } from "./webhooks/evolution-webhook.controller.js";
 import { AdminNotificationsService } from "./notifications/admin-notifications.service.js";
 import { MetaWebhookController } from "./webhooks/meta-webhook.controller.js";
@@ -71,6 +73,7 @@ import { StripeWebhookController } from "./webhooks/stripe-webhook.controller.js
     AiAttendanceController,
     OnboardingController,
     AgentController,
+    SuggestionsController,
   ],
   providers: [
     ConversationsService,
@@ -85,6 +88,7 @@ import { StripeWebhookController } from "./webhooks/stripe-webhook.controller.js
     AiSuggestionService,
     OnboardingService,
     AgentService,
+    SuggestionsService,
     AdminNotificationsService,
   ],
 })

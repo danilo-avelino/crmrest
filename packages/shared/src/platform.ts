@@ -82,6 +82,42 @@ export type PlatformAuditDto = {
   createdAt: string;
 };
 
+/**
+ * Assuntos das sugestões dos restaurantes (a IA escolhe um ao receber a sugestão). A plataforma vê o ranking por
+ * assunto, do que tem mais sugestões para o que tem menos.
+ */
+export const SUGGESTION_SUBJECTS = {
+  inbox: "Inbox e atendimento",
+  integracoes: "Integrações",
+  pedidos: "Pedidos",
+  clientes: "Clientes",
+  automacoes: "Mensagens automáticas",
+  ia: "Atendimento com IA",
+  avaliacoes: "Avaliações e relatórios",
+  campanhas: "Campanhas",
+  equipe: "Usuários e equipe",
+  extensao: "Extensão e assistente",
+  cobranca: "Plano e cobrança",
+  outro: "Outro assunto",
+} as const;
+export type SuggestionSubject = keyof typeof SUGGESTION_SUBJECTS;
+
+export const CreateSuggestionRequest = z.object({
+  tenantId: z.uuid(),
+  text: z.string().trim().min(1, "Escreva a sua sugestão.").max(2000, "Use até 2.000 caracteres."),
+});
+export type CreateSuggestionRequest = z.infer<typeof CreateSuggestionRequest>;
+
+/** Sugestão como a plataforma vê. `subject` null: a IA ainda não classificou (ou estava fora do ar). */
+export type PlatformSuggestionDto = {
+  id: string;
+  subject: SuggestionSubject | null;
+  text: string;
+  tenantName: string;
+  userName: string;
+  createdAt: string;
+};
+
 /** "Grupo Moby Dick" → "grupo-moby-dick". */
 export function slugify(name: string): string {
   return name

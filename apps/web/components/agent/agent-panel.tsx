@@ -22,6 +22,7 @@ import {
   ClockIcon,
   CopyIcon,
   GlobeIcon,
+  LightbulbIcon,
   LoaderCircleIcon,
   LockIcon,
   MessageSquareIcon,
@@ -67,6 +68,9 @@ type Entry = { id: number } & (
 );
 
 type NewEntry = Entry extends infer E ? (E extends Entry ? Omit<E, "id"> : never) : never;
+
+/** O que o painel está fazendo: implantação ou suporte (sessões do agente) ou recebendo uma sugestão (sem a IA). */
+type Mode = AgentSessionKind | "SUGGESTION";
 
 /** working: a IA age; waiting: espera o parceiro; support: passada para a equipe do Dish Desk; done: implantação concluída. */
 type Phase = "idle" | "working" | "waiting" | "paused" | "support" | "unavailable" | "done";
@@ -133,7 +137,7 @@ function Conversation({ tenantId, admin }: { tenantId: string; admin: boolean })
   const queryClient = useQueryClient();
   const [entries, setEntries] = useState<Entry[]>([]);
   const [phase, setPhaseState] = useState<Phase>("idle");
-  const [mode, setMode] = useState<AgentSessionKind | null>(null);
+  const [mode, setMode] = useState<Mode | null>(null);
   const [progress, setProgress] = useState<OnboardingDto | null>(null);
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
@@ -423,6 +427,19 @@ function Conversation({ tenantId, admin }: { tenantId: string; admin: boolean })
       return;
     }
     push({ kind: "partner", text: body });
+    if (mode === "SUGGESTION") {
+      try {
+        await request("/suggestions", { method: "POST", body: { tenantId, text: body } });
+        push({ kind: "agent", text: "Obrigado! A sua sugestão foi para a equipe do Dish Desk. Se tiver outra, é só escrever." });
+      } catch (error) {
+        setText(body);
+        push({
+          kind: "agent",
+          text: error instanceof ApiError ? error.message : "Não foi possível enviar. Tente de novo.",
+        });
+      }
+      return;
+    }
     try {
       if (!sessionRef.current) await startSession(kind ?? mode ?? (admin && SETUP_WORDS.test(body) ? "SETUP" : "SUPPORT"));
     } catch (error) {
@@ -449,6 +466,15 @@ function Conversation({ tenantId, admin }: { tenantId: string; admin: boolean })
         text: error instanceof ApiError ? error.message : "Não consegui falar com o Dish Desk agora. Tente de novo.",
       });
     }
+  }
+
+  function startSuggestion() {
+    setMode("SUGGESTION");
+    push({
+      kind: "agent",
+      text: "Que bom! Conte a sua ideia para melhorar o Dish Desk. Ela vai direto para a nossa equipe.",
+    });
+    setPhase("waiting");
   }
 
   async function callSupport() {
@@ -478,7 +504,7 @@ function Conversation({ tenantId, admin }: { tenantId: string; admin: boolean })
   // A IA decide o próximo passo (a resposta da API ainda não chegou): "Pensando…" no fim da conversa, como uma etapa.
   // Enquanto uma ação roda na página, a linha dela (a última) já mostra o andamento.
   const last = entries.at(-1);
-  const thinking = (phase === "working" || (busy && phase !== "support")) && !(last?.kind === "action" && last.state === "running");
+  const thinking = (phase === "working" || (busy && phase !== "support" && mode !== "SUGGESTION")) && !(last?.kind === "action" && last.state === "running");
 
   return (
     <div className="flex h-full flex-col bg-paper">
@@ -516,6 +542,7 @@ function Conversation({ tenantId, admin }: { tenantId: string; admin: boolean })
           <Welcome
             onboarding={admin ? (onboarding.data ?? null) : null}
             onSetup={() => act(() => send("Quero configurar o Dish Desk.", "SETUP"))}
+            onSuggest={startSuggestion}
             onHelp={() => act(startSupport)}
           />
         ) : (
@@ -574,7 +601,9 @@ function Conversation({ tenantId, admin }: { tenantId: string; admin: boolean })
             ? agentName
               ? `Escreva para ${agentName.split(" ")[0]}…`
               : "Deixe a sua mensagem…"
-            : "Peça em linguagem natural: conecta o meu WhatsApp…"
+            : mode === "SUGGESTION"
+              ? "Escreva a sua sugestão…"
+              : "Peça em linguagem natural: conecta o meu WhatsApp…"
         }
         onSend={() => act(() => send(text))}
       />
@@ -594,12 +623,13 @@ function statusOf(phase: Phase, supportOpen: boolean): Status {
   return { label: "Pronta para ajudar", tone: "ok" };
 }
 
-const MODE_LABEL: Record<AgentSessionKind, string> = {
+const MODE_LABEL: Record<Mode, string> = {
   SETUP: "Implantação",
   SUPPORT: "Suporte",
+  SUGGESTION: "Sugestão",
 };
 
-function Header({ mode, status, controls }: { mode: AgentSessionKind | null; status: Status; controls?: ReactNode }) {
+function Header({ mode, status, controls }: { mode: Mode | null; status: Status; controls?: ReactNode }) {
   return (
     <header className="shrink-0 border-b border-rule bg-surface px-3.5 pt-3 pb-2.5">
       <div className="flex items-center gap-2">
@@ -689,19 +719,38 @@ function Progress({ onboarding }: { onboarding: OnboardingDto }) {
   );
 }
 
-function Welcome({ onboarding, onSetup, onHelp }: { onboarding: OnboardingDto | null; onSetup: () => void; onHelp: () => void }) {
+function Welcome({
+  onboarding,
+  onSetup,
+  onSuggest,
+  onHelp,
+}: {
+  onboarding: OnboardingDto | null;
+  onSetup: () => void;
+  onSuggest: () => void;
+  onHelp: () => void;
+}) {
+  // Com todos os passos feitos, a implantação sai do início e entra o pedido de sugestões.
+  const configured = onboarding !== null && doneCount(onboarding) === onboarding.steps.length;
   return (
     <div className="mt-auto">
       <h1 className="font-heading text-[20px] font-bold tracking-[-0.3px]">Oi! Como posso ajudar?</h1>
       <p className="mt-1 text-[12.5px] text-ink-2">Eu mexo no navegador junto com você e mostro cada passo.</p>
       <div className="mt-4 flex flex-col gap-2">
-        {onboarding && (
-          <EntryButton icon={<SparklesIcon className="size-4 text-tomate" aria-hidden />} tile="bg-tomate-lt" onClick={onSetup}>
-            <span className="block text-[13px] font-medium">Configurar o Dish Desk</span>
-            <span className="block text-[11.5px] text-ink-3">
-              {doneCount(onboarding)} de {onboarding.steps.length} passos feitos
-            </span>
+        {configured ? (
+          <EntryButton icon={<LightbulbIcon className="size-4 text-tomate" aria-hidden />} tile="bg-tomate-lt" onClick={onSuggest}>
+            <span className="block text-[13px] font-medium">Fazer uma sugestão</span>
+            <span className="block text-[11.5px] text-ink-3">Ideias para melhorar o Dish Desk</span>
           </EntryButton>
+        ) : (
+          onboarding && (
+            <EntryButton icon={<SparklesIcon className="size-4 text-tomate" aria-hidden />} tile="bg-tomate-lt" onClick={onSetup}>
+              <span className="block text-[13px] font-medium">Configurar o Dish Desk</span>
+              <span className="block text-[11.5px] text-ink-3">
+                {doneCount(onboarding)} de {onboarding.steps.length} passos feitos
+              </span>
+            </EntryButton>
+          )
         )}
         <EntryButton icon={<MessageSquareIcon className="size-4 text-ink-2" aria-hidden />} tile="bg-surface-2" onClick={onHelp}>
           <span className="block text-[13px] font-medium">Preciso de ajuda</span>

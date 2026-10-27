@@ -75,6 +75,7 @@ model Tenant {
   evaluations         ConversationEvaluation[]
   agentSessions       AgentSession[]
   agentEvents         AgentEvent[]
+  productSuggestions  ProductSuggestion[]
   quickReplies        QuickReply[]
   auditLogs           AuditLog[]
   modules             TenantModule[]
@@ -109,6 +110,7 @@ model User {
   sentMessages          Message[]
   auditLogs             AuditLog[]
   agentSessions         AgentSession[]
+  productSuggestions    ProductSuggestion[]
 
   @@map("users")
 }
@@ -579,6 +581,23 @@ model AgentEvent {
 
   @@index([sessionId, createdAt])
   @@map("agent_events")
+}
+
+// Sugestão de um restaurante para o Dish Desk (painel da extensão). `subject`: SuggestionSubject (@dishdesk/shared),
+// classificado pela IA depois de salvo; null enquanto não classificado.
+model ProductSuggestion {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  text      String
+  subject   String?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+  @@map("product_suggestions")
 }
 
 // ---------- Auditoria ----------

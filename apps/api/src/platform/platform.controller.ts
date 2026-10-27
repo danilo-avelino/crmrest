@@ -5,9 +5,11 @@ import {
   CreateTenantRequest,
   MODULES,
   type PlatformAuditDto,
+  type PlatformSuggestionDto,
   type PlatformTenantDto,
   UpdateTenantAccessRequest,
   UpdateTenantModuleRequest,
+  type SuggestionSubject,
   UpdateTenantStatusRequest,
 } from "@dishdesk/shared";
 import {
@@ -30,10 +32,12 @@ import { ZodPipe } from "../common/zod.pipe.js";
 import { DatabaseService } from "../core/database.service.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+/** Sugestões que a página da plataforma mostra (as mais recentes). */
+const SUGGESTIONS_LIMIT = 2000;
 
 /**
  * Painel da plataforma (Super Admin, E16): todos os restaurantes com o uso de cada um, criação, suspensão, acesso
- * liberado à mão, módulos e a auditoria. O super admin é conferido no banco a cada chamada (users.is_super_admin), não no token; as políticas
+ * liberado à mão, módulos, a auditoria e as sugestões dos restaurantes. O super admin é conferido no banco a cada chamada (users.is_super_admin), não no token; as políticas
  * RLS da migration super_admin repetem a conferência.
  */
 @Controller("platform")
@@ -147,6 +151,32 @@ export class PlatformController {
         createdAt: row.created_at.toISOString(),
       }));
     });
+  }
+
+  /** Sugestões dos restaurantes, mais recentes primeiro (a página agrupa por assunto). */
+  @Get("suggestions")
+  async suggestions(@CurrentAuth() auth: RequestAuth): Promise<PlatformSuggestionDto[]> {
+    const tenants = await this.db.withTenants({ tenantIds: [], userId: auth.userId }, async (tx) => {
+      await requireSuperAdmin(tx, auth.userId);
+      return tx.tenant.findMany({ select: { id: true, name: true } });
+    });
+    if (tenants.length === 0) return [];
+    const rows = await this.db.withTenants({ tenantIds: tenants.map((t) => t.id), userId: auth.userId }, (tx) =>
+      tx.productSuggestion.findMany({
+        select: { id: true, tenantId: true, text: true, subject: true, createdAt: true, user: { select: { name: true } } },
+        orderBy: { createdAt: "desc" },
+        take: SUGGESTIONS_LIMIT,
+      }),
+    );
+    const names = new Map(tenants.map((t) => [t.id, t.name]));
+    return rows.map((row) => ({
+      id: row.id,
+      subject: row.subject as SuggestionSubject | null,
+      text: row.text,
+      tenantName: names.get(row.tenantId) ?? "",
+      userName: row.user.name,
+      createdAt: row.createdAt.toISOString(),
+    }));
   }
 
   private async tenants(userId: string): Promise<PlatformTenantDto[]> {
