@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Dish Desk · iFood",
   "description": "Ponte entre o painel do Dish Desk e o widget do iFood, e o assistente de implantação e suporte do Dish Desk.",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "icons": { "16": "icons/icon-16.png", "32": "icons/icon-32.png", "48": "icons/icon-48.png", "128": "icons/icon-128.png" },
   "action": { "default_title": "Assistente do Dish Desk", "default_icon": { "16": "icons/icon-16.png", "32": "icons/icon-32.png" } },
   "side_panel": { "default_path": "panel.html" },
