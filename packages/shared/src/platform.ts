@@ -118,6 +118,16 @@ export type PlatformSuggestionDto = {
   createdAt: string;
 };
 
+/**
+ * As LLMs do Atendimento com IA, conferidas na hora: a principal (o Ollama local) e a reserva (ex.: o Claude). Atende a
+ * principal se ela está no ar; senão, a reserva. null: não configurada (sem a principal, a IA está desligada).
+ */
+export type PlatformAiStatusDto = {
+  main: { model: string; online: boolean } | null;
+  fallback: { provider: "openai" | "anthropic"; model: string; online: boolean } | null;
+  checkedAt: string;
+};
+
 /** "Grupo Moby Dick" → "grupo-moby-dick". */
 export function slugify(name: string): string {
   return name

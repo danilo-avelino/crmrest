@@ -4,6 +4,7 @@ import type { ModuleKey } from "@dishdesk/database/enums";
 import {
   CreateTenantRequest,
   MODULES,
+  type PlatformAiStatusDto,
   type PlatformAuditDto,
   type PlatformSuggestionDto,
   type PlatformTenantDto,
@@ -28,6 +29,7 @@ import {
 } from "@nestjs/common";
 import { hash } from "@node-rs/argon2";
 import { CurrentAuth, type RequestAuth } from "../auth/auth.decorators.js";
+import { LlmClient } from "../ai/llm.client.js";
 import { ZodPipe } from "../common/zod.pipe.js";
 import { DatabaseService } from "../core/database.service.js";
 
@@ -42,7 +44,10 @@ const SUGGESTIONS_LIMIT = 2000;
  */
 @Controller("platform")
 export class PlatformController {
-  constructor(private readonly db: DatabaseService) {}
+  constructor(
+    private readonly db: DatabaseService,
+    private readonly llm: LlmClient,
+  ) {}
 
   @Get("tenants")
   list(@CurrentAuth() auth: RequestAuth): Promise<PlatformTenantDto[]> {
@@ -151,6 +156,13 @@ export class PlatformController {
         createdAt: row.created_at.toISOString(),
       }));
     });
+  }
+
+  /** Qual LLM do Atendimento com IA está no ar agora: a principal (local) ou a reserva. */
+  @Get("ai-status")
+  async aiStatus(@CurrentAuth() auth: RequestAuth): Promise<PlatformAiStatusDto> {
+    await this.db.withTenants({ tenantIds: [], userId: auth.userId }, (tx) => requireSuperAdmin(tx, auth.userId));
+    return this.llm.status();
   }
 
   /** Sugestões dos restaurantes, mais recentes primeiro (a página agrupa por assunto). */

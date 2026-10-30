@@ -19,6 +19,7 @@
     "user:add": "node scripts/user-add.mjs"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.3.0",
     "@bull-board/api": "^9.10.2",
     "@bull-board/express": "^9.10.2",
     "@dishdesk/database": "workspace:*",

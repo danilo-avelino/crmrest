@@ -17,6 +17,7 @@ import { useRouter } from "next/navigation";
 import { type ComponentProps, useId, useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
 import { StatusBadge } from "@/components/inbox/bits";
+import { PlatformAiStatus } from "@/components/platform/platform-ai-status";
 import { PlatformHeader, PlatformLoading } from "@/components/platform/platform-header";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
@@ -45,6 +46,7 @@ export function PlatformTenants() {
       <PlatformHeader title="Restaurantes" />
       <div className="flex-1 overflow-y-auto px-7 py-6">
         <div className="flex max-w-[1180px] flex-col gap-5">
+          <PlatformAiStatus />
           <CreateTenantForm />
           {tenants.data ? <TenantList tenants={tenants.data} /> : <PlatformLoading failed={tenants.isError} />}
         </div>
