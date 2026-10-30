@@ -121,4 +121,15 @@ Todo texto que uma automação manda ao cliente segue a **personalidade do atend
 - Na automação, ler os textos com `automationMessagesOf(await tenantSettings(tx, tenantId))` e trocar os dados com `fillMessage` (`{nome}`, `{pedido}`, `{hora}`...). Um marcador novo também entra no `REQUIRED` do teste em [packages/shared/test/settings.test.ts](packages/shared/test/settings.test.ts).
 - Uma personalidade nova entra em `PERSONALITIES`, `PERSONALITY_INFO` e `PERSONALITY_MESSAGES`, com todas as mensagens.
 
+## 11. Auditoria de segurança a cada 30 dias
+
+Rodar a skill **security-audit** ([.claude/skills/security-audit/](.claude/skills/security-audit/)) em modo de auditoria completa uma vez a cada 30 dias, contados da data da última verificação.
+
+- No início de uma sessão, conferir a última data abaixo. Se já passaram 30 dias ou mais (ou se ainda não há data), avisar o usuário que a auditoria está vencida e propor rodá-la.
+- Ao terminar uma auditoria, anotar a data abaixo (AAAA-MM-DD), com um resumo curto do resultado (quantos achados e de que gravidade). A próxima vence 30 dias depois dessa data.
+
+**Verificações:**
+
+- 2026-10-30: auditoria completa (perfil standard, só leitura do código; dependências não instaladas, então nada pôde ser executado). 0 confirmados, 21 a validar (sem severidade); os mais urgentes: workflow `deploy-db` com a credencial de dono do banco ao alcance de PRs de fork, conta pré-cadastrada herdando papel ao ser adicionada como membro, e telefone/código de pedido informado pelo cliente usado como prova de identidade. Relatório em `~/security-audit-skill/crmrest/run-1/REPORT.md`.
+
 **These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
