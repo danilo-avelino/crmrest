@@ -6,7 +6,7 @@
 **Esforço relativo:** **P** ≈ até 1 semana · **M** ≈ 1–2 semanas · **G** ≈ 2–4 semanas (1 dev full-stack).
 **Definição de pronto (todas as histórias de UI):** segue os tokens do design; todo botão novo tem guard de duplo-clique e estado "Carregando" (CLAUDE.md §6); nenhuma query roda sem contexto de tenant. **No MVP só existe desktop**: a versão mobile (CLAUDE.md §7) fica para depois da Fase 1.
 
-## Situação em 29/10/2026
+## Situação em 30/10/2026
 
 Conferida no código. **✅ Feito** quer dizer que o épico está no código. **🟡 Parcial** quer dizer que falta uma parte dele. **⬜ A fazer** quer dizer que não começou. O que depende de terceiros (análise da Meta, homologação do iFood, planos pagos) está em [docs/pendencias-producao.md](docs/pendencias-producao.md).
 
@@ -103,6 +103,7 @@ Objetivo: um restaurante piloto atende clientes de WhatsApp, Instagram e iFood e
 - Como atendente, quero enviar mensagens de texto com feedback otimista (`pending` → `sent`).
 - Como atendente, quero atribuir a conversa a mim ou a um colega e marcá-la como resolvida.
 - Como atendente, quero notificação sonora e visual de mensagem nova.
+  - **Feito em 30/10/2026:** os avisos continuam fora da Inbox (Configurações, Avaliações, Clientes...): alarme de chamado, bipe e aviso "Nova mensagem na Inbox" no topo, com o atalho para ela, e as não lidas no título da aba.
 - Como atendente, quero skeletons de carregamento enquanto a lista carrega.
 - **Painel master:** como usuário de vários restaurantes, quero uma Inbox única com as conversas de todos eles, cada item identificado pelo restaurante e com filtro por restaurante. Responder, atribuir e resolver respeitam o meu papel no tenant daquela conversa. O realtime assina as salas de todos os tenants do usuário.
 
@@ -128,8 +129,9 @@ Objetivo: um restaurante piloto atende clientes de WhatsApp, Instagram e iFood e
 
 #### E12 — Prontidão para produção · **M** · depende de: E1–E11 · **🟡 Parcial**
 - Deploy (provedor/região a definir, preferencialmente `sa-east-1`), Postgres gerenciado com backup e PITR, Redis gerenciado.
-- Logs Pino com `tenantId`, Sentry (front e back), health checks `/health/live` e `/health/ready`.
-- Painel Bull Board protegido.
+- Logs Pino com `tenantId`, Sentry (front e back), health checks `/health/live` e `/health/ready`. **Sentry no ar em 30/10/2026** (projetos `dishdesk-api` e `dishdesk-web` na organização `dish-desk`).
+- Painel Bull Board protegido. **No ar em 30/10/2026** em `/api/admin/filas` (usuário `admin`, senha em `BULL_BOARD_PASSWORD` na `api`).
+- **Falta:** backup diário do banco (o Supabase está no plano Free, que não tem backup).
 - Opt-out "SAIR"/"PARAR" registrado em `Consent`, mesmo antes do módulo Campanhas existir.
 - Seed do tenant piloto, dos usuários e do canal.
 
@@ -423,6 +425,7 @@ Objetivo: a IA da extensão do Chrome faz a implantação com o restaurante e at
 - As capturas de tela e o conteúdo das páginas vão para o provedor de LLM e podem ter dados do restaurante e dos clientes: entra na política de privacidade e no registro de uso por tenant (LGPD), como os outros épicos desta fase.
 - **Decidido em 25/10/2026:** o modelo é o mesmo do atendimento (Gemma 4 local), lendo a árvore da página, sem capturas de tela; a extensão é a mesma do chat do iFood, com um painel lateral; quando a IA se perde (a página mudou ou ela errou várias vezes seguidas), ela para e oferece tentar de novo ou falar com o suporte humano. O E30 vem antes.
 - **Motor pronto (25/10/2026):** sessões e registro de cada passo (`agent_sessions`, `agent_events`), `POST /agent/sessions`, `/turn` e `/handoff`, travas no código ([agent-guard.ts](apps/api/src/agent/agent-guard.ts)), conferência do passo pelo progresso do E30, painel lateral e leitura da página na extensão 0.4.0 e o ciclo no painel web ([agent-driver.ts](apps/web/lib/agent-driver.ts)). Testado com o Gemma 4 local. Tela `/extensao/agente` (board "Extensão do Chrome · Agente de implantação e suporte") e indicador na página (faixa, contorno, pausa quando o parceiro mexe na aba) feitos na extensão 0.5.0. Depois da transferência, o parceiro escreve no painel e as respostas da equipe aparecem nele (`/agent/sessions/:id/messages`, eventos `support`). **Falta** a tela da equipe Dish Desk que lê e responde essas conversas (sem board); horário do suporte provisório em `SUPPORT_HOURS` (seg–sex, 9h–18h).
+- **Feito em 27/10/2026:** a implantação começa pelas configurações do atendimento e depois passa às integrações; o painel mostra "Pensando…" enquanto a IA decide o próximo passo; depois da implantação, o painel da extensão tem "Fazer uma sugestão": a IA classifica o assunto e a plataforma vê o ranking por assunto.
 - A definir na implementação:
   - se o agente é gratuito na implantação ou entra na cobrança da IA;
   - onde fica o suporte humano que recebe as transferências (a própria Inbox do Dish Desk, como um tenant interno, ou outra ferramenta) e o horário de atendimento dele;
