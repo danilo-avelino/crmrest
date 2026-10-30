@@ -86,7 +86,7 @@ export class AiEvaluationService {
     if (!attendance) return;
 
     // Uma falha da LLM lança: o BullMQ tenta de novo, sem afetar a conversa.
-    const result = await this.llm.json("avaliacao", Evaluation, [
+    const { result, model } = await this.llm.answer("avaliacao", Evaluation, [
       { role: "system", content: SYSTEM_PROMPT },
       { role: "user", content: transcript(attendance.messages, { withTime: true }) },
     ]);
@@ -101,7 +101,7 @@ export class AiEvaluationService {
           score: result.score,
           summary: result.summary,
           teamReason: attendance.userId && result.teamReason !== "sem_equipe" ? result.teamReason : null,
-          model: this.llm.model,
+          model,
         },
       }),
     );

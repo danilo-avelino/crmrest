@@ -65,6 +65,12 @@ const EnvSchema = z.object({
   AI_API_KEY: z.string().min(1).optional(),
   AI_MODEL: z.string().min(1).default("gemma4:12b"),
   AI_TIMEOUT_MS: z.coerce.number().int().positive().default(60_000),
+  // LLM reserva: atende quando a principal está fora do ar (sem resposta ou erro HTTP). Ex.: o Ollama da VPS, só CPU,
+  // mais lento (por isso o próprio prazo). Sem o endereço, não há reserva. Sem AI_FALLBACK_MODEL, usa o AI_MODEL.
+  AI_FALLBACK_BASE_URL: z.url().optional(),
+  AI_FALLBACK_API_KEY: z.string().min(1).optional(),
+  AI_FALLBACK_MODEL: z.string().min(1).optional(),
+  AI_FALLBACK_TIMEOUT_MS: z.coerce.number().int().positive().default(180_000),
   // Desenvolvimento sem credenciais reais: envios aos canais são simulados (nunca em produção).
   CHANNELS_DRY_RUN: z.stringbool().default(false),
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),
