@@ -328,7 +328,7 @@ function useUnreadSignals(items: ConversationListItem[], calling: number) {
   }, [total, calling]);
 }
 
-function beep() {
+export function beep() {
   try {
     const audio = new AudioContext();
     const oscillator = audio.createOscillator();

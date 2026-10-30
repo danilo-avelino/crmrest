@@ -14,6 +14,7 @@ import {
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/components/auth/auth-provider";
+import { InboxWatcher } from "@/components/inbox/inbox-watcher";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -55,6 +56,8 @@ export function NavRail({ onHome }: { onHome?: () => void }) {
 
   return (
     <nav className="flex w-14 shrink-0 flex-col items-center gap-0.5 border-r border-[#2D2A24] bg-ink py-4">
+      {/* Na Inbox a lista já cuida dos avisos; nas outras páginas eles continuam por aqui. */}
+      {!pathname.startsWith("/inbox") && <InboxWatcher />}
       <Link
         href="/inbox"
         onClick={onHome}

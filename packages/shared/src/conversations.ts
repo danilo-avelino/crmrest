@@ -165,11 +165,13 @@ export type ConversationPage = { items: ConversationListItem[]; nextCursor: stri
 /**
  * Conversas por status e quantas estão chamando um atendente (alarme da Inbox); `awaitingQuiet` = quantas delas chamam sem urgência.
  * `urgentSince` = desde quando espera o chamado urgente mais antigo (o alarme só fica forte depois de alguns minutos).
+ * `unread` = mensagens não lidas nas conversas abertas e pendentes (aviso de nova mensagem fora da Inbox).
  */
 export type ConversationCounts = Record<ConversationStatus, number> & {
   awaitingAgent: number;
   awaitingQuiet: number;
   urgentSince: string | null;
+  unread: number;
 };
 /** `evaluations`: avaliações da IA, na ordem em que foram feitas (vazio para quem não é administrador). */
 export type ConversationMessages = { messages: MessageDto[]; orders: Record<string, OrderDto>; evaluations: ConversationEvaluationDto[] };
