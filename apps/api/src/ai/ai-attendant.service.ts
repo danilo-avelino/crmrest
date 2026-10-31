@@ -63,17 +63,19 @@ Regras obrigatórias:
 Quando o cliente falar de um pedido, siga estes passos:
 1. Há nos DADOS um pedido ainda não confirmado: mostre o número, os itens e o total e pergunte se é esse o pedido dele. Não diga o andamento antes de ele confirmar.
 2. Ele confirmou (order = "confirmed"): diga o andamento que está nos DADOS.
-3. Ele disse que não é (order = "denied") ou não há pedido nos DADOS: peça o número do pedido (e o telefone usado no pedido, se os DADOS disserem que o telefone não está no cadastro), sem passar para a equipe.
+3. Ele disse que não é (order = "denied") ou não há pedido nos DADOS: peça o número do pedido (e o telefone usado no pedido, se os DADOS disserem que o telefone não está no cadastro), sem passar para a equipe. Não diga que não achou o pedido nem fale em cadastro: só peça o número.
 4. Ele informou o número (e o telefone, se você pediu) e o pedido continua fora dos DADOS: passe para a equipe.
 
 Passe para a equipe (handoff = true) só quando o cliente:
 - pedir para falar com uma pessoa ou atendente, ou responder que sim quando você perguntar se ele quer;
-- reclamar ou contar um problema com o pedido (atraso, item errado ou faltando, qualidade, entrega) ou pedir cancelamento, reembolso ou troca;
+- contar um problema com o pedido (item errado ou faltando, qualidade, entrega) ou pedir cancelamento, reembolso ou troca;
+- continuar reclamando do atraso depois que você disse o andamento do pedido;
 - perguntar sobre pagamento (chave Pix, formas de pagamento, comprovante);
 - perguntar sobre o restaurante algo que não está nos DADOS nem no cardápio (entrega, taxa, endereço, promoção);
 - mandar imagem, vídeo ou documento: pode ser a foto de um problema ou um comprovante de pagamento, que só a equipe consegue ver. Diga só que alguém da equipe vai ver; não peça para ele descrever.
 
 Não passe para a equipe (handoff = false):
+- Reclamação de atraso: siga os passos do pedido (mostre o pedido, diga o andamento ou peça o número). A equipe só entra no passo 4 ou se o cliente continuar reclamando depois do andamento.
 - Cardápio, sabores, opções (vegana, sem glúten...) ou preço: mande os links para fazer pedido, onde estão o cardápio e os preços, e continue com handoff = false (sem links, passe para a equipe).
 - Áudio: diga que não consegue ouvir áudios e peça para ele escrever. Se ele mandar outro áudio, passe para a equipe.
 - Mensagem sem relação com pedido ou com o restaurante (conversa solta, brincadeira, frase sem sentido): responda em poucas palavras, como uma pessoa responderia, e puxe o assunto do restaurante numa frase, sem listar tudo o que você sabe fazer. Depois, espere o cliente.
@@ -130,6 +132,17 @@ function attendanceFacts(attendance: Attendance): string {
       : "nenhum online agora. Quando o cliente precisar da equipe (handoff = true), diga que no momento estamos sem atendentes online e que, assim que um chegar, a conversa será encaminhada para ele.";
   // Sem atendente, a regra de passar toda reclamação para a equipe faria a IA avisar logo de cara que não há ninguém.
   return `Atendentes: ${when} Você continua atendendo sozinho: tente resolver com os DADOS antes de falar da equipe. Só fale que não há atendentes (handoff = true) quando o cliente pedir para falar com uma pessoa ou quando você não conseguir resolver (ex.: item errado, pagamento, cancelamento, reembolso, algo fora dos DADOS). Num atraso, diga o andamento do pedido e passe para a equipe só se o cliente continuar insatisfeito ou pedir cancelamento, reembolso ou troca. Não diga que alguém vai falar com ele agora.`;
+}
+
+/**
+ * O pedido nos DADOS do atendimento. Sem pedido, o que fazer vai junto: o modelo segue melhor uma instrução nos DADOS,
+ * e sem ela ele passava para a equipe sem pedir o número, contava ao cliente que não achou nada "no cadastro" ou
+ * prometia procurar pelo número (a IA não busca pelo número: ele vai para a equipe).
+ */
+export function attendantOrderFacts(order: OrderFacts | null, noPhone: boolean): string {
+  const facts = orderFactsOf(order, noPhone);
+  if (order) return facts;
+  return `${facts} Se o cliente falar de um pedido (atraso, andamento), peça o número do pedido${noPhone ? " e o telefone usado nele" : ""}, sem dizer que não achou o pedido nem falar em cadastro. Você não consegue buscar pedidos pelo número: quando ele informar, passe para a equipe (handoff = true), que vai conferir.`;
 }
 
 /** O pedido do cliente nos DADOS da IA: o confirmado, o candidato a confirmar (sem o andamento liberado) ou nenhum. */
@@ -211,7 +224,7 @@ export class AiAttendantService {
     // Sem atendente, a IA responde tudo: o limite de respostas só serve para chamar a equipe.
     if (!attendance.available || (state.aiReplies ?? 0) < MAX_AI_REPLIES) {
       const noPhone = !conversation.contact.phone && !CHANNEL_CAPABILITIES[conversation.channel.type].providesPhone;
-      const orderFacts = orderFactsOf(context.order, noPhone);
+      const orderFacts = attendantOrderFacts(context.order, noPhone);
       try {
         answer = await this.llm.json(
           tenantId,
@@ -240,7 +253,10 @@ export class AiAttendantService {
       const sentLinks = !!answer && orderLinksOf(settings).some((link) => answer.reply.includes(link.url));
       // O cliente precisa da equipe (ou a LLM não respondeu). Com atendente, a IA passa a conversa e sai; sem, ela continua
       // atendendo e a conversa espera alguém (aiWaiting).
-      const needsTeam = !answer || (answer.handoff && !sentLinks);
+      // Sem atendente, a resposta que diz "estamos sem atendentes" promete encaminhar a conversa: ela espera alguém mesmo
+      // que a LLM tenha respondido handoff = false.
+      const promised = !!answer && !attendance.available && /sem atendentes?/i.test(answer.reply);
+      const needsTeam = !answer || (answer.handoff && !sentLinks) || promised;
       const handoff = needsTeam && attendance.available;
       const waits = needsTeam && !attendance.available;
       const startsWaiting = waits && !current.aiWaiting;
