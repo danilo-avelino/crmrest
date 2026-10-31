@@ -31,12 +31,7 @@ describe("recuperação de senha pelo Supabase Auth", () => {
       return { status: 200, body: {} };
     });
     [app, fx] = await Promise.all([
-      createTestApp({
-        SUPABASE_URL: supabase.url,
-        SUPABASE_SECRET_KEY: "sb_secret_teste",
-        WEB_ORIGIN: "https://painel.teste",
-        TRUST_PROXY_HOPS: "1",
-      }),
+      createTestApp({ SUPABASE_URL: supabase.url, SUPABASE_SECRET_KEY: "sb_secret_teste", WEB_ORIGIN: "https://painel.teste" }),
       createAuthFixture(),
     ]);
   });
@@ -96,17 +91,23 @@ describe("recuperação de senha pelo Supabase Auth", () => {
   });
 
   it("a senha nova libera o e-mail travado por senhas erradas", async () => {
-    // Um IP por tentativa: o limite por IP fica de fora.
-    const from = (ip: string) => request(app.getHttpServer()).post("/api/auth/login").set("X-Forwarded-For", ip);
-    for (let i = 0; i < 5; i++) await from(`198.51.100.${i}`).send({ email: fx.user.email, password: "errada" }).expect(401);
-    await from("198.51.100.5").send({ email: fx.user.email, password: NEW_PASSWORD }).expect(429);
+    // App novo: o limite por IP (10 por minuto, na memória de cada app) não soma os logins dos testes acima.
+    const fresh = await createTestApp({ SUPABASE_URL: supabase.url, SUPABASE_SECRET_KEY: "sb_secret_teste" });
+    try {
+      const attempt = (password: string) =>
+        request(fresh.getHttpServer()).post("/api/auth/login").send({ email: fx.user.email, password });
+      for (let i = 0; i < 5; i++) await attempt("errada").expect(401);
+      await attempt(NEW_PASSWORD).expect(429);
 
-    validToken = token("recovery");
-    await request(app.getHttpServer())
-      .post("/api/auth/reset-password")
-      .send({ accessToken: validToken, password: PASSWORD })
-      .expect(204);
-    await from("198.51.100.6").send({ email: fx.user.email, password: PASSWORD }).expect(200);
+      validToken = token("recovery");
+      await request(fresh.getHttpServer())
+        .post("/api/auth/reset-password")
+        .send({ accessToken: validToken, password: PASSWORD })
+        .expect(204);
+      await attempt(PASSWORD).expect(200);
+    } finally {
+      await fresh.close();
+    }
   });
 
   it("sem o Supabase configurado, responde 503", async () => {

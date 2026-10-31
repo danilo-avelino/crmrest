@@ -21,7 +21,7 @@ export const admin = createPrismaClient(process.env.DATABASE_ADMIN_URL ?? "");
 
 export async function createTestApp(overrides: Record<string, string> = {}): Promise<INestApplication> {
   const env = loadEnv({ ...process.env, ...overrides });
-  // Os limites de tentativas ficam no Redis: cada app de teste começa sem as tentativas dos arquivos anteriores.
+  // A trava do login fica no Redis: cada app de teste começa sem as senhas erradas dos arquivos anteriores.
   const redis = new Redis(env.REDIS_URL);
   const keys = await redis.keys(`${KEY_PREFIX}*`);
   if (keys.length) await redis.del(...keys);

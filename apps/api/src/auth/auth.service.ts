@@ -57,14 +57,14 @@ export class AuthService implements OnModuleInit {
     this.dummyHash = await hash("senha-de-um-usuario-que-nao-existe");
   }
 
-  async login(email: string, password: string, userAgent?: string, ip?: string) {
+  async login(email: string, password: string, userAgent?: string) {
     await this.limits.assertUnlocked(email);
     const [found] = await this.db.client.$queryRaw<{ id: string; password_hash: string; is_active: boolean }[]>`
       SELECT id, password_hash, is_active FROM app.find_login_user(${email})`;
     // Sem usuário, verifica um hash fictício: o tempo de resposta não revela quais e-mails existem.
     const valid = await verify(found?.password_hash ?? this.dummyHash, password);
     if (!found || !valid || !found.is_active) {
-      if (await this.limits.recordFailure(email)) this.logger.warn({ ip }, "Login travado por senhas erradas seguidas");
+      if (await this.limits.recordFailure(email)) this.logger.warn("Login travado por senhas erradas seguidas");
       throw new UnauthorizedException("E-mail ou senha inválidos.");
     }
     await this.limits.clear(email);
