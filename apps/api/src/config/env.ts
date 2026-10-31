@@ -11,6 +11,9 @@ const EnvSchema = z.object({
   ENCRYPTION_KEY: z.string().min(1),
   // Origem do painel, para o CORS do Socket.IO (o REST passa pelo proxy /api do Next).
   WEB_ORIGIN: z.url().default("http://localhost:3000"),
+  // Proxies entre o visitante e a API que põem o IP dele no X-Forwarded-For (na Railway, a borda dela: 1). Sem isso,
+  // os limites de tentativas por IP valem para todos os visitantes somados. 0 em dev e em acesso direto à API.
+  TRUST_PROXY_HOPS: z.coerce.number().int().min(0).default(0),
   // Meta (WhatsApp/Instagram). Sem os segredos, o webhook responde 503.
   META_APP_SECRET: z.string().min(1).optional(),
   META_WEBHOOK_VERIFY_TOKEN: z.string().min(1).optional(),

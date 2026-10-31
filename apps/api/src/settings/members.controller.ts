@@ -16,6 +16,7 @@ import {
   Patch,
   Post,
   ServiceUnavailableException,
+  UnprocessableEntityException,
 } from "@nestjs/common";
 import { CurrentAuth, type RequestAuth } from "../auth/auth.decorators.js";
 import { hasSupabaseAuth, sendInviteEmail, type SupabaseEnv } from "../auth/supabase-auth.js";
@@ -46,7 +47,8 @@ export class MembersController {
 
   /**
    * Sem senha, a conta nasce com uma senha aleatória que ninguém conhece e a pessoa recebe o convite para criar a dela.
-   * Quem já tem conta no Dish Desk só ganha acesso ao restaurante: entra com a senha que já usa, sem convite.
+   * Quem já tem conta no Dish Desk recebe o convite e fica com o acesso pendente até abrir o link do e-mail: o cadastro
+   * não confere o e-mail, então a conta pode ter sido criada por outra pessoa.
    */
   @Post()
   async create(
@@ -59,7 +61,7 @@ export class MembersController {
     const env = invite ? this.inviteEnv() : null;
     const passwordHash = await hash(body.password ?? randomBytes(32).toString("base64url"));
     const newUserId = randomUUID();
-    const { list, created } = await this.db.withTenants({ tenantIds: [tenantId], userId: auth.userId }, async (tx) => {
+    const { list, created, pending } = await this.db.withTenants({ tenantIds: [tenantId], userId: auth.userId }, async (tx) => {
       const existing = await tx.user.findFirst({ where: { email: body.email }, select: { id: true } });
       if (existing?.id === auth.userId) throw new ForbiddenException("Peça a outro administrador para alterar o seu acesso.");
       const [row] = await tx.$queryRaw<{ id: string }[]>`
@@ -71,9 +73,16 @@ export class MembersController {
           ${passwordHash},
           ${body.role}::"TenantRole"
         ) AS id`;
-      return { list: await members(tx, tenantId, auth.userId), created: row?.id === newUserId };
+      const member = await tx.tenantMember.findFirst({ where: { tenantId, userId: row?.id }, select: { invitePending: true } });
+      // Sem o e-mail, a conta que já existia não teria como aceitar: nada é criado.
+      if (member?.invitePending && !hasSupabaseAuth(this.env)) {
+        throw new ServiceUnavailableException("Esta pessoa já tem conta no Dish Desk e precisa aceitar pelo e-mail, mas o convite por e-mail ainda não está disponível.");
+      }
+      return { list: await members(tx, tenantId, auth.userId), created: row?.id === newUserId, pending: member?.invitePending ?? false };
     });
-    if (env && created) await this.sendInvite(env, body.email, `${body.name} foi adicionado, mas o e-mail do convite não saiu. Use "Enviar convite" na lista em alguns minutos.`);
+    if ((env && created) || pending) {
+      await this.sendInvite(this.inviteEnv(), body.email, `${body.name} foi adicionado, mas o e-mail do convite não saiu. Use "Enviar convite" na lista em alguns minutos.`);
+    }
     return list;
   }
 
@@ -88,7 +97,10 @@ export class MembersController {
     requireTenantAdmin(auth, tenantId);
     const env = this.inviteEnv();
     const member = await this.db.withTenants({ tenantIds: [tenantId], userId: auth.userId }, (tx) =>
-      tx.tenantMember.findFirst({ where: { tenantId, userId, isActive: true }, select: { user: { select: { email: true } } } }),
+      tx.tenantMember.findFirst({
+        where: { tenantId, userId, OR: [{ isActive: true }, { invitePending: true }] },
+        select: { user: { select: { email: true } } },
+      }),
     );
     if (!member) throw new NotFoundException("Esta pessoa não tem acesso ativo ao restaurante.");
     await this.sendInvite(env, member.user.email, "O e-mail do convite não saiu. Tente de novo em alguns minutos.");
@@ -104,6 +116,12 @@ export class MembersController {
     requireTenantAdmin(auth, tenantId);
     if (userId === auth.userId) throw new ForbiddenException("Peça a outro administrador para alterar o seu acesso.");
     return this.db.withTenants({ tenantIds: [tenantId], userId: auth.userId }, async (tx) => {
+      const pending = await tx.tenantMember.count({ where: { tenantId, userId, invitePending: true } });
+      if (pending && body.isActive) {
+        throw new UnprocessableEntityException('Esta pessoa ainda não aceitou o convite. Use "Enviar convite" para mandar o e-mail de novo.');
+      }
+      // Desativar um convite pendente o cancela: o link do e-mail não libera mais o acesso.
+      if (pending && body.isActive === false) await tx.$queryRaw`SELECT app.cancel_member_invite(${tenantId}::uuid, ${userId}::uuid)`;
       const { count } = await tx.tenantMember.updateMany({ where: { tenantId, userId }, data: body });
       if (count === 0) throw new NotFoundException("Esta pessoa não faz parte do restaurante.");
       return members(tx, tenantId, auth.userId);
@@ -131,7 +149,7 @@ export class MembersController {
 async function members(tx: TenantTx, tenantId: string, me: string): Promise<TeamMemberDto[]> {
   const rows = await tx.tenantMember.findMany({
     where: { tenantId },
-    select: { role: true, isActive: true, user: { select: { id: true, name: true, email: true } } },
+    select: { role: true, isActive: true, invitePending: true, user: { select: { id: true, name: true, email: true } } },
     orderBy: { user: { name: "asc" } },
   });
   return rows.map((row) => ({
@@ -140,6 +158,7 @@ async function members(tx: TenantTx, tenantId: string, me: string): Promise<Team
     email: row.user.email,
     role: row.role,
     isActive: row.isActive,
+    invitePending: row.invitePending,
     isYou: row.user.id === me,
   }));
 }

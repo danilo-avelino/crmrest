@@ -426,7 +426,7 @@ describe.skipIf(!process.env.SIM_AGENT)("simulação: implantação do zero", ()
       AI_TIMEOUT_MS: 180_000,
       WEB_ORIGIN: PANEL,
     } as unknown as Env;
-    const service = new AgentService(null as never, new LlmClient(env), env);
+    const service = new AgentService(null as never, new LlmClient(env, null as never), env);
     const sim = new Simulation();
     const granted: string[] = [];
     const told = new Set<string>();
@@ -464,7 +464,7 @@ describe.skipIf(!process.env.SIM_AGENT)("simulação: implantação do zero", ()
       }
 
       const context: DecideContext = {
-        session: { id: "sim", kind: "SETUP" },
+        session: { id: "sim", tenantId: "sim", kind: "SETUP" },
         restaurant: "Danilo Lanches",
         events: all.slice(-12),
         progress: sim.progress(),

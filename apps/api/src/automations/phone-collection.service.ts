@@ -1,10 +1,9 @@
-import type { Contact, TenantTx } from "@dishdesk/database";
+import type { TenantTx } from "@dishdesk/database";
 import { automationTextsOf, CHANNEL_CAPABILITIES, toE164 } from "@dishdesk/shared";
 import { InjectQueue } from "@nestjs/bullmq";
 import { Inject, Injectable } from "@nestjs/common";
 import type { Queue } from "bullmq";
 import { ENV, type Env } from "../config/env.js";
-import { mergeContacts } from "../contacts/contact-merge.js";
 import { DatabaseService } from "../core/database.service.js";
 import { type AutomationJob, type OutboundJob, QUEUES } from "../queues/queues.module.js";
 import { RealtimeEmitter } from "../realtime/realtime.emitter.js";
@@ -24,7 +23,8 @@ export const PHONE_REMINDER_DELAY_MS = 10 * 60_000;
 
 /**
  * Pede o telefone a quem chega sem ele (Instagram, chat do iFood) e cadastra o número informado: é o que qualifica o
- * contato. Se o número já é de outro cadastro, é a mesma pessoa em outro canal: os dois viram um.
+ * contato. Se o número já é de outro cadastro, pode ser a mesma pessoa em outro canal, mas nada prova que o número é
+ * de quem digitou: a equipe decide se une os dois (Clientes → Duplicados).
  */
 @Injectable()
 export class PhoneCollectionService {
@@ -56,17 +56,16 @@ export class PhoneCollectionService {
       if (state.phoneCollection === "awaiting_phone" && event.text) {
         const phone = extractPhone(event.text);
         if (!phone) return null;
-        const notify = await this.register(tx, conversation, phone);
+        await this.register(tx, conversation, phone);
         const messageId = await automationMessage(tx, conversation, "phone_confirmation", texts.phoneConfirmation);
         await setAutomationState(tx, conversation.id, { ...state, phoneCollection: "phone_collected" });
-        return { send: [messageId], remind: false, notify };
+        return { send: [messageId], remind: false };
       }
       return null;
     });
 
     if (!result) return;
     await dispatch(this.outbound, this.realtime, tenantId, event.conversationId, result.send);
-    for (const conversationId of result.notify ?? []) this.realtime.inboxChanged(tenantId, conversationId);
     if (result.remind) {
       await this.automations.add("phone-reminder", { tenantId, conversationId: event.conversationId }, { delay: PHONE_REMINDER_DELAY_MS });
     }
@@ -74,38 +73,27 @@ export class PhoneCollectionService {
 
   /**
    * Cadastra o telefone que o cliente informou na conversa (aqui ou ao responder a IA) e, se outro cadastro já tinha
-   * este telefone, une os dois. Devolve as outras conversas do cliente, para avisar os painéis.
+   * este telefone, avisa a equipe na conversa.
    */
   async register(
     tx: TenantTx,
     conversation: { id: string; tenantId: string; channelId: string; contact: { id: string } },
     phone: string,
-  ): Promise<string[]> {
+  ): Promise<void> {
     // Quem já tinha este telefone (o cadastro mais antigo, se houver mais de um).
     const known = await tx.contact.findFirst({
       where: { phone, deletedAt: null, id: { not: conversation.contact.id } },
       orderBy: { firstSeenAt: "asc" },
     });
-    const contact = await tx.contact.update({
+    await tx.contact.update({
       where: { id: conversation.contact.id },
       data: { phone, phoneSource: "informed_by_customer", phoneStatus: "ok" },
     });
     await systemEvent(tx, conversation, { event: "phone_collected", text: "Telefone informado e cadastrado" });
-    return known ? this.unify(tx, conversation, contact, known) : [];
-  }
-
-  /** Une o cadastro da conversa ao que já tinha o telefone informado. Devolve as outras conversas do cliente, para avisar os painéis. */
-  private async unify(tx: TenantTx, conversation: { id: string; tenantId: string; channelId: string }, contact: Contact, known: Contact): Promise<string[]> {
-    const result = await mergeContacts(tx, contact, known);
-    if (!result.merged) {
-      const text = `${known.name ?? "Outro cliente"} já tem este telefone, com ${result.conflict} diferente`;
-      await systemEvent(tx, conversation, { event: "merge_conflict", text });
-      return [];
+    if (known) {
+      const text = `${known.name ?? "Outro cliente"} já tem este telefone. Se for a mesma pessoa, una os cadastros em Clientes → Duplicados`;
+      await systemEvent(tx, conversation, { event: "possible_duplicate", text });
     }
-    const text = `Cadastro unificado com o de ${known.name ?? "outro cliente"}, que já tinha este telefone`;
-    await systemEvent(tx, conversation, { event: "contacts_merged", text });
-    const others = await tx.conversation.findMany({ where: { contactId: result.contactId, id: { not: conversation.id } }, select: { id: true } });
-    return others.map((other) => other.id);
   }
 
   /** Um único lembrete, se o cliente ainda não informou o telefone. */

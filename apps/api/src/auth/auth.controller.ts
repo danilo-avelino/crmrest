@@ -36,7 +36,7 @@ export class AuthController {
     @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
   ): Promise<AuthSession> {
-    const { refreshToken, session } = await this.auth.login(body.email, body.password, request.headers["user-agent"]);
+    const { refreshToken, session } = await this.auth.login(body.email, body.password, request.headers["user-agent"], request.ip);
     this.setSessionCookie(response, refreshToken);
     return session;
   }

@@ -48,6 +48,8 @@ export type MessageContent = {
     | "opt_out"
     | "contacts_merged"
     | "merge_conflict"
+    /** O telefone que o cliente digitou já está em outro cadastro: a equipe decide se une (Clientes → Duplicados). */
+    | "possible_duplicate"
     /** Pedido confirmado é de outro restaurante atendido pelo canal: os cadastros ficam separados. */
     | "order_other_restaurant"
     | "order_ambiguous"

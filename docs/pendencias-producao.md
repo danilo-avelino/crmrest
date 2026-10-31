@@ -1,6 +1,6 @@
 # Pendências para produção — Dish Desk
 
-Atualizado em 30 de outubro de 2026.
+Atualizado em 31 de outubro de 2026.
 
 Esta é a lista do que falta para o Dish Desk atender restaurantes de verdade. Quando um item for concluído, marque `[x]` e troque a data acima.
 
@@ -101,7 +101,7 @@ Pagamento pendente (Claude, 11/10): a renovação do mensal tem 1 dia de folga; 
   - [ ] Pôr `STRIPE_SECRET_KEY` e `STRIPE_WEBHOOK_SECRET` no serviço `api` da Railway — você.
   - [ ] Salvar as configurações do portal do cliente (Customer Portal) no painel da Stripe, com a troca de meio de pagamento ligada: sem isso, "Cadastrar novo cartão" de quem já assina o mensal responde "Não foi possível abrir o pagamento" — você, com o Claude orientando.
   - [ ] Fazer um pagamento de cada plano no modo de teste da Stripe e conferir se o restaurante é liberado; trocar o cartão pelo portal e pagar o anual com o mensal ativo, conferindo se a assinatura mensal é cancelada (o teste automático usa uma Stripe simulada).
-- [ ] **Cadastro sem confirmação de e-mail.** Qualquer pessoa cria um restaurante com um e-mail que não é dela. O limite é de 10 cadastros por hora, e hoje vale para todos os visitantes somados, porque a API não enxerga o IP de quem acessa (o mesmo vale para o limite do login). Depende do provedor de e-mail e de a API confiar no proxy — Claude.
+- [ ] **Cadastro sem confirmação de e-mail.** Qualquer pessoa cria um restaurante com um e-mail que não é dela. O limite é de 10 cadastros por hora por IP, que só vale por visitante depois de `TRUST_PROXY_HOPS` na Railway (item "Limites de tentativas no login"). Depende do provedor de e-mail — Claude.
 - [x] **Teste grátis repetido** — Claude, 11/10. Quem cria outra conta e conecta um canal (WhatsApp, Instagram, iFood ou Cardápio Web) que já passou por um teste grátis encerrado há menos de 60 dias tem o teste encerrado na hora e cai na tela de pagamento, com o aviso. Depois de pagar, o canal sai do restaurante antigo e conecta no novo. Continua possível repetir o teste com outro número, outra conta e outra loja.
 - [ ] **Cancelar a assinatura.** O cliente não cancela pelo painel; hoje só você, no painel da Stripe.
 - [ ] **Nota fiscal.** A emissão é manual, com o CPF ou CNPJ que aparece em `/plataforma` e no pagamento da Stripe.
@@ -124,6 +124,9 @@ Pagamento pendente (Claude, 11/10): a renovação do mensal tem 1 dia de folga; 
 - [x] **Convite de usuário** — Claude, 21/10. Em Configurações → Usuários, com a senha em branco a pessoa recebe o e-mail "Invite user" do Supabase e cria a senha em `/redefinir-senha`; "Enviar convite" manda de novo. Usa a mesma configuração do "Esqueceu?" (variáveis `SUPABASE_*` na `api` e SMTP próprio, itens acima); falta traduzir o modelo "Invite user" em Authentication → Email Templates, como o de "Reset Password".
 - [ ] **Botão "Continuar com Google".** Aparece no login de produção, mas só mostra "em breve". Decidir: esconder até existir ou implementar.
 - [ ] **Monitoramento.** Sentry e painel das filas estão prontos no código, mas só ligam com as variáveis `SENTRY_DSN`, `NEXT_PUBLIC_SENTRY_DSN` e `BULL_BOARD_PASSWORD` na Railway. Falta conferir se estão lá.
+- [ ] **Limites de tentativas no login.** Desde 31/10 (Claude): 10 tentativas por minuto por IP, e 5 senhas erradas seguidas travam o e-mail por 15 minutos, mesmo vindas de IPs diferentes e mesmo com a senha certa depois. O login certo zera a contagem, e a redefinição pelo "Esqueceu?" libera o e-mail na hora. Os contadores ficam no Redis (valem para todas as réplicas da `api`). Falta:
+  - [ ] Na Railway, na `api`: `TRUST_PROXY_HOPS=1`. Sem ela, a API vê o IP do serviço `web` em todo mundo, e o limite por IP (login, cadastro, "Esqueceu?") vale para todos os visitantes somados — você.
+  - [ ] Conferir em produção: errar a senha 5 vezes num e-mail de teste e procurar nos logs da `api` "Login travado por senhas erradas seguidas". O `ip` do log deve ser o seu IP público. Se for um IP interno da Railway, o `web` também acrescenta um salto e o valor certo é `2` — você e Claude.
 - [ ] **Cabeçalhos de segurança.** A API e o painel não enviam cabeçalhos como CSP — Claude.
 - [ ] **Repositório público.** O `danilo-avelino/crmrest` está público no GitHub. Decidir se continua assim — você.
 

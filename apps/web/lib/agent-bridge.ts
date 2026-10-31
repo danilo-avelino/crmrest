@@ -15,13 +15,25 @@ export type AgentBridge = {
 let sequence = 0;
 
 /**
+ * IDs da extensão do Dish Desk (NEXT_PUBLIC_EXTENSION_IDS, separados por vírgula). Sem a variável, só em
+ * desenvolvimento vale qualquer extensão (a carregada sem compactar muda de ID a cada pasta).
+ */
+const EXTENSION_IDS = (process.env.NEXT_PUBLIC_EXTENSION_IDS ?? "").split(",").map((id) => id.trim()).filter(Boolean);
+
+function isDishDeskExtension(origin: string): boolean {
+  if (!origin.startsWith("chrome-extension://")) return false;
+  if (!EXTENSION_IDS.length) return process.env.NODE_ENV !== "production";
+  return EXTENSION_IDS.some((id) => origin === `chrome-extension://${id}`);
+}
+
+/**
  * O painel lateral da extensão, onde esta página roda num iframe; null fora dele (ex.: a página aberta numa aba). Só o
- * painel de uma extensão do Chrome recebe a página e as ações.
+ * painel da extensão do Dish Desk recebe a página e as ações: outra extensão que abra esta página não.
  */
 export function extensionPanel(): { target: Window; origin: string } | null {
   if (typeof window === "undefined" || window.parent === window) return null;
   const origin = window.location.ancestorOrigins?.[0];
-  return origin?.startsWith("chrome-extension://") ? { target: window.parent, origin } : null;
+  return origin && isDishDeskExtension(origin) ? { target: window.parent, origin } : null;
 }
 
 function call<T>(op: string, params: Record<string, unknown> = {}): Promise<T> {

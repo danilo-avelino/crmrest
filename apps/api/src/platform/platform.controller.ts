@@ -5,6 +5,7 @@ import {
   CreateTenantRequest,
   MODULES,
   type PlatformAiStatusDto,
+  type PlatformAiUsageDto,
   type PlatformAuditDto,
   type PlatformSuggestionDto,
   type PlatformTenantDto,
@@ -19,18 +20,23 @@ import {
   Controller,
   ForbiddenException,
   Get,
+  Inject,
   NotFoundException,
   Param,
   ParseUUIDPipe,
   Patch,
   Post,
   Put,
+  Query,
+  ServiceUnavailableException,
   UnprocessableEntityException,
 } from "@nestjs/common";
 import { hash } from "@node-rs/argon2";
 import { CurrentAuth, type RequestAuth } from "../auth/auth.decorators.js";
+import { hasSupabaseAuth, sendInviteEmail } from "../auth/supabase-auth.js";
 import { LlmClient } from "../ai/llm.client.js";
 import { ZodPipe } from "../common/zod.pipe.js";
+import { ENV, type Env } from "../config/env.js";
 import { DatabaseService } from "../core/database.service.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -46,6 +52,7 @@ const SUGGESTIONS_LIMIT = 2000;
 export class PlatformController {
   constructor(
     private readonly db: DatabaseService,
+    @Inject(ENV) private readonly env: Env,
     private readonly llm: LlmClient,
   ) {}
 
@@ -62,7 +69,8 @@ export class PlatformController {
     const passwordHash = await hash(body.adminPassword);
     const tenantId = randomUUID();
     // Restaurante e primeiro administrador na mesma transação: nunca fica um restaurante sem admin.
-    await this.db.withTenants({ tenantIds: [tenantId], userId: auth.userId }, async (tx) => {
+    // E-mail que já tem conta: o acesso fica pendente até a pessoa abrir o convite (a senha informada não vale para ela).
+    const pending = await this.db.withTenants({ tenantIds: [tenantId], userId: auth.userId }, async (tx) => {
       await requireSuperAdmin(tx, auth.userId);
       try {
         await tx.tenant.create({ data: { id: tenantId, name: body.name, slug: body.slug }, select: { id: true } });
@@ -70,12 +78,22 @@ export class PlatformController {
         if ((error as { code?: string }).code === "P2002") throw new ConflictException("Já existe um restaurante com este endereço.");
         throw error;
       }
-      await tx.$queryRaw`
+      const [row] = await tx.$queryRaw<{ id: string }[]>`
         SELECT app.create_or_restore_member(
           ${randomUUID()}::uuid, ${tenantId}::uuid, ${body.adminName}, ${body.adminEmail}, ${passwordHash}, 'ADMIN'::"TenantRole"
-        )`;
+        ) AS id`;
+      const member = await tx.tenantMember.findFirst({ where: { tenantId, userId: row?.id }, select: { invitePending: true } });
+      if (member?.invitePending && !hasSupabaseAuth(this.env)) {
+        throw new ServiceUnavailableException("Este e-mail já tem conta no Dish Desk e precisa aceitar pelo e-mail, mas o convite por e-mail ainda não está disponível.");
+      }
       await tx.$executeRaw`SELECT app.log_platform_action('tenant.create', ${tenantId}::uuid)`;
+      return member?.invitePending ?? false;
     });
+    if (pending && hasSupabaseAuth(this.env)) {
+      await sendInviteEmail(this.env, body.adminEmail).catch(() => {
+        throw new ServiceUnavailableException('Restaurante criado, mas o e-mail do convite não saiu. Use "Enviar convite" em Configurações → Usuários do restaurante.');
+      });
+    }
     return this.tenants(auth.userId);
   }
 
@@ -163,6 +181,49 @@ export class PlatformController {
   async aiStatus(@CurrentAuth() auth: RequestAuth): Promise<PlatformAiStatusDto> {
     await this.db.withTenants({ tenantIds: [], userId: auth.userId }, (tx) => requireSuperAdmin(tx, auth.userId));
     return this.llm.status();
+  }
+
+  /** Gastos com o Claude num mês (AAAA-MM; sem ele, o mês atual), horário de Brasília: o total e por restaurante. */
+  @Get("ai-usage")
+  async aiUsage(@CurrentAuth() auth: RequestAuth, @Query("month") month?: string): Promise<PlatformAiUsageDto> {
+    const current = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().slice(0, 7);
+    const chosen = month ?? current;
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(chosen)) throw new UnprocessableEntityException("Mês inválido: use AAAA-MM.");
+    const [year, monthNumber] = chosen.split("-").map(Number) as [number, number];
+    const from = new Date(`${chosen}-01T00:00:00-03:00`);
+    const to = new Date(`${monthNumber === 12 ? year + 1 : year}-${String((monthNumber % 12) + 1).padStart(2, "0")}-01T00:00:00-03:00`);
+
+    const tenants = await this.db.withTenants({ tenantIds: [], userId: auth.userId }, async (tx) => {
+      await requireSuperAdmin(tx, auth.userId);
+      return tx.tenant.findMany({ select: { id: true, name: true } });
+    });
+    const rows = tenants.length
+      ? await this.db.withTenants({ tenantIds: tenants.map((t) => t.id), userId: auth.userId }, (tx) =>
+          tx.aiUsage.groupBy({
+            by: ["tenantId"],
+            where: { createdAt: { gte: from, lt: to } },
+            _count: { _all: true },
+            _sum: { inputTokens: true, outputTokens: true, costMicroUsd: true },
+          }),
+        )
+      : [];
+    const names = new Map(tenants.map((t) => [t.id, t.name]));
+    const usage = rows
+      .map((row) => ({
+        tenantId: row.tenantId,
+        tenantName: names.get(row.tenantId) ?? "",
+        calls: row._count._all,
+        inputTokens: row._sum.inputTokens ?? 0,
+        outputTokens: row._sum.outputTokens ?? 0,
+        costUsd: (row._sum.costMicroUsd ?? 0) / 1_000_000,
+      }))
+      .sort((a, b) => b.costUsd - a.costUsd || b.calls - a.calls);
+    return {
+      month: chosen,
+      costUsd: usage.reduce((sum, row) => sum + row.costUsd, 0),
+      calls: usage.reduce((sum, row) => sum + row.calls, 0),
+      tenants: usage,
+    };
   }
 
   /** Sugestões dos restaurantes, mais recentes primeiro (a página agrupa por assunto). */

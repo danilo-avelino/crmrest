@@ -2,7 +2,7 @@ import type { TenantTx } from "@dishdesk/database";
 import { startOfYesterday } from "../automations/automation.js";
 import { linkedOrdersWhere } from "./customer-history.js";
 
-type ContactKeys = { id: string; phone: string | null; cpfHash: string | null; email: string | null };
+type ContactKeys = { id: string; phone: string | null; phoneSource: string | null; cpfHash: string | null; email: string | null };
 
 /**
  * Pedido mais recente de hoje ou de ontem ligado ao cadastro: do próprio cadastro (qualquer canal vinculado a ele:

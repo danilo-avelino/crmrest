@@ -37,7 +37,7 @@ export class SuggestionsService {
 
   private async classify(scope: { tenantIds: string[]; userId: string }, id: string, text: string): Promise<void> {
     try {
-      const { subject } = await this.llm.json("assunto_sugestao", Classification, [
+      const { subject } = await this.llm.json(scope.tenantIds[0]!, "assunto_sugestao", Classification, [
         { role: "system", content: SYSTEM_PROMPT },
         { role: "user", content: text },
       ]);

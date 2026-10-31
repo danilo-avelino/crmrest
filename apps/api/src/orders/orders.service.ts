@@ -61,7 +61,7 @@ export class OrdersService {
             items: true,
             channel: { select: { type: true, name: true } },
             tenant: { select: { id: true, name: true } },
-            contact: { select: { id: true, name: true, phone: true, cpfHash: true, email: true } },
+            contact: { select: { id: true, name: true, phone: true, phoneSource: true, cpfHash: true, email: true } },
             events: { orderBy: { occurredAt: "asc" }, select: { code: true, occurredAt: true, metadata: true } },
           },
           orderBy: [{ placedAt: sort }, { id: sort }],

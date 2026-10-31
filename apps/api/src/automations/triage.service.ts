@@ -20,6 +20,7 @@ import type { Queue } from "bullmq";
 import { LlmClient } from "../ai/llm.client.js";
 import { mergeContacts } from "../contacts/contact-merge.js";
 import { orderUpdateMessage } from "../orders/forecast.js";
+import { provenPhone, provenPhoneWhere } from "../orders/customer-history.js";
 import { latestOrderOf } from "../orders/latest-order.js";
 import { withOrderTenants } from "../orders/order-scope.js";
 import { DatabaseService } from "../core/database.service.js";
@@ -140,19 +141,19 @@ export class TriageService {
    * Atendimento com IA (módulo AI): a IA atende no lugar do menu, do começo do atendimento até passar para a equipe.
    * A resposta sai pela fila ai, um pouco depois, para juntar as mensagens que o cliente manda em sequência.
    * O entregador continua com o menu dele. No lugar da coleta de telefone, o telefone que o cliente mandar à IA é
-   * cadastrado (e une o cadastro ao que já o tinha), para ela achar os pedidos dele.
+   * cadastrado (sem unir ao cadastro que já o tinha: a equipe decide em Clientes → Duplicados).
    */
   private async aiTakes(event: InboundEvent): Promise<boolean> {
     const { tenantId } = event.channel;
-    const notify = await this.db.withTenants({ tenantIds: [tenantId] }, async (tx) => {
-      if (!(await this.llm.activeFor(tx, tenantId))) return null;
+    const takes = await this.db.withTenants({ tenantIds: [tenantId] }, async (tx) => {
+      if (!(await this.llm.activeFor(tx, tenantId))) return false;
       const conversation = await tx.conversation.findUniqueOrThrow({
         where: { id: event.conversationId },
         select: { id: true, tenantId: true, channelId: true, automationState: true, contact: { select: { id: true, phone: true, tags: true } } },
       });
-      if (conversation.contact.tags.includes(COURIER_TAG)) return null;
+      if (conversation.contact.tags.includes(COURIER_TAG)) return false;
       const state = conversation.automationState as AutomationState;
-      if (!event.newAttendance && state.ai !== "on") return null;
+      if (!event.newAttendance && state.ai !== "on") return false;
       // Atendimento novo zera o estado, menos a espera por um atendente: o cliente continua esperando.
       if (event.newAttendance) {
         await setAutomationState(tx, event.conversationId, {
@@ -162,10 +163,10 @@ export class TriageService {
       }
       const phone =
         !conversation.contact.phone && !CHANNEL_CAPABILITIES[event.channel.type].providesPhone && event.text ? extractPhone(event.text) : null;
-      return phone ? this.phoneCollection.register(tx, conversation, phone) : [];
+      if (phone) await this.phoneCollection.register(tx, conversation, phone);
+      return true;
     });
-    if (!notify) return false;
-    for (const conversationId of notify) this.realtime.inboxChanged(tenantId, conversationId);
+    if (!takes) return false;
     await this.ai.add("reply", { tenantId, conversationId: event.conversationId }, { delay: AI_REPLY_DELAY_MS });
     return true;
   }
@@ -270,12 +271,18 @@ export class TriageService {
       return { send: [messageId], done: true, handoff: true };
     };
     const digits = text?.match(/\d+/)?.[0];
-    if (!digits) return finish(await automationMessage(tx, conversation, "handoff", messages.handoff));
+    const phone = provenPhone(conversation.contact);
+    if (!digits || !phone) return finish(await automationMessage(tx, conversation, "handoff", messages.handoff));
 
+    // Saber o número não prova que o pedido é de quem escreve: só vale o pedido feito com o telefone do cliente.
     const code = digits.replace(/^0+(?=\d)/, "");
     const orders = await withOrderTenants(this.db, tx, conversation.channelId, (scoped) =>
       scoped.order.findMany({
-        where: { displayCode: { in: [...new Set([digits, code])] }, placedAt: { gte: startOfYesterday(new Date()) } },
+        where: {
+          displayCode: { in: [...new Set([digits, code])] },
+          placedAt: { gte: startOfYesterday(new Date()) },
+          contact: provenPhoneWhere(phone),
+        },
         include: { items: true },
         orderBy: { placedAt: "desc" },
         take: 2,
@@ -292,7 +299,15 @@ export class TriageService {
     return this.offerOrder(tx, conversation, state, messages, orders[0]!, orders[0]!.displayCode ?? code);
   }
 
+  /**
+   * Pede o número do pedido. Sem um telefone que identifique o cliente (o do WhatsApp ou o cadastrado pela equipe), o
+   * número não teria como ser conferido: a equipe atende.
+   */
   private async askOrderNumber(tx: TenantTx, conversation: Conversation, state: AutomationState, messages: AutomationMessages): Promise<Step> {
+    if (!provenPhone(conversation.contact)) {
+      await setAutomationState(tx, conversation.id, { ...state, triage: "done", foundOrderId: undefined, autoFound: undefined });
+      return { send: [await automationMessage(tx, conversation, "handoff", messages.handoff)], done: true, handoff: true };
+    }
     const id = await automationMessage(tx, conversation, "order_number_request", messages.orderNumberRequest);
     await setAutomationState(tx, conversation.id, { ...state, triage: "awaiting_order_number", foundOrderId: undefined, autoFound: undefined });
     return { send: [id], done: false };

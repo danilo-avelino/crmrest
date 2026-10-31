@@ -42,8 +42,8 @@ describe("Configurações → usuários do restaurante", () => {
   it("a equipe vê quem tem acesso ao restaurante", async () => {
     const { body } = await api("get", fx.a.id, agentToken).expect(200);
     expect(body).toEqual([
-      { userId: fx.user.id, name: "Atendente Teste", email: fx.user.email, role: "AGENT", isActive: true, isYou: true },
-      { userId: colleague.id, name: "Colega", email: colleague.email, role: "AGENT", isActive: true, isYou: false },
+      { userId: fx.user.id, name: "Atendente Teste", email: fx.user.email, role: "AGENT", isActive: true, invitePending: false, isYou: true },
+      { userId: colleague.id, name: "Colega", email: colleague.email, role: "AGENT", isActive: true, invitePending: false, isYou: false },
     ].sort((x, y) => x.name.localeCompare(y.name)));
     await api("get", fx.c.id, agentToken).expect(403);
   });
@@ -129,6 +129,7 @@ describe("Configurações → usuários: convite por e-mail", () => {
   let adminToken: string; // o usuário do fixture é administrador em B
   let agentToken: string; // e atendente em A
   let inviteStatus = 200;
+  let linkEmail = ""; // dono do token que o link do e-mail entrega (GET /auth/v1/user)
   const createdEmails: string[] = [];
   const calls = () => supabase.requests.map((call) => `${call.method} ${call.path}`);
   const redirect = encodeURIComponent("https://painel.teste/redefinir-senha");
@@ -136,7 +137,13 @@ describe("Configurações → usuários: convite por e-mail", () => {
   beforeAll(async () => {
     supabase = await startMockGraph();
     // Supabase falso: o convite responde inviteStatus (422 = o e-mail já tem cópia no Supabase).
-    supabase.reply((call) => (call.path.startsWith("/auth/v1/invite") ? { status: inviteStatus, body: {} } : { status: 200, body: {} }));
+    supabase.reply((call) =>
+      call.path.startsWith("/auth/v1/invite")
+        ? { status: inviteStatus, body: {} }
+        : call.path === "/auth/v1/user"
+          ? { status: 200, body: { email: linkEmail } }
+          : { status: 200, body: {} },
+    );
     [app, noSupabase, fx] = await Promise.all([
       createTestApp({ SUPABASE_URL: supabase.url, SUPABASE_SECRET_KEY: "sb_secret_teste", WEB_ORIGIN: "https://painel.teste" }),
       createTestApp(), // sem SUPABASE_URL e SUPABASE_SECRET_KEY (o .env de teste e o CI não têm)
@@ -184,15 +191,76 @@ describe("Configurações → usuários: convite por e-mail", () => {
     ]);
   });
 
-  it("quem já tem conta no Dish Desk só ganha acesso, sem convite", async () => {
+  it("quem já tem conta no Dish Desk recebe o convite e só entra depois de abrir o link do e-mail", async () => {
+    // A conta pode ter sido criada por outra pessoa: o cadastro não confere o e-mail.
     const colleague = await admin.user.create({
       data: { name: "Colega Antigo", email: `antigo-${fx.b.id}@teste.local`, passwordHash: await hash(PASSWORD) },
-      select: { email: true },
+      select: { id: true, email: true },
     });
     createdEmails.push(colleague.email);
+    const { body } = await create({ name: "Colega Antigo", email: colleague.email, role: "ADMIN", password: "outra-senha-123" }).expect(201);
+    expect(body.find((m: { email: string }) => m.email === colleague.email)).toMatchObject({ isActive: false, invitePending: true });
+    expect(calls()).toEqual([`POST /auth/v1/invite?redirect_to=${redirect}`]);
+
+    // Com a senha da conta, entra, mas não no restaurante; a senha que o admin digitou não vale.
+    const agent = request.agent(app.getHttpServer());
+    await agent.post("/api/auth/login").send({ email: colleague.email, password: PASSWORD }).expect(200);
+    await agent.post("/api/auth/context").send({ mode: "tenant", tenantId: fx.b.id }).expect(403);
+    await request(app.getHttpServer()).post("/api/auth/login").send({ email: colleague.email, password: "outra-senha-123" }).expect(401);
+
+    // O admin não libera no lugar dela; adicionar de novo não libera.
+    const patch = (data: object) =>
+      request(app.getHttpServer()).patch(`/api/settings/${fx.b.id}/members/${colleague.id}`).set("Authorization", `Bearer ${adminToken}`).send(data);
+    expect((await patch({ isActive: true }).expect(422)).body.message).toBe(
+      'Esta pessoa ainda não aceitou o convite. Use "Enviar convite" para mandar o e-mail de novo.',
+    );
+    const db = createPrismaClient(process.env.DATABASE_URL ?? "");
+    try {
+      // Nem direto no banco.
+      await expect(
+        withTenants(db, { tenantIds: [fx.b.id], userId: fx.user.id }, (tx) =>
+          tx.tenantMember.updateMany({ where: { tenantId: fx.b.id, userId: colleague.id }, data: { isActive: true } }),
+        ),
+      ).rejects.toThrow(/não aceitou o convite/);
+    } finally {
+      await db.$disconnect();
+    }
     await create({ name: "Colega Antigo", email: colleague.email, role: "AGENT" }).expect(201);
-    expect(calls()).toEqual([]);
-    await accessTokenFor(app, colleague.email, fx.b.id); // a senha de antes continua valendo
+    expect(await admin.tenantMember.findFirst({ where: { tenantId: fx.b.id, userId: colleague.id } })).toMatchObject({
+      role: "AGENT",
+      isActive: false,
+      invitePending: true,
+    });
+
+    // O link do e-mail prova que ela é a dona: troca a senha e libera o acesso.
+    linkEmail = colleague.email;
+    await request(app.getHttpServer()).post("/api/auth/reset-password").send({ accessToken: "token-do-link", password: "senha-nova-123" }).expect(204);
+    expect(await admin.tenantMember.findFirst({ where: { tenantId: fx.b.id, userId: colleague.id } })).toMatchObject({
+      isActive: true,
+      invitePending: false,
+    });
+    const login = request.agent(app.getHttpServer());
+    await login.post("/api/auth/login").send({ email: colleague.email, password: "senha-nova-123" }).expect(200);
+    await login.post("/api/auth/context").send({ mode: "tenant", tenantId: fx.b.id }).expect(200);
+  });
+
+  it("convite pendente cancelado: o link do e-mail não libera mais o acesso", async () => {
+    const colleague = await admin.user.create({
+      data: { name: "Colega Cancelado", email: `cancelado-${fx.b.id}@teste.local`, passwordHash: await hash(PASSWORD) },
+      select: { id: true, email: true },
+    });
+    createdEmails.push(colleague.email);
+    await create({ name: "Colega Cancelado", email: colleague.email, role: "AGENT" }).expect(201);
+    const { body } = await request(app.getHttpServer())
+      .patch(`/api/settings/${fx.b.id}/members/${colleague.id}`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ isActive: false })
+      .expect(200);
+    expect(body.find((m: { email: string }) => m.email === colleague.email)).toMatchObject({ isActive: false, invitePending: false });
+
+    linkEmail = colleague.email;
+    await request(app.getHttpServer()).post("/api/auth/reset-password").send({ accessToken: "token-do-link", password: "senha-nova-123" }).expect(204);
+    expect(await admin.tenantMember.findFirst({ where: { tenantId: fx.b.id, userId: colleague.id } })).toMatchObject({ isActive: false });
   });
 
   it("convite que não sai: o usuário fica criado e o admin vê o motivo", async () => {

@@ -76,6 +76,7 @@ model Tenant {
   agentSessions       AgentSession[]
   agentEvents         AgentEvent[]
   productSuggestions  ProductSuggestion[]
+  aiUsages            AiUsage[]
   quickReplies        QuickReply[]
   auditLogs           AuditLog[]
   modules             TenantModule[]
@@ -138,6 +139,8 @@ model TenantMember {
   userId    String     @map("user_id") @db.Uuid
   role      TenantRole
   isActive  Boolean    @default(true) @map("is_active")
+  // Conta que já existia: inativa até a pessoa aceitar pelo link do e-mail (app.reset_password libera).
+  invitePending Boolean @default(false) @map("invite_pending")
   createdAt DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -598,6 +601,24 @@ model ProductSuggestion {
 
   @@index([tenantId, createdAt])
   @@map("product_suggestions")
+}
+
+// Uma chamada paga à IA (hoje, o Claude como reserva do Atendimento com IA): os tokens e o custo, em milionésimos de
+// dólar pelo preço do modelo na hora da chamada. A LLM local não entra (não custa por chamada). O painel da plataforma
+// soma por mês e por restaurante.
+model AiUsage {
+  id            String   @id @default(uuid(7)) @db.Uuid
+  tenantId      String   @map("tenant_id") @db.Uuid
+  model         String
+  inputTokens   Int      @map("input_tokens")
+  outputTokens  Int      @map("output_tokens")
+  costMicroUsd  Int      @map("cost_micro_usd")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+  @@map("ai_usages")
 }
 
 // ---------- Auditoria ----------

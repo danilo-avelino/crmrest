@@ -366,7 +366,7 @@ describe("Chat do iFood na Inbox (trava IFOOD_CHAT_BRIDGE ligada)", () => {
     }
   });
 
-  it("telefone informado que já é de outro cadastro: os dois viram um, com os canais e os pedidos de ambos", async () => {
+  it("telefone informado que já é de outro cadastro: não une os dois (nada prova o número) e avisa a equipe", async () => {
     const tenantId = fx.tenant.id;
     const known = await admin.contact.create({
       data: {
@@ -387,18 +387,18 @@ describe("Chat do iFood na Inbox (trava IFOOD_CHAT_BRIDGE ligada)", () => {
     await post("/ifood-chat/sync", { orderCode: "6560", messages: [complaint, shown("INBOUND", "É o 11 91234-5678", new Date())] }).expect(200);
     await settle();
 
-    // Fica o cadastro mais antigo (o do WhatsApp), agora também com o iFood; a conversa e o pedido passam para ele.
+    // Cada um fica no seu cadastro: o telefone vai para o do chat do iFood, e a equipe decide em Clientes → Duplicados.
     const chat = await admin.conversation.findFirstOrThrow({
-      where: { channelId: fx.ifood.id, contactId: known.id },
+      where: { channelId: fx.ifood.id, contactId: paula.contactId },
       include: { contact: { include: { identities: true } } },
     });
-    expect(chat.contact).toMatchObject({ name: "Paula do WhatsApp", phone: "+5511912345678", phoneSource: "channel" });
-    expect(chat.contact.identities.map((identity) => identity.channelType).sort()).toEqual(["IFOOD", "WHATSAPP"]);
-    expect(await admin.contact.findUnique({ where: { id: paula.contactId } })).toBeNull();
-    expect((await admin.order.findUniqueOrThrow({ where: { id: paula.id } })).contactId).toBe(known.id);
+    expect(chat.contact).toMatchObject({ phone: "+5511912345678", phoneSource: "informed_by_customer" });
+    expect(chat.contact.identities.map((identity) => identity.channelType)).toEqual(["IFOOD"]);
+    expect(await admin.contactIdentity.count({ where: { contactId: known.id } })).toBe(1);
+    expect((await admin.order.findUniqueOrThrow({ where: { id: paula.id } })).contactId).toBe(paula.contactId);
     expect((await timeline(chat.id)).map((m) => m.content)).toContainEqual({
-      event: "contacts_merged",
-      text: "Cadastro unificado com o de Paula do WhatsApp, que já tinha este telefone",
+      event: "possible_duplicate",
+      text: "Paula do WhatsApp já tem este telefone. Se for a mesma pessoa, una os cadastros em Clientes → Duplicados",
     });
     await typeOutbox();
   });

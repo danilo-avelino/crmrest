@@ -86,7 +86,7 @@ export class AiEvaluationService {
     if (!attendance) return;
 
     // Uma falha da LLM lança: o BullMQ tenta de novo, sem afetar a conversa.
-    const { result, model } = await this.llm.answer("avaliacao", Evaluation, [
+    const { result, model } = await this.llm.answer(tenantId, "avaliacao", Evaluation, [
       { role: "system", content: SYSTEM_PROMPT },
       { role: "user", content: transcript(attendance.messages, { withTime: true }) },
     ]);

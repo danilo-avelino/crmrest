@@ -216,7 +216,7 @@ export class ContactsService {
   orders(auth: RequestAuth, id: string): Promise<OrderDto[]> {
     return this.db.withTenants(auth.scope, async (tx) => {
       await this.requireContact(tx, id);
-      const contact = await tx.contact.findUniqueOrThrow({ where: { id }, select: { id: true, phone: true, cpfHash: true, email: true } });
+      const contact = await tx.contact.findUniqueOrThrow({ where: { id }, select: { id: true, phone: true, phoneSource: true, cpfHash: true, email: true } });
       // Todas as fontes: também os pedidos de outros cadastros com o mesmo telefone, CPF ou e-mail.
       const rows = await tx.order.findMany({
         where: linkedOrdersWhere(contact),

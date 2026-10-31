@@ -186,4 +186,32 @@ describe("painel da plataforma (Super Admin)", () => {
     expect(free.body.message).toBe("Este restaurante não tem cobrança pelo sistema.");
     await api("patch", `tenants/${fx.b.id}/access`, userToken).send({ plan: "MONTHLY", paidUntil: until }).expect(403);
   });
+
+  it("gastos com o Claude: o total do mês e os restaurantes de quem gastou mais; o mês vazio vem zerado", async () => {
+    await api("get", "ai-usage", userToken).expect(403);
+    await api("get", "ai-usage?month=2026-13", superToken).expect(422);
+    // 31/10 às 23h em Brasília ainda é outubro; 01/11 às 00h30 já é novembro.
+    await admin.aiUsage.createMany({
+      data: [
+        { tenantId: fx.b.id, model: "claude-haiku-5-5", inputTokens: 1000, outputTokens: 200, costMicroUsd: 200, createdAt: new Date("2026-10-31T23:00:00-03:00") },
+        { tenantId: fx.c.id, model: "claude-haiku-5-5", inputTokens: 3000, outputTokens: 600, costMicroUsd: 600, createdAt: new Date("2026-10-05T12:00:00-03:00") },
+        { tenantId: fx.c.id, model: "claude-haiku-5-5", inputTokens: 3000, outputTokens: 600, costMicroUsd: 600, createdAt: new Date("2026-10-06T12:00:00-03:00") },
+        { tenantId: fx.b.id, model: "claude-haiku-5-5", inputTokens: 1000, outputTokens: 200, costMicroUsd: 200, createdAt: new Date("2026-11-01T00:30:00-03:00") },
+      ],
+    });
+    try {
+      const { body } = await api("get", "ai-usage?month=2026-10", superToken).expect(200);
+      const ours = body.tenants.filter((t: { tenantId: string }) => [fx.b.id, fx.c.id].includes(t.tenantId));
+      expect(ours).toEqual([
+        { tenantId: fx.c.id, tenantName: "Teste C", calls: 2, inputTokens: 6000, outputTokens: 1200, costUsd: 0.0012 },
+        { tenantId: fx.b.id, tenantName: "Teste B", calls: 1, inputTokens: 1000, outputTokens: 200, costUsd: 0.0002 },
+      ]);
+      expect(body.month).toBe("2026-10");
+      expect(body.costUsd).toBeGreaterThanOrEqual(0.0014);
+      const { body: empty } = await api("get", "ai-usage?month=1999-01", superToken).expect(200);
+      expect(empty).toEqual({ month: "1999-01", costUsd: 0, calls: 0, tenants: [] });
+    } finally {
+      await admin.aiUsage.deleteMany({ where: { tenantId: { in: [fx.b.id, fx.c.id] } } });
+    }
+  });
 });

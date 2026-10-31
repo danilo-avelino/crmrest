@@ -5,6 +5,7 @@ import type { PlatformAiStatusDto } from "@dishdesk/shared";
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import { z } from "zod";
 import { ENV, type Env } from "../config/env.js";
+import { DatabaseService } from "../core/database.service.js";
 
 export type LlmMessage = { role: "system" | "user"; content: string };
 
@@ -12,6 +13,16 @@ export type LlmMessage = { role: "system" | "user"; content: string };
 const PARSE_ATTEMPTS = 2;
 /** Quanto o painel da plataforma espera cada LLM responder ao conferir se está no ar. */
 const PING_TIMEOUT_MS = 15_000;
+/**
+ * Preço do Claude em dólares por milhão de tokens (entrada, saída), que é o mesmo que milionésimos de dólar por token.
+ * O Haiku 5.5 cobra mais acima de 100 mil tokens de entrada, o que os prompts daqui não chegam perto.
+ */
+const CLAUDE_PRICES: Record<string, { input: number; output: number }> = {
+  "claude-haiku-5-5": { input: 0.1, output: 0.5 },
+  "claude-haiku-4-5": { input: 1, output: 5 },
+  "claude-sonnet-5-5": { input: 2, output: 10 },
+  "claude-opus-5-5": { input: 4, output: 20 },
+};
 
 type Endpoint =
   | { provider: "openai"; base: string; apiKey?: string; model: string; timeoutMs: number }
@@ -27,7 +38,10 @@ export class LlmClient {
   private readonly logger = new Logger(LlmClient.name);
   private readonly fallback: Endpoint | null;
 
-  constructor(@Inject(ENV) private readonly env: Env) {
+  constructor(
+    @Inject(ENV) private readonly env: Env,
+    private readonly db: DatabaseService,
+  ) {
     const model = env.AI_FALLBACK_MODEL ?? env.AI_MODEL;
     if (env.AI_FALLBACK_PROVIDER === "anthropic") {
       this.fallback = env.AI_FALLBACK_API_KEY
@@ -84,12 +98,19 @@ export class LlmClient {
     }
   }
 
-  async json<T>(name: string, schema: z.ZodType<T>, messages: LlmMessage[], temperature = 0.3): Promise<T> {
-    return (await this.answer(name, schema, messages, temperature)).result;
+  /** `tenantId`: o restaurante a quem a chamada serve, para os gastos com o Claude no painel da plataforma. */
+  async json<T>(tenantId: string, name: string, schema: z.ZodType<T>, messages: LlmMessage[], temperature = 0.3): Promise<T> {
+    return (await this.answer(tenantId, name, schema, messages, temperature)).result;
   }
 
   /** Como json, dizendo também qual modelo respondeu (o da principal ou o da reserva). */
-  async answer<T>(name: string, schema: z.ZodType<T>, messages: LlmMessage[], temperature = 0.3): Promise<{ result: T; model: string }> {
+  async answer<T>(
+    tenantId: string,
+    name: string,
+    schema: z.ZodType<T>,
+    messages: LlmMessage[],
+    temperature = 0.3,
+  ): Promise<{ result: T; model: string }> {
     const main = this.env.AI_BASE_URL;
     if (!main) throw new Error("IA desligada: falta AI_BASE_URL.");
     const endpoints: Endpoint[] = [
@@ -98,7 +119,7 @@ export class LlmClient {
     ];
     // O modelo local às vezes devolve um JSON quebrado (vírgula sobrando, texto cortado): pede de novo antes de desistir.
     for (let attempt = 1; ; attempt++) {
-      const { content, model } = await this.completeAny(endpoints, name, schema, messages, temperature);
+      const { content, model } = await this.completeAny(tenantId, endpoints, name, schema, messages, temperature);
       try {
         return { result: schema.parse(JSON.parse(content)), model };
       } catch (error) {
@@ -109,6 +130,7 @@ export class LlmClient {
 
   /** A principal; se ela não responder (rede, prazo ou erro HTTP), a reserva. */
   private async completeAny<T>(
+    tenantId: string,
     endpoints: Endpoint[],
     name: string,
     schema: z.ZodType<T>,
@@ -118,7 +140,7 @@ export class LlmClient {
     for (const [index, endpoint] of endpoints.entries()) {
       try {
         const content =
-          endpoint.provider === "anthropic" ? await this.completeClaude(endpoint, schema, messages) : await this.complete(endpoint, name, schema, messages, temperature);
+          endpoint.provider === "anthropic" ? await this.completeClaude(tenantId, endpoint, schema, messages) : await this.complete(endpoint, name, schema, messages, temperature);
         return { content, model: endpoint.model };
       } catch (error) {
         if (index === endpoints.length - 1) throw error;
@@ -133,7 +155,12 @@ export class LlmClient {
    * tamanho mínimo, e as confere aqui). Sem temperatura: os modelos atuais recusam outro valor que não o padrão.
    * Esforço baixo: as tarefas são respostas curtas, e o esforço é o que mais pesa no tempo e no custo.
    */
-  private async completeClaude<T>(endpoint: Extract<Endpoint, { provider: "anthropic" }>, schema: z.ZodType<T>, messages: LlmMessage[]): Promise<string> {
+  private async completeClaude<T>(
+    tenantId: string,
+    endpoint: Extract<Endpoint, { provider: "anthropic" }>,
+    schema: z.ZodType<T>,
+    messages: LlmMessage[],
+  ): Promise<string> {
     const response = await endpoint.client.messages.parse({
       model: endpoint.model,
       max_tokens: 16000,
@@ -141,9 +168,27 @@ export class LlmClient {
       messages: messages.filter((message) => message.role === "user").map((message) => ({ role: "user", content: message.content })),
       output_config: { effort: "low", format: zodOutputFormat(schema) },
     });
+    await this.recordUsage(tenantId, endpoint.model, response.usage); // a recusa também é cobrada
     if (response.stop_reason === "refusal") throw new Error(`O Claude recusou (${response.stop_details?.category ?? "sem categoria"}).`);
     if (response.parsed_output == null) throw new Error("A LLM não respondeu.");
     return JSON.stringify(response.parsed_output);
+  }
+
+  /** Grava o gasto da chamada; uma falha aqui não derruba a resposta, que já foi paga. */
+  private async recordUsage(tenantId: string, model: string, usage: { input_tokens: number; output_tokens: number }): Promise<void> {
+    const price = CLAUDE_PRICES[model];
+    if (!price) this.logger.warn(`Sem preço para o modelo ${model}: o gasto fica registrado só em tokens.`);
+    const costMicroUsd = price ? Math.round(usage.input_tokens * price.input + usage.output_tokens * price.output) : 0;
+    try {
+      await this.db.withTenants({ tenantIds: [tenantId] }, (tx) =>
+        tx.aiUsage.create({
+          data: { tenantId, model, inputTokens: usage.input_tokens, outputTokens: usage.output_tokens, costMicroUsd },
+          select: { id: true },
+        }),
+      );
+    } catch (error) {
+      this.logger.warn(`Gasto com o Claude não registrado: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   private async complete<T>(

@@ -76,7 +76,14 @@ const SELECTION_TTL_MS = 10 * 60_000;
 
 /** O que o `state` do login do Instagram carrega: quem pediu, para qual restaurante e até quando vale. */
 /** `from`: o login foi aberto pelo assistente de configuração, e a volta é para ele. */
-const LoginState = z.object({ tenantId: z.uuid(), userId: z.uuid(), from: z.literal("assistente").optional(), exp: z.number() });
+/** `nonce`: o mesmo valor vai num cookie do navegador que abriu o login; a volta sem ele não conecta a conta. */
+const LoginState = z.object({
+  tenantId: z.uuid(),
+  userId: z.uuid(),
+  from: z.literal("assistente").optional(),
+  nonce: z.string(),
+  exp: z.number(),
+});
 const LOGIN_STATE_TTL_MS = 10 * 60_000;
 
 /** Volta do login do Instagram: os parâmetros que o Instagram põe no endereço de retorno. */
@@ -232,33 +239,43 @@ export class IntegrationsService {
     }
   }
 
-  /** Endereço da tela de login do Instagram; o `state` assinado diz, na volta, para qual restaurante é a conta. */
-  instagramLoginUrl(auth: RequestAuth, tenantId: string, from?: "assistente"): { url: string } {
+  /**
+   * Endereço da tela de login do Instagram; o `state` assinado diz, na volta, para qual restaurante é a conta.
+   * `nonce`: o controller o guarda num cookie, para a volta só valer no navegador que pediu o login.
+   */
+  instagramLoginUrl(auth: RequestAuth, tenantId: string, from?: "assistente"): { url: string; nonce: string } {
     requireTenantAdmin(auth, tenantId);
     if (!this.env.INSTAGRAM_APP_ID || !this.env.INSTAGRAM_APP_SECRET) {
       throw new UnprocessableEntityException("O login do Instagram não está configurado neste servidor.");
     }
+    const nonce = randomBytes(16).toString("base64url");
     const url = new URL("https://www.instagram.com/oauth/authorize");
     url.search = new URLSearchParams({
       client_id: this.env.INSTAGRAM_APP_ID,
       redirect_uri: this.instagramRedirectUri(),
       response_type: "code",
       scope: "instagram_business_basic,instagram_business_manage_messages",
-      state: this.signLoginState({ tenantId, userId: auth.userId, ...(from && { from }) }),
+      state: this.signLoginState({ tenantId, userId: auth.userId, nonce, ...(from && { from }) }),
       // Sempre a tela de usuário e senha, mesmo com outra conta já aberta no navegador.
       force_authentication: "1",
     }).toString();
-    return { url: url.toString() };
+    return { url: url.toString(), nonce };
   }
 
-  /** Volta do login do Instagram: conecta a conta e devolve para onde mandar o navegador (a aba Integrações ou o assistente). */
-  async finishInstagramLogin(query: InstagramCallback): Promise<string> {
+  /**
+   * Volta do login do Instagram: conecta a conta e devolve para onde mandar o navegador (a aba Integrações ou o assistente).
+   * `nonce`: o do cookie do navegador; sem ele, ou diferente do `state`, o login não foi aberto aqui e nada é conectado.
+   */
+  async finishInstagramLogin(query: InstagramCallback, nonce: string | undefined): Promise<string> {
     const state = query.state ? this.readLoginState(query.state) : null;
     const back = (params: Record<string, string>) =>
       state?.from === "assistente"
         ? `${this.env.WEB_ORIGIN}/assistente?${new URLSearchParams({ restaurante: state.tenantId, instagram: "erro", ...params }).toString()}`
         : `${this.env.WEB_ORIGIN}/configuracoes/integracoes?${new URLSearchParams({ instagram: "erro", ...params }).toString()}`;
     if (!state) return back({ motivo: "O login expirou. Tente conectar de novo." });
+    if (!nonce || !safeEqual(nonce, state.nonce)) {
+      return back({ motivo: "O login do Instagram foi aberto em outro navegador. Conecte de novo por aqui." });
+    }
     if (query.error || !query.code) return back({ motivo: "O login no Instagram foi cancelado." });
     try {
       const accessToken = await this.connectors.instagram.exchangeLoginCode(query.code, this.instagramRedirectUri());
@@ -607,16 +624,15 @@ export class IntegrationsService {
     return this.env.INSTAGRAM_REDIRECT_URI ?? `${this.env.WEB_ORIGIN}/api/integrations/instagram/callback`;
   }
 
-  private signLoginState(data: { tenantId: string; userId: string; from?: "assistente" }): string {
+  private signLoginState(data: { tenantId: string; userId: string; nonce: string; from?: "assistente" }): string {
     const payload = Buffer.from(JSON.stringify({ ...data, exp: Date.now() + LOGIN_STATE_TTL_MS })).toString("base64url");
     return `${payload}.${this.loginStateMac(payload)}`;
   }
 
   /** Confere a assinatura e a validade do `state`; inválido ou vencido devolve null. */
-  private readLoginState(state: string): { tenantId: string; userId: string; from?: "assistente" } | null {
+  private readLoginState(state: string): { tenantId: string; userId: string; nonce: string; from?: "assistente" } | null {
     const [payload = "", mac = ""] = state.split(".");
-    const expected = this.loginStateMac(payload);
-    if (mac.length !== expected.length || !timingSafeEqual(Buffer.from(mac), Buffer.from(expected))) return null;
+    if (!safeEqual(mac, this.loginStateMac(payload))) return null;
     try {
       const data = LoginState.parse(JSON.parse(Buffer.from(payload, "base64url").toString()));
       return data.exp > Date.now() ? data : null;
@@ -628,6 +644,11 @@ export class IntegrationsService {
   private loginStateMac(payload: string): string {
     return createHmac("sha256", this.env.JWT_SECRET).update(`instagram-login:${payload}`).digest("base64url");
   }
+}
+
+function safeEqual(a: string, b: string): boolean {
+  const [x, y] = [Buffer.from(a), Buffer.from(b)];
+  return x.length === y.length && timingSafeEqual(x, y);
 }
 
 /** A instância da Evolution guardada nas credenciais (WhatsApp por QR Code); credenciais vazias ou da Meta: null. */

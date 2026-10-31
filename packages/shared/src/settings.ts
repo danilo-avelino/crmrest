@@ -268,6 +268,8 @@ export type TeamMemberDto = {
   email: string;
   role: "ADMIN" | "AGENT";
   isActive: boolean;
+  /** Já tinha conta no Dish Desk: o acesso só vale depois que a pessoa abrir o link do convite no e-mail. */
+  invitePending: boolean;
   /** O próprio usuário: não altera o próprio acesso (outro administrador altera). */
   isYou: boolean;
 };

@@ -128,6 +128,14 @@ export type PlatformAiStatusDto = {
   checkedAt: string;
 };
 
+/** Gastos com a IA paga (o Claude) num mês (AAAA-MM, horário de Brasília): o total e os restaurantes, de quem gastou mais. */
+export type PlatformAiUsageDto = {
+  month: string;
+  costUsd: number;
+  calls: number;
+  tenants: { tenantId: string; tenantName: string; calls: number; inputTokens: number; outputTokens: number; costUsd: number }[];
+};
+
 /** "Grupo Moby Dick" → "grupo-moby-dick". */
 export function slugify(name: string): string {
   return name

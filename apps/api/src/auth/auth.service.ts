@@ -26,6 +26,7 @@ import {
 } from "@nestjs/common";
 import { ENV, type Env } from "../config/env.js";
 import { DatabaseService } from "../core/database.service.js";
+import { LoginLimitsService } from "./login-limits.service.js";
 import { consumeRecoveryToken, hasSupabaseAuth, sendRecoveryEmail, type SupabaseEnv } from "./supabase-auth.js";
 import {
   formatRefreshToken,
@@ -48,6 +49,7 @@ export class AuthService implements OnModuleInit {
   constructor(
     private readonly db: DatabaseService,
     private readonly tokens: TokensService,
+    private readonly limits: LoginLimitsService,
     @Inject(ENV) private readonly env: Env,
   ) {}
 
@@ -55,12 +57,17 @@ export class AuthService implements OnModuleInit {
     this.dummyHash = await hash("senha-de-um-usuario-que-nao-existe");
   }
 
-  async login(email: string, password: string, userAgent?: string) {
+  async login(email: string, password: string, userAgent?: string, ip?: string) {
+    await this.limits.assertUnlocked(email);
     const [found] = await this.db.client.$queryRaw<{ id: string; password_hash: string; is_active: boolean }[]>`
       SELECT id, password_hash, is_active FROM app.find_login_user(${email})`;
     // Sem usuário, verifica um hash fictício: o tempo de resposta não revela quais e-mails existem.
     const valid = await verify(found?.password_hash ?? this.dummyHash, password);
-    if (!found || !valid || !found.is_active) throw new UnauthorizedException("E-mail ou senha inválidos.");
+    if (!found || !valid || !found.is_active) {
+      if (await this.limits.recordFailure(email)) this.logger.warn({ ip }, "Login travado por senhas erradas seguidas");
+      throw new UnauthorizedException("E-mail ou senha inválidos.");
+    }
+    await this.limits.clear(email);
 
     const refreshToken = await this.openSession(found.id, userAgent);
     const profile = await this.loadProfile(found.id);
@@ -123,7 +130,8 @@ export class AuthService implements OnModuleInit {
           SELECT app.reset_password(${email}, ${await hash(password)}) AS id`)[0]?.id
       : null;
     if (email && !userId) this.logger.warn("Redefinição de senha: o e-mail do token não é de um usuário ativo");
-    if (!userId) throw new BadRequestException("Este link expirou ou já foi usado. Peça um novo na tela de login.");
+    if (!email || !userId) throw new BadRequestException("Este link expirou ou já foi usado. Peça um novo na tela de login.");
+    await this.limits.clear(email);
   }
 
   private supabaseEnv(): SupabaseEnv {

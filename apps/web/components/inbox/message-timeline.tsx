@@ -48,7 +48,7 @@ const AUTOMATION_LABEL: Record<NonNullable<MessageContent["automation"]>, string
 };
 
 const SUCCESS_EVENTS = new Set<MessageContent["event"]>(["phone_collected", "contacts_merged", "rating"]);
-const WARNING_EVENTS = new Set<MessageContent["event"]>(["phone_pending", "opt_out", "merge_conflict", "order_ambiguous", "awaiting_agent"]);
+const WARNING_EVENTS = new Set<MessageContent["event"]>(["phone_pending", "opt_out", "merge_conflict", "possible_duplicate", "order_ambiguous", "awaiting_agent"]);
 
 /** Linha do tempo da conversa: mensagens, eventos, notas e pedidos (board Inbox → "Mensagens"). */
 export function MessageTimeline({

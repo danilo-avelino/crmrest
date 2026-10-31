@@ -11,20 +11,28 @@ import {
   type WhatsAppQrDto,
   WhatsAppSignupRequest,
 } from "@dishdesk/shared";
-import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Query, Redirect } from "@nestjs/common";
+import { Body, Controller, Delete, Get, HttpCode, Inject, Param, ParseUUIDPipe, Patch, Post, Query, Redirect, Req, Res } from "@nestjs/common";
+import type { Request, Response } from "express";
 import { z } from "zod";
 import { CurrentAuth, Public, type RequestAuth } from "../auth/auth.decorators.js";
 import { ZodPipe } from "../common/zod.pipe.js";
+import { ENV, type Env } from "../config/env.js";
 import { type InstagramCallback, IntegrationsService } from "./integrations.service.js";
 
 const IntegrationsQuery = z.object({ tenantId: z.uuid() });
 // Tentativa de conexão do WhatsApp por QR Code: o id do restaurante e um sufixo aleatório (IntegrationsService.whatsappQrStart).
 const QrSession = z.string().regex(/^[0-9a-f-]{36}-[0-9a-f]{12}$/, "Tentativa de conexão inválida.");
 const InstagramCallbackQuery = z.looseObject({ code: z.string().optional(), state: z.string().optional(), error: z.string().optional() });
+// Prende o login do Instagram ao navegador que o abriu: a volta só conecta a conta se trouxer este cookie.
+const INSTAGRAM_LOGIN_COOKIE = "dd_instagram_login";
+const INSTAGRAM_LOGIN_COOKIE_PATH = "/api/integrations/instagram/callback";
 
 @Controller("integrations")
 export class IntegrationsController {
-  constructor(private readonly integrations: IntegrationsService) {}
+  constructor(
+    private readonly integrations: IntegrationsService,
+    @Inject(ENV) private readonly env: Env,
+  ) {}
 
   @Get()
   list(@Query(new ZodPipe(IntegrationsQuery)) query: { tenantId: string }, @CurrentAuth() auth: RequestAuth): Promise<IntegrationsDto> {
@@ -62,16 +70,34 @@ export class IntegrationsController {
     @Param("tenantId", ParseUUIDPipe) tenantId: string,
     @Query("origem") origin: string | undefined,
     @CurrentAuth() auth: RequestAuth,
+    @Res({ passthrough: true }) response: Response,
   ): { url: string } {
-    return this.integrations.instagramLoginUrl(auth, tenantId, origin === "assistente" ? "assistente" : undefined);
+    const { url, nonce } = this.integrations.instagramLoginUrl(auth, tenantId, origin === "assistente" ? "assistente" : undefined);
+    response.cookie(INSTAGRAM_LOGIN_COOKIE, nonce, {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: this.env.NODE_ENV === "production",
+      path: INSTAGRAM_LOGIN_COOKIE_PATH,
+      maxAge: 10 * 60_000,
+    });
+    return { url };
   }
 
-  /** Volta do login do Instagram (sem sessão: quem pediu vem no `state` assinado); devolve o navegador ao painel. */
+  /**
+   * Volta do login do Instagram (sem sessão: quem pediu vem no `state` assinado, e o cookie prova que é o mesmo
+   * navegador); devolve o navegador ao painel. O cookie vale uma volta só.
+   */
   @Public()
   @Get("instagram/callback")
   @Redirect()
-  async instagramCallback(@Query(new ZodPipe(InstagramCallbackQuery)) query: InstagramCallback): Promise<{ url: string }> {
-    return { url: await this.integrations.finishInstagramLogin(query) };
+  async instagramCallback(
+    @Query(new ZodPipe(InstagramCallbackQuery)) query: InstagramCallback,
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<{ url: string }> {
+    const nonce = (request.cookies as Record<string, string> | undefined)?.[INSTAGRAM_LOGIN_COOKIE];
+    response.clearCookie(INSTAGRAM_LOGIN_COOKIE, { path: INSTAGRAM_LOGIN_COOKIE_PATH });
+    return { url: await this.integrations.finishInstagramLogin(query, nonce) };
   }
 
   @Post(":tenantId/:channelId/disconnect")

@@ -72,10 +72,13 @@ function CreateMemberForm({ tenantId }: { tenantId: string }) {
       const updated = await request<TeamMemberDto[]>(`/settings/${tenantId}/members`, { method: "POST", body: parsed.data });
       queryClient.setQueryData(["members-settings", tenantId], updated);
       void queryClient.invalidateQueries({ queryKey: ["members"] });
+      const pending = updated.some((member) => member.email === parsed.data.email && member.invitePending);
       toast(
-        parsed.data.password
-          ? `${parsed.data.name} foi adicionado`
-          : `${parsed.data.name} foi adicionado. Quem ainda não tem conta recebe o convite por e-mail`,
+        pending
+          ? `${parsed.data.name} já tem conta no Dish Desk: o acesso libera quando a pessoa abrir o convite no e-mail`
+          : parsed.data.password
+            ? `${parsed.data.name} foi adicionado`
+            : `${parsed.data.name} foi adicionado. Quem ainda não tem conta recebe o convite por e-mail`,
       );
       setName("");
       setEmail("");
@@ -217,11 +220,15 @@ function MemberRow({ tenantId, member, canEdit }: { tenantId: string; member: Te
       </div>
       <span className="w-24 text-[12px] text-ink-2">
         {member.role === "ADMIN" ? "Administrador" : "Atendente"}
-        {!member.isActive && <span className="block text-[11px] text-ink-3">desativado</span>}
+        {member.invitePending ? (
+          <span className="block text-[11px] text-warning">convite pendente</span>
+        ) : (
+          !member.isActive && <span className="block text-[11px] text-ink-3">desativado</span>
+        )}
       </span>
       {canEdit && (
         <div className="flex shrink-0 gap-1.5">
-          {member.isActive && (
+          {(member.isActive || member.invitePending) && (
             <Button variant="outline" size="sm" title="Manda o link para a pessoa criar ou trocar a senha" onClick={sendInvite}>
               Enviar convite
             </Button>
@@ -239,15 +246,21 @@ function MemberRow({ tenantId, member, canEdit }: { tenantId: string; member: Te
               {member.role === "ADMIN" ? "Tornar atendente" : "Tornar administrador"}
             </Button>
           )}
-          <Button
-            variant={member.isActive ? "destructive" : "outline"}
-            size="sm"
-            onClick={() =>
-              change({ isActive: !member.isActive }, member.isActive ? `${member.name} foi desativado` : `${member.name} foi reativado`)
-            }
-          >
-            {member.isActive ? "Desativar" : "Reativar"}
-          </Button>
+          {member.invitePending ? (
+            <Button variant="destructive" size="sm" onClick={() => change({ isActive: false }, `Convite de ${member.name} cancelado`)}>
+              Cancelar convite
+            </Button>
+          ) : (
+            <Button
+              variant={member.isActive ? "destructive" : "outline"}
+              size="sm"
+              onClick={() =>
+                change({ isActive: !member.isActive }, member.isActive ? `${member.name} foi desativado` : `${member.name} foi reativado`)
+              }
+            >
+              {member.isActive ? "Desativar" : "Reativar"}
+            </Button>
+          )}
         </div>
       )}
     </li>

@@ -8,6 +8,7 @@ import { ENV, type Env } from "../config/env.js";
 import { DatabaseService } from "../core/database.service.js";
 import { type OutboundJob, QUEUES } from "../queues/queues.module.js";
 import { RealtimeEmitter } from "../realtime/realtime.emitter.js";
+import { provenPhone, provenPhoneWhere } from "./customer-history.js";
 import { deliveredNoticeMessage, dispatchNoticeMessage, readyNoticeMessage } from "./forecast.js";
 
 /** Status que geram aviso ao cliente. */
@@ -53,7 +54,9 @@ export class OrderNoticeService {
       });
       // Pedido feito antes de a loja ser conectada (o iFood ainda entrega as últimas horas ao conectar): sem aviso.
       if (order.channel.connectedAt && order.placedAt < order.channel.connectedAt) return [];
-      const { id, phone, cpfHash, email } = order.contact;
+      const { id, cpfHash, email } = order.contact;
+      // O telefone digitado pelo cliente numa conversa não identifica: os avisos não vão para quem só digitou o número.
+      const phone = provenPhone(order.contact);
       const conversations = await tx.conversation.findMany({
         where: {
           OR: [
@@ -63,7 +66,7 @@ export class OrderNoticeService {
           contact: {
             OR: [
               { id },
-              ...(phone ? [{ phone }] : []),
+              ...(phone ? [provenPhoneWhere(phone)] : []),
               ...(cpfHash ? [{ cpfHash }] : []),
               ...(email ? [{ email: { equals: email, mode: "insensitive" as const } }] : []),
             ],

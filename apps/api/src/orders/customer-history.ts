@@ -1,18 +1,33 @@
 import type { Prisma, TenantTx } from "@dishdesk/database";
 import type { CustomerHistory } from "@dishdesk/shared";
 
-type ContactKeys = { id: string; phone: string | null; cpfHash: string | null; email: string | null };
+type ContactKeys = { id: string; phone: string | null; phoneSource: string | null; cpfHash: string | null; email: string | null };
+
+/**
+ * Telefone que identifica o cliente: o que o canal informa (WhatsApp) ou a equipe cadastrou. O que o cliente digitou
+ * na conversa (Instagram, chat do iFood) não identifica: qualquer um digita o telefone de outra pessoa.
+ */
+export function provenPhone(contact: { phone: string | null; phoneSource: string | null }): string | null {
+  return contact.phone && contact.phoneSource !== "informed_by_customer" ? contact.phone : null;
+}
+
+/** Outros cadastros cujo telefone identifica o cliente (o par de `provenPhone` numa consulta). */
+export function provenPhoneWhere(phone: string): Prisma.ContactWhereInput {
+  return { phone, OR: [{ phoneSource: null }, { phoneSource: { not: "informed_by_customer" } }] };
+}
 
 /**
  * Pedidos do cliente em todas as fontes: os do próprio cadastro (qualquer canal vinculado a ele) e os de outros
  * cadastros com o mesmo telefone, CPF ou e-mail (ex.: o cadastro do iFood, sem telefone, e o do Cardápio Web).
+ * O telefone digitado pelo cliente na conversa não liga pedidos de outros cadastros.
  */
 export function linkedOrdersWhere(contact: ContactKeys): Prisma.OrderWhereInput {
-  const { id, phone, cpfHash, email } = contact;
+  const { id, cpfHash, email } = contact;
+  const phone = provenPhone(contact);
   return {
     OR: [
       { contactId: id },
-      ...(phone ? [{ contact: { phone } }] : []),
+      ...(phone ? [{ contact: provenPhoneWhere(phone) }] : []),
       ...(cpfHash ? [{ contact: { cpfHash } }] : []),
       ...(email ? [{ contact: { email: { equals: email, mode: "insensitive" as const } } }] : []),
     ],

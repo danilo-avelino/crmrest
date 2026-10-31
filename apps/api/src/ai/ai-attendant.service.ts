@@ -13,7 +13,7 @@ import { InjectQueue } from "@nestjs/bullmq";
 import { Injectable, Logger } from "@nestjs/common";
 import type { Queue } from "bullmq";
 import { z } from "zod";
-import { type AutomationState, automationMessage, dispatch, setAutomationState, startOfYesterday, systemEvent } from "../automations/automation.js";
+import { type AutomationState, automationMessage, dispatch, setAutomationState, systemEvent } from "../automations/automation.js";
 import { linkOrderContact, ORDER_STATUS_TEXT } from "../automations/triage.service.js";
 import { DatabaseService } from "../core/database.service.js";
 import { orderUpdateMessage } from "../orders/forecast.js";
@@ -24,7 +24,7 @@ import { RealtimeEmitter } from "../realtime/realtime.emitter.js";
 import { PresenceService } from "../realtime/presence.service.js";
 import { type Attendance, attendanceOf } from "./ai-forward.service.js";
 import { LlmClient, type LlmMessage } from "./llm.client.js";
-import { restaurantFacts, toneOf, transcript, WRITING_RULES } from "./prompts.js";
+import { REPLY_STYLE, restaurantFacts, toneOf, transcript, WRITING_RULES } from "./prompts.js";
 
 /** Respostas da IA num atendimento; na seguinte, ela passa para a equipe sem perguntar à LLM. */
 export const MAX_AI_REPLIES = 8;
@@ -51,6 +51,7 @@ export function systemPrompt(restaurant: string, channel: string, settings: unkn
   return `Você é o atendente virtual do restaurante ${restaurant} e responde clientes pelo ${channel}.
 ${toneOf(settings)}
 ${WRITING_RULES}
+${REPLY_STYLE}
 
 Você tira dúvidas sobre o horário de funcionamento, os links para fazer pedido e o andamento do pedido do cliente, usando só os DADOS.
 
@@ -61,7 +62,7 @@ Regras obrigatórias:
 
 Quando o cliente falar de um pedido, siga estes passos:
 1. Há nos DADOS um pedido ainda não confirmado: mostre o número, os itens e o total e pergunte se é esse o pedido dele. Não diga o andamento antes de ele confirmar.
-2. Ele confirmou (order = "confirmed"): diga o andamento que está nos DADOS e pergunte se pode ajudar em algo mais.
+2. Ele confirmou (order = "confirmed"): diga o andamento que está nos DADOS.
 3. Ele disse que não é (order = "denied") ou não há pedido nos DADOS: peça o número do pedido (e o telefone usado no pedido, se os DADOS disserem que o telefone não está no cadastro), sem passar para a equipe.
 4. Ele informou o número (e o telefone, se você pediu) e o pedido continua fora dos DADOS: passe para a equipe.
 
@@ -75,47 +76,15 @@ Passe para a equipe (handoff = true) só quando o cliente:
 Não passe para a equipe (handoff = false):
 - Cardápio, sabores, opções (vegana, sem glúten...) ou preço: mande os links para fazer pedido, onde estão o cardápio e os preços, e continue com handoff = false (sem links, passe para a equipe).
 - Áudio: diga que não consegue ouvir áudios e peça para ele escrever. Se ele mandar outro áudio, passe para a equipe.
-- Mensagem sem relação com pedido ou com o restaurante (conversa solta, brincadeira, frase sem sentido): responda com educação, em poucas palavras, diga em que você pode ajudar e espere o cliente.
+- Mensagem sem relação com pedido ou com o restaurante (conversa solta, brincadeira, frase sem sentido): responda em poucas palavras, como uma pessoa responderia, e puxe o assunto do restaurante numa frase, sem listar tudo o que você sabe fazer. Depois, espere o cliente.
 - O cliente agradeceu ou se despediu: despeça-se em poucas palavras, sem fazer nova pergunta.
-- Você não entendeu o que o cliente quer: pergunte o que ele precisa e espere a resposta.
+- Você não entendeu o que o cliente quer: pergunte o que ele precisa, numa frase curta, e espere a resposta.
 - Na CONVERSA, a sua última mensagem já perguntou como ajudar e o cliente respondeu sem dizer o que quer: não repita a pergunta; pergunte se ele quer falar com um atendente, com handoff = false, e espere ele responder que sim.
 
 Mensagem de quando você passa para a equipe (handoff = true):
-- Reclamação ou problema (não uma simples pergunta): comece reconhecendo o problema com empatia (ex.: lamentar o atraso), sem prometer solução, reembolso ou desconto.
+- Reclamação ou problema (não uma simples pergunta): comece reconhecendo o problema que o cliente contou, com as palavras do caso (ex.: "Sinto muito pela demora do seu pedido"), e não com uma frase genérica ("Lamentamos o transtorno"). Não prometa solução, reembolso nem desconto.
 - Há atendente online (veja "Atendentes" nos DADOS): diga que alguém da equipe vai continuar o atendimento, sem fazer nenhuma pergunta (quem continua é a equipe). Não diga "um momento" nem que você vai verificar: quem verifica é a equipe.
 - Não há atendente: siga o que "Atendentes" diz nos DADOS e continue respondendo as outras dúvidas do cliente.`;
-}
-
-// "1234", "#1234", "é o 1234", "pedido 1234", "Pedido Nº 1234", "pedido: 1234", "número do pedido é 1234". Números
-// soltos no meio do texto ("2 pizzas", "há 30 minutos") não contam: achariam o pedido de outro cliente.
-const ORDER_NUMBER = [
-  /^\s*(?:[ée]\s+(?:o\s+)?|o\s+)?(?:pedido\s*)?(?:n[º°]\.?\s*|n[uú]mero\s*)?#?\s*(\d{1,6})\s*[.!]?\s*$/gi,
-  /pedido\s*(?:n[º°]\.?|n\.|n[uú]mero|#|:)\s*#?\s*(\d{1,6})(?!\d)/gi,
-  /n[uú]mero\s+do\s+pedido\s*(?:é|e|:)?\s*#?\s*(\d{1,6})(?!\d)/gi,
-  // "pedido 1234 já saiu?": o número seguido do fim da frase ou de um verbo, não de uma medida ("pedido 30 minutos atrás").
-  /pedido\s+#?\s*(\d{1,6})(?=\s*$|\s*[?!.,;]|\s+(?:j[áa]|que|foi|est[áa]|t[áa]|ainda|n[ãa]o|saiu|chegou|vai|vem|e)(?![a-zà-ú]))/gi,
-];
-
-/** Números de pedido que o cliente informou nas mensagens (com e sem os zeros à esquerda). */
-export function orderNumbersIn(texts: string[]): string[] {
-  const numbers = texts.flatMap((text) => ORDER_NUMBER.flatMap((pattern) => [...text.matchAll(pattern)].map((match) => match[1]!)));
-  return [...new Set(numbers.flatMap((number) => [number, number.replace(/^0+(?=\d)/, "")]))];
-}
-
-/**
- * Pedido de hoje ou de ontem com o número que o cliente informou na conversa; com dois pedidos possíveis, nenhum.
- * `exclude`: pedidos que o cliente já disse não serem dele.
- */
-async function orderByNumber(orders: TenantTx, history: { direction: string; content: unknown }[], now: Date, exclude: string[]) {
-  const codes = orderNumbersIn(history.filter((m) => m.direction === "INBOUND").map((m) => (m.content as MessageContent).text ?? ""));
-  if (!codes.length) return null;
-  const found = await orders.order.findMany({
-    where: { displayCode: { in: codes }, placedAt: { gte: startOfYesterday(now) }, id: { notIn: exclude } },
-    include: { items: true },
-    orderBy: { placedAt: "desc" },
-    take: 2,
-  });
-  return found.length === 1 ? found[0]! : null;
 }
 
 export type OrderFacts = {
@@ -129,8 +98,6 @@ export type OrderFacts = {
   update: { text: string } | null;
   /** O cliente confirmou neste atendimento que o pedido é dele. */
   confirmed: boolean;
-  /** Achado pelo número que o cliente informou (não pelo cadastro). */
-  byNumber: boolean;
 };
 
 /** O que a LLM recebe para responder: as regras e, na mensagem do usuário, os DADOS e a CONVERSA. */
@@ -161,17 +128,18 @@ function attendanceFacts(attendance: Attendance): string {
     attendance.reason === "closed"
       ? `nenhum agora, porque o restaurante está fechado. Quando o cliente precisar da equipe (handoff = true), diga que no momento estamos sem atendentes, que o restaurante volta a atender ${attendance.reopening} e que a conversa será encaminhada para a equipe assim que abrir.`
       : "nenhum online agora. Quando o cliente precisar da equipe (handoff = true), diga que no momento estamos sem atendentes online e que, assim que um chegar, a conversa será encaminhada para ele.";
-  return `Atendentes: ${when} Você continua atendendo sozinho: responda tudo o que puder e não diga que alguém vai falar com ele agora.`;
+  // Sem atendente, a regra de passar toda reclamação para a equipe faria a IA avisar logo de cara que não há ninguém.
+  return `Atendentes: ${when} Você continua atendendo sozinho: tente resolver com os DADOS antes de falar da equipe. Só fale que não há atendentes (handoff = true) quando o cliente pedir para falar com uma pessoa ou quando você não conseguir resolver (ex.: item errado, pagamento, cancelamento, reembolso, algo fora dos DADOS). Num atraso, diga o andamento do pedido e passe para a equipe só se o cliente continuar insatisfeito ou pedir cancelamento, reembolso ou troca. Não diga que alguém vai falar com ele agora.`;
 }
 
 /** O pedido do cliente nos DADOS da IA: o confirmado, o candidato a confirmar (sem o andamento liberado) ou nenhum. */
 export function orderFactsOf(order: OrderFacts | null, noPhone: boolean): string {
   if (!order) {
-    return `Pedido do cliente: nenhum pedido de hoje ou de ontem no cadastro nem com um número informado na conversa.${noPhone ? " O telefone do cliente não está no cadastro." : ""}`;
+    // Só o cadastro liga o pedido ao cliente: saber o número de um pedido não prova que ele é de quem escreve.
+    return `Pedido do cliente: nenhum pedido de hoje ou de ontem ligado ao cadastro.${noPhone ? " O telefone do cliente não está no cadastro." : ""}`;
   }
-  const source = order.byNumber ? "achado pelo número que ele informou" : "ligado ao cadastro dele";
   return [
-    order.confirmed ? "Pedido do cliente (ele confirmou que é dele):" : `Pedido que pode ser do cliente (${source}; ainda não confirmado por ele):`,
+    order.confirmed ? "Pedido do cliente (ele confirmou que é dele):" : "Pedido que pode ser do cliente (ligado ao cadastro dele; ainda não confirmado por ele):",
     `#${order.displayCode ?? order.externalOrderId} (${CHANNEL_LABEL[order.channelType]}), feito em ${BRASILIA_TIME.format(order.placedAt)}, ${ORDER_STATUS_TEXT[order.status]}.`,
     `Itens: ${order.items.map((item) => `${item.quantity}x ${item.name}`).join("; ")}. Total: ${BRL.format(Number(order.total))}.`,
     ...(order.update ? [`Andamento${order.confirmed ? "" : " (só diga depois que ele confirmar que o pedido é dele)"}: ${order.update.text}`] : []),
@@ -223,15 +191,14 @@ export class AiAttendantService {
       const settings = conversation.tenant.settings;
       const state = conversation.automationState as AutomationState;
       const denied = state.aiDeniedOrderIds ?? [];
-      // O pedido que o cliente confirmou neste atendimento; senão, o candidato a confirmar: o do cadastro ou o do número informado.
+      // O pedido que o cliente confirmou neste atendimento; senão, o candidato a confirmar: o mais recente do cadastro.
       const order = await withOrderTenants(this.db, tx, conversation.channelId, async (orders) => {
         const confirmed = state.linkedOrder ? await orders.order.findUnique({ where: { id: state.linkedOrder.id }, include: { items: true } }) : null;
-        const linked = confirmed ?? (await latestOrderOf(orders, conversation.contact, now, denied));
-        const found = linked ?? (await orderByNumber(orders, history, now, denied));
+        const found = confirmed ?? (await latestOrderOf(orders, conversation.contact, now, denied));
         if (!found) return null;
         const channel = await orders.channel.findUniqueOrThrow({ where: { id: found.channelId }, select: { type: true } });
         const update = await orderUpdateMessage(orders, found.id, now, settings);
-        return { ...found, confirmed: !!confirmed, byNumber: !linked, channelType: channel.type, update };
+        return { ...found, confirmed: !!confirmed, channelType: channel.type, update };
       });
       return { conversation, settings, history, lastId: last.id, order };
     });
@@ -247,6 +214,7 @@ export class AiAttendantService {
       const orderFacts = orderFactsOf(context.order, noPhone);
       try {
         answer = await this.llm.json(
+          tenantId,
           "atendimento",
           AttendantReply,
           attendantMessages(conversation.tenant.name, conversation.channel.type, settings, now, orderFacts, transcript(context.history), attendance),

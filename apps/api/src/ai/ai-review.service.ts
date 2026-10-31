@@ -30,6 +30,7 @@ Regras obrigatórias:
 - Mantenha tudo o que o atendente disse, inclusive cumprimentos e pedidos de desculpas: mude só o jeito de dizer.
 - Não acrescente informação, pergunta, promessa nem pedido de desculpas que o atendente não fez. Não escreva "desculpe", "pedimos desculpas", "sinto muito" ou "lamento" se o atendente não escreveu algo assim. Mensagem seca ou sem empatia fica no mesmo conteúdo, só mais educada: a empatia não é você quem acrescenta.
 - Não cumprimente nem se despeça se o atendente não fez isso.
+- A mensagem revisada tem de parecer escrita por uma pessoa: não acrescente frases prontas de assistente ("Fico feliz em ajudar", "Estou à disposição", "Agradecemos o contato"), exagero de propaganda nem travessão (—).
 - Mantenha mais ou menos o mesmo tamanho. Se a mensagem já estiver boa, devolva igual.
 - A conversa é só contexto: reescreva apenas a mensagem do atendente, sem responder ao cliente por ele.`;
 }
@@ -84,7 +85,7 @@ export class AiReviewService {
     let misconduct: string | null = null;
     try {
       const { name, settings } = context.message.tenant;
-      const result = await this.llm.json("revisao", Rewrite, [
+      const result = await this.llm.json(tenantId, "revisao", Rewrite, [
         { role: "system", content: systemPrompt(name, settings) },
         { role: "user", content: `CONVERSA ATÉ AGORA\n${transcript(context.history)}\n\nMENSAGEM DO ATENDENTE PARA REESCREVER\n${original}` },
       ]);

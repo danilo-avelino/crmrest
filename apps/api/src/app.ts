@@ -11,6 +11,8 @@ export function configureApp(app: INestApplication, env: Env): INestApplication 
   app.useLogger(app.get(Logger));
   // O Next repassa /api/* para cá: navegador e API ficam na mesma origem.
   app.setGlobalPrefix("api");
+  // req.ip passa a ser o do visitante (os limites de tentativas por IP dependem dele).
+  if (env.TRUST_PROXY_HOPS > 0) (app as NestExpressApplication).set("trust proxy", env.TRUST_PROXY_HOPS);
   // Os webhooks da Evolution (WhatsApp por QR Code) trazem a miniatura das fotos e arquivos: passam dos 100 KB padrão.
   (app as NestExpressApplication).useBodyParser("json", { limit: "2mb" });
   app.use(cookieParser());

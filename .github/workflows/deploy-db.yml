@@ -14,8 +14,18 @@ concurrency:
 
 jobs:
   migrate:
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    # Só um push na main deste repositório: um PR (de fork, inclusive) também roda o CI e não pode chegar à credencial do banco.
+    if: >-
+      github.event_name == 'workflow_dispatch' || (
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event == 'push' &&
+        github.event.workflow_run.head_repository.full_name == github.repository
+      )
     runs-on: ubuntu-latest
+    # Em Settings → Environments, o "producao" pode exigir aprovação antes de cada deploy.
+    environment: producao
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v5
         with:

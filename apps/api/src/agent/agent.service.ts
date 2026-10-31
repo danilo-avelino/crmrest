@@ -139,7 +139,7 @@ export function progressText(progress: OnboardingDto | null, partner: string[] =
 type EventRow = { kind: string; content: Prisma.JsonValue };
 
 export type DecideContext = {
-  session: { id: string; kind: AgentSessionKind };
+  session: { id: string; tenantId: string; kind: AgentSessionKind };
   restaurant: string;
   events: EventRow[];
   progress: OnboardingDto | null;
@@ -330,7 +330,7 @@ export class AgentService {
     }
     if (context.session.kind === "SETUP" && context.asking && !context.intakeDone) {
       const intake = await this.llm
-        .json("resposta_inicial", Intake, [
+        .json(context.session.tenantId, "resposta_inicial", Intake, [
           { role: "system", content: INTAKE_PROMPT },
           { role: "user", content: `Respostas do parceiro:\n${context.answers}` },
         ])
@@ -390,7 +390,7 @@ export class AgentService {
     for (let attempt = 0; attempt < 2; attempt++) {
       let decision: AgentDecision;
       try {
-        decision = await this.llm.json("agente", AgentDecision, [
+        decision = await this.llm.json(context.session.tenantId, "agente", AgentDecision, [
           { role: "system", content: systemPrompt(context.restaurant, context.session.kind, this.env.WEB_ORIGIN) },
           { role: "user", content: `${user}${note}` },
         ], AGENT_TEMPERATURE);

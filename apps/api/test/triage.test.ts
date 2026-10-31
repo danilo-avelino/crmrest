@@ -50,8 +50,11 @@ describe("menu de atendimento, busca do pedido e pesquisa de satisfação", () =
   const contents = async (waId: string) => (await conversationOf(waId)).messages.map((m) => m.content as Content);
   const automations = async (waId: string) => (await contents(waId)).flatMap((c) => (c.automation ? [c.automation] : []));
 
-  /** Pedido do iFood (o cliente só tem CPF e endereço no cadastro, como o iFood informa). */
-  const ifoodOrder = async (code: string, placedAt: Date, customer: { phone?: string } = {}) => {
+  /**
+   * Pedido do iFood (o cliente só tem CPF e endereço no cadastro, como o iFood informa). O pedido pelo número só é
+   * achado com o telefone de quem escreve no cadastro do pedido (`customer.phone`).
+   */
+  const ifoodOrder = async (code: string, placedAt: Date, customer: { phone?: string; phoneSource?: string } = {}) => {
     const contact = await admin.contact.create({
       data: {
         tenantId: fx.tenant.id,
@@ -97,7 +100,7 @@ describe("menu de atendimento, busca do pedido e pesquisa de satisfação", () =
   });
 
   it("pedido de hoje: card na conversa e confirmação com os itens; confirmado, une o cadastro ao do iFood", async () => {
-    const order = await ifoodOrder("4853", new Date());
+    const order = await ifoodOrder("4853", new Date(), { phone: "+5511970000001", phoneSource: "channel" });
     await say("5511970000001", "wamid.T3", "é o #4853");
     const found = await conversationOf("5511970000001");
     expect(found.contactId).not.toBe(order.contactId); // ainda não une: espera a confirmação
@@ -222,27 +225,28 @@ describe("menu de atendimento, busca do pedido e pesquisa de satisfação", () =
     expect((await conversationOf("5511970000002")).messages).toHaveLength(conversation.messages.length);
   });
 
-  it("pedido de outro cliente (telefone diferente): não une os cadastros e avisa a equipe", async () => {
-    const order = await ifoodOrder("5150", new Date(), { phone: "+5511999990000" });
-    await say("5511970000003", "wamid.C1", "Oi");
-    await say("5511970000003", "wamid.C2", "1");
-    await say("5511970000003", "wamid.C3", "5150");
-    await say("5511970000003", "wamid.C4", "1");
+  it("pedido de outro cliente (sem telefone ou com outro): saber o número não mostra o pedido nem une os cadastros", async () => {
+    const orders = [await ifoodOrder("5150", new Date(), { phone: "+5511999990000" }), await ifoodOrder("5151", new Date())];
+    for (const [i, order] of orders.entries()) {
+      const waId = `551197000004${i}`;
+      await say(waId, `wamid.C1-${i}`, "Oi");
+      await say(waId, `wamid.C2-${i}`, "1");
+      await say(waId, `wamid.C3-${i}`, order.displayCode!);
 
-    const conversation = await conversationOf("5511970000003");
-    expect(conversation.contactId).not.toBe(order.contactId);
-    const content = conversation.messages.map((m) => m.content as Content);
-    expect(content).toContainEqual({ event: "order", orderId: order.id });
-    expect(content).toContainEqual({
-      event: "merge_conflict",
-      text: "O pedido #5150 (iFood) está no cadastro de Carlos Mendes, com telefone diferente",
-    });
+      const conversation = await conversationOf(waId);
+      expect(conversation.contactId).not.toBe(order.contactId);
+      expect(conversation.automationState).toEqual({ triage: "done" });
+      const content = conversation.messages.map((m) => m.content as Content);
+      expect(content).not.toContainEqual(expect.objectContaining({ event: "order" }));
+      expect(content.map((c) => c.text)).not.toContainEqual(expect.stringContaining("Pizza Margherita"));
+      expect(content.at(-2)!.text).toBe(`Não encontramos o pedido #${order.displayCode} entre os pedidos de hoje e de ontem. Um atendente já vai te ajudar.`);
+    }
   });
 
   it("pedido achado, mas o cliente diz que não é dele: não une os cadastros e segue com a equipe", async () => {
-    const order = await ifoodOrder("8181", new Date());
     await say("5511970000012", "wamid.D1", "Oi");
     await say("5511970000012", "wamid.D2", "1");
+    const order = await ifoodOrder("8181", new Date(), { phone: "+5511970000012" });
     await say("5511970000012", "wamid.D3", "8181");
     await say("5511970000012", "wamid.D4", "Não");
 
@@ -414,9 +418,9 @@ describe("menu de atendimento, busca do pedido e pesquisa de satisfação", () =
   };
 
   it("cliente sem responder por 20 minutos: encerra a conversa e, com pedido de hoje, pede a avaliação", async () => {
-    await ifoodOrder("6060", new Date());
     await say("5511970000008", "wamid.I1", "Oi");
     await say("5511970000008", "wamid.I2", "1");
+    await ifoodOrder("6060", new Date(), { phone: "+5511970000008" });
     await say("5511970000008", "wamid.I3", "6060");
     await say("5511970000008", "wamid.I4", "1");
     await say("5511970000008", "wamid.I5", "Ainda não chegou"); // depois de confirmar o pedido: chama a equipe
@@ -674,10 +678,10 @@ describe("menu de atendimento, busca do pedido e pesquisa de satisfação", () =
     // Um pedido que já saiu do restaurante em 15 minutos serve de base.
     const done = await ifoodOrder("6161", new Date(Date.now() - 60 * 60_000));
     await admin.order.update({ where: { id: done.id }, data: { status: "DISPATCHED", dispatchedAt: new Date(Date.now() - 45 * 60_000) } });
-    await ifoodOrder("6262", new Date());
 
     await say("5511970000018", "wamid.E1", "Oi");
     await say("5511970000018", "wamid.E2", "1");
+    await ifoodOrder("6262", new Date(), { phone: "+5511970000018" });
     await say("5511970000018", "wamid.E3", "6262");
     await say("5511970000018", "wamid.E4", "sim");
     // Uma mensagem só: confirmação, previsão e o pedido para contar o problema.
@@ -704,9 +708,11 @@ describe("menu de atendimento, busca do pedido e pesquisa de satisfação", () =
   });
 
   it("confirmou um pedido que já saiu: avisa quando saiu, no lugar da previsão", async () => {
-    // O #6161 do teste anterior saiu há 45 minutos.
+    // O #6161 do teste anterior saiu há 45 minutos; o cadastro dele passa a ter o telefone de quem escreve.
     await say("5511970000019", "wamid.S1", "Oi");
     await say("5511970000019", "wamid.S2", "1");
+    const done = await admin.order.findFirstOrThrow({ where: { tenantId: fx.tenant.id, displayCode: "6161" } });
+    await admin.contact.update({ where: { id: done.contactId }, data: { phone: "+5511970000019" } });
     await say("5511970000019", "wamid.S3", "6161");
     await say("5511970000019", "wamid.S4", "sim");
     const confirmed = (await contents("5511970000019")).at(-1)!;

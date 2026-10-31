@@ -254,7 +254,7 @@ export class IfoodClient {
 
   /** Resposta da loja (10 a 300 caracteres). 409/422: a avaliação não aceita mais resposta; 422 também é texto recusado. */
   async answerReview(merchantId: string, reviewId: string, text: string): Promise<void> {
-    await this.call(`/review/v2.0/merchants/${merchantId}/reviews/${reviewId}/answers`, {
+    await this.call(`/review/v2.0/merchants/${encodeURIComponent(merchantId)}/reviews/${encodeURIComponent(reviewId)}/answers`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text }),

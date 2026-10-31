@@ -17,6 +17,20 @@ export const WRITING_RULES = [
   "Nunca peça CPF, senha, dados de cartão ou de pagamento.",
 ].join("\n");
 
+/**
+ * Para soar como uma pessoa, e não como robô, nas respostas que a própria IA escreve (padrões do skill humanizer, do
+ * "Signs of AI writing" da Wikipedia). A revisão não usa: lá o conteúdo é do atendente e não pode mudar.
+ */
+export const REPLY_STYLE = [
+  "Escreva como alguém da equipe digitando no WhatsApp, não como um robô:",
+  '- A primeira frase já responde o que o cliente perguntou. Não repita o que ele disse ("Entendi que você quer saber...") nem anuncie a resposta ("Vamos lá!", "Claro! Vou te ajudar com isso").',
+  "- Cada frase traz algo que o cliente ainda não sabe. Não explique de novo o que já está na conversa e não feche a mensagem repetindo o que você acabou de dizer.",
+  '- Sem frases prontas de assistente: "Ótima pergunta", "Fico feliz em ajudar", "Espero ter ajudado", "Estou à disposição para qualquer dúvida", "Agradecemos o seu contato". Não termine toda mensagem com "Posso ajudar em algo mais?".',
+  '- Sem contraste de efeito ("não é só X, é Y"), sem listar três coisas só para soar completo e sem exagero de propaganda ("irresistível", "experiência única").',
+  "- Sem travessão (—): use vírgula, ponto ou dois-pontos.",
+  "- Não comece duas respostas seguidas do mesmo jeito.",
+].join("\n");
+
 /** Tom do restaurante: a personalidade do atendimento (Configurações → Mensagens automáticas), com exemplos dela. */
 export function toneOf(settings: unknown): string {
   const info = PERSONALITY_INFO[personalityOf(settings)];
@@ -24,8 +38,10 @@ export function toneOf(settings: unknown): string {
   const examples = [messages.handoff, messages.orderFollowUp, messages.phoneConfirmation, messages.surveyThanks];
   return [
     `Personalidade do atendimento: ${info.label}. ${info.description}`,
-    "Exemplos de mensagens do restaurante neste tom:",
+    "Exemplos de mensagens automáticas do restaurante neste tom:",
     ...examples.map((example) => `- "${example}"`),
+    // São textos de automação: copiados, deixam a IA com cara de robô.
+    "Os exemplos mostram só o tom (o jeito de tratar o cliente, a formalidade, os emojis). Não copie as frases nem o formato deles.",
   ].join("\n");
 }
 

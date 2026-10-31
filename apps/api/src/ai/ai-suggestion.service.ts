@@ -10,7 +10,7 @@ import { withOrderTenants } from "../orders/order-scope.js";
 import { orderFactsOf } from "./ai-attendant.service.js";
 import { factsOf } from "./ai-review.service.js";
 import { LlmClient } from "./llm.client.js";
-import { restaurantFacts, toneOf, transcript, WRITING_RULES } from "./prompts.js";
+import { REPLY_STYLE, restaurantFacts, toneOf, transcript, WRITING_RULES } from "./prompts.js";
 
 /** Mensagens da conversa (das últimas 12 horas) que a IA lê antes de sugerir, como no atendimento com IA. */
 const HISTORY_LIMIT = 30;
@@ -22,6 +22,7 @@ export function systemPrompt(restaurant: string, channel: string, settings: unkn
   return `Você sugere a próxima resposta que alguém da equipe do restaurante ${restaurant} vai mandar a um cliente pelo ${channel}. O atendente lê a sugestão, muda o que quiser e envia.
 ${toneOf(settings)}
 ${WRITING_RULES}
+${REPLY_STYLE}
 
 Regras obrigatórias:
 - Responda à última mensagem do cliente, levando em conta a conversa.
@@ -79,7 +80,7 @@ export class AiSuggestionService {
         if (!found) return null;
         const channel = await orders.channel.findUniqueOrThrow({ where: { id: found.channelId }, select: { type: true } });
         const update = await orderUpdateMessage(orders, found.id, now, settings);
-        return { ...found, confirmed: !!confirmed, byNumber: false, channelType: channel.type, update };
+        return { ...found, confirmed: !!confirmed, channelType: channel.type, update };
       });
       return { conversation, settings, history, order };
     });
@@ -89,7 +90,7 @@ export class AiSuggestionService {
     const dialogue = transcript(context.history);
     let text: string;
     try {
-      ({ text } = await this.llm.json("sugestao", Suggestion, [
+      ({ text } = await this.llm.json(conversation.tenantId, "sugestao", Suggestion, [
         { role: "system", content: systemPrompt(conversation.tenant.name, CHANNEL_LABEL[conversation.channel.type], settings) },
         { role: "user", content: `DADOS\n${facts}\n\nCONVERSA\n${dialogue}` },
       ]));

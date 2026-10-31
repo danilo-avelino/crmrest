@@ -12,6 +12,12 @@ import { QUEUES } from "../src/queues/queues.module.js";
 import { accessTokenFor, admin, createChannelFixture, createTestApp, PASSWORD, startMockGraph } from "./helpers.js";
 
 /** API do Cardápio Web para conferir a chave (aceita uma, recusa as outras); a base de clientes vem vazia. */
+/** O cookie `dd_instagram_login` que a API devolve ao abrir o login do Instagram, pronto para o cabeçalho Cookie. */
+function loginCookie(headers: Record<string, unknown>): string {
+  const cookies = [headers["set-cookie"]].flat().map(String);
+  return cookies.find((cookie) => cookie.startsWith("dd_instagram_login="))?.split(";")[0] ?? "";
+}
+
 async function startMockCardapioWeb() {
   const server = createServer((req, res) => {
     const ok = req.headers["x-api-key"] === "chave-boa-da-loja";
@@ -172,16 +178,22 @@ describe("Integrações (Configurações)", () => {
   });
 
   describe("login do Instagram", () => {
+    // O cookie que prende o login ao navegador que o abriu.
+    let browserCookie = "";
     const loginUrl = async () => {
-      const { body } = await request(app.getHttpServer())
+      const { body, headers } = await request(app.getHttpServer())
         .get(`/api/integrations/${fx.tenant.id}/instagram/login`)
         .set("Authorization", `Bearer ${adminToken}`)
         .expect(200);
+      browserCookie = loginCookie(headers);
       return new URL(body.url);
     };
-    // Volta do Instagram: sem sessão, como o navegador chega depois do login.
-    const callback = (query: Record<string, string>) =>
-      request(app.getHttpServer()).get(`/api/integrations/instagram/callback?${new URLSearchParams(query).toString()}`).expect(302);
+    // Volta do Instagram: sem sessão, como o navegador chega depois do login, mas com o cookie do login.
+    const callback = (query: Record<string, string>, cookie = browserCookie) =>
+      request(app.getHttpServer())
+        .get(`/api/integrations/instagram/callback?${new URLSearchParams(query).toString()}`)
+        .set("Cookie", cookie)
+        .expect(302);
     const backParams = (location = "") => Object.fromEntries(new URL(location).searchParams);
 
     it("abre a tela de login do Instagram; só o admin pede", async () => {
@@ -206,6 +218,24 @@ describe("Integrações (Configurações)", () => {
       expect(secrets.accessToken).toBe("token-longo-do-instagram");
     });
 
+    it("a volta em outro navegador (sem o cookie do login, ou com o de outro login) não conecta a conta", async () => {
+      const state = (await loginUrl()).searchParams.get("state") ?? "";
+      const mine = browserCookie;
+      await loginUrl(); // outro login, outro cookie
+      const exchanges = () => graph.requests.filter((r) => r.path === "/oauth/access_token").length;
+      const before = exchanges();
+      for (const cookie of ["", browserCookie]) {
+        expect(backParams((await callback({ code: "codigo-do-login", state }, cookie)).headers.location)).toEqual({
+          instagram: "erro",
+          motivo: "O login do Instagram foi aberto em outro navegador. Conecte de novo por aqui.",
+        });
+      }
+      expect(exchanges()).toBe(before);
+      // A volta apaga o cookie: ele vale uma vez só.
+      const { headers } = await callback({ error: "access_denied", state }, mine);
+      expect(String(headers["set-cookie"])).toMatch(/^dd_instagram_login=;/);
+    });
+
     it("state adulterado, login cancelado ou código recusado voltam ao painel com o motivo", async () => {
       const state = (await loginUrl()).searchParams.get("state") ?? "";
       const forged = `${Buffer.from(JSON.stringify({ tenantId: other.tenant.id, userId: adminUserId, exp: Date.now() + 60_000 })).toString("base64url")}.${state.split(".")[1]}`;
@@ -220,12 +250,12 @@ describe("Integrações (Configurações)", () => {
     });
 
     it("aberto pelo assistente de configuração, volta para o assistente", async () => {
-      const { body } = await request(app.getHttpServer())
+      const login = await request(app.getHttpServer())
         .get(`/api/integrations/${fx.tenant.id}/instagram/login?origem=assistente`)
         .set("Authorization", `Bearer ${adminToken}`)
         .expect(200);
-      const state = new URL(body.url).searchParams.get("state") ?? "";
-      const { headers } = await callback({ error: "access_denied", state });
+      const state = new URL(login.body.url).searchParams.get("state") ?? "";
+      const { headers } = await callback({ error: "access_denied", state }, loginCookie(login.headers));
       expect(headers.location).toMatch(/^http:\/\/painel\.teste\/assistente\?/);
       expect(backParams(headers.location)).toEqual({ restaurante: fx.tenant.id, instagram: "erro", motivo: "O login no Instagram foi cancelado." });
     });
@@ -456,6 +486,7 @@ describe("Integrações (Configurações)", () => {
 
       const { headers } = await request(app.getHttpServer())
         .get(`/api/integrations/instagram/callback?${new URLSearchParams({ code: "codigo-do-login", state }).toString()}`)
+        .set("Cookie", loginCookie(login.headers))
         .expect(302);
       expect(headers.location).toBe(`http://painel.teste/assinatura?restaurante=${fx.tenant.id}`);
       expect((await tenant(fx.tenant.id)).trialRevokedAt).not.toBeNull();
