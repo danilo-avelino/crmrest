@@ -11,10 +11,11 @@ SaaS **multi-tenant** (vários restaurantes) que centraliza o atendimento de **W
 
 ### Objetivos principais
 1. **Inbox unificada:** atendentes respondem todos os canais em uma única tela, em tempo real.
-2. **Cadastro automático de clientes:** todo contato vira (ou atualiza) um cadastro, com o máximo de dados extraídos da origem (nome, telefone, CPF, endereço, histórico).
-3. **Coleta ativa de telefone:** quando a origem não fornece telefone real (ex.: chat do iFood, Instagram), o sistema pede o telefone logo na primeira interação.
-4. **Campanhas (módulo pago/extra):** disparos segmentados, agendados e automatizados.
-5. **Escala:** arquitetura preparada para **100+ restaurantes** com crescimento horizontal.
+2. **Atendimento com IA de saída:** a IA atende o cliente desde o primeiro contato e passa para a equipe quando não resolve. Responde a LLM principal; fora do ar, a reserva (Claude Haiku); sem as duas, o menu de atendimento.
+3. **Cadastro automático de clientes:** todo contato vira (ou atualiza) um cadastro, com o máximo de dados extraídos da origem (nome, telefone, CPF, endereço, histórico).
+4. **Coleta ativa de telefone:** quando a origem não fornece telefone real (ex.: chat do iFood, Instagram), o sistema pede o telefone logo na primeira interação.
+5. **Campanhas (módulo pago/extra):** disparos segmentados, agendados e automatizados.
+6. **Escala:** arquitetura preparada para **100+ restaurantes** com crescimento horizontal.
 
 ### Personas
 | Persona | Descrição |

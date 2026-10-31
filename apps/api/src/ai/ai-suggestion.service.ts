@@ -80,7 +80,7 @@ export class AiSuggestionService {
         if (!found) return null;
         const channel = await orders.channel.findUniqueOrThrow({ where: { id: found.channelId }, select: { type: true } });
         const update = await orderUpdateMessage(orders, found.id, now, settings);
-        return { ...found, confirmed: !!confirmed, channelType: channel.type, update };
+        return { ...found, confirmed: !!confirmed, byNumber: false, channelType: channel.type, update };
       });
       return { conversation, settings, history, order };
     });

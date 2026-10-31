@@ -13,8 +13,8 @@ import { InjectQueue } from "@nestjs/bullmq";
 import { Injectable, Logger } from "@nestjs/common";
 import type { Queue } from "bullmq";
 import { z } from "zod";
-import { type AutomationState, automationMessage, dispatch, setAutomationState, systemEvent } from "../automations/automation.js";
-import { linkOrderContact, ORDER_STATUS_TEXT } from "../automations/triage.service.js";
+import { type AutomationState, automationMessage, dispatch, setAutomationState, startOfYesterday, systemEvent } from "../automations/automation.js";
+import { linkOrderContact, ORDER_STATUS_TEXT, TriageService } from "../automations/triage.service.js";
 import { DatabaseService } from "../core/database.service.js";
 import { orderUpdateMessage } from "../orders/forecast.js";
 import { latestOrderOf } from "../orders/latest-order.js";
@@ -89,6 +89,40 @@ Mensagem de quando você passa para a equipe (handoff = true):
 - Não há atendente: siga o que "Atendentes" diz nos DADOS e continue respondendo as outras dúvidas do cliente.`;
 }
 
+// "1234", "#1234", "é o 1234", "pedido 1234", "Pedido Nº 1234", "pedido: 1234", "número do pedido é 1234". Números
+// soltos no meio do texto ("2 pizzas", "há 30 minutos") não contam: achariam o pedido de outro cliente.
+const ORDER_NUMBER = [
+  /^\s*(?:[ée]\s+(?:o\s+)?|o\s+)?(?:pedido\s*)?(?:n[º°]\.?\s*|n[uú]mero\s*)?#?\s*(\d{1,6})\s*[.!]?\s*$/gi,
+  /pedido\s*(?:n[º°]\.?|n\.|n[uú]mero|#|:)\s*#?\s*(\d{1,6})(?!\d)/gi,
+  /n[uú]mero\s+do\s+pedido\s*(?:é|e|:)?\s*#?\s*(\d{1,6})(?!\d)/gi,
+  // "pedido 1234 já saiu?": o número seguido do fim da frase ou de um verbo, não de uma medida ("pedido 30 minutos atrás").
+  /pedido\s+#?\s*(\d{1,6})(?=\s*$|\s*[?!.,;]|\s+(?:j[áa]|que|foi|est[áa]|t[áa]|ainda|n[ãa]o|saiu|chegou|vai|vem|e)(?![a-zà-ú]))/gi,
+];
+
+/** Números de pedido que o cliente informou nas mensagens (com e sem os zeros à esquerda). */
+export function orderNumbersIn(texts: string[]): string[] {
+  const numbers = texts.flatMap((text) => ORDER_NUMBER.flatMap((pattern) => [...text.matchAll(pattern)].map((match) => match[1]!)));
+  return [...new Set(numbers.flatMap((number) => [number, number.replace(/^0+(?=\d)/, "")]))];
+}
+
+/**
+ * Pedido de hoje ou de ontem com o número que o cliente informou na conversa; com dois pedidos possíveis, nenhum.
+ * Qualquer pedido com o número, mesmo de outro cadastro: decisão do produto (31/10/2026), contra o achado da auditoria
+ * de segurança de 30/10. Por isso confirmar um pedido achado assim não une os cadastros (ver confirmOrder).
+ * `exclude`: pedidos que o cliente já disse não serem dele.
+ */
+async function orderByNumber(orders: TenantTx, history: { direction: string; content: unknown }[], now: Date, exclude: string[]) {
+  const codes = orderNumbersIn(history.filter((m) => m.direction === "INBOUND").map((m) => (m.content as MessageContent).text ?? ""));
+  if (!codes.length) return null;
+  const found = await orders.order.findMany({
+    where: { displayCode: { in: codes }, placedAt: { gte: startOfYesterday(now) }, id: { notIn: exclude } },
+    include: { items: true },
+    orderBy: { placedAt: "desc" },
+    take: 2,
+  });
+  return found.length === 1 ? found[0]! : null;
+}
+
 export type OrderFacts = {
   displayCode: string | null;
   externalOrderId: string;
@@ -100,6 +134,8 @@ export type OrderFacts = {
   update: { text: string } | null;
   /** O cliente confirmou neste atendimento que o pedido é dele. */
   confirmed: boolean;
+  /** Achado pelo número que o cliente informou (não pelo cadastro). */
+  byNumber: boolean;
 };
 
 /** O que a LLM recebe para responder: as regras e, na mensagem do usuário, os DADOS e a CONVERSA. */
@@ -136,23 +172,22 @@ function attendanceFacts(attendance: Attendance): string {
 
 /**
  * O pedido nos DADOS do atendimento. Sem pedido, o que fazer vai junto: o modelo segue melhor uma instrução nos DADOS,
- * e sem ela ele passava para a equipe sem pedir o número, contava ao cliente que não achou nada "no cadastro" ou
- * prometia procurar pelo número (a IA não busca pelo número: ele vai para a equipe).
+ * e sem ela ele passava para a equipe sem pedir o número ou contava ao cliente que não achou nada "no cadastro".
  */
 export function attendantOrderFacts(order: OrderFacts | null, noPhone: boolean): string {
   const facts = orderFactsOf(order, noPhone);
   if (order) return facts;
-  return `${facts} Se o cliente falar de um pedido (atraso, andamento), peça o número do pedido${noPhone ? " e o telefone usado nele" : ""}, sem dizer que não achou o pedido nem falar em cadastro. Você não consegue buscar pedidos pelo número: quando ele informar, passe para a equipe (handoff = true), que vai conferir.`;
+  return `${facts} Se o cliente falar de um pedido (atraso, andamento), peça o número do pedido, sem dizer que não achou o pedido nem falar em cadastro: o pedido com o número que ele informar aparece aqui nos DADOS. Se ele já informou o número e o pedido continua fora dos DADOS, passe para a equipe (handoff = true), que vai conferir.`;
 }
 
 /** O pedido do cliente nos DADOS da IA: o confirmado, o candidato a confirmar (sem o andamento liberado) ou nenhum. */
 export function orderFactsOf(order: OrderFacts | null, noPhone: boolean): string {
   if (!order) {
-    // Só o cadastro liga o pedido ao cliente: saber o número de um pedido não prova que ele é de quem escreve.
-    return `Pedido do cliente: nenhum pedido de hoje ou de ontem ligado ao cadastro.${noPhone ? " O telefone do cliente não está no cadastro." : ""}`;
+    return `Pedido do cliente: nenhum pedido de hoje ou de ontem no cadastro nem com um número informado na conversa.${noPhone ? " O telefone do cliente não está no cadastro." : ""}`;
   }
+  const source = order.byNumber ? "achado pelo número que ele informou" : "ligado ao cadastro dele";
   return [
-    order.confirmed ? "Pedido do cliente (ele confirmou que é dele):" : "Pedido que pode ser do cliente (ligado ao cadastro dele; ainda não confirmado por ele):",
+    order.confirmed ? "Pedido do cliente (ele confirmou que é dele):" : `Pedido que pode ser do cliente (${source}; ainda não confirmado por ele):`,
     `#${order.displayCode ?? order.externalOrderId} (${CHANNEL_LABEL[order.channelType]}), feito em ${BRASILIA_TIME.format(order.placedAt)}, ${ORDER_STATUS_TEXT[order.status]}.`,
     `Itens: ${order.items.map((item) => `${item.quantity}x ${item.name}`).join("; ")}. Total: ${BRL.format(Number(order.total))}.`,
     ...(order.update ? [`Andamento${order.confirmed ? "" : " (só diga depois que ele confirmar que o pedido é dele)"}: ${order.update.text}`] : []),
@@ -162,6 +197,7 @@ export function orderFactsOf(order: OrderFacts | null, noPhone: boolean): string
 /**
  * Atendimento com IA (E27): no lugar do menu de atendimento, a LLM responde o cliente com os dados do restaurante e
  * passa para a equipe quando não pode resolver. O TriageService decide se a IA atende e agenda o job "reply" da fila ai.
+ * Sem resposta da principal nem da reserva, o atendimento segue no menu (o último fallback).
  */
 @Injectable()
 export class AiAttendantService {
@@ -173,6 +209,7 @@ export class AiAttendantService {
     @InjectQueue(QUEUES.outbound) private readonly outbound: Queue<OutboundJob>,
     private readonly llm: LlmClient,
     private readonly presence: PresenceService,
+    private readonly triage: TriageService,
   ) {}
 
   /** Responde à última mensagem do cliente, se ninguém respondeu ainda (mensagens seguidas recebem uma resposta só). */
@@ -204,14 +241,15 @@ export class AiAttendantService {
       const settings = conversation.tenant.settings;
       const state = conversation.automationState as AutomationState;
       const denied = state.aiDeniedOrderIds ?? [];
-      // O pedido que o cliente confirmou neste atendimento; senão, o candidato a confirmar: o mais recente do cadastro.
+      // O pedido que o cliente confirmou neste atendimento; senão, o candidato a confirmar: o do cadastro ou o do número informado.
       const order = await withOrderTenants(this.db, tx, conversation.channelId, async (orders) => {
         const confirmed = state.linkedOrder ? await orders.order.findUnique({ where: { id: state.linkedOrder.id }, include: { items: true } }) : null;
-        const found = confirmed ?? (await latestOrderOf(orders, conversation.contact, now, denied));
+        const linked = confirmed ?? (await latestOrderOf(orders, conversation.contact, now, denied));
+        const found = linked ?? (await orderByNumber(orders, history, now, denied));
         if (!found) return null;
         const channel = await orders.channel.findUniqueOrThrow({ where: { id: found.channelId }, select: { type: true } });
         const update = await orderUpdateMessage(orders, found.id, now, settings);
-        return { ...found, confirmed: !!confirmed, channelType: channel.type, update };
+        return { ...found, confirmed: !!confirmed, byNumber: !linked, channelType: channel.type, update };
       });
       return { conversation, settings, history, lastId: last.id, order };
     });
@@ -221,6 +259,7 @@ export class AiAttendantService {
     const state = conversation.automationState as AutomationState;
     const attendance = await attendanceOf(this.presence, tenantId, settings, now);
     let answer: AttendantReply | null = null;
+    let failed = false;
     // Sem atendente, a IA responde tudo: o limite de respostas só serve para chamar a equipe.
     if (!attendance.available || (state.aiReplies ?? 0) < MAX_AI_REPLIES) {
       const noPhone = !conversation.contact.phone && !CHANNEL_CAPABILITIES[conversation.channel.type].providesPhone;
@@ -233,7 +272,8 @@ export class AiAttendantService {
           attendantMessages(conversation.tenant.name, conversation.channel.type, settings, now, orderFacts, transcript(context.history), attendance),
         );
       } catch (error) {
-        // Sem a LLM, o cliente não fica sem resposta: a equipe é chamada (ou, sem atendente, a conversa espera um).
+        // Sem a principal e sem a reserva, o cliente não fica sem resposta: o atendimento segue no menu.
+        failed = true;
         this.logger.warn(`IA sem resposta na conversa ${conversationId}: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
@@ -249,9 +289,19 @@ export class AiAttendantService {
         .automationState as AutomationState;
       if (latest?.id !== context.lastId || current.ai !== "on") return null;
 
+      if (failed) {
+        // O menu segue até o fim do atendimento (a IA sai), e a espera por um atendente continua valendo.
+        await systemEvent(tx, conversation, { event: "ai_fallback", text: "A IA não respondeu: o atendimento segue no menu" });
+        const step = await this.triage.fallbackToMenu(tx, conversationId, {
+          ai: "off",
+          ...(current.aiWaiting && { aiWaiting: true, aiWaitingReason: current.aiWaitingReason }),
+        });
+        return { ids: step.send, notify: [], startsWaiting: false };
+      }
+
       // Com os links para pedir, o cliente segue sozinho (como a opção "Fazer um pedido" do menu): a equipe não é chamada.
       const sentLinks = !!answer && orderLinksOf(settings).some((link) => answer.reply.includes(link.url));
-      // O cliente precisa da equipe (ou a LLM não respondeu). Com atendente, a IA passa a conversa e sai; sem, ela continua
+      // O cliente precisa da equipe (ou a IA chegou ao limite de respostas). Com atendente, a IA passa a conversa e sai; sem, ela continua
       // atendendo e a conversa espera alguém (aiWaiting).
       // Sem atendente, a resposta que diz "estamos sem atendentes" promete encaminhar a conversa: ela espera alguém mesmo
       // que a LLM tenha respondido handoff = false.
@@ -304,7 +354,7 @@ export class AiAttendantService {
       const deniedId = pending && offered && answer?.order === "denied" ? pending.id : null;
       const code = (pending?.displayCode ?? pending?.externalOrderId ?? "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       const offers = !!pending && !confirmed && !deniedId && !!answer && new RegExp(`(?<!\\d)${code}(?!\\d)`).test(answer.reply);
-      const notify = confirmed ? await this.confirmOrder(tx, conversationId, confirmed) : [];
+      const notify = confirmed ? await this.confirmOrder(tx, conversationId, confirmed, pending!.byNumber) : [];
       const reason = answer?.reason.trim() || undefined;
       await setAutomationState(tx, conversationId, {
         ...current,
@@ -337,8 +387,12 @@ export class AiAttendantService {
     for (const other of done.notify) this.realtime.inboxChanged(tenantId, other);
   }
 
-  /** O cliente confirmou o pedido: o card dele entra na conversa e o cadastro é unido ao do pedido. Devolve as outras conversas afetadas. */
-  private async confirmOrder(tx: TenantTx, conversationId: string, orderId: string): Promise<string[]> {
+  /**
+   * O cliente confirmou o pedido: o card dele entra na conversa e o cadastro é unido ao do pedido. Achado pelo número,
+   * não une: saber o número não prova que o pedido é dele, e a equipe decide em Clientes → Duplicados.
+   * Devolve as outras conversas afetadas.
+   */
+  private async confirmOrder(tx: TenantTx, conversationId: string, orderId: string, byNumber: boolean): Promise<string[]> {
     const conversation = await tx.conversation.findUniqueOrThrow({
       where: { id: conversationId },
       select: { id: true, tenantId: true, channelId: true, contact: true },
@@ -350,6 +404,13 @@ export class AiAttendantService {
       }),
     );
     await systemEvent(tx, conversation, { event: "order", orderId });
+    if (byNumber && order.tenantId === conversation.tenantId && order.contact.id !== conversation.contact.id) {
+      await systemEvent(tx, conversation, {
+        event: "possible_duplicate",
+        text: `O cliente confirmou o pedido #${order.displayCode} pelo número, mas ele está no cadastro de ${order.contact.name ?? "outro cliente"}. Se for a mesma pessoa, una os cadastros em Clientes → Duplicados`,
+      });
+      return [];
+    }
     return linkOrderContact(tx, conversation, order);
   }
 }

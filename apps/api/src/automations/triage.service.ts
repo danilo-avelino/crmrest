@@ -183,18 +183,7 @@ export class TriageService {
     const messages = automationMessagesOf(settings);
 
     // Conversa nova, resolvida ou parada: começa um atendimento, com o estado das automações zerado.
-    if (event.newAttendance) {
-      // Fora do horário: avisa no lugar do menu (ninguém atenderia a opção escolhida); a coleta de telefone segue.
-      const hours = businessHoursOf(settings);
-      if (hours.enabled && !isOpenAt(hours, new Date())) {
-        const text = fillMessage(hours.closedMessage, { retorno: reopeningAt(hours, new Date()) });
-        const id = await automationMessage(tx, conversation, "after_hours", text);
-        await setAutomationState(tx, conversation.id, { triage: "done", afterHours: true });
-        await this.keepPending(tx, conversation.id);
-        return { send: [id], done: true };
-      }
-      return this.sendMenu(tx, conversation, { triage: "awaiting_option" }, messages);
-    }
+    if (event.newAttendance) return this.startMenu(tx, conversation, settings, messages, {});
     if (state.triage === "awaiting_option") return this.chooseOption(tx, conversation, state, settings, event.text);
     if (state.triage === "awaiting_order_number") return this.findOrder(tx, conversation, state, messages, event.text);
     if (state.triage === "awaiting_order_confirmation") return this.confirmOrder(tx, conversation, state, messages, event.text);
@@ -213,6 +202,33 @@ export class TriageService {
       return this.sendMenu(tx, conversation, { ...state, triage: "awaiting_option", selfServed: undefined, menuRepeated: true }, messages);
     }
     return { send: [], done: true };
+  }
+
+  /**
+   * A principal e a reserva da IA não responderam: o atendimento segue no menu até o fim, como num restaurante sem IA (o
+   * próximo atendimento volta para a IA). `keep`: o que fica do estado da IA (ex.: a espera por um atendente).
+   */
+  async fallbackToMenu(tx: TenantTx, conversationId: string, keep: AutomationState): Promise<Step> {
+    const conversation = await tx.conversation.findUniqueOrThrow({
+      where: { id: conversationId },
+      select: { id: true, tenantId: true, channelId: true, contact: true },
+    });
+    const settings = await tenantSettings(tx, conversation.tenantId);
+    return this.startMenu(tx, conversation, settings, automationMessagesOf(settings), keep);
+  }
+
+  /** Começo do atendimento: o menu ou, fora do horário, o aviso no lugar dele. `keep`: estado que continua valendo. */
+  private async startMenu(tx: TenantTx, conversation: Conversation, settings: unknown, messages: AutomationMessages, keep: AutomationState): Promise<Step> {
+    // Fora do horário: avisa no lugar do menu (ninguém atenderia a opção escolhida); a coleta de telefone segue.
+    const hours = businessHoursOf(settings);
+    if (hours.enabled && !isOpenAt(hours, new Date())) {
+      const text = fillMessage(hours.closedMessage, { retorno: reopeningAt(hours, new Date()) });
+      const id = await automationMessage(tx, conversation, "after_hours", text);
+      await setAutomationState(tx, conversation.id, { ...keep, triage: "done", afterHours: true });
+      await this.keepPending(tx, conversation.id);
+      return { send: [id], done: true };
+    }
+    return this.sendMenu(tx, conversation, { ...keep, triage: "awaiting_option" }, messages);
   }
 
   /** Menu de atendimento ("Em que podemos ajudar?"), com a saudação de Configurações. */

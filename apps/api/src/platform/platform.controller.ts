@@ -78,6 +78,8 @@ export class PlatformController {
         if ((error as { code?: string }).code === "P2002") throw new ConflictException("Já existe um restaurante com este endereço.");
         throw error;
       }
+      // O Dish Desk é vendido com a IA: o restaurante já nasce com o atendimento com IA (a plataforma pode desligar).
+      await tx.$executeRaw`SELECT app.set_tenant_module(${tenantId}::uuid, 'AI'::"ModuleKey", true)`;
       const [row] = await tx.$queryRaw<{ id: string }[]>`
         SELECT app.create_or_restore_member(
           ${randomUUID()}::uuid, ${tenantId}::uuid, ${body.adminName}, ${body.adminEmail}, ${passwordHash}, 'ADMIN'::"TenantRole"

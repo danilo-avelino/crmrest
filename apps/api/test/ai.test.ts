@@ -3,6 +3,7 @@ import type { INestApplication } from "@nestjs/common";
 import type { Queue } from "bullmq";
 import request from "supertest";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
+import { orderNumbersIn } from "../src/ai/ai-attendant.service.js";
 import { AiEvaluationService } from "../src/ai/ai-evaluation.service.js";
 import { AiForwardService } from "../src/ai/ai-forward.service.js";
 import { InactivityService } from "../src/automations/inactivity.service.js";
@@ -358,14 +359,24 @@ describe("atendimento com IA: resposta, revisão e avaliação", () => {
     expect(conversation.awaitingAgentSince).toBeNull();
   });
 
-  it("sem a LLM, o cliente não fica sem resposta: a equipe é chamada", async () => {
+  it("sem a principal e sem a reserva, o atendimento segue no menu até o fim", async () => {
     delete answers.atendimento;
     await say("5511980000003", "wamid.AI-7", "Oi");
     await settle();
 
-    const all = await contents("5511980000003");
-    expect(all.at(-2)).toEqual({ text: "Certo! Um atendente já vai falar com você.", automation: "handoff" });
-    expect(all.at(-1)).toMatchObject({ event: "handoff", text: "IA passou o atendimento para a equipe" });
+    const conversation = await conversationOf("5511980000003");
+    expect(conversation.messages.map((m) => m.content as Content).slice(-2)).toMatchObject([
+      { event: "ai_fallback", text: "A IA não respondeu: o atendimento segue no menu" },
+      { automation: "menu" },
+    ]);
+    expect(conversation.automationState).toMatchObject({ ai: "off", triage: "awaiting_option" });
+
+    // A resposta ao menu segue no menu, sem chamar a LLM: a opção 3 chama a equipe.
+    const calls = llmCalls("atendimento").length;
+    await say("5511980000003", "wamid.AI-7b", "3");
+    await settle();
+    expect(llmCalls("atendimento").length).toBe(calls);
+    expect((await contents("5511980000003")).slice(-2)).toMatchObject([{ automation: "handoff" }, { event: "handoff" }]);
   });
 
   it("resolvida, a IA avalia o atendimento uma vez", async () => {
@@ -402,7 +413,7 @@ describe("atendimento com IA: resposta, revisão e avaliação", () => {
     expect(body.evaluations).toEqual([]);
   });
 
-  it("Instagram: o número do pedido e o telefone digitados não mostram o pedido de outro cadastro nem unem os cadastros", async () => {
+  it("Instagram: a IA acha o pedido pelo número, mas o telefone digitado não une os cadastros", async () => {
     // Cliente que já pediu, com telefone no cadastro. Quem escreve no Instagram diz o número e o telefone dela.
     const bruna = await admin.contact.create({
       data: {
@@ -439,10 +450,11 @@ describe("atendimento com IA: resposta, revisão e avaliação", () => {
     answers.atendimento = { reply: "Pode me passar o número do pedido?", handoff: false, reason: "", order: "none" };
 
     await dm("mid.AI-IG-1", "Qual a previsão do meu pedido?");
-    expect(lastPrompt()).toContain("nenhum pedido de hoje ou de ontem ligado ao cadastro. O telefone do cliente não está no cadastro.");
+    expect(lastPrompt()).toContain("nenhum pedido de hoje ou de ontem no cadastro nem com um número informado na conversa. O telefone do cliente não está no cadastro.");
 
+    const byNumber = "Pedido que pode ser do cliente (achado pelo número que ele informou; ainda não confirmado por ele):\n#4321 (iFood)";
     await dm("mid.AI-IG-2", "Pedido Nº 4321\nFeito às 13:44");
-    expect(lastPrompt()).not.toContain("#4321");
+    expect(lastPrompt()).toContain(byNumber);
 
     // O telefone fica no cadastro do Instagram, sem unir ao da Bruna: a equipe vê o aviso e decide em Duplicados.
     await dm("mid.AI-IG-3", "(11) 97654-0001");
@@ -456,7 +468,7 @@ describe("atendimento com IA: resposta, revisão e avaliação", () => {
       { event: "phone_collected", text: "Telefone informado e cadastrado" },
       { event: "possible_duplicate", text: "Bruna Alves já tem este telefone. Se for a mesma pessoa, una os cadastros em Clientes → Duplicados" },
     ]);
-    expect(lastPrompt()).not.toContain("#4321");
+    expect(lastPrompt()).toContain(byNumber);
     expect(conversation.automationState).toMatchObject({ ai: "on" });
     expect(conversation.messages.at(-1)).toMatchObject({ status: "SENT", content: { aiReply: true } });
     expect(recipient()).toBe("IGSID-BRUNA");
@@ -515,9 +527,9 @@ describe("atendimento com IA: resposta, revisão e avaliação", () => {
     expect(promptOf()).toContain("Pedido do cliente (ele confirmou que é dele):\n#8765");
   });
 
-  it("pedido que o cliente diz não ser dele; o número do pedido de outro cliente não o mostra", async () => {
+  it("pedido que o cliente diz não ser dele: a IA acha outro pelo número, e confirmá-lo não une os cadastros", async () => {
     const mine = await orderFor("5556", "+5511980000006");
-    await orderFor("5557");
+    const other = await orderFor("5557");
     answers.atendimento = { reply: "É o pedido #5556?", handoff: false, reason: "", order: "none" };
     await say("5511980000006", "wamid.AI-D1", "Cadê meu pedido?");
     await settle();
@@ -528,12 +540,26 @@ describe("atendimento com IA: resposta, revisão e avaliação", () => {
     await settle();
     expect((await conversationOf("5511980000006")).automationState).toMatchObject({ aiDeniedOrderIds: [mine.id] });
 
-    // O #5557 é de outro cadastro, sem telefone: saber o número não basta.
-    answers.atendimento = { reply: "Vou passar para a equipe conferir.", handoff: false, reason: "", order: "none" };
+    // O #5557 é de outro cadastro, sem telefone (como os do iFood): a IA o acha pelo número.
+    answers.atendimento = { reply: "É o pedido #5557, com 1 Pizza Margherita?", handoff: false, reason: "", order: "none" };
     await say("5511980000006", "wamid.AI-D3", "Pedido nº 5557");
     await settle();
-    expect(promptOf()).toContain("Pedido do cliente: nenhum pedido de hoje ou de ontem ligado ao cadastro.");
-    expect(promptOf()).not.toContain("Pizza Margherita");
+    expect(promptOf()).toContain("Pedido que pode ser do cliente (achado pelo número que ele informou; ainda não confirmado por ele):\n#5557");
+
+    // Confirmado: o card entra na conversa, mas o cadastro não é unido ao do pedido (saber o número não prova que é dele).
+    answers.atendimento = { reply: "Certo! Ele está sendo preparado.", handoff: false, reason: "", order: "confirmed" };
+    await say("5511980000006", "wamid.AI-D4", "Sim, é esse");
+    await settle();
+    const conversation = await conversationOf("5511980000006");
+    expect(conversation.automationState).toMatchObject({ linkedOrder: { id: other.id } });
+    expect((await admin.order.findUniqueOrThrow({ where: { id: other.id } })).contactId).not.toBe(conversation.contactId);
+    expect(conversation.messages.map((m) => m.content as Content).filter((c) => c.event).slice(-2)).toMatchObject([
+      { event: "order" },
+      {
+        event: "possible_duplicate",
+        text: "O cliente confirmou o pedido #5557 pelo número, mas ele está no cadastro de Cliente 5557. Se for a mesma pessoa, una os cadastros em Clientes → Duplicados",
+      },
+    ]);
   });
 
   it("o atendente pede uma sugestão de resposta: nada é enviado e um dado inventado não vale", async () => {
@@ -573,6 +599,19 @@ describe("atendimento com IA: resposta, revisão e avaliação", () => {
     const other = await accessTokenFor(app, withoutAi.user.email, withoutAi.tenant.id);
     await request(app.getHttpServer()).post(`/api/conversations/${conversation.id}/suggestion`).set("Authorization", `Bearer ${other}`).expect(404);
     expect(llm.requests.length).toBe(calls);
+  });
+});
+
+describe("atendimento com IA: número do pedido informado pelo cliente", () => {
+  it("lê o número do pedido, mas não números soltos no meio do texto", () => {
+    expect(orderNumbersIn(["4321"])).toEqual(["4321"]);
+    expect(orderNumbersIn(["#0042"])).toEqual(["0042", "42"]);
+    expect(orderNumbersIn(["é o 5557", "o 88", "nº 12"])).toEqual(["5557", "88", "12"]);
+    expect(orderNumbersIn(["o pedido 5150 já saiu?", "meu pedido 31, cadê"])).toEqual(["5150", "31"]);
+    expect(orderNumbersIn(["pedido 2 pizzas", "fiz o pedido 30 minutos atrás"])).toEqual([]);
+    expect(orderNumbersIn(["Pedido Nº 1\nFeito às 13:44"])).toEqual(["1"]);
+    expect(orderNumbersIn(["o número do pedido é 5150", "pedido: 77"])).toEqual(["5150", "77"]);
+    expect(orderNumbersIn(["quero 2 pizzas", "fiz o pedido há 30 minutos", "86999731647", "(86) 99973-1647"])).toEqual([]);
   });
 });
 

@@ -137,7 +137,9 @@ Objetivo: um restaurante piloto atende clientes de WhatsApp, Instagram e iFood e
 
 ### IA no atendimento (entrou no MVP em 29/10/2026)
 
-O restaurante usa IA para atender o cliente de duas formas, **atendimento 100% com IA** (E27) ou **suporte com revisão por IA** (E28), e toda conversa recebe uma avaliação automática (E29). É um módulo pago (`AI`), ligado por restaurante pela plataforma.
+O restaurante usa IA para atender o cliente de duas formas, **atendimento 100% com IA** (E27) ou **suporte com revisão por IA** (E28), e toda conversa recebe uma avaliação automática (E29). O módulo `AI` é ligado por restaurante pela plataforma.
+
+**Decidido em 31/10/2026:** o Dish Desk é vendido com a IA logo de início. Todo restaurante novo já nasce com o módulo `AI` ligado (a plataforma ainda pode desligar; os que já existiam são ligados pelo painel). O menu de atendimento virou o último recurso: LLM principal → reserva (Claude Haiku) → menu. Quando as duas LLMs falham, aquele atendimento segue no menu até o fim, e o próximo volta para a IA.
 
 Vale para os três épicos:
 - A IA segue a **personalidade do atendimento** escolhida pelo restaurante (Configurações → Mensagens automáticas, CLAUDE.md §10), a mesma das mensagens automáticas.
@@ -198,7 +200,7 @@ Vale para os três épicos:
 
 O WhatsApp vem primeiro porque é o único canal que não depende de aprovação longa e que entrega telefone. Ele valida o pipeline inteiro antes de entrarem os canais mais incertos.
 
-Na IA, a avaliação (E29) vem primeiro porque não envia nada ao cliente (o risco é o menor) e porque cria a medida que vai dizer se os outros dois funcionam. A revisão (E28) vem em seguida porque mantém o atendente no controle. O atendimento 100% com IA (E27) fica por último: é o de maior risco e só deve ser ligado quando a nota do E29 mostrar que a IA atende tão bem quanto a equipe.
+Na IA, a avaliação (E29) vem primeiro porque não envia nada ao cliente (o risco é o menor) e porque cria a medida que vai dizer se os outros dois funcionam. A revisão (E28) vem em seguida porque mantém o atendente no controle. O atendimento 100% com IA (E27) fica por último: é o de maior risco e só deve ser ligado quando a nota do E29 mostrar que a IA atende tão bem quanto a equipe. Com a IA ligada de saída (31/10/2026), a nota do E29 passa a acompanhar a qualidade da IA, em vez de decidir quando ligá-la.
 
 ### Critérios de aceite do MVP (piloto em produção)
 

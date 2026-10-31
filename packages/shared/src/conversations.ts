@@ -57,6 +57,8 @@ export type MessageContent = {
     | "handoff"
     /** A IA precisa da equipe, mas não há atendente: a conversa vai para a equipe quando houver alguém. */
     | "awaiting_agent"
+    /** A principal e a reserva da IA não responderam: o atendimento segue no menu. */
+    | "ai_fallback"
     | "cancellation_alert";
   orderId?: string;
   /** O card do pedido traz o botão de conversar com o cliente (pedido informado por um entregador). */
