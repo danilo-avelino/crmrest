@@ -323,13 +323,14 @@ describe("atendimento com IA: resposta, revisão e avaliação", () => {
     expect(on).toMatchObject({ tenantId: fx.tenant.id, fullAuto: true, closed: false, agentsOnline: true });
     const before = (on as { waiting: number }).waiting; // conversas que outros testes deixaram esperando
 
-    // Sem resposta da LLM: sai o aviso de que não há atendentes, na personalidade do restaurante.
-    delete answers.atendimento;
+    // O cliente pede uma pessoa: a IA avisa que não há atendentes e a conversa espera um.
+    const notice = "No momento estamos sem atendentes online. Assim que um chegar, sua conversa será encaminhada para ele.";
+    answers.atendimento = { reply: notice, handoff: true, reason: "Cliente pediu um atendente", order: "none" };
     await say("5511980000011", "wamid.AI-A1", "Quero falar com uma pessoa");
     await settle();
     let conversation = await conversationOf("5511980000011");
     expect(conversation.messages.map((m) => m.content as Content).slice(-2)).toMatchObject([
-      { text: "No momento estamos sem atendentes online. Assim que um chegar, sua conversa será encaminhada para ele.", automation: "no_agents_online" },
+      { text: notice, aiReply: true },
       { event: "awaiting_agent", text: expect.stringContaining("o 100% automático está ligado") },
     ]);
     const { body: list } = await request(app.getHttpServer()).get("/api/ai/attendance").set("Authorization", `Bearer ${token}`).expect(200);
