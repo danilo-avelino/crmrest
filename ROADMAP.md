@@ -13,7 +13,7 @@ Conferida no código. **✅ Feito** quer dizer que o épico está no código. **
 | Fase | Feito | Falta |
 |---|---|---|
 | **1 — MVP, com a IA no atendimento** | E1–E11, E27–E29 | **E12:** backup diário (o Supabase está no plano Free). Sentry (api e web) e Bull Board estão no ar desde 30/10/2026. |
-| **2 — Pós-MVP** | E13–E15, E17, E26, E30 | **E16:** entrar no painel de um restaurante para suporte (impersonação auditada). **E18:** Inbox para tablet. **E32–E39:** reputação e avaliações. |
+| **2 — Pós-MVP** | E13–E15, E17, E26, E30 | **E16:** entrar no painel de um restaurante para suporte (impersonação auditada). **E18:** Inbox para tablet. **E32–E39:** reputação e avaliações. **E40:** prevenção de fraude com o histórico importado e o cancelamento em todas as integrações. |
 | **3 — Campanhas** | — | **E19:** os módulos já são ligados por restaurante pela plataforma; falta o estado bloqueado do módulo Campanhas. **E25:** a assinatura do Dish Desk pela Stripe existe; falta a cobrança do módulo. **E20–E24:** não começaram. |
 | **4 — Agente de implantação e suporte** | — | **E31:** falta a tela da equipe Dish Desk que lê e responde as conversas de suporte. |
 
@@ -343,6 +343,33 @@ Problema: menos de 5% dos pedidos do iFood recebem avaliação. Quem teve proble
 
 **Ordem sugerida (reputação):** `E32 Convite → E33 Avisos para todos → E34 Alerta negativo + E35 Resumo diário → E36 Google → E37 Salão → E38 Assistente`. O E33 aproveita o trabalho do E32 na extensão. O E34 e o E35 entram assim que o módulo Review for homologado. O **E39 (comentários do Instagram)** não depende dos outros e pode entrar assim que a Meta aprovar a permissão de comentários.
 
+### Prevenção de fraude (E40)
+A base é o alerta na Inbox (board "Prevenção de fraude · Inbox e Landing", em 01/11/2026): o pedido de um cliente que já cancelou algum pedido abre a conversa com o alerta, o pedido e a lista de cancelamentos; o atendente decide entre manter e cancelar. O E40 junta o que falta para o alerta valer em todas as integrações.
+
+#### E40 — Prevenção de fraude: histórico completo e cancelamento em todas as integrações · **G** · depende de: o alerta na Inbox, E7, integração do Cardápio Web · **⬜ A fazer**
+- **Decidido em 01/11/2026:**
+  - **Quando dispara:** um cancelamento no histórico já basta, sem janela de tempo (golpista não costuma pedir várias vezes seguidas). Quem decide se o pedido segue é o atendente.
+  - **Qualquer histórico conta:** o do Dish Desk, de todas as fontes ligadas ao cliente (telefone, CPF, e-mail; [customer-history.ts](apps/api/src/orders/customer-history.ts)), e o que vier importado de uma integração.
+  - **Sem API para cancelar:** o botão "Cancelar pedido" não aparece; no lugar, um aviso para cancelar no sistema de origem.
+  - **Pagamento online não é proteção:** golpista costuma preferir o pagamento online, então o Dish Desk não sugere nem exige pagamento online de quem tem cancelamentos.
+  - **Motivo à vista:** todo cancelamento conta, não importa quem cancelou. O que ajuda o atendente é ver o **motivo** de cada um na lista (ex.: "não veio retirar o pedido" num pedido para retirada, "ninguém recebeu na entrega"). Cada integração precisa guardar o motivo no pedido.
+  - **Marcar como fraude:** ao cancelar, o atendente pode marcar o pedido como fraude (fica guardado no pedido, com quem marcou). Os próximos pedidos, de qualquer cliente, para o **mesmo endereço** mostram esse pedido no alerta. O endereço precisa ser idêntico: rua, número, condomínio, bloco e apartamento iguais (comparação normalizada, sem diferenciar maiúsculas, acentos e abreviações como "R." e "Rua"). Endereço parecido não conta.
+- Como restaurante, quero que o **histórico de pedidos de antes da conexão** entre na conta do alerta. Hoje a importação traz só o cadastro do cliente, sem pedidos:
+  - **Cardápio Web:** a base de clientes importada não tem pedidos, e a consulta de pedidos volta no máximo 24 h. Perguntar ao Cardápio Web se a API tem pedidos antigos (por cliente ou por data) ou um resumo no cadastro do cliente (total de pedidos e de cancelamentos). Se tiver, importar junto com a base de clientes.
+  - **iFood:** a Merchant API só entrega pedidos novos (polling de eventos). Conferir se há como consultar pedidos antigos da loja.
+  - **Anota AI:** quando a integração existir, já nasce importando o histórico de pedidos, se a API permitir (CLAUDE.md §9).
+  - Cancelamento importado conta como os outros e aparece na lista com a origem e a data. Se a fonte só tiver contadores (sem cada pedido), o alerta mostra o número e a origem, sem a lista.
+- Como atendente, quero **cancelar pelo Dish Desk** o pedido de qualquer integração:
+  - **iFood:** pronto no cliente da API (`cancellationReasons` e `requestCancellation` em [ifood.client.ts](apps/api/src/connectors/ifood.client.ts)); o botão só aparece quando o iFood devolve motivos (vazio = não dá para cancelar agora).
+  - **Cardápio Web:** o cliente da API não tem cancelamento. Conferir se a API de parceiros tem um endpoint para cancelar o pedido; se tiver, ligar o botão. Até lá, vale o aviso.
+  - **Anota AI:** mesma conferência quando a integração existir.
+- Como cliente, quero receber a mensagem de cancelamento no tom da personalidade do restaurante (CLAUDE.md §10), na conversa do canal de onde o pedido veio.
+- A definir:
+  - como normalizar o endereço de cada integração (iFood, Cardápio Web) para a comparação exata, já que cada uma manda os campos de um jeito;
+  - se o atendente pode marcar como fraude um pedido que já estava cancelado (por exemplo, um do histórico);
+  - se o alerta também aparece para pedidos que chegam sem conversa aberta (por exemplo, um pedido do iFood sem chat), abrindo a conversa só para a equipe;
+  - **mobile e tablet:** o alerta e o painel do pedido entram na Inbox para tablet (E18) e na versão mobile, depois do MVP.
+
 #### E30 — Assistente de configuração (primeiro acesso) · **M** · depende de: E14, E15 · **✅ Feito**
 - Como admin de um restaurante novo, quero um **assistente passo a passo** no primeiro acesso, que me ensine a configurar o sistema até a primeira mensagem chegar na Inbox.
 - **Regra obrigatória:** antes de cada integração, o assistente **pergunta se o restaurante vai usar aquele sistema** ("Você atende pelo WhatsApp?", "Você vende pelo iFood?"). Com "sim", abre o passo a passo daquela integração. Com "não" ou "agora não", pula para a próxima. Nenhuma integração é obrigatória.
@@ -439,3 +466,4 @@ Objetivo: a IA da extensão do Chrome faz a implantação com o restaurante e at
 - **Login com Google (OAuth real).** O botão já existe visualmente desde o MVP.
 - **Versões mobile** de todas as telas (CLAUDE.md §7), adiadas no MVP.
 - **Envio de mídia** pelo atendente (o design mostra só texto). Sugestão: logo após o MVP.
+- **Vídeos UGC para divulgar o Dish Desk** (marketing, não é funcionalidade do produto). Vídeos curtos de criadores ou de donos de restaurante mostrando o Dish Desk no dia a dia, para anúncios no Instagram e no Facebook e para a landing. Referência: a página de creators para SaaS da Turbo Partners (pages.turbopartners.com.br/creators/saas), não analisada ainda porque a rede desta sessão bloqueia o site. A definir: contratar uma agência ou criadores diretamente, roteiros (atendimento com IA, prevenção de fraude) e quantos vídeos por mês.
