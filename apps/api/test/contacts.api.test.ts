@@ -238,7 +238,9 @@ describe("API de Clientes", () => {
 
   it("resumo da base: total, novos, VIPs, recorrentes, inativos, telefone pendente, aniversariantes e ticket médio", async () => {
     // João faz aniversário neste mês, e o pedido mais recente dele foi cancelado (cancelados não entram no ticket).
-    await admin.contact.update({ where: { id: joao.id }, data: { birthDate: new Date(Date.UTC(1990, new Date().getMonth(), 15)) } });
+    // "Este mês" é o de São Paulo, como no serviço: o CI roda em UTC e vira o mês 3 horas antes.
+    const monthSp = Number(new Intl.DateTimeFormat("en", { month: "numeric", timeZone: "America/Sao_Paulo" }).format(new Date()));
+    await admin.contact.update({ where: { id: joao.id }, data: { birthDate: new Date(Date.UTC(1990, monthSp - 1, 15)) } });
     const ifoodA = await admin.channel.findFirstOrThrow({ where: { tenantId: fx.a.id, type: "IFOOD" } });
     await admin.order.create({
       data: {
