@@ -13,6 +13,7 @@ const nextConfig: NextConfig = {
       { source: "/api/:path*", destination: `${process.env.API_URL ?? "http://localhost:4000"}/api/:path*` },
       // Site institucional: HTML estático em public/, servido na raiz do mesmo domínio do painel.
       { source: "/", destination: "/index.html" },
+      { source: "/funcionalidades", destination: "/funcionalidades/index.html" },
       { source: "/privacidade", destination: "/privacidade/index.html" },
       { source: "/exclusao-de-dados", destination: "/exclusao-de-dados/index.html" },
     ];

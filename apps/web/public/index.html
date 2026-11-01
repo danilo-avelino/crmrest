@@ -3,397 +3,551 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Dish Desk — Atendimento de restaurantes em uma caixa de entrada só</title>
-<meta name="description" content="Dish Desk reúne as conversas de WhatsApp, Instagram e iFood do seu restaurante em uma única caixa de entrada. Um produto da AVELINO GASTRONOMIA LTDA.">
+<title>Dish Desk — Atendimento com IA para restaurantes</title>
+<meta name="description" content="O Dish Desk atende o WhatsApp, o Instagram e o iFood do seu restaurante com IA, e passa para a sua equipe quando o cliente precisa de uma pessoa. Um produto da AVELINO GASTRONOMIA LTDA.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23C4341A'/%3E%3Crect x='7' y='9.5' width='18' height='2.6' rx='1.3' fill='%23F7F4EF'/%3E%3Crect x='7' y='14.7' width='12' height='2.6' rx='1.3' fill='%23F7F4EF'/%3E%3Crect x='7' y='19.9' width='8' height='2.6' rx='1.3' fill='%23fff' opacity='.5'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..700;1,9..144,400..700&family=Inter:wght@400;500;600&display=swap">
-<link rel="stylesheet" href="assets/style.css">
+<style>
+body{margin:0;background:#1A1814}
+a{color:inherit}a:hover{color:#C4341A}
+.tab{font-variant-numeric:tabular-nums}
+.btn{transition:transform .2s ease,box-shadow .2s ease,background-color .2s ease}
+.btn:hover{transform:translateY(-2px);box-shadow:0 10px 24px -12px rgba(0,0,0,.55)}
+.btn-t:hover{background:#A82B14 !important;color:#FFFFFF !important}
+.btn:focus-visible,summary:focus-visible,a:focus-visible{outline:2px solid #C4341A;outline-offset:3px}
+.slot{background:#FEF9EC;color:#7A5008;border:1px dashed #D9B25F;border-radius:4px;padding:1px 6px}
+.dots{background-image:radial-gradient(rgba(247,244,239,.10) 1px,transparent 1.2px);background-size:22px 22px}
+.dots-ink{background-image:radial-gradient(rgba(26,24,20,.09) 1px,transparent 1.2px);background-size:22px 22px}
+details summary{list-style:none;cursor:pointer}
+details summary::-webkit-details-marker{display:none}
+details .chev{transition:transform .25s ease}
+details[open] .chev{transform:rotate(45deg)}
+details[open]{background:#FFFFFF}
+
+/* planos do topo: rolagem (--hp) e ponteiro (--mx, --my) */
+.pl-back{transform:translate3d(calc(var(--mx,0) * -10px), calc(var(--hp,0) * -50px + var(--my,0) * -8px),0)}
+.pl-mid{transform:translate3d(calc(var(--mx,0) * -18px), calc(var(--hp,0) * -120px + var(--my,0) * -12px),0)}
+.pl-front{transform:translate3d(calc(var(--mx,0) * -30px), calc(var(--hp,0) * -230px + var(--my,0) * -20px),0)}
+.pl-plate{transform:translate3d(calc(var(--mx,0) * -6px), calc(var(--hp,0) * -20px),0) scale(calc(1 + var(--hp,0) * .12))}
+.pl-back,.pl-mid,.pl-front,.pl-plate{transition:transform .25s ease-out;will-change:transform}
+.hero-copy{transform:translateY(calc(var(--hp,0) * 60px));opacity:calc(1 - var(--hp,0) * 1.2)}
+
+/* linha de progresso de "como funciona" (--cp) */
+.cp-fill{transform:scaleY(var(--cp,0));transform-origin:top}
+
+/* revelar ao rolar (só com script) */
+.js .rv{opacity:0;transform:translateY(32px);transition:opacity .8s cubic-bezier(.2,.7,.2,1),transform .8s cubic-bezier(.2,.7,.2,1)}
+.js .rv.d1{transition-delay:.08s}.js .rv.d2{transition-delay:.16s}.js .rv.d3{transition-delay:.24s}
+.js .rv.in{opacity:1;transform:none}
+.js .rv-l{opacity:.15;transform:translateY(40px);transition:opacity 1s ease,transform 1s cubic-bezier(.2,.7,.2,1)}
+.js .rv-l.in{opacity:1;transform:none}
+
+@keyframes pop{from{opacity:0;transform:translateY(8px) scale(.98)}to{opacity:1;transform:none}}
+@keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-10px)}}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes marq{to{transform:translateX(-50%)}}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(45,125,70,.55)}70%{box-shadow:0 0 0 10px rgba(45,125,70,0)}100%{box-shadow:0 0 0 0 rgba(45,125,70,0)}}
+@keyframes pulseT{0%{box-shadow:0 0 0 0 rgba(196,52,26,.5)}70%{box-shadow:0 0 0 10px rgba(196,52,26,0)}100%{box-shadow:0 0 0 0 rgba(196,52,26,0)}}
+@keyframes typing{0%,100%{opacity:.25;transform:translateY(0)}50%{opacity:1;transform:translateY(-3px)}}
+@keyframes typeShow{0%,8%{opacity:0}12%,85%{opacity:1}92%,100%{opacity:0}}
+@keyframes strike{0%,15%{transform:scaleX(0)}35%,100%{transform:scaleX(1)}}
+@keyframes rewrite{0%,38%{opacity:0;transform:translateY(8px)}48%,92%{opacity:1;transform:none}100%{opacity:0}}
+@keyframes caret{0%,49%{opacity:1}50%,100%{opacity:0}}
+@keyframes flag{0%,20%{transform:translateX(16px);opacity:0}30%,90%{transform:none;opacity:1}100%{opacity:0}}
+
+@media (prefers-reduced-motion:no-preference){
+  .b1{animation:pop .5s ease .4s both}.b2{animation:pop .5s ease 1.6s both}.b3{animation:pop .5s ease 2.6s both}.b4{animation:pop .5s ease 3.9s both}
+  .ty1{animation:typeShow 1.2s ease .6s both}.ty2{animation:typeShow 1.2s ease 2.9s both}
+  .ty1 i,.ty2 i{animation:typing .9s ease-in-out infinite}.ty1 i:nth-child(2),.ty2 i:nth-child(2){animation-delay:.15s}.ty1 i:nth-child(3),.ty2 i:nth-child(3){animation-delay:.3s}
+  .bob{animation:bob 6s ease-in-out infinite}.bob2{animation:bob 7.5s ease-in-out -2s infinite}.bob3{animation:bob 5s ease-in-out -1s infinite}
+  .spin{animation:spin 60s linear infinite}
+  .marq{animation:marq 28s linear infinite}
+  .live{animation:pulse 2s ease-out infinite}.liveT{animation:pulseT 2s ease-out infinite}
+  .strike{animation:strike 6s ease infinite}
+  .rewrite{animation:rewrite 6s ease infinite}
+  .caret{animation:caret 1s steps(1) infinite}
+  .flag{animation:flag 5s ease infinite}
+}
+@media (prefers-reduced-motion:reduce){.ty1,.ty2{display:none}}
+@media (min-width:960px){.stick{position:sticky;top:110px}}
+@media (max-width:720px){.hide-sm{display:none !important}.hero-stage{height:600px !important}}
+</style>
 </head>
 <body>
+<div data-lp="" style="font-family: Inter, system-ui, sans-serif; color: #1A1814; background: #1A1814; font-size: 15px; line-height: 1.55; overflow-x: hidden">
 
-<header class="site-header">
-  <div class="wrap">
-    <a class="brand" href="./" aria-label="Dish Desk — início">
-      <span class="brand-mark"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="3" y="4" width="10" height="1.5" rx=".75" fill="#F7F4EF"/><rect x="3" y="7.25" width="7" height="1.5" rx=".75" fill="#F7F4EF"/><rect x="3" y="10.5" width="4.5" height="1.5" rx=".75" fill="#C4341A"/></svg></span>
-      <span class="brand-name">Dish Desk</span>
+<!-- NAV -->
+<header style="position: sticky; top: 0; z-index: 30; background: rgba(26,24,20,.88); backdrop-filter: blur(10px); border-bottom: 1px solid rgba(247,244,239,.08)">
+  <nav aria-label="Principal" style="max-width: 1200px; margin: 0 auto; padding: 14px 24px; display: flex; align-items: center; gap: 24px; flex-wrap: wrap; color: #F7F4EF">
+    <a href="#topo" style="display: flex; align-items: center; gap: 10px; text-decoration: none; color: #F7F4EF">
+      <span style="display: flex; width: 30px; height: 30px; border-radius: 6px; background: #F7F4EF; align-items: center; justify-content: center">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="3" y="4" width="10" height="1.5" rx="0.75" fill="#1A1814"></rect><rect x="3" y="7.25" width="7" height="1.5" rx="0.75" fill="#1A1814"></rect><rect x="3" y="10.5" width="4.5" height="1.5" rx="0.75" fill="#C4341A"></rect></svg>
+      </span>
+      <span style="font-family: Fraunces, Georgia, serif; font-weight: 600; font-size: 19px">Dish Desk</span>
     </a>
-    <nav class="nav" aria-label="Principal">
-      <a class="link" href="#como-funciona">Como funciona</a>
-      <a class="link" href="#clientes">Clientes</a>
-      <a class="link" href="#preco">Preço</a>
-      <a class="plain" href="/login">Entrar</a>
-      <a class="btn btn-accent" href="/cadastro">Testar grátis</a>
-    </nav>
-  </div>
+    <div class="hide-sm" style="display: flex; gap: 24px; margin-left: 16px; font-weight: 500; font-size: 14px">
+      <a href="#como" style="text-decoration: none; color: #CFC6BB">Como funciona</a>
+      <a href="/funcionalidades" style="text-decoration: none; color: #CFC6BB">Funcionalidades</a>
+      <a href="#equipe" style="text-decoration: none; color: #CFC6BB">Sua equipe</a>
+      <a href="#duvidas" style="text-decoration: none; color: #CFC6BB">Dúvidas</a>
+      <a href="#preco" style="text-decoration: none; color: #CFC6BB">Preço</a>
+    </div>
+    <div style="margin-left: auto; display: flex; gap: 10px; align-items: center">
+      <a href="/login" style="text-decoration: none; font-weight: 500; font-size: 14px; color: #F7F4EF; padding: 0 12px; height: 44px; display: flex; align-items: center">Entrar</a>
+      <a class="btn btn-t" href="/cadastro" style="text-decoration: none; background: #C4341A; color: #FFFFFF; font-weight: 500; font-size: 14px; padding: 0 18px; height: 44px; border-radius: 6px; display: flex; align-items: center">Testar grátis</a>
+    </div>
+  </nav>
 </header>
 
-<main>
-  <section class="hero">
-    <div class="wrap">
-      <h1>Atenda WhatsApp, Instagram e iFood sem trocar de tela.</h1>
-      <p class="lead">O Dish Desk junta as conversas do seu restaurante numa fila só e mostra, ao lado de cada uma, o pedido e o histórico do cliente.</p>
-      <div class="cta-row">
-        <a class="btn btn-accent" href="/cadastro">Testar grátis por 15 dias</a>
-        <a class="btn btn-ghost" href="https://wa.me/5586999731647?text=Ol%C3%A1!%20Quero%20conhecer%20o%20Dish%20Desk.">Falar no WhatsApp</a>
+<!-- 1 · ABERTURA (escura, com planos) -->
+<section id="topo" data-hero="" class="dots" style="position: relative; background-color: #1A1814; color: #F7F4EF; overflow: hidden">
+  <div style="max-width: 1200px; margin: 0 auto; padding: 48px 24px 56px; display: flex; flex-wrap: wrap; gap: 48px; align-items: center; position: relative">
+    <div class="hero-copy" style="flex: 1 1 440px; min-width: 0; position: relative; z-index: 2">
+      <p style="margin: 0 0 22px; display: inline-flex; align-items: center; gap: 10px; font-size: 13px; font-weight: 500; color: #CFC6BB; border: 1px solid rgba(247,244,239,.16); background: rgba(247,244,239,.04); border-radius: 999px; padding: 6px 14px">
+        <span class="live" style="width: 8px; height: 8px; border-radius: 50%; background: #2D7D46"></span>
+        Atendimento com IA incluído no plano
+      </p>
+      <h1 style="margin: 0; font-family: Fraunces, Georgia, serif; font-weight: 700; font-size: clamp(42px, 6vw, 80px); line-height: 1.0; letter-spacing: -2px">A IA que atende os clientes do seu <span style="color: #C4341A; font-style: italic">restaurante.</span></h1>
+      <p style="margin: 26px 0 0; max-width: 500px; font-size: 18px; color: #CFC6BB">O Dish Desk responde no WhatsApp, no Instagram e no iFood acessando o cardápio e os pedidos do seu restaurante em tempo real: identifica atrasos e prevê quando cada pedido sai para entrega. Quando o cliente precisa de uma pessoa, a conversa passa para a sua equipe.</p>
+      <div style="display: flex; gap: 12px; margin-top: 34px; flex-wrap: wrap">
+        <a class="btn btn-t" href="/cadastro" style="text-decoration: none; background: #C4341A; color: #FFFFFF; font-weight: 500; font-size: 15px; padding: 0 24px; height: 52px; border-radius: 6px; display: flex; align-items: center">Testar grátis por 15 dias</a>
+        <a class="btn" href="https://wa.me/5586999731647?text=Ol%C3%A1!%20Quero%20conhecer%20o%20Dish%20Desk." style="text-decoration: none; background: transparent; color: #F7F4EF; border: 1px solid rgba(247,244,239,.28); font-weight: 500; font-size: 15px; padding: 0 20px; height: 52px; border-radius: 6px; display: flex; align-items: center; gap: 8px"><span style="width: 8px; height: 8px; border-radius: 50%; background: #25D366"></span>Falar no WhatsApp</a>
       </div>
-      <p class="fine">Não pede cartão. Depois do teste, R$ 99 por mês.</p>
-      <div class="hero-shot">
-        <img src="assets/inbox.webp" width="2560" height="1800" fetchpriority="high" alt="Caixa de entrada do Dish Desk: no WhatsApp, a Maria informa o número do pedido, a automação encontra o pedido 4853 do iFood e o cadastro dela é unido ao do pedido. Ao lado, o pedido com a saída prevista atrasada">
-      </div>
+      <p style="margin: 14px 0 0; font-size: 13px; color: #8C857D">Não pede cartão.</p>
     </div>
-  </section>
 
-  <section id="como-funciona" class="night">
-    <div class="wrap">
-      <h2 class="lp-h2">Deixe a equipe livre para os problemas de verdade.</h2>
-      <p class="lp-intro">O Dish Desk resolve sozinho o que mais se repete no atendimento, como o “cadê meu pedido?”. Veja um pedido de sexta à noite do começo ao fim, sem ninguém da equipe digitar.</p>
+    <div class="hero-stage" style="flex: 1 1 520px; min-width: 0; position: relative; height: 600px">
+      <!-- prato: disco tomate com borda girando -->
+      <div class="pl-plate" aria-hidden="true" style="position: absolute; top: 50%; left: 50%; width: 520px; height: 520px; margin: -260px 0 0 -250px">
+        <div style="position: absolute; inset: 0; border-radius: 50%; background: #C4341A"></div>
+        <div style="position: absolute; inset: 34px; border-radius: 50%; border: 1px solid rgba(247,244,239,.35)"></div>
+        <svg class="spin" viewBox="0 0 520 520" width="520" height="520" aria-hidden="true" style="position: absolute; inset: 0"><circle cx="260" cy="260" r="246" fill="none" stroke="#F7F4EF" stroke-opacity=".5" stroke-width="1.5" stroke-dasharray="2 10"></circle></svg>
+      </div>
 
-      <div class="scene idle" data-scene>
-        <div class="scene-steps">
-          <ol class="scene-list">
-            <li><button type="button" class="scene-step on" aria-current="step"><span class="step-time">18:52</span><span class="step-body"><span class="step-title">O pedido chega pelo iFood.</span><span class="step-text">O pedido aparece no Dish Desk com itens, observações e a entrega prometida, já no cadastro da Maria.</span><span class="step-timer"></span></span></button></li>
-            <li><button type="button" class="scene-step"><span class="step-time">19:41</span><span class="step-body"><span class="step-title">A Maria pergunta pelo pedido.</span><span class="step-text">O Dish Desk identifica o pedido automaticamente e dá uma previsão baseada no tempo dos seus últimos pedidos.</span><span class="step-timer"></span></span></button></li>
-            <li><button type="button" class="scene-step"><span class="step-time">19:52</span><span class="step-body"><span class="step-title">O pedido sai para entrega.</span><span class="step-text">Como a Maria já entrou em contato, o Dish Desk continua avisando cada movimentação do pedido no WhatsApp.</span><span class="step-timer"></span></span></button></li>
-            <li><button type="button" class="scene-step"><span class="step-time">20:18</span><span class="step-body"><span class="step-title">Entregue e com avaliação.</span><span class="step-text">Depois do aviso de entrega, o Dish Desk pede uma avaliação do seu atendimento e pode enviar um NPS ao cliente.</span><span class="step-timer"></span></span></button></li>
-          </ol>
-          <button type="button" class="scene-play" data-play>
-            <span data-when="playing"><svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" aria-hidden="true"><rect x="3" y="2" width="3" height="10" rx="1"/><rect x="8" y="2" width="3" height="10" rx="1"/></svg><span class="play-label">Pausar</span></span>
-            <span data-when="paused" hidden><svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" aria-hidden="true"><path d="M4 2.5v9a.5.5 0 0 0 .77.42l7-4.5a.5.5 0 0 0 0-.84l-7-4.5A.5.5 0 0 0 4 2.5Z"/></svg><span class="play-label">Continuar</span></span>
-          </button>
+      <!-- fundo: comanda -->
+      <div class="pl-back" aria-hidden="true" style="position: absolute; top: 0; right: -8px; z-index: 1">
+        <div class="bob2" style="width: 250px; background: #F0EDE8; border-radius: 8px; padding: 20px; transform: rotate(4deg); box-shadow: 0 24px 50px -24px rgba(0,0,0,.6)">
+          <div style="display: flex; justify-content: space-between; font-size: 12px; color: #8C857D"><span style="display: flex; align-items: center; gap: 6px"><span style="width: 7px; height: 7px; border-radius: 50%; background: #EA1D2C"></span>iFood</span><span class="tab">18:52</span></div>
+          <p class="tab" style="margin: 10px 0 2px; font-family: Fraunces, Georgia, serif; font-weight: 600; font-size: 24px; color: #1A1814">#4853</p>
+          <p style="margin: 0; font-size: 13px; color: #4A4540">1× Lasanha Bolonhesa G<br>sem cebola</p>
+          <p style="margin: 4px 0 0; font-size: 13px; color: #4A4540">1× Refrigerante lata</p>
+          <div style="border-top: 1px dashed #C4B8A0; margin: 14px 0 10px"></div>
+          <div class="tab" style="display: flex; justify-content: space-between; font-size: 12px; color: #4A4540"><span>Saída prevista</span><strong>19:50</strong></div>
+          <div style="margin-top: 10px; display: inline-block; font-size: 11px; font-weight: 600; background: #FEF9EC; color: #7A5008; padding: 3px 8px; border-radius: 4px">Em preparo</div>
         </div>
+      </div>
 
-        <div class="scene-caption" aria-hidden="true">
-          <span class="step-body"><span class="step-title" data-cap-title>O pedido chega pelo iFood.</span><span class="step-text" data-cap-text>O pedido aparece no Dish Desk com itens, observações e a entrega prometida, já no cadastro da Maria.</span></span>
-        </div>
-
-        <div class="scene-screen" role="img" aria-label="Pedido 4853 do iFood em preparo, no cadastro da Maria: VIP e recorrente, com iFood e WhatsApp vinculados, 12 pedidos e 847 reais gastos." data-screen>
-          <div class="screen-head">
-            <span class="avatar" aria-hidden="true">MO</span>
-            <span class="screen-who">
-              <span class="convo-name">Maria Oliveira</span>
-              <span class="convo-channel"><span class="dot dot-wa"></span>WhatsApp</span>
-            </span>
-            <span class="screen-clock">Sexta, <span data-clock>18:52</span></span>
+      <!-- meio: conversa -->
+      <div class="pl-mid" style="position: absolute; top: 90px; left: 0; width: min(410px, 94%); z-index: 2">
+        <div class="bob" style="background: #FFFFFF; color: #1A1814; border-radius: 14px; box-shadow: 0 40px 80px -30px rgba(0,0,0,.7); overflow: hidden">
+          <div style="display: flex; align-items: center; gap: 10px; padding: 14px 16px; border-bottom: 1px solid #DDD8D0">
+            <span style="width: 36px; height: 36px; border-radius: 50%; background: #F0EDE8; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; color: #4A4540">MO</span>
+            <div style="flex: 1"><p style="margin: 0; font-weight: 600; font-size: 14px">Maria Oliveira</p><p style="margin: 0; font-size: 12px; color: #8C857D; display: flex; align-items: center; gap: 5px"><span style="width: 6px; height: 6px; border-radius: 50%; background: #25D366"></span>WhatsApp · sexta, 19:41</p></div>
+            <span style="font-size: 11px; font-weight: 600; background: #FDECEA; color: #C4341A; padding: 3px 8px; border-radius: 4px">Aberta</span>
           </div>
-          <div class="screen-order">
-            <div class="screen-order-top"><span class="dot dot-if"></span>iFood #4853<span class="screen-total">R$ 67,40</span><span class="badge badge-amber" data-status>Em preparo</span></div>
-            <p class="screen-items">1× Lasanha Bolonhesa G (sem cebola), 1× Refrigerante lata 350 ml</p>
-            <div class="screen-bar"><span class="bar-fill bar-0" data-bar></span></div>
-            <div class="screen-facts">
-              <div><span data-elapsed-label>Decorrido</span><strong data-elapsed>0 min</strong></div>
-              <div><span data-depart-label>Saída prevista</span><strong data-depart>19:29</strong></div>
-              <div><span>Entrega prometida</span><strong>19:30</strong></div>
-            </div>
-          </div>
-          <div class="scene-chat">
-            <div class="scene-profile">
-              <div class="scene-profile-top"><span class="label">Cadastro da cliente</span><span class="tags"><span class="tag">VIP</span><span class="tag">Recorrente</span></span></div>
-              <div class="scene-profile-row"><span class="dot dot-wa"></span>WhatsApp<span class="end soft">+55 11 97654-3210</span></div>
-              <div class="scene-profile-row"><span class="dot dot-if"></span>iFood<span class="end soft">desde jan. de 2026</span></div>
-              <div class="scene-profile-row addr"><span class="soft">Entrega</span>Rua das Acácias, 847, ap. 42, Vila Madalena</div>
-              <div class="scene-stats"><div><strong>12</strong><span>pedidos</span></div><div><strong>R$ 847</strong><span>gastos</span></div><div><strong>9 meses</strong><span>como cliente</span></div></div>
-              <span class="label">Últimos pedidos</span>
-              <div class="scene-profile-row"><strong>#4853</strong><span class="soft">Hoje, 18:52</span><span class="end">R$ 67,40</span><span class="badge badge-amber" data-status-history>Em preparo</span></div>
-              <div class="scene-profile-row"><strong>#4621</strong><span class="soft">Há 3 dias</span><span class="end">R$ 94,20</span><span class="badge badge-green">Entregue</span></div>
-            </div>
-            <div class="bubble in" data-at="1" hidden>Boa noite! Meu pedido ainda não chegou. É o 4853.<span class="at">19:41</span></div>
-            <div class="bubble auto" data-at="1" hidden><span class="who">Automação</span><span class="line">Pedimos desculpas pela demora! 🙏 Seu pedido está levando mais tempo que o normal.</span><span class="line">Nova previsão de saída do restaurante: por volta das 19:50.</span></div>
-            <div class="bubble auto" data-at="2" hidden><span class="who">Automação</span>🛵 Boa notícia! Seu pedido #4853 saiu para entrega às 19:52.</div>
-            <div class="bubble in" data-at="2" hidden>Obrigada!<span class="at">19:53</span></div>
-            <div class="bubble auto" data-at="3" hidden><span class="who">Automação</span>✅ Seu pedido #4853 foi entregue! Bom apetite 😋</div>
-            <div class="bubble auto" data-at="3" hidden><span class="who">Automação</span>Encerramos esta conversa por falta de interação. Se precisar de algo, é só mandar uma mensagem que retomamos de onde paramos.</div>
-            <div class="bubble auto" data-at="3" hidden><span class="who">Automação</span>Qual nota você dá para nosso atendimento? Digite de 1 a 5</div>
-            <div class="bubble in" data-at="3" hidden>5<span class="at">20:40</span></div>
+          <div style="padding: 18px 16px 22px; background: #F7F4EF; display: flex; flex-direction: column; gap: 10px; min-height: 300px">
+            <div class="b1" style="align-self: flex-start; max-width: 80%; background: #FFFFFF; border: 1px solid #DDD8D0; border-radius: 12px 12px 12px 2px; padding: 9px 12px; font-size: 13px">Boa noite! Meu pedido está perto de sair?</div>
+            <div class="ty1" aria-hidden="true" style="align-self: flex-end; display: flex; gap: 4px; background: #1A1814; border-radius: 12px; padding: 10px 12px; height: 0; overflow: visible; margin-bottom: -10px"><i style="width: 6px; height: 6px; border-radius: 50%; background: #F7F4EF; display: block"></i><i style="width: 6px; height: 6px; border-radius: 50%; background: #F7F4EF; display: block"></i><i style="width: 6px; height: 6px; border-radius: 50%; background: #F7F4EF; display: block"></i></div>
+            <div class="b2" style="align-self: flex-end; max-width: 84%; background: #1A1814; color: #F7F4EF; border-radius: 12px 12px 2px 12px; padding: 9px 12px; font-size: 13px">Boa noite, Maria! Me diz o número do seu pedido para que eu verifique.</div>
+            <div class="b3" style="align-self: flex-start; max-width: 60%; background: #FFFFFF; border: 1px solid #DDD8D0; border-radius: 12px 12px 12px 2px; padding: 9px 12px; font-size: 13px">É o 4853</div>
+            <div class="ty2" aria-hidden="true" style="align-self: flex-end; display: flex; gap: 4px; background: #1A1814; border-radius: 12px; padding: 10px 12px; height: 0; overflow: visible; margin-bottom: -10px"><i style="width: 6px; height: 6px; border-radius: 50%; background: #F7F4EF; display: block"></i><i style="width: 6px; height: 6px; border-radius: 50%; background: #F7F4EF; display: block"></i><i style="width: 6px; height: 6px; border-radius: 50%; background: #F7F4EF; display: block"></i></div>
+            <div class="b4" style="align-self: flex-end; max-width: 84%; background: #1A1814; color: #F7F4EF; border-radius: 12px 12px 2px 12px; padding: 9px 12px; font-size: 13px">Achei seu pedido #4853: ele está em preparo, com saída prevista para as 19:50. Assim que sair para entrega, eu te aviso por aqui.</div>
+            <p class="b4" style="align-self: flex-end; margin: -4px 2px 0; font-size: 11px; color: #8C857D">Escrita pela IA · com os dados do pedido</p>
           </div>
         </div>
       </div>
-    </div>
-  </section>
 
-  <section id="clientes" class="lp-section">
-    <div class="wrap duo">
-      <div class="duo-text">
-        <h2 class="lp-h2">Cada cliente vira um cadastro só.</h2>
-        <p class="lp-intro">Quem pede no iFood e depois chama no WhatsApp continua sendo a mesma pessoa. O Dish Desk liga os canais pelo telefone, CPF ou e-mail e avisa quando encontra cadastros parecidos para juntar.</p>
-        <dl class="defs">
-          <div>
-            <dt>Histórico</dt>
-            <dd>Pedidos, total gasto e desde quando a pessoa compra com você.</dd>
+      <!-- frente: sinais -->
+      <div class="pl-front" aria-hidden="true" style="position: absolute; bottom: 10px; right: 0; z-index: 3">
+        <div class="bob3" style="display: flex; flex-direction: column; gap: 10px; align-items: flex-end">
+          <div style="background: #FFFFFF; color: #1A1814; border-radius: 8px; padding: 11px 15px; font-size: 13px; font-weight: 500; box-shadow: 0 22px 40px -18px rgba(0,0,0,.6); display: flex; gap: 10px; align-items: center">
+            <span class="live" style="width: 8px; height: 8px; border-radius: 50%; background: #2D7D46"></span>Resolvida sem ninguém digitar
           </div>
-          <div>
-            <dt>Tags</dt>
-            <dd>O Dish Desk marca sozinho quem é VIP, recorrente, novo, sumido ou saiu insatisfeito da última avaliação.</dd>
-          </div>
-          <div>
-            <dt>LGPD</dt>
-            <dd>CPF mascarado na tela e criptografado no banco.</dd>
-          </div>
-        </dl>
-      </div>
-      <div class="duo-visual profile" role="img" aria-label="Cadastro da Maria Oliveira: tags VIP e Recorrente, WhatsApp e iFood ligados, 12 pedidos, 847 reais gastos, os dois últimos pedidos e um aviso de possível cadastro duplicado no Instagram">
-        <div class="profile-top">
-          <span class="avatar avatar-lg">MO</span>
-          <div>
-            <p class="profile-name">Maria Oliveira</p>
-            <div class="tags"><span class="tag">VIP</span><span class="tag">Recorrente</span></div>
-          </div>
-        </div>
-        <div class="profile-block">
-          <span class="label">Canais</span>
-          <div class="profile-line"><span class="dot dot-wa"></span>WhatsApp<span class="end soft">+55 11 97654-3210</span></div>
-          <div class="profile-line"><span class="dot dot-if"></span>iFood<span class="end soft">desde jan. de 2026</span></div>
-        </div>
-        <div class="stats">
-          <div><strong>12</strong><span>pedidos</span></div>
-          <div><strong>R$ 847</strong><span>gastos</span></div>
-          <div><strong>9 meses</strong><span>como cliente</span></div>
-        </div>
-        <div class="profile-block">
-          <span class="label">Últimos pedidos</span>
-          <div class="profile-line"><strong>#4853</strong><span class="soft">Hoje, 18:52</span><span class="end">R$ 67,40</span><span class="badge badge-green">Entregue</span></div>
-          <div class="profile-line"><strong>#4621</strong><span class="soft">Há 3 dias</span><span class="end">R$ 94,20</span><span class="badge badge-green">Entregue</span></div>
-        </div>
-        <div class="dup">
-          <p>Possível duplicado: Maria O., no Instagram, com nome parecido.</p>
-          <span class="fake-btn">Comparar</span>
+          <div style="background: #F7F4EF; color: #1A1814; border-radius: 8px; padding: 11px 15px; font-size: 13px; font-weight: 500; box-shadow: 0 22px 40px -18px rgba(0,0,0,.6)">Sua equipe segue focada no que importa</div>
         </div>
       </div>
-    </div>
-  </section>
-
-  <section id="canais" class="lp-section">
-    <div class="wrap">
-      <h2 class="lp-h2">Funciona com os canais que você já usa.</h2>
-      <p class="lp-intro">Você mesmo conecta cada um em Configurações, na aba Integrações.</p>
-      <ul class="channel-list">
-        <li>
-          <span class="channel-name"><span class="dot dot-wa"></span>WhatsApp</span>
-          <p>Conversas pela API oficial da Meta, com respostas rápidas e modelos aprovados para falar com quem não escreve há mais de 24 horas.</p>
-        </li>
-        <li>
-          <span class="channel-name"><span class="dot dot-ig"></span>Instagram</span>
-          <p>Mensagens diretas da conta do restaurante, na mesma fila do WhatsApp.</p>
-        </li>
-        <li>
-          <span class="channel-name"><span class="dot dot-if"></span>iFood</span>
-          <p>Pedidos com itens, complementos, pagamento e status, ligados ao cadastro de quem pediu.</p>
-        </li>
-        <li>
-          <span class="channel-name"><span class="dot dot-cw"></span>Cardápio Web</span>
-          <p>Pedidos do seu cardápio digital, com a linha do tempo do preparo.</p>
-        </li>
-      </ul>
-    </div>
-  </section>
-
-  <section id="preco" class="lp-section">
-    <div class="wrap">
-      <h2 class="lp-h2">Dois jeitos de pagar, os mesmos recursos.</h2>
-      <p class="lp-intro">Os primeiros 15 dias são grátis e não pedem cartão. No fim do teste, você escolhe o plano.</p>
-      <div class="plans">
-        <div class="plan">
-          <h3>Mensal</h3>
-          <p class="price"><strong>R$ 99</strong><span>por mês</span></p>
-          <p class="plan-note">No cartão de crédito, com renovação automática.</p>
-        </div>
-        <div class="plan">
-          <h3>Anual</h3>
-          <p class="price"><strong>R$ 999</strong><span>por ano</span></p>
-          <p class="plan-note">Pagamento único. Sai por R$ 83,25 por mês.</p>
-        </div>
-      </div>
-      <div class="cta-row" id="contato">
-        <a class="btn btn-accent" href="/cadastro">Testar grátis por 15 dias</a>
-        <a class="btn btn-ghost" href="https://wa.me/5586999731647?text=Ol%C3%A1!%20Quero%20conhecer%20o%20Dish%20Desk.">Falar no WhatsApp</a>
-      </div>
-      <p class="fine">Prefere e-mail? Escreva para <a href="mailto:dishdesk.crm@gmail.com" data-copy>dishdesk.crm@gmail.com</a>.</p>
-    </div>
-  </section>
-</main>
-
-<footer class="site-footer">
-  <div class="wrap">
-    <div class="footer-grid">
-      <div>
-        <a class="brand" href="./">
-          <span class="brand-mark"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="3" y="4" width="10" height="1.5" rx=".75" fill="#F7F4EF"/><rect x="3" y="7.25" width="7" height="1.5" rx=".75" fill="#F7F4EF"/><rect x="3" y="10.5" width="4.5" height="1.5" rx=".75" fill="#C4341A"/></svg></span>
-          <span class="brand-name">Dish Desk</span>
-        </a>
-        <p class="tagline-company">Dish Desk é um produto da Avelino Gastronomia Ltda., de Teresina, Piauí.</p>
-      </div>
-      <div>
-        <h4>Empresa</h4>
-        <p>Avelino Gastronomia Ltda</p>
-        <p>CNPJ 66.832.307/0001-67</p>
-        <p>Rua Azar Chaib, 807, Santa Isabel<br>Teresina/PI, CEP 64053-290</p>
-      </div>
-      <div>
-        <h4>Contato e legal</h4>
-        <ul>
-          <li><a href="tel:+5586999731647">+55 86 99973-1647</a></li>
-          <li><a href="mailto:dishdesk.crm@gmail.com">dishdesk.crm@gmail.com</a></li>
-          <li><a href="privacidade/">Política de privacidade</a></li>
-          <li><a href="exclusao-de-dados/">Exclusão de dados</a></li>
-        </ul>
-      </div>
-    </div>
-    <div class="footer-bottom">
-      <span>© 2026 Avelino Gastronomia Ltda. Todos os direitos reservados.</span>
-      <span>Teresina, Piauí</span>
     </div>
   </div>
-</footer>
+</section>
 
+<!-- 2 · FAIXA DE CANAIS (tomate, em movimento) -->
+<section aria-label="Funciona com WhatsApp, Instagram, iFood e Cardápio Web" style="background: #C4341A; color: #FFFFFF; overflow: hidden; border-top: 1px solid #A82B14; border-bottom: 1px solid #A82B14">
+  <div class="marq" style="display: flex; width: max-content; padding: 18px 0; font-family: Fraunces, Georgia, serif; font-weight: 600; font-size: 26px; white-space: nowrap">
+    <div style="display: flex; gap: 40px; padding-right: 40px; align-items: center">
+      <span>Funciona com</span><span style="opacity: .5">✦</span><span>WhatsApp</span><span style="opacity: .5">✦</span><span>Instagram</span><span style="opacity: .5">✦</span><span>iFood</span><span style="opacity: .5">✦</span><span>Cardápio Web</span><span style="opacity: .5">✦</span>
+      <span>Funciona com</span><span style="opacity: .5">✦</span><span>WhatsApp</span><span style="opacity: .5">✦</span><span>Instagram</span><span style="opacity: .5">✦</span><span>iFood</span><span style="opacity: .5">✦</span><span>Cardápio Web</span><span style="opacity: .5">✦</span>
+    </div>
+    <div aria-hidden="true" style="display: flex; gap: 40px; padding-right: 40px; align-items: center">
+      <span>Funciona com</span><span style="opacity: .5">✦</span><span>WhatsApp</span><span style="opacity: .5">✦</span><span>Instagram</span><span style="opacity: .5">✦</span><span>iFood</span><span style="opacity: .5">✦</span><span>Cardápio Web</span><span style="opacity: .5">✦</span>
+      <span>Funciona com</span><span style="opacity: .5">✦</span><span>WhatsApp</span><span style="opacity: .5">✦</span><span>Instagram</span><span style="opacity: .5">✦</span><span>iFood</span><span style="opacity: .5">✦</span><span>Cardápio Web</span><span style="opacity: .5">✦</span>
+    </div>
+  </div>
+</section>
+
+<!-- 3 · NÚMEROS DO PILOTO: escondida até chegarem os dados reais do piloto. Para mostrar, tire o <template>. -->
+<template data-piloto="">
+<section aria-label="Resultados do piloto" style="background: #F0EDE8">
+  <div style="max-width: 1200px; margin: 0 auto; padding: 40px 24px; display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 32px">
+    <div class="rv" style="border-top: 2px solid #C4341A; padding-top: 18px">
+      <p class="tab" style="margin: 0; font-family: Fraunces, Georgia, serif; font-weight: 700; font-size: 48px; line-height: 1"><span class="slot">[X%]</span></p>
+      <p style="margin: 10px 0 0; font-size: 14px; color: #4A4540">das conversas resolvidas pela IA no piloto da Moby Dick Dark Kitchen</p>
+    </div>
+    <div class="rv d1" style="border-top: 2px solid #C4341A; padding-top: 18px">
+      <p class="tab" style="margin: 0; font-family: Fraunces, Georgia, serif; font-weight: 700; font-size: 48px; line-height: 1"><span class="slot">[X s]</span></p>
+      <p style="margin: 10px 0 0; font-size: 14px; color: #4A4540">de tempo médio até a primeira resposta</p>
+    </div>
+    <div class="rv d2" style="border-top: 2px solid #C4341A; padding-top: 18px">
+      <p class="tab" style="margin: 0; font-family: Fraunces, Georgia, serif; font-weight: 700; font-size: 48px; line-height: 1"><span class="slot">[X,X]</span></p>
+      <p style="margin: 10px 0 0; font-size: 14px; color: #4A4540">de nota média dos atendimentos da IA</p>
+    </div>
+  </div>
+</section></template>
+
+<!-- 4 · PROBLEMA (creme, tipografia grande que se monta) -->
+<section aria-labelledby="t-tensao" class="dots-ink" style="background-color: #F7F4EF">
+  <div style="max-width: 1100px; margin: 0 auto; padding: 64px 24px">
+    <h2 id="t-tensao" style="margin: 0; font-family: Fraunces, Georgia, serif; font-weight: 600; font-size: clamp(32px, 5vw, 64px); line-height: 1.1; letter-spacing: -1.2px; color: #1A1814">
+      <span class="rv-l" style="display: block">Na hora do pico, ninguém tem a mão livre</span>
+      <span class="rv-l" style="display: block; color: #8C857D">para digitar “qual é o número do pedido?”</span>
+      <span class="rv-l" style="display: block; color: #8C857D">pela trigésima vez.</span>
+      <span class="rv-l" style="display: block; margin-top: 32px">Agora alguém tem<span style="color: #C4341A">.</span></span>
+    </h2>
+  </div>
+</section>
+
+<!-- 5 · COMO FUNCIONA (creme escuro, linha de progresso) -->
+<section id="como" data-como="" style="background: #E9E3DA; border-top: 1px solid #DDD8D0">
+  <div style="max-width: 1200px; margin: 0 auto; padding: 72px 24px; display: flex; flex-wrap: wrap; gap: 56px">
+    <div style="flex: 1 1 340px; min-width: 0">
+      <div class="stick">
+        <h2 class="rv" style="margin: 0; font-family: Fraunces, Georgia, serif; font-weight: 700; font-size: clamp(32px, 3.8vw, 48px); line-height: 1.08; letter-spacing: -0.8px">Ela lê, procura e responde. Ou chama você.</h2>
+        <p class="rv d1" style="margin: 18px 0 0; color: #4A4540; max-width: 380px">A IA trabalha com o que o restaurante já tem no Dish Desk: o cardápio, os horários, os links para pedir e os pedidos de cada cliente.</p>
+        <a class="btn rv d2" href="/cadastro" style="margin-top: 28px; text-decoration: none; background: #1A1814; color: #F7F4EF; font-weight: 500; font-size: 15px; padding: 0 20px; height: 48px; border-radius: 6px; display: inline-flex; align-items: center">Testar grátis por 15 dias</a>
+      </div>
+    </div>
+    <div style="flex: 1 1 560px; min-width: 0; position: relative; padding-left: 36px">
+      <div aria-hidden="true" style="position: absolute; left: 8px; top: 8px; bottom: 8px; width: 2px; background: #D3CBBF; border-radius: 2px">
+        <div class="cp-fill" style="position: absolute; inset: 0; background: #C4341A; border-radius: 2px"></div>
+      </div>
+      <ol style="list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 20px">
+        <li class="rv" style="position: relative; background: #F7F4EF; border-radius: 10px; padding: 28px; box-shadow: 0 1px 0 #DDD8D0, 0 18px 40px -30px rgba(26,24,20,.4)">
+          <span aria-hidden="true" style="position: absolute; left: -35px; top: 32px; width: 14px; height: 14px; border-radius: 50%; background: #E9E3DA; border: 2px solid #C4341A"></span>
+          <p class="tab" style="margin: 0 0 6px; font-size: 13px; font-weight: 600; color: #C4341A">19:41</p>
+          <h3 style="margin: 0; font-family: Fraunces, Georgia, serif; font-weight: 600; font-size: 22px">A mensagem chega em qualquer canal</h3>
+          <p style="margin: 8px 0 0; color: #4A4540">WhatsApp, Instagram e iFood caem na mesma Inbox. Quem pediu no iFood e chamou no WhatsApp continua sendo a mesma cliente, com um cadastro só.</p>
+        </li>
+        <li class="rv" style="position: relative; background: #F7F4EF; border-radius: 10px; padding: 28px; box-shadow: 0 1px 0 #DDD8D0, 0 18px 40px -30px rgba(26,24,20,.4)">
+          <span aria-hidden="true" style="position: absolute; left: -35px; top: 32px; width: 14px; height: 14px; border-radius: 50%; background: #E9E3DA; border: 2px solid #C4341A"></span>
+          <p class="tab" style="margin: 0 0 6px; font-size: 13px; font-weight: 600; color: #C4341A">19:41</p>
+          <h3 style="margin: 0; font-family: Fraunces, Georgia, serif; font-weight: 600; font-size: 22px">A IA procura nos dados do restaurante</h3>
+          <p style="margin: 8px 0 0; color: #4A4540">Perguntou do pedido? Ela pede o número, encontra o pedido e conta em que pé ele está, com a previsão de saída calculada pelo tempo dos seus últimos pedidos.</p>
+          <div style="margin-top: 16px; display: flex; gap: 8px; flex-wrap: wrap; font-size: 12px">
+            <span style="border: 1px dashed #C4B8A0; border-radius: 4px; padding: 3px 8px; color: #4A4540">Cardápio</span>
+            <span style="border: 1px dashed #C4B8A0; border-radius: 4px; padding: 3px 8px; color: #4A4540">Horários</span>
+            <span style="border: 1px dashed #C4B8A0; border-radius: 4px; padding: 3px 8px; color: #4A4540">Links para pedir</span>
+            <span style="border: 1px dashed #C4B8A0; border-radius: 4px; padding: 3px 8px; color: #4A4540">Pedidos do cliente</span>
+          </div>
+        </li>
+        <li class="rv" style="position: relative; background: #F7F4EF; border-radius: 10px; padding: 28px; box-shadow: 0 1px 0 #DDD8D0, 0 18px 40px -30px rgba(26,24,20,.4)">
+          <span aria-hidden="true" style="position: absolute; left: -35px; top: 32px; width: 14px; height: 14px; border-radius: 50%; background: #E9E3DA; border: 2px solid #C4341A"></span>
+          <p class="tab" style="margin: 0 0 6px; font-size: 13px; font-weight: 600; color: #C4341A">19:42</p>
+          <h3 style="margin: 0; font-family: Fraunces, Georgia, serif; font-weight: 600; font-size: 22px">Responde no tom da casa</h3>
+          <p style="margin: 8px 0 0; color: #4A4540">Você escolhe a personalidade do atendimento: cordial, formal, jovial, descontraído, acolhedor ou direto. Cada mensagem marca que foi escrita pela IA, para a equipe saber o que já foi dito.</p>
+        </li>
+        <li class="rv" style="position: relative; background: #1A1814; color: #F7F4EF; border-radius: 10px; padding: 28px; box-shadow: 0 24px 50px -30px rgba(26,24,20,.7)">
+          <span aria-hidden="true" class="liveT" style="position: absolute; left: -35px; top: 32px; width: 14px; height: 14px; border-radius: 50%; background: #C4341A; border: 2px solid #C4341A"></span>
+          <p class="tab" style="margin: 0 0 6px; font-size: 13px; font-weight: 600; color: #F3A08F">19:43</p>
+          <h3 style="margin: 0; font-family: Fraunces, Georgia, serif; font-weight: 600; font-size: 22px">Ou passa para a equipe</h3>
+          <p style="margin: 8px 0 0; color: #CFC6BB">Reembolso, cancelamento, reclamação ou uma pergunta sem resposta nos dados: a conversa vai para um atendente, com o alarme de sempre. Quando alguém responde, a IA sai daquela conversa.</p>
+        </li>
+      </ol>
+    </div>
+  </div>
+</section>
+
+<!-- 6 · REGRAS (escuro) -->
+<section aria-labelledby="t-regras" class="dots" style="background-color: #1A1814; color: #F7F4EF">
+  <div style="max-width: 1200px; margin: 0 auto; padding: 72px 24px">
+    <div style="display: flex; flex-wrap: wrap; gap: 32px 56px; align-items: flex-end">
+      <h2 id="t-regras" class="rv" style="flex: 1 1 460px; margin: 0; font-family: Fraunces, Georgia, serif; font-weight: 700; font-size: clamp(34px, 4.4vw, 56px); line-height: 1.04; letter-spacing: -1px">Ela só diz o que está nos <span style="color: #C4341A; font-style: italic">seus dados.</span></h2>
+      <p class="rv d1" style="flex: 1 1 340px; margin: 0; color: #CFC6BB; font-size: 17px">Sem a informação, ela não arrisca: passa para a equipe. É a regra que vem antes de todas as outras.</p>
+    </div>
+    <div style="margin-top: 36px; display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px">
+      <div class="rv" style="background: #24211C; border: 1px solid #3A352F; border-radius: 10px; padding: 28px">
+        <p class="tab" style="margin: 0 0 18px; font-family: Fraunces, Georgia, serif; font-size: 15px; color: #C4341A">01</p>
+        <p style="margin: 0; font-weight: 600; font-size: 17px">Nunca inventa</p>
+        <p style="margin: 8px 0 0; color: #A2968A; font-size: 14px">Preço, prazo, promoção ou política que não estejam no cadastro do restaurante.</p>
+      </div>
+      <div class="rv d1" style="background: #24211C; border: 1px solid #3A352F; border-radius: 10px; padding: 28px">
+        <p class="tab" style="margin: 0 0 18px; font-family: Fraunces, Georgia, serif; font-size: 15px; color: #C4341A">02</p>
+        <p style="margin: 0; font-weight: 600; font-size: 17px">Respeita o cliente</p>
+        <p style="margin: 8px 0 0; color: #A2968A; font-size: 14px">A janela de 24 horas e o pedido para não receber mensagens, como qualquer envio.</p>
+      </div>
+      <div class="rv d2" style="background: #24211C; border: 1px solid #3A352F; border-radius: 10px; padding: 28px">
+        <p class="tab" style="margin: 0 0 18px; font-family: Fraunces, Georgia, serif; font-size: 15px; color: #C4341A">03</p>
+        <p style="margin: 0; font-weight: 600; font-size: 17px">Sabe parar</p>
+        <p style="margin: 8px 0 0; color: #A2968A; font-size: 14px">Com um limite de respostas por atendimento, a conversa vai para uma pessoa.</p>
+      </div>
+      <div class="rv d3" style="background: #24211C; border: 1px solid #3A352F; border-radius: 10px; padding: 28px">
+        <p class="tab" style="margin: 0 0 18px; font-family: Fraunces, Georgia, serif; font-size: 15px; color: #C4341A">04</p>
+        <p style="margin: 0; font-weight: 600; font-size: 17px">Não deixa ninguém sem resposta</p>
+        <p style="margin: 8px 0 0; color: #A2968A; font-size: 14px">Sem atendente online, avisa o cliente e a conversa espera o primeiro que chegar.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 7 · EQUIPE (creme, demos animadas) -->
+<section id="equipe" aria-labelledby="t-equipe" style="background: #F0EDE8">
+  <div style="max-width: 1200px; margin: 0 auto; padding: 72px 24px">
+    <h2 id="t-equipe" class="rv" style="margin: 0; max-width: 720px; font-family: Fraunces, Georgia, serif; font-weight: 700; font-size: clamp(32px, 4vw, 52px); line-height: 1.06; letter-spacing: -0.9px">Quando a equipe responde, a IA revisa e acompanha.</h2>
+    <div style="margin-top: 36px; display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px">
+
+      <article class="rv" style="border-radius: 12px; padding: 30px; background: #1A1814; color: #F7F4EF; display: flex; flex-direction: column; gap: 14px">
+        <h3 style="margin: 0; font-family: Fraunces, Georgia, serif; font-weight: 600; font-size: 24px">Revisora dos seus atendentes</h3>
+        <p style="margin: 0; color: #CFC6BB; font-size: 14px">Seus atendentes digitam livremente, rápido e do jeito deles. Antes do envio, a IA deixa o texto agradável para o cliente, sem mexer em valores, prazos e promessas.</p>
+        <div aria-hidden="true" style="margin-top: auto; padding-top: 18px; display: flex; flex-direction: column; gap: 10px; min-height: 120px">
+          <div style="align-self: flex-start; position: relative; background: #24211C; border: 1px dashed #4A4540; border-radius: 6px; padding: 8px 12px; font-size: 13px; color: #A2968A">blz, ja ta saindo, uns 10 min<span class="strike" style="position: absolute; left: 10px; right: 10px; top: 50%; height: 1.5px; background: #C4341A; transform-origin: left"></span></div>
+          <div class="rewrite" style="align-self: flex-end; background: #F7F4EF; color: #1A1814; border-radius: 12px 12px 2px 12px; padding: 9px 12px; font-size: 13px">Tudo certo! Seu pedido já está saindo, em cerca de 10 minutos.</div>
+        </div>
+      </article>
+
+      <article class="rv d1" style="border-radius: 12px; padding: 30px; background: #FFFFFF; display: flex; flex-direction: column; gap: 14px; box-shadow: 0 24px 50px -36px rgba(26,24,20,.5)">
+        <h3 style="margin: 0; font-family: Fraunces, Georgia, serif; font-weight: 600; font-size: 24px">Auditoria de todos os chats</h3>
+        <p style="margin: 0; color: #4A4540; font-size: 14px">A IA lê cada conversa, da IA e da equipe, e avisa o gestor quando encontra uma falha no atendimento.</p>
+        <div style="margin-top: auto; padding-top: 18px; display: flex; flex-direction: column; gap: 10px">
+          <div aria-label="Conversa de exemplo" style="background: #F7F4EF; border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 6px; font-size: 12px">
+            <div style="align-self: flex-start; max-width: 85%; background: #FFFFFF; border: 1px solid #DDD8D0; border-radius: 10px 10px 10px 2px; padding: 6px 10px">Já faz 1 hora que pedi, cadê meu pedido??</div>
+            <div style="align-self: flex-end; max-width: 85%; background: #1A1814; color: #F7F4EF; border-radius: 10px 10px 2px 10px; padding: 6px 10px">já vai</div>
+            <div style="align-self: flex-start; max-width: 85%; background: #FFFFFF; border: 1px solid #DDD8D0; border-radius: 10px 10px 10px 2px; padding: 6px 10px">Vai quando? Quero cancelar</div>
+            <p style="align-self: center; margin: 2px 0 0; font-size: 11px; color: #8C857D">Sem resposta há 25 min · Bruno</p>
+          </div>
+          <div class="flag" style="background: #FFFFFF; border: 1px solid #F3C9C0; border-radius: 8px; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; font-size: 13px; box-shadow: 0 14px 30px -18px rgba(196,52,26,.45)">
+            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap"><span class="liveT" style="width: 8px; height: 8px; border-radius: 50%; background: #C4341A"></span><span style="font-size: 11px; font-weight: 600; background: #FDECEA; color: #C4341A; padding: 3px 8px; border-radius: 4px">Falha no atendimento</span><span style="color: #8C857D; font-size: 12px; margin-left: auto">Aviso ao gestor</span></div>
+            <p style="margin: 2px 0 0; font-weight: 600">Carla Souza · atendida por Bruno</p>
+            <p style="margin: 0; color: #4A4540">Cliente reclamou de atraso e não recebeu previsão. Pediu para cancelar e ficou sem resposta.</p>
+          </div>
+        </div>
+      </article>
+
+      <article class="rv d2" style="border-radius: 12px; padding: 30px; background: #FFFFFF; display: flex; flex-direction: column; gap: 14px; box-shadow: 0 24px 50px -36px rgba(26,24,20,.5)">
+        <h3 style="margin: 0; font-family: Fraunces, Georgia, serif; font-weight: 600; font-size: 24px">Sugerir com IA</h3>
+        <p style="margin: 0; color: #4A4540; font-size: 14px">Campo vazio, um clique: a IA lê a conversa e escreve uma resposta. O atendente edita e envia. Nada sai sozinho.</p>
+        <div style="margin-top: auto; padding-top: 18px">
+          <div style="background: #F7F4EF; border: 1px solid #DDD8D0; border-radius: 8px; padding: 12px">
+            <p style="margin: 0 0 6px; font-size: 11px; color: #8C857D">Sugestão da IA · revise antes de enviar</p>
+            <p style="margin: 0; font-size: 13px">Temos sim! A lasanha sai em porção individual ou família.<span class="caret" aria-hidden="true" style="display: inline-block; width: 1.5px; height: 14px; background: #1A1814; margin-left: 2px; vertical-align: -2px"></span></p>
+            <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 10px">
+              <span style="font-size: 12px; font-weight: 500; padding: 5px 10px; border: 1px solid #DDD8D0; border-radius: 6px; background: #FFFFFF">Descartar</span>
+              <span style="font-size: 12px; font-weight: 500; padding: 5px 10px; background: #1A1814; color: #F7F4EF; border-radius: 6px">Enviar</span>
+            </div>
+          </div>
+        </div>
+      </article>
+    </div>
+    <div class="rv" style="margin-top: 32px; display: flex; flex-wrap: wrap; gap: 16px; align-items: center; justify-content: space-between; border-top: 1px solid #D3CBBF; padding-top: 32px">
+      <p style="margin: 0; font-size: 18px; max-width: 560px">Cada cliente vira um cadastro só, com pedidos, total gasto e histórico ao lado da conversa. <a href="/funcionalidades" style="color: #C4341A; font-weight: 500">Ver todas as funcionalidades</a></p>
+      <a class="btn" href="/cadastro" style="text-decoration: none; background: #1A1814; color: #F7F4EF; font-weight: 500; font-size: 15px; padding: 0 20px; height: 48px; border-radius: 6px; display: inline-flex; align-items: center">Testar grátis por 15 dias</a>
+    </div>
+  </div>
+</section>
+
+<!-- 8 · PROVA SOCIAL (tomate): escondida até chegarem os dados reais do piloto. Para mostrar, tire o <template>. -->
+<template data-piloto="">
+<section aria-labelledby="t-prova" style="background: #C4341A; color: #FFFFFF; position: relative; overflow: hidden">
+  <svg class="spin" aria-hidden="true" viewBox="0 0 600 600" width="600" height="600" style="position: absolute; right: -180px; top: -160px; opacity: .25"><circle cx="300" cy="300" r="290" fill="none" stroke="#FFFFFF" stroke-width="1.5" stroke-dasharray="2 12"></circle><circle cx="300" cy="300" r="230" fill="none" stroke="#FFFFFF" stroke-width="1"></circle></svg>
+  <div style="max-width: 1200px; margin: 0 auto; padding: 72px 24px; position: relative">
+    <div class="rv" style="display: flex; flex-wrap: wrap; gap: 20px 56px; align-items: flex-end; justify-content: space-between">
+      <h2 id="t-prova" style="margin: 0; max-width: 640px; font-family: Fraunces, Georgia, serif; font-weight: 700; font-size: clamp(32px, 4vw, 52px); line-height: 1.04; letter-spacing: -0.9px">O que dizem os restaurantes</h2>
+      <p style="margin: 0; max-width: 380px; color: #FFE1D9">Cozinhas de delivery e salões que atendem pelo Dish Desk.</p>
+    </div>
+    <div style="margin-top: 36px; display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px; align-items: start">
+
+      <figure class="rv" style="margin: 0; background: #F7F4EF; color: #1A1814; border-radius: 12px; padding: 26px; box-shadow: 0 30px 60px -36px rgba(0,0,0,.6); display: flex; flex-direction: column; gap: 18px">
+        <span style="align-self: flex-start; font-size: 11px; font-weight: 600; background: #1A1814; color: #F7F4EF; padding: 4px 9px; border-radius: 4px">Atendimento no pico</span>
+        <blockquote style="margin: 0; font-family: Fraunces, Georgia, serif; font-weight: 500; font-size: 19px; line-height: 1.4"><p style="margin: 0">“Sexta à noite era mensagem chegando no WhatsApp, no Instagram e no iFood ao mesmo tempo. Hoje a IA responde quem pergunta do pedido, e a equipe só entra quando precisa.”</p></blockquote>
+        <figcaption style="display: flex; align-items: center; gap: 12px; border-top: 1px solid #DDD8D0; padding-top: 16px">
+          <span aria-hidden="true" style="width: 42px; height: 42px; border-radius: 50%; background: #C4341A; color: #FFFFFF; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 13px; flex: 0 0 auto">NP</span>
+          <span style="display: flex; flex-direction: column"><strong style="font-size: 14px">Nippon</strong><span style="font-size: 12px; color: #4A4540"><span class="slot">[Nome, cargo]</span></span></span>
+        </figcaption>
+      </figure>
+
+      <figure class="rv d1" style="margin: 0; background: #1A1814; color: #F7F4EF; border-radius: 12px; padding: 26px; box-shadow: 0 30px 60px -36px rgba(0,0,0,.6); display: flex; flex-direction: column; gap: 18px">
+        <span style="align-self: flex-start; font-size: 11px; font-weight: 600; background: #EA1D2C; color: #FFFFFF; padding: 4px 9px; border-radius: 4px">Nota no iFood</span>
+        <p class="tab" style="margin: 0; font-family: Fraunces, Georgia, serif; font-weight: 700; font-size: 44px; line-height: 1"><span class="slot">[4,X]</span> <span style="font-size: 22px; color: #A2968A">→</span> <span class="slot">[4,X]</span></p>
+        <blockquote style="margin: 0; font-family: Fraunces, Georgia, serif; font-weight: 500; font-size: 19px; line-height: 1.4"><p style="margin: 0">“Quem pergunta pelo pedido recebe resposta na hora, com a previsão de saída. Isso apareceu na nossa nota do iFood.”</p></blockquote>
+        <figcaption style="display: flex; align-items: center; gap: 12px; border-top: 1px solid #3A352F; padding-top: 16px">
+          <span aria-hidden="true" style="width: 42px; height: 42px; border-radius: 50%; background: #F7F4EF; color: #1A1814; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 13px; flex: 0 0 auto">HS</span>
+          <span style="display: flex; flex-direction: column"><strong style="font-size: 14px">HeySushi</strong><span style="font-size: 12px; color: #A2968A"><span class="slot">[Nome, cargo]</span></span></span>
+        </figcaption>
+      </figure>
+
+      <figure class="rv d2" style="margin: 0; background: #F7F4EF; color: #1A1814; border-radius: 12px; padding: 26px; box-shadow: 0 30px 60px -36px rgba(0,0,0,.6); display: flex; flex-direction: column; gap: 18px">
+        <span style="align-self: flex-start; font-size: 11px; font-weight: 600; background: #EAF6EF; color: #1D5C33; padding: 4px 9px; border-radius: 4px">Qualidade de vida da equipe</span>
+        <blockquote style="margin: 0; font-family: Fraunces, Georgia, serif; font-weight: 500; font-size: 19px; line-height: 1.4"><p style="margin: 0">“Meus atendentes pararam de passar a noite perguntando o número do pedido. Eles cuidam do que precisa de gente, e o turno ficou bem mais leve.”</p></blockquote>
+        <figcaption style="display: flex; align-items: center; gap: 12px; border-top: 1px solid #DDD8D0; padding-top: 16px">
+          <span aria-hidden="true" style="width: 42px; height: 42px; border-radius: 50%; background: #1A1814; color: #F7F4EF; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 13px; flex: 0 0 auto">OS</span>
+          <span style="display: flex; flex-direction: column"><strong style="font-size: 14px">Onami Sushi</strong><span style="font-size: 12px; color: #4A4540"><span class="slot">[Nome, cargo]</span></span></span>
+        </figcaption>
+      </figure>
+
+      <figure class="rv" style="margin: 0; background: #F7F4EF; color: #1A1814; border-radius: 12px; padding: 26px; box-shadow: 0 30px 60px -36px rgba(0,0,0,.6); display: flex; flex-direction: column; gap: 18px">
+        <span style="align-self: flex-start; font-size: 11px; font-weight: 600; background: #FEF9EC; color: #7A5008; padding: 4px 9px; border-radius: 4px">Tom das mensagens</span>
+        <blockquote style="margin: 0; font-family: Fraunces, Georgia, serif; font-weight: 500; font-size: 19px; line-height: 1.4"><p style="margin: 0">“Cada atendente escrevia de um jeito. Agora eles digitam rápido e a IA deixa a mensagem com a cara da casa, sem mexer no que foi prometido.”</p></blockquote>
+        <figcaption style="display: flex; align-items: center; gap: 12px; border-top: 1px solid #DDD8D0; padding-top: 16px">
+          <span aria-hidden="true" style="width: 42px; height: 42px; border-radius: 50%; background: #C4341A; color: #FFFFFF; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 13px; flex: 0 0 auto">AN</span>
+          <span style="display: flex; flex-direction: column"><strong style="font-size: 14px">Aglio Nero</strong><span style="font-size: 12px; color: #4A4540"><span class="slot">[Nome, cargo]</span></span></span>
+        </figcaption>
+      </figure>
+
+      <figure class="rv d1" style="margin: 0; background: #F7F4EF; color: #1A1814; border-radius: 12px; padding: 26px; box-shadow: 0 30px 60px -36px rgba(0,0,0,.6); display: flex; flex-direction: column; gap: 18px">
+        <span style="align-self: flex-start; font-size: 11px; font-weight: 600; background: #FDECEA; color: #C4341A; padding: 4px 9px; border-radius: 4px">Gestão com a auditoria</span>
+        <blockquote style="margin: 0; font-family: Fraunces, Georgia, serif; font-weight: 500; font-size: 19px; line-height: 1.4"><p style="margin: 0">“Eu não conseguia ler todas as conversas. A auditoria me avisa quando um cliente fica sem resposta, e eu resolvo no mesmo dia.”</p></blockquote>
+        <figcaption style="display: flex; align-items: center; gap: 12px; border-top: 1px solid #DDD8D0; padding-top: 16px">
+          <span aria-hidden="true" style="width: 42px; height: 42px; border-radius: 50%; background: #1A1814; color: #F7F4EF; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 13px; flex: 0 0 auto">TQ</span>
+          <span style="display: flex; flex-direction: column"><strong style="font-size: 14px">Terra Querida</strong><span style="font-size: 12px; color: #4A4540"><span class="slot">[Nome, cargo]</span></span></span>
+        </figcaption>
+      </figure>
+
+      <figure class="rv d2" style="margin: 0; background: #1A1814; color: #F7F4EF; border-radius: 12px; padding: 26px; box-shadow: 0 30px 60px -36px rgba(0,0,0,.6); display: flex; flex-direction: column; gap: 18px">
+        <span style="align-self: flex-start; font-size: 11px; font-weight: 600; background: #F7F4EF; color: #1A1814; padding: 4px 9px; border-radius: 4px">Piloto</span>
+        <blockquote style="margin: 0; font-family: Fraunces, Georgia, serif; font-weight: 500; font-size: 19px; line-height: 1.4"><p style="margin: 0">“Somos só delivery, então o atendimento é a nossa vitrine. Com a IA respondendo, nenhum cliente fica esperando enquanto a cozinha está a mil.”</p></blockquote>
+        <figcaption style="display: flex; align-items: center; gap: 12px; border-top: 1px solid #3A352F; padding-top: 16px">
+          <span aria-hidden="true" style="width: 42px; height: 42px; border-radius: 50%; background: #C4341A; color: #FFFFFF; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 13px; flex: 0 0 auto">MD</span>
+          <span style="display: flex; flex-direction: column"><strong style="font-size: 14px">Moby Dick Dark Kitchen</strong><span style="font-size: 12px; color: #A2968A"><span class="slot">[Nome, cargo]</span></span></span>
+        </figcaption>
+      </figure>
+    </div>
+  </div>
+</section></template>
+
+<!-- 9 · DÚVIDAS (creme) -->
+<section id="duvidas" aria-labelledby="t-duvidas" class="dots-ink" style="background-color: #F7F4EF">
+  <div style="max-width: 1200px; margin: 0 auto; padding: 72px 24px; display: flex; flex-wrap: wrap; gap: 56px">
+    <div class="rv" style="flex: 1 1 300px; min-width: 0">
+      <h2 id="t-duvidas" style="margin: 0; font-family: Fraunces, Georgia, serif; font-weight: 700; font-size: clamp(32px, 3.8vw, 48px); line-height: 1.06; letter-spacing: -0.8px">Antes de testar</h2>
+      <p style="margin: 14px 0 0; color: #4A4540">Outra dúvida? <a href="https://wa.me/5586999731647?text=Ol%C3%A1!%20Quero%20conhecer%20o%20Dish%20Desk." style="color: #C4341A; font-weight: 500">Fale com a gente no WhatsApp</a>.</p>
+    </div>
+    <div class="rv d1" style="flex: 2 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 10px">
+      <details style="border: 1px solid #DDD8D0; border-radius: 10px; padding: 0 22px; background: #FBF9F6">
+        <summary style="display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 18px 0; min-height: 44px; font-weight: 600; font-size: 16px">E se a IA errar?<span class="chev" aria-hidden="true" style="font-size: 24px; font-weight: 400; color: #C4341A">+</span></summary>
+        <p style="margin: 0 0 22px; color: #4A4540; max-width: 640px">Ela só afirma o que está nos dados do restaurante. Nunca inventa preço, prazo, promoção ou política. Sem a informação, passa a conversa para a equipe. E toda conversa passa pela auditoria da IA, que avisa o gestor das falhas.</p>
+      </details>
+      <details style="border: 1px solid #DDD8D0; border-radius: 10px; padding: 0 22px; background: #FBF9F6">
+        <summary style="display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 18px 0; min-height: 44px; font-weight: 600; font-size: 16px">Preciso trocar o número do WhatsApp?<span class="chev" aria-hidden="true" style="font-size: 24px; font-weight: 400; color: #C4341A">+</span></summary>
+        <p style="margin: 0 0 22px; color: #4A4540; max-width: 640px">A conexão é por QR Code, como no WhatsApp Web.</p>
+      </details>
+      <details style="border: 1px solid #DDD8D0; border-radius: 10px; padding: 0 22px; background: #FBF9F6">
+        <summary style="display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 18px 0; min-height: 44px; font-weight: 600; font-size: 16px">Funciona com o meu iFood?<span class="chev" aria-hidden="true" style="font-size: 24px; font-weight: 400; color: #C4341A">+</span></summary>
+        <p style="margin: 0 0 22px; color: #4A4540; max-width: 640px">Sim. Os pedidos do iFood e do Cardápio Web entram no cadastro do cliente, e a IA usa esses pedidos para responder quem pergunta pela entrega.</p>
+      </details>
+      <details style="border: 1px solid #DDD8D0; border-radius: 10px; padding: 0 22px; background: #FBF9F6">
+        <summary style="display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 18px 0; min-height: 44px; font-weight: 600; font-size: 16px">A IA anota pedidos?<span class="chev" aria-hidden="true" style="font-size: 24px; font-weight: 400; color: #C4341A">+</span></summary>
+        <p style="margin: 0 0 22px; color: #4A4540; max-width: 640px">Não. Ela manda os links para pedir que você cadastrou e responde sobre horários, cardápio e pedidos já feitos.</p>
+      </details>
+      <details style="border: 1px solid #DDD8D0; border-radius: 10px; padding: 0 22px; background: #FBF9F6">
+        <summary style="display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 18px 0; min-height: 44px; font-weight: 600; font-size: 16px">É difícil configurar?<span class="chev" aria-hidden="true" style="font-size: 24px; font-weight: 400; color: #C4341A">+</span></summary>
+        <p style="margin: 0 0 22px; color: #4A4540; max-width: 640px">No primeiro acesso, um assistente leva você passo a passo: conectar os canais, o horário de funcionamento, a personalidade do atendimento, os links para pedir e o convite para a equipe. Dá para sair e continuar depois.</p>
+      </details>
+      <details style="border: 1px solid #DDD8D0; border-radius: 10px; padding: 0 22px; background: #FBF9F6">
+        <summary style="display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 18px 0; min-height: 44px; font-weight: 600; font-size: 16px">E os dados dos meus clientes?<span class="chev" aria-hidden="true" style="font-size: 24px; font-weight: 400; color: #C4341A">+</span></summary>
+        <p style="margin: 0 0 22px; color: #4A4540; max-width: 640px">O CPF aparece mascarado na tela e fica criptografado no banco. Os dados de cada restaurante ficam separados dos outros.</p>
+      </details>
+    </div>
+  </div>
+</section>
+
+<!-- 10 · PREÇO + FECHO (escuro) -->
+<section id="preco" aria-labelledby="t-preco" class="dots" style="background-color: #1A1814; color: #F7F4EF; position: relative; overflow: hidden">
+  <div aria-hidden="true" style="position: absolute; left: -220px; bottom: -260px; width: 560px; height: 560px; border-radius: 50%; background: #C4341A; opacity: .9"></div>
+  <svg class="spin" aria-hidden="true" viewBox="0 0 640 640" width="640" height="640" style="position: absolute; left: -260px; bottom: -300px"><circle cx="320" cy="320" r="310" fill="none" stroke="#F7F4EF" stroke-opacity=".35" stroke-width="1.5" stroke-dasharray="2 10"></circle></svg>
+  <div style="max-width: 1200px; margin: 0 auto; padding: 80px 24px 64px; display: flex; flex-wrap: wrap; gap: 56px; align-items: flex-start; position: relative">
+    <div class="rv" style="flex: 1 1 420px; min-width: 0">
+      <h2 id="t-preco" style="margin: 0; font-family: Fraunces, Georgia, serif; font-weight: 700; font-size: clamp(40px, 5.6vw, 72px); line-height: 1.0; letter-spacing: -1.6px">Na próxima sexta, deixe a IA <span style="color: #C4341A; font-style: italic">atender.</span></h2>
+      <p style="margin: 22px 0 0; max-width: 440px; font-size: 17px; color: #CFC6BB">Um plano, com tudo incluído.</p>
+      <ul style="list-style: none; margin: 28px 0 0; padding: 0; display: flex; flex-direction: column; gap: 12px; font-size: 15px">
+        <li style="display: flex; gap: 12px"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true" style="flex: 0 0 auto; margin-top: 3px"><path d="M3.5 9.5l3.5 3.5 7.5-8" stroke="#5FB37B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>Inbox única para WhatsApp, Instagram e iFood</li>
+        <li style="display: flex; gap: 12px"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true" style="flex: 0 0 auto; margin-top: 3px"><path d="M3.5 9.5l3.5 3.5 7.5-8" stroke="#5FB37B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>Atendimento com IA no tom do seu restaurante</li>
+        <li style="display: flex; gap: 12px"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true" style="flex: 0 0 auto; margin-top: 3px"><path d="M3.5 9.5l3.5 3.5 7.5-8" stroke="#5FB37B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>Revisão e sugestão de respostas para a equipe</li>
+        <li style="display: flex; gap: 12px"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true" style="flex: 0 0 auto; margin-top: 3px"><path d="M3.5 9.5l3.5 3.5 7.5-8" stroke="#5FB37B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>Auditoria de todos os chats, com aviso ao gestor</li>
+        <li style="display: flex; gap: 12px"><svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true" style="flex: 0 0 auto; margin-top: 3px"><path d="M3.5 9.5l3.5 3.5 7.5-8" stroke="#5FB37B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>Cadastro único de cada cliente, com pedidos e histórico</li>
+      </ul>
+    </div>
+    <div class="rv d1" style="flex: 1 1 400px; min-width: 0; display: flex; flex-direction: column; gap: 14px; background: #F7F4EF; color: #1A1814; border-radius: 14px; padding: 28px; box-shadow: 0 40px 90px -40px rgba(0,0,0,.8)">
+      <div style="display: flex; gap: 12px; flex-wrap: wrap">
+        <div style="flex: 1 1 170px; border: 1px solid #DDD8D0; border-radius: 10px; padding: 22px; background: #FFFFFF">
+          <p style="margin: 0; font-size: 13px; color: #4A4540; font-weight: 500">Mensal</p>
+          <p class="tab" style="margin: 6px 0 0"><strong style="font-family: Fraunces, Georgia, serif; font-size: 40px">R$ 149</strong><span style="color: #4A4540"> por mês</span></p>
+        </div>
+        <div style="flex: 1 1 170px; border: 2px solid #1A1814; border-radius: 10px; padding: 21px; background: #FFFFFF">
+          <p style="margin: 0; font-size: 13px; color: #4A4540; font-weight: 500">Anual</p>
+          <p class="tab" style="margin: 6px 0 0"><strong style="font-family: Fraunces, Georgia, serif; font-size: 40px">R$ 1.490</strong><span style="color: #4A4540"> por ano</span></p>
+          <p class="tab" style="margin: 6px 0 0; font-size: 13px; color: #2D7D46; font-weight: 500">em até 10x de R$ 149. Equivale a 2 meses grátis.</p>
+        </div>
+      </div>
+      <a class="btn btn-t" href="/cadastro" style="margin-top: 6px; text-decoration: none; background: #C4341A; color: #FFFFFF; font-weight: 500; font-size: 16px; height: 56px; border-radius: 6px; display: flex; align-items: center; justify-content: center">Testar grátis por 15 dias</a>
+      <p style="margin: 0; font-size: 13px; color: #8C857D; text-align: center">Não pede cartão.</p>
+    </div>
+  </div>
+  <footer style="border-top: 1px solid #2E2A25; position: relative">
+    <div style="max-width: 1200px; margin: 0 auto; padding: 24px; display: flex; flex-wrap: wrap; gap: 20px; font-size: 13px; color: #A2968A">
+      <span>Dish Desk</span>
+      <a href="/privacidade" style="color: #CFC6BB">Privacidade</a>
+      <a href="/exclusao-de-dados" style="color: #CFC6BB">Exclusão de dados</a>
+      <a href="/login" style="color: #CFC6BB; margin-left: auto">Entrar</a>
+    </div>
+  </footer>
+</section>
+
+</div>
 <script>
-  (function () {
-    var h = document.querySelector('.site-header');
-    function onScroll() { h.classList.toggle('scrolled', window.scrollY > 8); }
-    window.addEventListener('scroll', onScroll, { passive: true }); onScroll();
-  })();
-
-  // Um pedido do começo ao fim: a cena avança sozinha quando aparece na tela; dá para pausar e escolher o passo.
-  // Quem pede menos movimento no sistema vê a cena parada e avança pelos passos.
-  (function () {
-    var scene = document.querySelector('[data-scene]');
-    if (!scene) return;
-    var STEP_MS = 5500;
-    var ORDER = [
-      { status: 'Em preparo', badge: 'badge-amber', bar: 'bar-0', elapsedLabel: 'Decorrido', elapsed: '0 min', departLabel: 'Saída prevista', depart: '19:29', late: false },
-      { status: 'Em preparo', badge: 'badge-amber', bar: 'bar-late', elapsedLabel: 'Decorrido', elapsed: '49 min', departLabel: 'Saída prevista', depart: '19:50, atrasado', late: true },
-      { status: 'Saiu para entrega', badge: 'badge-gray', bar: 'bar-done', elapsedLabel: 'Saiu em', elapsed: '60 min', departLabel: 'Saída', depart: '19:52', late: false },
-      { status: 'Entregue', badge: 'badge-green', bar: 'bar-done', elapsedLabel: 'Saiu em', elapsed: '60 min', departLabel: 'Saída', depart: '19:52', late: false }
-    ];
-    var CLOCK = ['18:52', '19:41', '19:53', '20:40'];
-    var SCREEN = [
-      'Pedido 4853 do iFood em preparo, no cadastro da Maria: VIP e recorrente, com iFood e WhatsApp vinculados, 12 pedidos e 847 reais gastos.',
-      'A Maria avisa no WhatsApp que o pedido não chegou e a automação manda a nova previsão: 19:50, atrasado.',
-      'O pedido saiu às 19:52 e a Maria recebeu o aviso automático.',
-      'Pedido entregue: aviso automático, conversa encerrada pela automação, pesquisa de satisfação e a Maria dá nota 5.'
-    ];
-    var steps = scene.querySelectorAll('.scene-step');
-    var messages = scene.querySelectorAll('[data-at]');
-    var field = function (name) { return scene.querySelector('[data-' + name + ']'); };
-    var play = field('play');
-    var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    var current = 0;
-    var playing = !reduce;
-    var started = false;
-    var timer = null;
-    var startedAt = 0;
-    var remaining = STEP_MS;
-
-    function show(index) {
-      current = index;
-      steps.forEach(function (step, i) {
-        step.classList.remove('on');
-        step.classList.toggle('done', i < index);
-        step.removeAttribute('aria-current');
-        if (i === index) {
-          void step.offsetWidth; // reinicia a barrinha de tempo do passo
-          step.classList.add('on');
-          step.setAttribute('aria-current', 'step');
-          // Legenda do celular: o mesmo texto do passo, ao lado da tela.
-          field('cap-title').textContent = step.querySelector('.step-title').textContent;
-          field('cap-text').textContent = step.querySelector('.step-text').textContent;
-        }
-      });
-      messages.forEach(function (message) {
-        var visible = Number(message.dataset.at) <= index;
-        if (visible && message.hidden) {
-          message.hidden = false;
-          message.classList.remove('msg');
-          void message.offsetWidth;
-          message.classList.add('msg');
-        } else if (!visible) {
-          message.hidden = true;
-        }
-      });
-      var order = ORDER[index];
-      ['status', 'status-history'].forEach(function (name) {
-        field(name).textContent = order.status;
-        field(name).className = 'badge ' + order.badge;
-      });
-      field('bar').className = 'bar-fill ' + order.bar;
-      field('elapsed-label').textContent = order.elapsedLabel;
-      field('elapsed').textContent = order.elapsed;
-      field('depart-label').textContent = order.departLabel;
-      field('depart').textContent = order.depart;
-      field('depart').classList.toggle('late', order.late);
-      field('clock').textContent = CLOCK[index];
-      field('screen').setAttribute('aria-label', SCREEN[index]);
+(function () {
+    var root = document.querySelector('[data-lp]');
+    if (!root) return;
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    root.classList.add('js');
+    var self = {};
+    var els = root.querySelectorAll('.rv, .rv-l');
+    if ('IntersectionObserver' in window) {
+      self.io = new IntersectionObserver(function (entries) {
+        entries.forEach(function (e) {
+          if (e.isIntersecting) { e.target.classList.add('in'); self.io.unobserve(e.target); }
+        });
+      }, { threshold: 0.15, rootMargin: '0px 0px -6% 0px' });
+      els.forEach(function (el) { self.io.observe(el); });
+    } else {
+      els.forEach(function (el) { el.classList.add('in'); });
     }
-
-    function schedule(ms) {
-      clearTimeout(timer);
-      startedAt = Date.now();
-      remaining = ms;
-      timer = setTimeout(function () {
-        show((current + 1) % steps.length);
-        schedule(STEP_MS);
-      }, ms);
-    }
-
-    function setPlaying(value) {
-      playing = value;
-      scene.classList.toggle('paused', !playing);
-      play.querySelector('[data-when="playing"]').hidden = !playing;
-      play.querySelector('[data-when="paused"]').hidden = playing;
-    }
-
-    function start() {
-      if (started) return;
-      started = true;
-      scene.classList.remove('idle');
-      show(0);
-      if (playing) schedule(STEP_MS);
-    }
-
-    steps.forEach(function (step, i) {
-      step.addEventListener('click', function () {
-        if (!started) { started = true; scene.classList.remove('idle'); }
-        show(i);
-        if (playing) schedule(STEP_MS);
-        else remaining = STEP_MS;
-      });
-    });
-
-    play.addEventListener('click', function () {
-      if (!started) start();
-      if (playing) {
-        clearTimeout(timer);
-        remaining = Math.max(0, remaining - (Date.now() - startedAt));
-        setPlaying(false);
-      } else {
-        setPlaying(true);
-        schedule(remaining);
+    var hero = root.querySelector('[data-hero]');
+    var como = root.querySelector('[data-como]');
+    var tick = function () {
+      self.raf = 0;
+      var vh = window.innerHeight || 800;
+      if (hero) {
+        var r = hero.getBoundingClientRect();
+        var p = Math.min(1, Math.max(0, -r.top / Math.max(1, r.height)));
+        hero.style.setProperty('--hp', p.toFixed(3));
       }
-    });
-
-    setPlaying(playing);
-    if (!playing) { started = true; scene.classList.remove('idle'); return; }
-    if (!('IntersectionObserver' in window)) { start(); return; }
-    var observer = new IntersectionObserver(function (entries) {
-      if (entries.some(function (entry) { return entry.isIntersecting; })) {
-        observer.disconnect();
-        start();
+      if (como) {
+        var r2 = como.getBoundingClientRect();
+        var p2 = Math.min(1, Math.max(0, (vh * 0.6 - r2.top) / Math.max(1, r2.height - vh * 0.3)));
+        como.style.setProperty('--cp', p2.toFixed(3));
       }
-    }, { threshold: 0.4 });
-    observer.observe(scene);
-  })();
-
-  // Sem programa de e-mail configurado o mailto não abre nada: o clique também copia o endereço e avisa no link.
-  document.querySelectorAll('a[data-copy][href^="mailto:"]').forEach(function (a) {
-    var label = a.textContent;
-    a.addEventListener('click', function () {
-      if (!navigator.clipboard) return;
-      navigator.clipboard.writeText(a.href.slice(7).split('?')[0]).then(function () {
-        a.textContent = 'E-mail copiado';
-        setTimeout(function () { a.textContent = label; }, 2000);
-      });
-    });
-  });
+    };
+    self.onScroll = function () { if (!self.raf) self.raf = requestAnimationFrame(tick); };
+    self.onMove = function (ev) {
+      if (!hero) return;
+      var r = hero.getBoundingClientRect();
+      hero.style.setProperty('--mx', (((ev.clientX - r.left) / r.width) - 0.5).toFixed(3));
+      hero.style.setProperty('--my', (((ev.clientY - r.top) / r.height) - 0.5).toFixed(3));
+    };
+    document.addEventListener('scroll', self.onScroll, { passive: true, capture: true });
+    window.addEventListener('resize', self.onScroll);
+    if (hero) hero.addEventListener('pointermove', self.onMove);
+    tick();
+})();
 </script>
 </body>
 </html>
