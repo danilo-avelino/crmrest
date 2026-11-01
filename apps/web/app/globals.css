@@ -2,7 +2,7 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
-/* O design não tem modo escuro: dark: só valeria sob uma classe .dark, que não é usada. */
+/* Modo escuro: classe .dark no <html> (lib/theme.ts). dark: vale para tudo dentro dela. */
 @custom-variant dark (&:is(.dark *));
 
 /*
@@ -101,6 +101,79 @@
   --input: var(--color-rule);
   --ring: var(--color-ink);
   --radius: 6px;
+}
+
+/*
+ * Modo escuro, no padrão da landing page: fundo ink com bolinhas claras.
+ * Os tokens trocam de valor, então bg-paper, text-ink etc. já viram as versões escuras.
+ * ink e paper se invertem: o botão primário e o balão de saída ficam claros sobre o fundo escuro.
+ */
+.dark {
+  color-scheme: dark;
+  --color-paper: #1a1814;
+  --color-surface: #24211c;
+  --color-surface-2: #2e2a25;
+  --color-ink: #f2ede6;
+  --color-ink-2: #cfc6bb;
+  --color-ink-3: #a2968a;
+  --color-rule: #3a352f;
+  --color-rule-soft: #2e2a25;
+  --color-tomate-lt: #3a1f18;
+  --color-tomate-line: #6b2a1d;
+  --color-tomate-ink: #f3a08f;
+  --color-warning: #e59a4a;
+  --color-warning-lt: #33290f;
+  --color-warning-line: #6b5420;
+  --color-warning-ink: #f0c96b;
+  --color-success: #4fa36c;
+  --color-success-lt: #17301f;
+  --color-success-line: #2f5a3e;
+  --color-success-ink: #8fd3a6;
+  --color-tag-line: #5a5248;
+}
+
+/* O padrão de bolinhas no fundo da página e nas áreas em paper, alinhado entre elas. */
+.dark body,
+.dark .bg-paper {
+  background-image: radial-gradient(rgb(247 244 239 / 0.07) 1px, transparent 1.2px);
+  background-size: 22px 22px;
+  background-attachment: fixed;
+}
+
+/* O tomate do design não tem contraste como texto no fundo escuro: o texto usa um tom mais claro. */
+.dark .text-tomate {
+  color: #f07a62;
+}
+
+/*
+ * Áreas que já são escuras no design (barra lateral, login, escolha de restaurante, avisos):
+ * voltam aos tokens claros, para continuarem como no design, só um pouco mais fundas que a página.
+ */
+.dark .theme-light {
+  color-scheme: light;
+  --color-paper: #f7f4ef;
+  --color-surface: #ffffff;
+  --color-surface-2: #f0ede8;
+  --color-ink: #131110;
+  --color-ink-2: #4a4540;
+  --color-ink-3: #8c857d;
+  --color-rule: #ddd8d0;
+  --color-rule-soft: #e8e4de;
+  --color-tomate-lt: #fdecea;
+  --color-tomate-line: #f5b5ac;
+  --color-tomate-ink: #9b2414;
+  --color-warning: #b45309;
+  --color-warning-lt: #fef9ec;
+  --color-warning-line: #f0d88a;
+  --color-warning-ink: #7a5008;
+  --color-success: #2d7d46;
+  --color-success-lt: #eaf6ef;
+  --color-success-line: #a8d9bb;
+  --color-success-ink: #1d5c33;
+  --color-tag-line: #c4b8a0;
+}
+.dark .theme-light .text-tomate {
+  color: var(--color-tomate);
 }
 
 @layer base {

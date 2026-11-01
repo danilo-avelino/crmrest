@@ -37,9 +37,9 @@ export function InboxView() {
       {offline && (
         <div
           role="status"
-          className="fixed top-3 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-[7px] border border-[#FDE68A] bg-warning-lt px-3.5 py-2 text-xs font-medium text-warning-ink shadow-sm"
+          className="fixed top-3 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 rounded-[7px] border border-[#FDE68A] dark:border-warning-line bg-warning-lt px-3.5 py-2 text-xs font-medium text-warning-ink shadow-sm"
         >
-          <WifiOffIcon className="size-3.5 text-[#D97706]" aria-hidden />
+          <WifiOffIcon className="size-3.5 text-[#D97706] dark:text-warning" aria-hidden />
           Sem conexão com o servidor. As conversas podem estar desatualizadas.
           <span className="flex items-center gap-1 font-normal">
             <LoaderCircleIcon className="size-3 animate-spin" aria-hidden />

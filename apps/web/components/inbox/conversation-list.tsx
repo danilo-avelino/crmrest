@@ -232,7 +232,7 @@ function ConversationRow({
       className={cn(
         "flex w-full shrink-0 gap-2.5 border-b border-l-2 px-3.5 py-3 text-left",
         active
-          ? "border-b-[#F5C4BC] border-l-tomate bg-tomate-lt"
+          ? "border-b-[#F5C4BC] border-l-tomate bg-tomate-lt dark:border-b-tomate-line"
           : "border-b-rule-soft border-l-transparent bg-surface hover:bg-paper",
         // Chamando o atendente: borda grossa e fundo tomate, para saltar aos olhos; sem urgência, só a borda, em ink.
         calling && (quiet ? "border-l-4 border-l-ink" : "border-l-4 border-l-tomate bg-tomate-lt hover:bg-tomate-lt"),

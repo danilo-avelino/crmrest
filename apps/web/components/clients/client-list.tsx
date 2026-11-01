@@ -165,8 +165,8 @@ export function ClientList() {
             </span>
           </div>
           {pairs > 0 && (
-            <div className="flex items-center gap-2 rounded-[7px] border border-[#FDE68A] bg-warning-lt px-3.5 py-2">
-              <TriangleAlertIcon className="size-3.5 text-[#D97706]" aria-hidden />
+            <div className="flex items-center gap-2 rounded-[7px] border border-[#FDE68A] dark:border-warning-line bg-warning-lt px-3.5 py-2">
+              <TriangleAlertIcon className="size-3.5 text-[#D97706] dark:text-warning" aria-hidden />
               <span className="text-xs font-medium text-warning-ink">
                 {pairs === 1 ? "1 possível duplicado" : `${count(pairs)} possíveis duplicados`}
               </span>
@@ -393,7 +393,7 @@ function ClientRow({
   return (
     <tr
       onClick={() => router.push(href)}
-      className={cn("group cursor-pointer", duplicate && "bg-[#FFFDF5]", anonymized && "opacity-60")}
+      className={cn("group cursor-pointer", duplicate && "bg-[#FFFDF5] dark:bg-warning-lt", anonymized && "opacity-60")}
     >
       <Td>
         <div className="flex items-center gap-2.5">
@@ -432,7 +432,7 @@ function ClientRow({
           <span className="tabular-nums">{formatPhone(contact.phone)}</span>
         ) : anonymized ? null : contact.phoneStatus === "pending" ? (
           <span className="flex items-center gap-[5px] text-xs font-medium text-warning">
-            <TriangleAlertIcon className="size-3 text-[#D97706]" aria-hidden />
+            <TriangleAlertIcon className="size-3 text-[#D97706] dark:text-warning" aria-hidden />
             pendente
           </span>
         ) : (
@@ -493,7 +493,7 @@ function Td({ children, className }: { children?: ReactNode; className?: string 
   return (
     <td
       className={cn(
-        "border-b border-surface-2 px-3 py-[13px] align-middle text-[12.5px] group-hover:bg-[#F7F6F4] first:pl-7 last:pr-7",
+        "border-b border-surface-2 px-3 py-[13px] align-middle text-[12.5px] group-hover:bg-[#F7F6F4] dark:group-hover:bg-surface-2 first:pl-7 last:pr-7",
         className,
       )}
     >

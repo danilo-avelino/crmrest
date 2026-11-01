@@ -189,8 +189,8 @@ export function ClientDetail({ id, onClose }: { id: string; onClose?: () => void
         </div>
 
         {admin && sameAs && twin && (
-          <div className="mt-2.5 flex items-center gap-2.5 rounded-lg border border-[#FDE68A] bg-warning-lt px-3.5 py-2">
-            <TriangleAlertIcon className="size-[13px] shrink-0 text-[#D97706]" aria-hidden />
+          <div className="mt-2.5 flex items-center gap-2.5 rounded-lg border border-[#FDE68A] dark:border-warning-line bg-warning-lt px-3.5 py-2">
+            <TriangleAlertIcon className="size-[13px] shrink-0 text-[#D97706] dark:text-warning" aria-hidden />
             <span className="text-xs text-warning-ink">
               Pode ser a mesma pessoa que{" "}
               <strong>
@@ -530,7 +530,7 @@ function ConversationsTab({ contactId, now }: { contactId: string; now: number }
             key={conversation.id}
             href={`/inbox?conversa=${conversation.id}`}
             className={cn(
-              "flex items-start gap-3 rounded-xl border border-rule-soft bg-surface px-4 py-3.5 hover:bg-[#F7F6F4]",
+              "flex items-start gap-3 rounded-xl border border-rule-soft bg-surface px-4 py-3.5 hover:bg-[#F7F6F4] dark:hover:bg-surface-2",
               open && "border-l-[3px] border-l-tomate",
             )}
           >
@@ -614,7 +614,7 @@ function OrdersTab({ contactId, total, now }: { contactId: string; total: number
                 key={order.id}
                 onClick={toggle}
                 aria-expanded={open}
-                className={cn("cursor-pointer", open ? "bg-tomate-lt" : "hover:bg-[#F7F6F4]")}
+                className={cn("cursor-pointer", open ? "bg-tomate-lt" : "hover:bg-[#F7F6F4] dark:hover:bg-surface-2")}
               >
                 <td className={cn(td, "tabular-nums", open && "border-b-0 font-semibold shadow-[inset_3px_0_0_var(--color-tomate)]")}>
                   <button

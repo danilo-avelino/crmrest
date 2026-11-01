@@ -71,7 +71,7 @@ export function SectionLabel({ children, className }: { children: ReactNode; cla
 /** Selo âmbar "possível duplicado". */
 export function DuplicateBadge() {
   return (
-    <span className="rounded-[3px] border border-[#FDE68A] bg-[#FEF3C7] px-[5px] py-px text-[10px] font-medium whitespace-nowrap text-[#92400E]">
+    <span className="rounded-[3px] border border-[#FDE68A] dark:border-warning-line bg-[#FEF3C7] px-[5px] py-px text-[10px] font-medium whitespace-nowrap text-[#92400E] dark:bg-warning-lt dark:text-warning-ink">
       possível duplicado
     </span>
   );

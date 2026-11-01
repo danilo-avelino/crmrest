@@ -46,7 +46,7 @@ export function DuplicatesView() {
           <h1 className="font-heading text-lg font-bold tracking-[-0.3px]">Possíveis duplicados</h1>
         </div>
         {pairs.length > 0 && (
-          <span className="rounded-md border border-[#FDE68A] bg-warning-lt px-3 py-[5px] text-xs font-medium text-warning-ink tabular-nums">
+          <span className="rounded-md border border-[#FDE68A] dark:border-warning-line bg-warning-lt px-3 py-[5px] text-xs font-medium text-warning-ink tabular-nums">
             {pairs.length === 1 ? "1 par para revisar" : `${count(pairs.length)} pares para revisar`}
           </span>
         )}
@@ -208,7 +208,7 @@ function Comparison({ pair, onDone }: { pair: DuplicatePair; onDone: () => void 
           </div>
         </div>
       ) : confirming ? (
-        <div className="rounded-xl bg-ink px-6 py-5">
+        <div className="theme-light rounded-xl bg-ink px-6 py-5">
           <div className="mb-1.5 font-heading text-[15px] font-bold text-paper">Unir cadastros?</div>
           <p className="mb-3.5 text-[12.5px] leading-normal text-ink-3">
             Esta ação é irreversível. Os dados de {nameOf(other)} serão mesclados em {nameOf(keep)} e o cadastro de{" "}

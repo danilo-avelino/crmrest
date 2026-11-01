@@ -47,7 +47,7 @@ export function TenantChooser() {
   const canAdd = Boolean(session?.user.isSuperAdmin || tenants.some((tenant) => tenant.role === "ADMIN"));
 
   return (
-    <section className="relative flex flex-1 flex-col overflow-hidden bg-ink">
+    <section className="theme-light relative flex flex-1 flex-col overflow-hidden bg-ink">
       {/* Textura de comanda: linhas sutis a cada 32px. */}
       <div
         aria-hidden

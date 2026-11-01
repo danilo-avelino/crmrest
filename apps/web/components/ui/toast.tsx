@@ -25,7 +25,7 @@ function ToastList() {
     <Toast.Root
       key={toast.id}
       toast={toast}
-      className="flex items-center gap-2.5 rounded-xl border border-[#3D3A34] bg-ink px-5 py-3 shadow-[0_4px_16px_rgba(0,0,0,0.3)] transition-[opacity,translate] duration-200 data-ending-style:translate-y-2 data-ending-style:opacity-0 data-starting-style:translate-y-2 data-starting-style:opacity-0"
+      className="theme-light flex items-center gap-2.5 rounded-xl border border-[#3D3A34] bg-ink px-5 py-3 shadow-[0_4px_16px_rgba(0,0,0,0.3)] transition-[opacity,translate] duration-200 data-ending-style:translate-y-2 data-ending-style:opacity-0 data-starting-style:translate-y-2 data-starting-style:opacity-0"
     >
       <span className="flex size-[18px] shrink-0 items-center justify-center rounded-full bg-success">
         <CheckIcon className="size-2.5 text-white" strokeWidth={3} aria-hidden />

@@ -16,14 +16,20 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/components/auth/auth-provider";
 import { InboxWatcher } from "@/components/inbox/inbox-watcher";
+import { useState } from "react";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { usePendingAction } from "@/hooks/use-pending-action";
+import { readTheme, saveTheme, type Theme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 
 // Campanhas chega nas próximas fases. Atendentes só usam a Inbox (as outras páginas são de administrador).
@@ -52,12 +58,14 @@ export function NavRail({ onHome }: { onHome?: () => void }) {
   const router = useRouter();
   const pathname = usePathname();
   const [signOut] = usePendingAction(() => logout());
+  // O tema salvo só existe no navegador. O menu só é desenhado aberto, então o servidor nunca mostra este valor.
+  const [theme, setTheme] = useState<Theme>(() => (typeof window === "undefined" ? "system" : readTheme()));
   if (!session?.context) return null;
   const context = session.context;
   const isAdmin = context.tenants.some((tenant) => tenant.role === "ADMIN");
 
   return (
-    <nav className="flex w-14 shrink-0 flex-col items-center gap-0.5 border-r border-[#2D2A24] bg-ink py-4">
+    <nav className="theme-light flex w-14 shrink-0 flex-col items-center gap-0.5 border-r border-[#2D2A24] bg-ink py-4">
       {/* Na Inbox a lista já cuida dos avisos; nas outras páginas eles continuam por aqui. */}
       {!pathname.startsWith("/inbox") && <InboxWatcher />}
       <Link
@@ -157,6 +165,28 @@ export function NavRail({ onHome }: { onHome?: () => void }) {
               Trocar de restaurante
             </DropdownMenuItem>
           )}
+          <DropdownMenuSeparator />
+          <DropdownMenuGroup>
+            <DropdownMenuLabel>Tema</DropdownMenuLabel>
+            <DropdownMenuRadioGroup
+              value={theme}
+              onValueChange={(value: Theme) => {
+                setTheme(value);
+                saveTheme(value);
+              }}
+            >
+              <DropdownMenuRadioItem value="light" closeOnClick>
+                Claro
+              </DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="dark" closeOnClick>
+                Escuro
+              </DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="system" closeOnClick>
+                Igual ao computador
+              </DropdownMenuRadioItem>
+            </DropdownMenuRadioGroup>
+          </DropdownMenuGroup>
+          <DropdownMenuSeparator />
           <DropdownMenuItem onClick={() => signOut()}>Sair</DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>

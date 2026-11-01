@@ -3,7 +3,7 @@ import { CheckIcon } from "lucide-react";
 /** Painel direito (escuro) das telas de cadastro e de assinatura, no padrão do board "Login · Escolha de restaurante". */
 export function AuthAside({ title, subtitle, items }: { title: string; subtitle: string; items: string[] }) {
   return (
-    <section className="relative flex flex-1 flex-col overflow-hidden bg-ink">
+    <section className="theme-light relative flex flex-1 flex-col overflow-hidden bg-ink">
       {/* Textura de comanda: linhas sutis a cada 32px. */}
       <div
         aria-hidden

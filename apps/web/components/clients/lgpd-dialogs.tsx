@@ -49,8 +49,8 @@ export function ExportDialog({ contact, open, onOpenChange }: Props) {
           <p className="mb-3.5 text-[13px] leading-relaxed text-ink-2">
             O arquivo incluirá: cadastro completo, canais vinculados, endereços, consentimentos, todas as conversas e pedidos.
           </p>
-          <div className="mb-[18px] flex items-center gap-2 rounded-[7px] border border-[#FDE68A] bg-warning-lt px-3.5 py-2.5">
-            <TriangleAlertIcon className="size-3.5 shrink-0 text-[#D97706]" aria-hidden />
+          <div className="mb-[18px] flex items-center gap-2 rounded-[7px] border border-[#FDE68A] dark:border-warning-line bg-warning-lt px-3.5 py-2.5">
+            <TriangleAlertIcon className="size-3.5 shrink-0 text-[#D97706] dark:text-warning" aria-hidden />
             <span className="text-xs text-warning-ink">Esta ação ficará registrada no histórico de auditoria.</span>
           </div>
           {error && (

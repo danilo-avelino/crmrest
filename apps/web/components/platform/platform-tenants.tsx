@@ -268,8 +268,8 @@ function TenantRow({ tenant }: { tenant: PlatformTenantDto }) {
               A equipe do restaurante perde o acesso ao painel em até 15 minutos e os canais param de receber mensagens. Os dados
               continuam guardados; dá para reativar quando quiser.
             </p>
-            <div className="mb-[18px] flex items-center gap-2 rounded-[7px] border border-[#FDE68A] bg-warning-lt px-3.5 py-2.5">
-              <TriangleAlertIcon className="size-3.5 shrink-0 text-[#D97706]" aria-hidden />
+            <div className="mb-[18px] flex items-center gap-2 rounded-[7px] border border-[#FDE68A] dark:border-warning-line bg-warning-lt px-3.5 py-2.5">
+              <TriangleAlertIcon className="size-3.5 shrink-0 text-[#D97706] dark:text-warning" aria-hidden />
               <span className="text-xs text-warning-ink">Esta ação ficará registrada na auditoria da plataforma.</span>
             </div>
             {error && (
@@ -440,8 +440,8 @@ function PlanDialog({ tenant }: { tenant: PlatformTenantDto }) {
             {error}
           </p>
         )}
-        <div className="flex items-center gap-2 rounded-[7px] border border-[#FDE68A] bg-warning-lt px-3.5 py-2.5">
-          <TriangleAlertIcon className="size-3.5 shrink-0 text-[#D97706]" aria-hidden />
+        <div className="flex items-center gap-2 rounded-[7px] border border-[#FDE68A] dark:border-warning-line bg-warning-lt px-3.5 py-2.5">
+          <TriangleAlertIcon className="size-3.5 shrink-0 text-[#D97706] dark:text-warning" aria-hidden />
           <span className="text-xs text-warning-ink">Estas ações ficam registradas na auditoria da plataforma.</span>
         </div>
       </div>

@@ -307,7 +307,7 @@ function DeliveryStatus({ message }: { message: MessageDto }) {
       return <span className="ml-1">✓✓</span>;
     case "FAILED":
       return (
-        <span className="ml-1 inline-flex items-center gap-0.5 text-[#F5B5AC]" title={message.statusError ?? undefined}>
+        <span className="ml-1 inline-flex items-center gap-0.5 text-[#F5B5AC] dark:text-tomate-ink" title={message.statusError ?? undefined}>
           · <AlertCircleIcon className="size-2.5" aria-hidden /> não enviada · <RetryButton message={message} />
         </span>
       );
