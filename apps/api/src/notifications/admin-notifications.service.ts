@@ -62,7 +62,7 @@ export function weeklyReportText(restaurant: string, conversations: number, repo
 
   lines.push("💬 *ATENDIMENTO*", `• *${number(conversations)}* ${conversations === 1 ? "conversa" : "conversas"}`);
   lines.push(`• *${number(summary.handoffs)}* ${summary.handoffs === 1 ? "chamado" : "chamados"} para a equipe`);
-  if (ai?.evaluations) lines.push(`• 🤖 *${percent(ai.onlyAi, ai.evaluations)}%* dos atendimentos só com a IA`);
+  if (ai && ai.onlyAi + ai.withTeam > 0) lines.push(`• 🤖 *${percent(ai.onlyAi, ai.onlyAi + ai.withTeam)}%* dos atendimentos só com a IA`);
 
   lines.push("", "⏱️ *TEMPO DE RESPOSTA*");
   lines.push(summary.averageResponseSeconds === null ? "• Sem chamados respondidos" : `• Média da equipe: *${duration(summary.averageResponseSeconds)}*`);

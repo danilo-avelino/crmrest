@@ -72,10 +72,13 @@ model Tenant {
   orderItems          OrderItem[]
   orderEvents         OrderEvent[]
   ratings             Rating[]
+  reviewInvites       ReviewInvite[]
   evaluations         ConversationEvaluation[]
+  aiOnlyAttendances   AiOnlyAttendance[]
   agentSessions       AgentSession[]
   agentEvents         AgentEvent[]
   productSuggestions  ProductSuggestion[]
+  supportTickets      SupportTicket[]
   aiUsages            AiUsage[]
   quickReplies        QuickReply[]
   auditLogs           AuditLog[]
@@ -112,6 +115,7 @@ model User {
   auditLogs             AuditLog[]
   agentSessions         AgentSession[]
   productSuggestions    ProductSuggestion[]
+  supportTickets        SupportTicket[]
 
   @@map("users")
 }
@@ -369,6 +373,7 @@ model Conversation {
   orders       Order[]
   ratings      Rating[]
   evaluations  ConversationEvaluation[]
+  aiOnlyAttendances AiOnlyAttendance[]
 
   @@index([tenantId, status, lastMessageAt])
   @@index([tenantId, contactId])
@@ -450,6 +455,7 @@ model Order {
   items        OrderItem[]
   ratings      Rating[]
   events       OrderEvent[]
+  reviewInvite ReviewInvite?
 
   @@unique([channelId, externalOrderId])
   @@index([tenantId, contactId, placedAt])
@@ -510,8 +516,8 @@ model Rating {
   @@map("ratings")
 }
 
-// Avaliação de um atendimento pela IA (E29), feita quando a conversa é resolvida: uma por atendimento.
-// userId: quem da equipe respondeu por último (null = só a IA e as automações atenderam).
+// Avaliação de um atendimento pela IA (E29), feita quando a conversa é resolvida, só se a equipe respondeu ao cliente.
+// userId: quem da equipe respondeu por último (null só em avaliações antigas, de quando a IA avaliava todo atendimento).
 model ConversationEvaluation {
   id             String   @id @default(uuid(7)) @db.Uuid
   tenantId       String   @map("tenant_id") @db.Uuid
@@ -533,6 +539,22 @@ model ConversationEvaluation {
   @@map("conversation_evaluations")
 }
 
+// Atendimento resolvido em que a equipe não respondeu: não gasta chamada de IA com avaliação, mas conta no relatório
+// e marca onde o próximo atendimento da conversa começa.
+model AiOnlyAttendance {
+  id             String   @id @default(uuid(7)) @db.Uuid
+  tenantId       String   @map("tenant_id") @db.Uuid
+  conversationId String   @map("conversation_id") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  tenant       Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+  @@index([conversationId])
+  @@map("ai_only_attendances")
+}
+
 // ---------- Agente de implantação e suporte na extensão do Chrome (E31) ----------
 
 enum AgentSessionKind {
@@ -543,7 +565,7 @@ enum AgentSessionKind {
 enum AgentSessionStatus {
   ACTIVE
   DONE
-  HANDED_OFF // passou para o suporte humano
+  HANDED_OFF // virou um ticket para o suporte humano
 }
 
 model AgentSession {
@@ -563,6 +585,7 @@ model AgentSession {
   tenant Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   user   User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   events AgentEvent[]
+  ticket SupportTicket?
 
   @@index([tenantId, createdAt])
   @@index([status, updatedAt])
@@ -601,6 +624,55 @@ model ProductSuggestion {
 
   @@index([tenantId, createdAt])
   @@map("product_suggestions")
+}
+
+enum ReviewInviteStatus {
+  PENDING // esperando um painel com a extensão digitar no widget
+  SENT
+  SKIPPED // `reason`: canceled, late ou not_delivered
+  EXPIRED // ninguém enviou a tempo (sem painel aberto, pedido antigo ou convite desligado)
+  FAILED // `reason`: o que o painel contou
+}
+
+// Convite para avaliar a loja no app do iFood (E32), um por pedido. Não é uma mensagem: não aparece na Inbox nem conta como
+// conversa. `text` fica guardado para a leitura do widget reconhecer o balão e deixá-lo de fora da cópia.
+model ReviewInvite {
+  id        String             @id @default(uuid(7)) @db.Uuid
+  tenantId  String             @map("tenant_id") @db.Uuid
+  orderId   String             @unique @map("order_id") @db.Uuid
+  status    ReviewInviteStatus
+  reason    String?
+  text      String?
+  dueAt     DateTime           @map("due_at") @db.Timestamptz(3)
+  claimedAt DateTime?          @map("claimed_at") @db.Timestamptz(3)
+  sentAt    DateTime?          @map("sent_at") @db.Timestamptz(3)
+  createdAt DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  order  Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, status, dueAt])
+  @@map("review_invites")
+}
+
+// Ticket ao suporte, aberto no painel da extensão quando a IA não resolve. O suporte entra em contato pelo telefone.
+// `summary`: nasce com o que o parceiro escreveu; a IA troca pelo resumo do problema logo depois de salvo.
+model SupportTicket {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  sessionId String   @unique @map("session_id") @db.Uuid
+  name      String
+  phone     String // E.164
+  summary   String
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  tenant  Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user    User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  session AgentSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+  @@map("support_tickets")
 }
 
 // Uma chamada paga à IA (hoje, o Claude como reserva do Atendimento com IA): os tokens e o custo, em milionésimos de

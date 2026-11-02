@@ -4,22 +4,23 @@ import {
   type AgentPageAction,
   type AgentSessionDto,
   type AgentSessionKind,
-  type AgentSupportMessageDto,
+  type AgentTicketDto,
   type AgentTurnDto,
   type AgentTurnRequest,
+  CreateSupportTicketRequest,
+  formatPhone,
   ONBOARDING_INTEGRATIONS,
   type OnboardingDto,
   type OnboardingStep,
   supportReturn,
 } from "@dishdesk/shared";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import {
   AlertTriangleIcon,
   ArrowRightIcon,
   CheckIcon,
   ChevronDownIcon,
   ChevronUpIcon,
-  ClockIcon,
   CopyIcon,
   GlobeIcon,
   LightbulbIcon,
@@ -32,14 +33,17 @@ import {
   SkipForwardIcon,
   SparklesIcon,
   SquareIcon,
-  UserIcon,
+  TicketIcon,
   XIcon,
 } from "lucide-react";
-import { type KeyboardEvent, type ReactNode, useEffect, useRef, useState } from "react";
+import { type FormEvent, type KeyboardEvent, type ReactNode, useEffect, useRef, useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
 import { LogoMark } from "@/components/brand/logo-mark";
 import { doneCount, resumeIndex, STEP_INFO } from "@/components/onboarding/steps";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { usePendingAction } from "@/hooks/use-pending-action";
 import { agentBridge, extensionPanel, indicate, onPageEvent } from "@/lib/agent-bridge";
 import { type AgentTurnApi, answerConfirmation, answerPermission, type RunOptions, runAgent } from "@/lib/agent-driver";
 import { ApiError } from "@/lib/api";
@@ -52,8 +56,9 @@ type Card =
   | { type: "paused"; auto: boolean }
   | { type: "lost"; say: string }
   | { type: "step_done"; step: OnboardingStep; next: OnboardingStep | null }
-  | { type: "handoff" }
-  | { type: "off_hours"; when: string }
+  | { type: "offer_ticket"; say: string; declined?: boolean }
+  | { type: "ticket_form" }
+  | { type: "ticket_sent"; phone: string; when: string | null }
   | { type: "unavailable" };
 
 type Entry = { id: number } & (
@@ -72,13 +77,11 @@ type NewEntry = Entry extends infer E ? (E extends Entry ? Omit<E, "id"> : never
 /** O que o painel está fazendo: implantação ou suporte (sessões do agente) ou recebendo uma sugestão (sem a IA). */
 type Mode = AgentSessionKind | "SUGGESTION";
 
-/** working: a IA age; waiting: espera o parceiro; support: passada para a equipe do Dish Desk; done: implantação concluída. */
-type Phase = "idle" | "working" | "waiting" | "paused" | "support" | "unavailable" | "done";
+/** working: a IA age; waiting: espera o parceiro; done: implantação concluída. */
+type Phase = "idle" | "working" | "waiting" | "paused" | "unavailable" | "done";
 
 /** O que o parceiro escreveu no início e parece implantação (o resto vai para o suporte). */
 const SETUP_WORDS = /configur|implant|conect|integra|whats|zap|insta|ifood|card[aá]pio/i;
-/** Depois da transferência, o painel confere as respostas da equipe. */
-const SUPPORT_POLL_MS = 10_000;
 
 const HOSTS: [RegExp, string][] = [
   [/(^|\.)portal\.ifood\.com\.br$/, "o Portal do Parceiro iFood"],
@@ -133,8 +136,7 @@ function SignedOut() {
 }
 
 function Conversation({ tenantId, admin }: { tenantId: string; admin: boolean }) {
-  const { request } = useAuth();
-  const queryClient = useQueryClient();
+  const { request, session } = useAuth();
   const [entries, setEntries] = useState<Entry[]>([]);
   const [phase, setPhaseState] = useState<Phase>("idle");
   const [mode, setMode] = useState<Mode | null>(null);
@@ -153,20 +155,14 @@ function Conversation({ tenantId, admin }: { tenantId: string; admin: boolean })
   } | null>(null);
   const nextId = useRef(0);
   const scroller = useRef<HTMLDivElement>(null);
+  // A IA já perguntou do ticket: se ela oferecer de novo (o parceiro respondeu "sim" escrevendo), o formulário abre direto.
+  const ticketOffered = useRef(false);
 
   const onboarding = useQuery({
     queryKey: ["onboarding", tenantId],
     queryFn: () => request<OnboardingDto>(`/onboarding/${tenantId}`),
     enabled: admin,
   });
-  const supportKey = ["agent-support", sessionId];
-  const support =
-    useQuery({
-      queryKey: supportKey,
-      queryFn: () => request<AgentSupportMessageDto[]>(`/agent/sessions/${sessionId}/messages`),
-      enabled: phase === "support" && sessionId !== null,
-      refetchInterval: SUPPORT_POLL_MS,
-    }).data ?? [];
 
   const setSession = (next: AgentSessionDto | null) => {
     sessionRef.current = next;
@@ -180,7 +176,7 @@ function Conversation({ tenantId, admin }: { tenantId: string; admin: boolean })
 
   useEffect(() => {
     scroller.current?.scrollTo({ top: scroller.current.scrollHeight });
-  }, [entries, support, phase, busy]);
+  }, [entries, phase, busy]);
 
   // A faixa na aba: Pausar e Continuar, e o parceiro mexendo na página enquanto a IA age (pausa sozinha).
   const handlers = useRef({
@@ -287,7 +283,7 @@ function Conversation({ tenantId, admin }: { tenantId: string; admin: boolean })
     applyProgress(turn.progress);
     const next = turn.next;
     const kind = sessionRef.current?.kind;
-    if (turn.status !== "ACTIVE" && next.type !== "handoff") setSession(null);
+    if (turn.status !== "ACTIVE") setSession(null);
     switch (next.type) {
       case "act":
         // Parou antes da ação (Pausar ou Parar) ou chegou ao limite de ações seguidas.
@@ -335,8 +331,10 @@ function Conversation({ tenantId, admin }: { tenantId: string; admin: boolean })
         indicate({ state: "off" });
         push({ kind: "card", card: { type: "unavailable" } });
         return setPhase("unavailable");
-      case "handoff":
-        return handedOff();
+      case "offer_ticket":
+        push({ kind: "card", card: ticketOffered.current ? { type: "ticket_form" } : { type: "offer_ticket", say: next.say } });
+        ticketOffered.current = true;
+        return waiting();
       case "done":
         push({ kind: "agent", text: next.say });
         indicate({ state: "off" });
@@ -361,15 +359,25 @@ function Conversation({ tenantId, admin }: { tenantId: string; admin: boolean })
     setPhase("idle");
     indicate({ state: "off" });
   }
-  function handedOff() {
+
+  const closeTicketForm = () => setEntries((current) => current.filter((entry) => !(entry.kind === "card" && entry.card.type === "ticket_form")));
+
+  /** "Agora não": o cartão fica na conversa, sem os botões. */
+  function declineTicket() {
+    ticketOffered.current = false;
+    setEntries((current) => current.map((entry) => (entry.kind === "card" && entry.card.type === "offer_ticket" ? { ...entry, card: { ...entry.card, declined: true } } : entry)));
+    push({ kind: "agent", text: "Tudo bem, sem ticket. Se precisar de mais alguma coisa, é só me dizer." });
+  }
+
+  async function sendTicket(ticket: CreateSupportTicketRequest) {
+    if (!sessionRef.current) await startSession("SUPPORT");
+    const { phone } = await request<AgentTicketDto>(`/agent/sessions/${sessionRef.current!.id}/ticket`, { method: "POST", body: ticket });
+    setSession(null);
+    ticketOffered.current = false;
+    closeTicketForm();
+    push({ kind: "card", card: { type: "ticket_sent", phone, when: supportReturn(new Date()) } });
+    setPhase("idle");
     indicate({ state: "off" });
-    const when = supportReturn(new Date());
-    push({
-      kind: "card",
-      card: when ? { type: "off_hours", when } : { type: "handoff" },
-    });
-    setMode("SUPPORT");
-    setPhase("support");
   }
 
   function stop() {
@@ -410,22 +418,7 @@ function Conversation({ tenantId, admin }: { tenantId: string; admin: boolean })
     const body = message.trim();
     if (!body) return;
     setText("");
-    if (phaseRef.current === "support" && sessionRef.current) {
-      try {
-        const messages = await request<AgentSupportMessageDto[]>(`/agent/sessions/${sessionRef.current.id}/messages`, {
-          method: "POST",
-          body: { text: body },
-        });
-        queryClient.setQueryData(["agent-support", sessionRef.current.id], messages);
-      } catch (error) {
-        setText(body);
-        push({
-          kind: "agent",
-          text: error instanceof ApiError ? error.message : "Não foi possível enviar. Tente de novo.",
-        });
-      }
-      return;
-    }
+    closeTicketForm();
     push({ kind: "partner", text: body });
     if (mode === "SUGGESTION") {
       try {
@@ -477,18 +470,6 @@ function Conversation({ tenantId, admin }: { tenantId: string; admin: boolean })
     setPhase("waiting");
   }
 
-  async function callSupport() {
-    try {
-      if (!sessionRef.current) await startSession("SUPPORT");
-      finish(await request<AgentTurnDto>(`/agent/sessions/${sessionRef.current!.id}/handoff`, { method: "POST" }), null);
-    } catch (error) {
-      push({
-        kind: "agent",
-        text: error instanceof ApiError ? error.message : "Não foi possível chamar o suporte. Tente de novo.",
-      });
-    }
-  }
-
   // Só o cartão mais recente responde (os de antes ficam como registro).
   const lastCard = entries.findLast((entry) => entry.kind === "card")?.id;
   const cardAction = (entry: Entry, work: () => Promise<void>) => () => {
@@ -497,14 +478,12 @@ function Conversation({ tenantId, admin }: { tenantId: string; admin: boolean })
 
   const current = progress ?? onboarding.data ?? null;
   const showProgress = mode === "SETUP" && current;
-  const supportOpen = phase === "support" && !entries.some((entry) => entry.kind === "card" && entry.card.type === "off_hours");
-  const status = statusOf(phase, supportOpen);
+  const status = statusOf(phase);
   const controls = sessionId && (phase === "working" || phase === "waiting" || phase === "paused");
-  const agentName = support.findLast((message) => message.from === "support")?.author ?? null;
   // A IA decide o próximo passo (a resposta da API ainda não chegou): "Pensando…" no fim da conversa, como uma etapa.
   // Enquanto uma ação roda na página, a linha dela (a última) já mostra o andamento.
   const last = entries.at(-1);
-  const thinking = (phase === "working" || (busy && phase !== "support" && mode !== "SUGGESTION")) && !(last?.kind === "action" && last.state === "running");
+  const thinking = (phase === "working" || (busy && mode !== "SUGGESTION")) && !(last?.kind === "action" && last.state === "running");
 
   return (
     <div className="flex h-full flex-col bg-paper">
@@ -552,6 +531,7 @@ function Conversation({ tenantId, admin }: { tenantId: string; admin: boolean })
                 key={entry.id}
                 entry={entry}
                 active={entry.id === lastCard && phase !== "working" && !busy}
+                partnerName={session?.user.name ?? ""}
                 cardAction={cardAction}
                 handlers={{
                   confirm: (action, confirmed) => {
@@ -565,19 +545,13 @@ function Conversation({ tenantId, admin }: { tenantId: string; admin: boolean })
                         : runAgent(api, agentBridge, { message: `Não permiti agir em ${host}.` }, options),
                     ),
                   message: (message) => run((options) => runAgent(api, agentBridge, { message }, options)),
-                  support: callSupport,
+                  openTicket: async () => push({ kind: "card", card: { type: "ticket_form" } }),
+                  declineTicket: async () => declineTicket(),
+                  sendTicket,
+                  closeTicketForm,
                 }}
               />
             ))}
-            {support.map((message) =>
-              message.from === "partner" ? (
-                <Bubble key={message.id} from="partner">
-                  {message.text}
-                </Bubble>
-              ) : (
-                <SupportBubble key={message.id} author={message.author} text={message.text} />
-              ),
-            )}
             {thinking && (
               <div role="status" className="ml-[9px] flex items-center gap-2 border-l border-rule py-1 pl-4 text-[12px] text-ink-2">
                 <LoaderCircleIcon className="size-3 shrink-0 animate-spin text-tomate" aria-hidden />
@@ -596,15 +570,7 @@ function Conversation({ tenantId, admin }: { tenantId: string; admin: boolean })
         onChange={setText}
         disabled={phase === "unavailable"}
         sending={phase === "working" || busy}
-        placeholder={
-          phase === "support"
-            ? agentName
-              ? `Escreva para ${agentName.split(" ")[0]}…`
-              : "Deixe a sua mensagem…"
-            : mode === "SUGGESTION"
-              ? "Escreva a sua sugestão…"
-              : "Peça em linguagem natural: conecta o meu WhatsApp…"
-        }
+        placeholder={mode === "SUGGESTION" ? "Escreva a sua sugestão…" : "Peça em linguagem natural: conecta o meu WhatsApp…"}
         onSend={() => act(() => send(text))}
       />
     </div>
@@ -613,11 +579,10 @@ function Conversation({ tenantId, admin }: { tenantId: string; admin: boolean })
 
 type Status = { label: string; tone: "working" | "waiting" | "ok" | "off" };
 
-function statusOf(phase: Phase, supportOpen: boolean): Status {
+function statusOf(phase: Phase): Status {
   if (phase === "working") return { label: "Trabalhando", tone: "working" };
   if (phase === "waiting") return { label: "Esperando você", tone: "waiting" };
   if (phase === "paused") return { label: "Pausada", tone: "off" };
-  if (phase === "support") return supportOpen ? { label: "Com o suporte", tone: "ok" } : { label: "Esperando você", tone: "waiting" };
   if (phase === "unavailable") return { label: "IA indisponível", tone: "off" };
   if (phase === "done") return { label: "Concluído", tone: "ok" };
   return { label: "Pronta para ajudar", tone: "ok" };
@@ -779,17 +744,22 @@ type EntryHandlers = {
   confirm: (action: AgentPageAction, confirmed: boolean) => Promise<void>;
   permission: (host: string, granted: boolean) => Promise<void>;
   message: (message: string) => Promise<void>;
-  support: () => Promise<void>;
+  openTicket: () => Promise<void>;
+  declineTicket: () => Promise<void>;
+  sendTicket: (ticket: CreateSupportTicketRequest) => Promise<void>;
+  closeTicketForm: () => void;
 };
 
 function EntryView({
   entry,
   active,
+  partnerName,
   cardAction,
   handlers,
 }: {
   entry: Entry;
   active: boolean;
+  partnerName: string;
   cardAction: (entry: Entry, work: () => Promise<void>) => () => void;
   handlers: EntryHandlers;
 }) {
@@ -876,11 +846,36 @@ function EntryView({
               <Button size="xs" onClick={on(() => handlers.message("Tente de novo."))}>
                 Tentar de novo
               </Button>
-              <Button variant="outline" size="xs" onClick={on(handlers.support)}>
-                Falar com o suporte
+              <Button variant="outline" size="xs" onClick={on(handlers.openTicket)}>
+                Enviar ticket
               </Button>
             </CardButtons>
           )}
+        </CardBox>
+      );
+    case "offer_ticket":
+      return (
+        <CardBox tone="danger" icon={<AlertTriangleIcon aria-hidden />} title="Não consegui resolver">
+          {card.say}
+          {active && !card.declined && (
+            <CardButtons>
+              <Button size="xs" onClick={on(handlers.openTicket)}>
+                Enviar ticket
+              </Button>
+              <Button variant="outline" size="xs" onClick={on(handlers.declineTicket)}>
+                Agora não
+              </Button>
+            </CardButtons>
+          )}
+        </CardBox>
+      );
+    case "ticket_form":
+      return <TicketForm defaultName={partnerName} onSend={handlers.sendTicket} onCancel={handlers.closeTicketForm} />;
+    case "ticket_sent":
+      return (
+        <CardBox tone="success" icon={<CheckIcon aria-hidden />} title="Ticket enviado">
+          A IA resumiu o problema para a equipe. O suporte entrará em contato pelo telefone {formatPhone(card.phone)}
+          {card.when ? `, a partir de ${card.when}` : ""}.
         </CardBox>
       );
     case "step_done":
@@ -898,35 +893,87 @@ function EntryView({
           )}
         </CardBox>
       );
-    case "handoff":
-      return (
-        <CardBox tone="muted" icon={<UserIcon aria-hidden />} title="Transferido para o suporte">
-          Chamamos alguém da equipe Dish Desk. Ela já recebeu o histórico da conversa e das ações.
-        </CardBox>
-      );
-    case "off_hours":
-      return (
-        <CardBox tone="muted" icon={<ClockIcon aria-hidden />} title={`O suporte volta ${card.when}`}>
-          Deixe a sua mensagem aqui. A equipe já recebeu o histórico e responde assim que voltar.
-        </CardBox>
-      );
     case "unavailable":
       return (
         <CardBox tone="muted" icon={<AlertTriangleIcon aria-hidden />} title="A IA está fora do ar agora">
-          Não consigo mexer no navegador neste momento. A equipe de suporte pode ajudar você.
+          Não consigo mexer no navegador neste momento. Se você enviar um ticket, a equipe do Dish Desk entrará em contato com você.
           {active && (
             <CardButtons>
               <Button size="xs" onClick={on(() => handlers.message("Tente de novo."))}>
                 Tentar de novo
               </Button>
-              <Button variant="outline" size="xs" onClick={on(handlers.support)}>
-                Falar com o suporte
+              <Button variant="outline" size="xs" onClick={on(handlers.openTicket)}>
+                Enviar ticket
               </Button>
             </CardButtons>
           )}
         </CardBox>
       );
   }
+}
+
+/** O nome e o telefone para o suporte falar com o parceiro; o resumo do problema é a IA que escreve. */
+function TicketForm({
+  defaultName,
+  onSend,
+  onCancel,
+}: {
+  defaultName: string;
+  onSend: (ticket: CreateSupportTicketRequest) => Promise<void>;
+  onCancel: () => void;
+}) {
+  const [name, setName] = useState(defaultName);
+  const [phone, setPhone] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [submit, sending] = usePendingAction(async () => {
+    const parsed = CreateSupportTicketRequest.safeParse({ name, phone });
+    if (!parsed.success) return setError(parsed.error.issues[0]?.message ?? "Confira os dados.");
+    setError(null);
+    try {
+      await onSend(parsed.data);
+    } catch (failure) {
+      setError(failure instanceof ApiError ? failure.message : "Não foi possível enviar o ticket. Tente de novo.");
+    }
+  });
+  const onSubmit = (event: FormEvent) => {
+    event.preventDefault();
+    submit();
+  };
+  return (
+    <CardBox tone="strong" icon={<TicketIcon aria-hidden />} title="Enviar ticket ao suporte">
+      A IA resume o problema para a equipe, e o suporte entrará em contato com você por este telefone.
+      <form onSubmit={onSubmit} noValidate className="mt-2.5 flex flex-col gap-2.5">
+        <div className="flex flex-col gap-1">
+          <Label htmlFor="ticket-name">Nome</Label>
+          <Input id="ticket-name" value={name} autoComplete="name" onChange={(event) => setName(event.target.value)} />
+        </div>
+        <div className="flex flex-col gap-1">
+          <Label htmlFor="ticket-phone">Telefone com DDD</Label>
+          <Input
+            id="ticket-phone"
+            type="tel"
+            value={phone}
+            autoComplete="tel"
+            placeholder="(11) 98765-4321"
+            onChange={(event) => setPhone(event.target.value)}
+          />
+        </div>
+        {error && (
+          <p role="alert" className="text-[12px] text-tomate">
+            {error}
+          </p>
+        )}
+        <div className="flex gap-1.5">
+          <Button type="submit" size="xs" loading={sending}>
+            Enviar ticket
+          </Button>
+          <Button type="button" variant="outline" size="xs" disabled={sending} onClick={onCancel}>
+            Cancelar
+          </Button>
+        </div>
+      </form>
+    </CardBox>
+  );
 }
 
 /** O texto que o parceiro cola na página (ex.: o código de vinculação nas caixinhas do iFood), com o botão Copiar. */
@@ -963,28 +1010,6 @@ function Bubble({ from, children }: { from: "partner" | "agent"; children: React
       <LogoMark className="mt-0.5 size-5 rounded-[5px] [&_svg]:size-3" />
       <div className="rounded-[12px_12px_12px_2px] border border-rule bg-surface px-3 py-2 text-[13px] leading-[1.4] break-words whitespace-pre-wrap">
         {children}
-      </div>
-    </div>
-  );
-}
-
-function SupportBubble({ author, text }: { author: string | null; text: string }) {
-  const initials = (author ?? "Suporte")
-    .split(/\s+/)
-    .map((part) => part[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
-  return (
-    <div className="flex max-w-[88%] items-start gap-2">
-      <span className="mt-4 flex size-5 shrink-0 items-center justify-center rounded-full bg-[#E9E3F5] text-[8.5px] font-semibold text-[#5B3FA0]">
-        {initials}
-      </span>
-      <div>
-        <p className="mb-1 text-[11px] font-medium text-ink-2">{author ?? "Equipe"} · Suporte Dish Desk</p>
-        <div className="rounded-[12px_12px_12px_2px] border border-rule bg-surface px-3 py-2 text-[13px] leading-[1.4] break-words whitespace-pre-wrap">
-          {text}
-        </div>
       </div>
     </div>
   );

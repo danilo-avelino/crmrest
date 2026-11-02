@@ -112,6 +112,8 @@ export class ReportsService {
             include: { conversation: { select: { contact: { select: { name: true } } } } },
           })
         : [];
+      // Atendimentos sem resposta da equipe: não passam pela avaliação, só contam.
+      const aiOnlyAttendances = aiModule ? await tx.aiOnlyAttendance.count({ where: { tenantId, createdAt: { gte: from } } }) : 0;
       // Respostas bloqueadas pela revisão da IA por má conduta.
       const misconduct = aiModule
         ? await tx.message.findMany({
@@ -204,7 +206,8 @@ export class ReportsService {
               reacted: evaluations.filter((row) => row.satisfied !== null).length,
               satisfied: evaluations.filter((row) => row.satisfied).length,
               lowScores: evaluations.filter((row) => row.score <= 2).length,
-              onlyAi: evaluations.filter((row) => row.userId === null).length,
+              onlyAi: aiOnlyAttendances + evaluations.filter((row) => row.userId === null).length,
+              withTeam: evaluations.filter((row) => row.userId !== null).length,
               teamReasons: Object.keys(TEAM_REASONS)
                 .map((reason) => ({ reason: reason as TeamReason, count: evaluations.filter((row) => row.teamReason === reason).length }))
                 .filter((row) => row.count > 0)

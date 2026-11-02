@@ -15,7 +15,7 @@ Conferida no código. **✅ Feito** quer dizer que o épico está no código. **
 | **1 — MVP, com a IA no atendimento** | E1–E11, E27–E29 | **E12:** backup diário (o Supabase está no plano Free). Sentry (api e web) e Bull Board estão no ar desde 30/10/2026. |
 | **2 — Pós-MVP** | E13–E15, E17, E26, E30 | **E16:** entrar no painel de um restaurante para suporte (impersonação auditada). **E18:** Inbox para tablet. **E32–E39:** reputação e avaliações. **E40:** prevenção de fraude com o histórico importado e o cancelamento em todas as integrações. |
 | **3 — Campanhas** | — | **E19:** os módulos já são ligados por restaurante pela plataforma; falta o estado bloqueado do módulo Campanhas. **E25:** a assinatura do Dish Desk pela Stripe existe; falta a cobrança do módulo. **E20–E24:** não começaram. |
-| **4 — Agente de implantação e suporte** | — | **E31:** falta a tela da equipe Dish Desk que lê e responde as conversas de suporte. |
+| **4 — Agente de implantação e suporte** | — | **E31:** falta o teste com o Chrome de verdade. |
 
 Os canais estão no código, mas três dependem de terceiros para chegar aos restaurantes:
 - **Instagram (E6):** só funciona para contas testadoras até a análise da Meta.
@@ -137,7 +137,7 @@ Objetivo: um restaurante piloto atende clientes de WhatsApp, Instagram e iFood e
 
 ### IA no atendimento (entrou no MVP em 29/10/2026)
 
-O restaurante usa IA para atender o cliente de duas formas, **atendimento 100% com IA** (E27) ou **suporte com revisão por IA** (E28), e toda conversa recebe uma avaliação automática (E29). O módulo `AI` é ligado por restaurante pela plataforma.
+O restaurante usa IA para atender o cliente de duas formas, **atendimento 100% com IA** (E27) ou **suporte com revisão por IA** (E28), e toda conversa em que a equipe respondeu recebe uma avaliação automática (E29). O módulo `AI` é ligado por restaurante pela plataforma.
 
 **Decidido em 31/10/2026:** o Dish Desk é vendido com a IA logo de início. Todo restaurante novo já nasce com o módulo `AI` ligado (a plataforma ainda pode desligar; os que já existiam são ligados pelo painel). O menu de atendimento virou o último recurso: LLM principal → reserva (Claude Haiku) → menu. Quando as duas LLMs falham, aquele atendimento segue no menu até o fim, e o próximo volta para a IA.
 
@@ -173,9 +173,10 @@ Vale para os três épicos:
   - se **o cliente ficou satisfeito**;
   - uma **nota para o atendimento**, de acordo com a reação do cliente.
 - Como admin, quero ver a avaliação na conversa e filtrar as conversas com nota baixa ou problema não resolvido.
-- Como admin, quero ver a nota média por atendente e por período. A avaliação vale tanto para o atendimento humano quanto para o da IA (E27).
+- Como admin, quero ver a nota média por atendente e por período.
 - Como plataforma, quero a avaliação rodando em **job assíncrono** (fila própria no `worker`), fora do caminho do atendimento. Uma falha na avaliação nunca atrasa nem bloqueia a conversa.
 - **Primeira versão (24/10/2026):** roda 5 minutos depois de resolvida (ou encerrada por inatividade) e avalia o que veio depois da última avaliação da conversa; reaberta antes disso, espera a próxima resolução. Nota de 1 a 5, resolvido, satisfeito (ou sem reação) e um resumo; aparece na conversa e na aba Avaliações, só para administradores. Modelo em teste: Gemma 4 12B local (Ollama).
+- **Só com a equipe (02/11/2026):** para reduzir chamadas à IA, só são avaliados os atendimentos em que alguém da equipe respondeu ao cliente. Nota interna ou resolver sem responder não contam. O atendimento sem resposta da equipe não recebe nota, só fica registrado (`ai_only_attendances`), para o relatório seguir mostrando quantos a IA resolveu sozinha. Falhas da IA nesses atendimentos não aparecem mais nas Avaliações.
 - A definir na implementação:
   - a escala da nota (ex.: 1 a 5) e os critérios de cada nível;
   - o que fazer com conversas sem reação do cliente (ex.: cliente que parou de responder);
@@ -276,7 +277,7 @@ Inspiração: Super Avaliações ([superavaliacoes.com.br](https://superavaliaco
 - 99Food e Keeta, que esperam haver restaurante usando.
 - conexão via MCP com ferramentas de IA de fora.
 
-#### E32 — Convite de avaliação no iFood · **M** · depende de: E7, chat do iFood pela extensão ([docs/plano-chat-ifood.md](docs/plano-chat-ifood.md)) · **⬜ A fazer**
+#### E32 — Convite de avaliação no iFood · **M** · depende de: E7, chat do iFood pela extensão ([docs/plano-chat-ifood.md](docs/plano-chat-ifood.md)) · **🟡 Construído em 02/11/2026; falta o teste numa loja real (desligado por padrão)**
 Problema: menos de 5% dos pedidos do iFood recebem avaliação. Quem teve problema avalia, e quem gostou raramente avalia. O pedido de avaliação do próprio app do iFood não basta.
 - Como restaurante, quero que o Dish Desk escreva no chat do pedido do iFood, **10 minutos depois da entrega**, pedindo ao cliente que avalie a loja no app do iFood.
 - Como restaurante, quero ligar ou desligar o convite numa **seção do iFood em Configurações → Mensagens automáticas**. O texto segue a personalidade do atendimento (CLAUDE.md §10).
@@ -287,14 +288,16 @@ Problema: menos de 5% dos pedidos do iFood recebem avaliação. Quem teve proble
   - **Envio:** o iFood não tem API de chat, então quem envia é o painel com a extensão. Só sai se houver painel aberto na hora; sem painel, o convite é descartado (sem fila, sem reenvio).
   - **Inbox:** o convite não aparece nela. Se o cliente responder, segue o fluxo normal: sem IA, a conversa abre e a equipe é chamada; com IA, ela analisa, responde se precisar e chama a equipe se o cliente quiser.
   - **Onde fica guardado:** uma tabela própria (`ReviewInvite`) com um convite por pedido, o desfecho (enviado, pulado e por quê, descartado sem painel, falhou) e as horas. Entra na RLS e no teste de isolamento entre tenants.
-- A definir na implementação:
-  - como o convite é disparado na hora certa: o próprio pedido de envio do painel decide, uma tarefa com atraso por pedido, ou uma varredura por minuto;
-  - por quanto tempo o convite espera um painel aberto antes de ser descartado.
-- A conferir antes de construir:
+- **Decidido na implementação (02/11/2026):**
+  - **Disparo:** varredura por minuto ([review-invite.service.ts](apps/api/src/automations/review-invite.service.ts)), que também registra os desfechos.
+  - **Espera por um painel:** 30 minutos; depois disso, o convite é descartado. A varredura olha os pedidos das últimas 24 horas.
+  - **Sem aviso de entrega:** pedido que ainda não saiu da loja no horário prometido + 10 min fica de fora (`not_delivered`), porque com certeza atrasou.
+  - **Pesquisa de satisfação:** saiu do iFood no lugar do convite; continua no WhatsApp e no Instagram.
+  - **Chat certo:** o convite vai para o pedido dele e só abre a conversa com o nome do cliente do pedido; sem esse nome na lista do widget, registra a falha e não digita em nenhuma.
+  - **Inatividade e resposta rápida:** o convite não é mensagem, então não agenda encerramento. A leitura do widget deixa o balão dele fora da cópia, e a resposta do cliente segue como conversa nova.
+- A conferir numa loja real antes de ligar (o desfecho fica em `review_invites`, com o motivo em `reason`):
   - **Escrever primeiro:** se um pedido sem mensagens aparece na lista de chats do widget, e se o chat aceita mensagem 10 minutos depois da entrega. Hoje a extensão só abre chats que já estão na lista ([ifood-chat-driver.ts](apps/web/lib/ifood-chat-driver.ts)).
-  - **Chat certo:** hoje o envio pelo iFood vai para o último pedido do cliente na loja ([ifood-chat.service.ts](apps/api/src/conversations/ifood-chat.service.ts), `claim`). O convite precisa ir para o pedido dele.
-  - **Inatividade:** um envio pela ponte agenda o encerramento por inatividade, e o convite não pode agendar.
-  - **Resposta rápida:** uma resposta do cliente em até 5 minutos depois de uma mensagem da loja conta como "atendimento em andamento", sem alarme. Isso não pode valer para o convite.
+  - **Nome do cliente:** se o nome que o widget mostra é igual ao `raw.customer.name` do pedido. Se não for, os convites falham com "O chat deste pedido não está aberto no widget do iFood.", sem digitar em conversa errada.
   - **Horário de entrega:** quantos pedidos de fato recebem `deliveredAt`, por tipo de frota.
   - **Regras do iFood:** se a política dele permite pedir avaliação no chat em todo pedido.
 - Medição: avaliações ÷ pedidos do iFood por loja e período, na aba Avaliações → iFood. Depende da homologação do módulo Review ([docs/pendencias-producao.md](docs/pendencias-producao.md)).
@@ -442,22 +445,23 @@ Objetivo: a IA da extensão do Chrome faz a implantação com o restaurante e at
 #### E31 — Agente de implantação e suporte na extensão do Chrome · **G** · depende de: E30, extensão do Chrome ([apps/extension](apps/extension/README.md)) · **🟡 Parcial**
 - Como parceiro (restaurante), quero que a **extensão do Chrome do Dish Desk** tenha uma IA que **controla o meu navegador** e faz comigo a implantação do sistema, parecida com o Claude no Chrome: ela lê a tela, clica, preenche e navega entre as páginas.
 - Como parceiro, quero que essa mesma IA seja o **suporte do Dish Desk**: tiro dúvidas sobre o sistema e peço ajuda quando algo não funciona (canal desconectado, mensagem que não chegou, configuração errada). Ela investiga na minha tela e no Dish Desk e corrige comigo, com as mesmas regras da implantação.
-- Como parceiro, quero que a IA **transfira para o suporte humano** quando não resolver, quando eu pedir ou quando o problema for de cobrança ou de conta, e que a pessoa do suporte receba o histórico da conversa e das ações, sem eu repetir a história.
+- Como parceiro, quero que a IA **ofereça um ticket ao suporte** quando não resolver, quando eu pedir ou quando o problema for de cobrança ou de conta: ela avisa que não conseguiu e pergunta se quero enviar; informo o nome e o telefone, ela escreve o resumo do problema e o suporte entra em contato depois, sem eu repetir a história.
 - Como parceiro, quero pedir em linguagem natural ("conecta o meu WhatsApp", "liga o iFood") e ver a IA executar o passo a passo do assistente de configuração (E30), inclusive nos **painéis de fora** do Dish Desk, onde não temos API: Meta Business (conta do WhatsApp Business, verificação, Página do Instagram), Portal do Parceiro iFood e Portal do Cardápio Web (gerar a chave e colar no Dish Desk).
 - Como parceiro, quero acompanhar cada ação na tela, **pausar ou parar a IA a qualquer momento** e assumir o controle.
 - **Regra obrigatória:** a IA **pede a minha confirmação** antes de qualquer ação que não dá para desfazer ou que fala em nome do restaurante (aceitar termos, enviar documentos, publicar, pagar, apagar). Ela **nunca digita senha, código de verificação nem dados de cartão**: nesses pontos, para e pede que eu faça.
 - Como parceiro, quero que a IA só aja nos sites da implantação (lista fechada de domínios) e peça permissão antes de abrir outro.
 - Como plataforma, quero registrar o que a IA fez em cada implantação e em cada atendimento de suporte (passos, onde parou, onde falhou), para o suporte humano continuar de onde ela parou e para melhorar o assistente.
-- Como plataforma, quero que a IA de suporte só afirme o que está na documentação do Dish Desk e nos dados do restaurante. Sem a informação, ela transfere (mesma regra do E27).
+- Como plataforma, quero que a IA de suporte só afirme o que está na documentação do Dish Desk e nos dados do restaurante. Sem a informação, ela oferece o ticket.
 - Como plataforma, quero que cada integração conferida pela IA passe pela mesma conferência de Configurações → Integrações (E14) antes de dar o passo como concluído.
 - A IA também oferece a **importação dos contatos** de cada sistema conectado, quando ele permitir (CLAUDE.md §9).
 - As capturas de tela e o conteúdo das páginas vão para o provedor de LLM e podem ter dados do restaurante e dos clientes: entra na política de privacidade e no registro de uso por tenant (LGPD), como os outros épicos desta fase.
-- **Decidido em 25/10/2026:** o modelo é o mesmo do atendimento (Gemma 4 local), lendo a árvore da página, sem capturas de tela; a extensão é a mesma do chat do iFood, com um painel lateral; quando a IA se perde (a página mudou ou ela errou várias vezes seguidas), ela para e oferece tentar de novo ou falar com o suporte humano. O E30 vem antes.
-- **Motor pronto (25/10/2026):** sessões e registro de cada passo (`agent_sessions`, `agent_events`), `POST /agent/sessions`, `/turn` e `/handoff`, travas no código ([agent-guard.ts](apps/api/src/agent/agent-guard.ts)), conferência do passo pelo progresso do E30, painel lateral e leitura da página na extensão 0.4.0 e o ciclo no painel web ([agent-driver.ts](apps/web/lib/agent-driver.ts)). Testado com o Gemma 4 local. Tela `/extensao/agente` (board "Extensão do Chrome · Agente de implantação e suporte") e indicador na página (faixa, contorno, pausa quando o parceiro mexe na aba) feitos na extensão 0.5.0. Depois da transferência, o parceiro escreve no painel e as respostas da equipe aparecem nele (`/agent/sessions/:id/messages`, eventos `support`). **Falta** a tela da equipe Dish Desk que lê e responde essas conversas (sem board); horário do suporte provisório em `SUPPORT_HOURS` (seg–sex, 9h–18h).
+- **Decidido em 25/10/2026:** o modelo é o mesmo do atendimento (Gemma 4 local), lendo a árvore da página, sem capturas de tela; a extensão é a mesma do chat do iFood, com um painel lateral; quando a IA se perde (a página mudou ou ela errou várias vezes seguidas), ela para e oferece tentar de novo ou enviar um ticket ao suporte. O E30 vem antes.
+- **Motor pronto (25/10/2026):** sessões e registro de cada passo (`agent_sessions`, `agent_events`), `POST /agent/sessions`, `/turn` e `/ticket`, travas no código ([agent-guard.ts](apps/api/src/agent/agent-guard.ts)), conferência do passo pelo progresso do E30, painel lateral e leitura da página na extensão 0.4.0 e o ciclo no painel web ([agent-driver.ts](apps/web/lib/agent-driver.ts)). Testado com o Gemma 4 local. Tela `/extensao/agente` (board "Extensão do Chrome · Agente de implantação e suporte") e indicador na página (faixa, contorno, pausa quando o parceiro mexe na aba) feitos na extensão 0.5.0. Horário do suporte provisório em `SUPPORT_HOURS` (seg–sex, 9h–18h).
+- **Mudado em 02/11/2026:** o chat com o suporte saiu. Quando a IA não resolve, o painel oferece um **ticket** (`support_tickets`): o parceiro informa o nome e o telefone, a IA escreve o resumo e o painel avisa que o suporte entrará em contato (fora do horário, a partir de quando ele volta). A equipe lê em `/plataforma/tickets` (sem board).
 - **Feito em 27/10/2026:** a implantação começa pelas configurações do atendimento e depois passa às integrações; o painel mostra "Pensando…" enquanto a IA decide o próximo passo; depois da implantação, o painel da extensão tem "Fazer uma sugestão": a IA classifica o assunto e a plataforma vê o ranking por assunto.
 - A definir na implementação:
   - se o agente é gratuito na implantação ou entra na cobrança da IA;
-  - onde fica o suporte humano que recebe as transferências (a própria Inbox do Dish Desk, como um tenant interno, ou outra ferramenta) e o horário de atendimento dele;
+  - o horário de atendimento do suporte humano;
   - se o suporte também fica disponível fora da extensão (no Dish Desk web, para quem não usa Chrome).
 
 ---

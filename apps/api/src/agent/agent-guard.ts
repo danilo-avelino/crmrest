@@ -3,12 +3,16 @@ import { type AgentAction, type AgentPageAction, hostAllowed, type PageElement, 
 /** O que a LLM decidiu (schema AgentDecision), antes das travas. */
 export type Decision = {
   say: string;
-  action: "click" | "fill" | "select" | "navigate" | "login" | "switch" | "reply" | "done" | "handoff";
+  action: "click" | "fill" | "select" | "navigate" | "login" | "switch" | "reply" | "done" | "ticket";
   ref: number;
   value: string;
   irreversible: boolean;
   reason: string;
 };
+
+/** O aviso que acompanha toda oferta de ticket ao suporte. */
+export const TICKET_CONTACT = "Se enviar, a equipe do Dish Desk entrará em contato com você.";
+export const TICKET_OFFER = `Quer enviar um ticket ao suporte? ${TICKET_CONTACT}`;
 
 /** Pelo nome do campo, além do que a extensão marcou: senha, código de verificação ou cartão. */
 const SENSITIVE: [SensitiveField, RegExp][] = [
@@ -57,7 +61,8 @@ export function guard(decision: Decision, page: PageSnapshot | undefined, allowe
     }
     return { next: { type: "reply", say } };
   }
-  if (decision.action === "handoff") return { next: { type: "handoff", say, reason: decision.reason.trim() || "Pedido do parceiro" } };
+  // A pergunta é fixa: o suporte não atende no chat, e a LLM costuma dizer que está "transferindo".
+  if (decision.action === "ticket") return { next: { type: "offer_ticket", say: TICKET_OFFER, reason: decision.reason.trim() || "Pedido do parceiro" } };
   if (decision.action === "done") return { next: { type: "done", say } };
 
   if (decision.action === "login") {

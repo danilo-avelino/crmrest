@@ -54,6 +54,7 @@ describe("personalidade do atendimento", () => {
     courierArrivalConfirmed: ["pedido"],
     courierOrderNotFound: ["pedido"],
     courierProblemRequest: ["pedido"],
+    reviewInvite: ["pedido"],
   };
 
   it.each(PERSONALITIES)("%s: todas as mensagens preenchidas, com os marcadores certos", (personality) => {

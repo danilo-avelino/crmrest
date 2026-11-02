@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { toE164 } from "./contacts.js";
 import type { OnboardingDto } from "./onboarding.js";
 
 // ---------- Agente de implantação e suporte na extensão do Chrome (E31) ----------
@@ -84,8 +85,8 @@ export type AgentPageAction =
  * - `permission`: pedir para agir num site fora da lista;
  * - `reply`: só responder e esperar o parceiro;
  * - `done`: o pedido terminou (na implantação, conferido pelo Dish Desk);
- * - `handoff`: passou para o suporte humano;
- * - `lost`: a IA se perdeu (a página mudou ou ela errou várias vezes): tentar de novo ou falar com o suporte;
+ * - `offer_ticket`: a IA não resolveu e pergunta se o parceiro quer enviar um ticket ao suporte;
+ * - `lost`: a IA se perdeu (a página mudou ou ela errou várias vezes): tentar de novo ou enviar um ticket;
  * - `unavailable`: a IA está fora do ar.
  */
 export type AgentAction =
@@ -96,7 +97,7 @@ export type AgentAction =
   | { type: "permission"; say: string; host: string }
   | { type: "reply"; say: string }
   | { type: "done"; say: string }
-  | { type: "handoff"; say: string; reason: string }
+  | { type: "offer_ticket"; say: string; reason: string }
   | { type: "lost"; say: string }
   | { type: "unavailable"; say: string };
 
@@ -112,18 +113,18 @@ export type AgentTurnDto = {
 
 export type AgentSessionDto = { id: string; tenantId: string; kind: AgentSessionKind; status: AgentSessionStatus; createdAt: string };
 
-/**
- * O registro da sessão: o que o parceiro pediu (`partner`), o que a IA respondeu (`agent`), o resultado das ações
- * (`result`) e, depois da transferência, o que a equipe do Dish Desk respondeu (`support`).
- */
-export type AgentEventKind = "partner" | "agent" | "result" | "support";
+/** O registro da sessão: o que o parceiro pediu (`partner`), o que a IA respondeu (`agent`) e o resultado das ações (`result`). */
+export type AgentEventKind = "partner" | "agent" | "result";
 
-/** Depois da transferência, o parceiro continua escrevendo no painel; a equipe do Dish Desk responde na mesma conversa. */
-export const AgentMessageRequest = z.object({ text: z.string().trim().min(1).max(2000) });
-export type AgentMessageRequest = z.infer<typeof AgentMessageRequest>;
+/** O ticket ao suporte: como falar com o parceiro depois. O resumo do problema é a IA que escreve. */
+export const CreateSupportTicketRequest = z.object({
+  name: z.string().trim().min(2, "Informe o seu nome.").max(120, "Use até 120 caracteres."),
+  phone: z.string().trim().refine((value) => toE164(value) !== null, "Informe um telefone válido, com DDD."),
+});
+export type CreateSupportTicketRequest = z.infer<typeof CreateSupportTicketRequest>;
 
-/** Uma mensagem da conversa com o suporte: do parceiro ou de quem da equipe do Dish Desk respondeu (`author`). */
-export type AgentSupportMessageDto = { id: string; from: "partner" | "support"; author: string | null; text: string; createdAt: string };
+/** `phone`: o telefone em E.164, como ficou no ticket. */
+export type AgentTicketDto = { phone: string };
 
 /** Horário do suporte humano do Dish Desk (Brasília): dias da semana (0 = domingo) e horas cheias de abertura e fechamento. */
 export const SUPPORT_HOURS = { days: [1, 2, 3, 4, 5], open: 9, close: 18 } as const;

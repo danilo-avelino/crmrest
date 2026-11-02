@@ -9,6 +9,7 @@ import {
   type PlatformAuditDto,
   type PlatformSuggestionDto,
   type PlatformTenantDto,
+  type PlatformTicketDto,
   UpdateTenantAccessRequest,
   UpdateTenantModuleRequest,
   type SuggestionSubject,
@@ -42,6 +43,8 @@ import { DatabaseService } from "../core/database.service.js";
 const DAY_MS = 24 * 60 * 60 * 1000;
 /** Sugestões que a página da plataforma mostra (as mais recentes). */
 const SUGGESTIONS_LIMIT = 2000;
+/** Tickets que a página da plataforma mostra (os mais recentes). */
+const TICKETS_LIMIT = 500;
 
 /**
  * Painel da plataforma (Super Admin, E16): todos os restaurantes com o uso de cada um, criação, suspensão, acesso
@@ -248,6 +251,33 @@ export class PlatformController {
       id: row.id,
       subject: row.subject as SuggestionSubject | null,
       text: row.text,
+      tenantName: names.get(row.tenantId) ?? "",
+      userName: row.user.name,
+      createdAt: row.createdAt.toISOString(),
+    }));
+  }
+
+  /** Tickets ao suporte, mais recentes primeiro: a equipe entra em contato pelo telefone de cada um. */
+  @Get("tickets")
+  async tickets(@CurrentAuth() auth: RequestAuth): Promise<PlatformTicketDto[]> {
+    const tenants = await this.db.withTenants({ tenantIds: [], userId: auth.userId }, async (tx) => {
+      await requireSuperAdmin(tx, auth.userId);
+      return tx.tenant.findMany({ select: { id: true, name: true } });
+    });
+    if (tenants.length === 0) return [];
+    const rows = await this.db.withTenants({ tenantIds: tenants.map((t) => t.id), userId: auth.userId }, (tx) =>
+      tx.supportTicket.findMany({
+        select: { id: true, tenantId: true, name: true, phone: true, summary: true, createdAt: true, user: { select: { name: true } } },
+        orderBy: { createdAt: "desc" },
+        take: TICKETS_LIMIT,
+      }),
+    );
+    const names = new Map(tenants.map((t) => [t.id, t.name]));
+    return rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      phone: row.phone,
+      summary: row.summary,
       tenantName: names.get(row.tenantId) ?? "",
       userName: row.user.name,
       createdAt: row.createdAt.toISOString(),

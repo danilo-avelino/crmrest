@@ -31,6 +31,7 @@ export type TenantSettingsDto = {
   automationTexts: AutomationTexts;
   businessHours: BusinessHours;
   orderForecast: OrderForecastSettings;
+  reviewInvite: ReviewInviteSettings;
   adminNotifications: AdminNotifications;
   /** WhatsApp do restaurante por onde as notificações saem (null: nenhum conectado). */
   notificationChannel: string | null;
@@ -110,6 +111,17 @@ export type OrderForecastSettings = z.infer<typeof OrderForecastSettings>;
 export function orderForecastOf(settings: unknown): OrderForecastSettings {
   const saved = z.looseObject({ orderForecast: OrderForecastSettings.optional() }).safeParse(settings).data?.orderForecast;
   return saved ?? { showQueue: true };
+}
+
+// ---------- Convite de avaliação no iFood (E32) ----------
+
+/** enabled: o Dish Desk escreve no chat do pedido do iFood pedindo a avaliação da loja (desligado por padrão). */
+export const ReviewInviteSettings = z.object({ enabled: z.boolean() });
+export type ReviewInviteSettings = z.infer<typeof ReviewInviteSettings>;
+
+export function reviewInviteOf(settings: unknown): ReviewInviteSettings {
+  const saved = z.looseObject({ reviewInvite: ReviewInviteSettings.optional() }).safeParse(settings).data?.reviewInvite;
+  return saved ?? { enabled: false };
 }
 
 // ---------- Notificações ao administrador pelo WhatsApp ----------

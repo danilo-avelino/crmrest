@@ -12,6 +12,8 @@ import {
   orderLinksOf,
   PERSONALITY_MESSAGES,
   personalityOf,
+  type ReviewInviteSettings,
+  reviewInviteOf,
   type TenantSettingsDto,
   type UpdateAutomationTextsRequest,
   type UpdateOrderLinksRequest,
@@ -59,6 +61,10 @@ export class SettingsService {
 
   updateOrderForecast(auth: RequestAuth, tenantId: string, body: OrderForecastSettings): Promise<TenantSettingsDto> {
     return this.merge(auth, tenantId, { orderForecast: body });
+  }
+
+  updateReviewInvite(auth: RequestAuth, tenantId: string, body: ReviewInviteSettings): Promise<TenantSettingsDto> {
+    return this.merge(auth, tenantId, { reviewInvite: body });
   }
 
   updateAdminNotifications(auth: RequestAuth, tenantId: string, body: AdminNotifications): Promise<TenantSettingsDto> {
@@ -118,6 +124,7 @@ function toDto(
     automationTexts: automationTextsOf(tenant.settings),
     businessHours: businessHoursOf(tenant.settings),
     orderForecast: orderForecastOf(tenant.settings),
+    reviewInvite: reviewInviteOf(tenant.settings),
     adminNotifications: adminNotificationsOf(tenant.settings),
     notificationChannel: tenant.channel?.name ?? null,
   };

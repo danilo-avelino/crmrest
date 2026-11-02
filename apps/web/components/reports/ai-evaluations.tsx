@@ -66,7 +66,7 @@ export function AiEvaluations({ ai, now, hint }: { ai: Ai; now: number; hint?: s
       <BlockTitle
         title="Avaliação da IA"
         badge="Atendimento com IA"
-        note="A IA lê cada atendimento resolvido 5 minutos depois do fim, para pegar a reação do cliente, e dá uma nota."
+        note="A IA lê cada atendimento resolvido em que a equipe respondeu, 5 minutos depois do fim, para pegar a reação do cliente, e dá uma nota."
       />
       <div className="mb-5 grid grid-cols-4 gap-3">
         <Metric
@@ -298,16 +298,17 @@ function Misconduct({ alerts, now }: { alerts: Ai["misconduct"]; now: number }) 
 
 /** Quem resolveu: só a IA ou passou pela equipe, e os motivos da passagem. */
 function WhoSolved({ ai }: { ai: Ai }) {
-  const toTeam = ai.evaluations - ai.onlyAi;
+  const toTeam = ai.withTeam;
+  const total = ai.onlyAi + toTeam;
   const max = Math.max(0, ...ai.teamReasons.map((item) => item.count));
   return (
     <Card>
       <div className="flex items-baseline justify-between">
         <div className="text-sm font-semibold">Atendimento pela IA</div>
-        <div className="text-xs text-ink-3">{plural(ai.evaluations, "atendimento", "atendimentos")}</div>
+        <div className="text-xs text-ink-3">{plural(total, "atendimento", "atendimentos")}</div>
       </div>
       <div className="mt-4 mb-2.5 flex h-3 overflow-hidden rounded-lg bg-rule">
-        <div className="bg-ink" style={{ width: `${ai.evaluations ? (ai.onlyAi / ai.evaluations) * 100 : 0}%` }} />
+        <div className="bg-ink" style={{ width: `${total ? (ai.onlyAi / total) * 100 : 0}%` }} />
       </div>
       <div className="mb-[18px] flex gap-6 text-[12.5px] text-ink-2">
         <span>

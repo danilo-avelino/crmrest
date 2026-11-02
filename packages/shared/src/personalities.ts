@@ -51,6 +51,8 @@ export type AutomationMessages = {
   /** A resposta é lida como nota de 1 a 5: o texto precisa pedir um número de 1 a 5. */
   surveyQuestion: string;
   surveyThanks: string;
+  /** Convite para avaliar a loja no app do iFood, no chat do pedido, 10 minutos depois da entrega. {pedido} */
+  reviewInvite: string;
   inactivityClose: string;
   /** Previsão de saída do pedido. {hora} */
   forecast: string;
@@ -104,6 +106,7 @@ export const PERSONALITY_MESSAGES: Record<Personality, AutomationMessages> = {
     orderLinks: "Você pode fazer seu pedido por aqui:",
     surveyQuestion: "Qual nota você dá para nosso atendimento? Digite de 1 a 5",
     surveyThanks: "Obrigado pela avaliação! 😊",
+    reviewInvite: "Como foi o seu pedido #{pedido}? 😊 Se puder, deixe sua avaliação da loja aqui no app do iFood. Isso nos ajuda muito!",
     inactivityClose:
       "Encerramos esta conversa por falta de interação. Se precisar de algo, é só mandar uma mensagem que retomamos de onde paramos.",
     forecast: "⏱️ Previsão de saída do restaurante: por volta das {hora}.",
@@ -146,6 +149,7 @@ export const PERSONALITY_MESSAGES: Record<Personality, AutomationMessages> = {
     orderLinks: "Seu pedido pode ser realizado pelos canais abaixo:",
     surveyQuestion: "Gostaríamos de conhecer sua opinião: qual nota atribui ao nosso atendimento? Responda com um número de 1 a 5.",
     surveyThanks: "Agradecemos a sua avaliação.",
+    reviewInvite: "Agradecemos a preferência. Caso possa, pedimos a gentileza de avaliar o pedido #{pedido} no aplicativo do iFood. Sua opinião é muito importante para nós.",
     inactivityClose:
       "Esta conversa foi encerrada por ausência de interação. Caso precise de algo, basta enviar uma nova mensagem e retomaremos o atendimento.",
     forecast: "Previsão de saída do restaurante: por volta das {hora}.",
@@ -185,6 +189,7 @@ export const PERSONALITY_MESSAGES: Record<Personality, AutomationMessages> = {
     orderLinks: "Bora pedir? 😋 É só escolher por onde:",
     surveyQuestion: "Conta pra gente: que nota você dá pro nosso atendimento? ⭐ Manda um número de 1 a 5!",
     surveyThanks: "Valeu demais pela nota! 💛",
+    reviewInvite: "E o pedido #{pedido}, como foi? 🎉 Conta pra gente avaliando a loja no app do iFood, ajuda demais! 💛",
     inactivityClose:
       "Parece que você saiu um pouquinho, então vamos encerrar por aqui 😉 Precisou de algo, é só chamar que a gente continua de onde parou!",
     forecast: "⏱️ Seu pedido deve sair daqui por volta das {hora}!",
@@ -223,6 +228,7 @@ export const PERSONALITY_MESSAGES: Record<Personality, AutomationMessages> = {
     orderLinks: "Pra pedir é só ir por aqui:",
     surveyQuestion: "E aí, o que achou do atendimento? Manda uma nota de 1 a 5 👇",
     surveyThanks: "Valeu pela nota! 🤙",
+    reviewInvite: "E aí, como foi o pedido #{pedido}? Se puder, dá uma moral e avalia a loja no app do iFood 🤙",
     inactivityClose: "Como a conversa deu uma parada, vamos fechar por aqui. Precisando, é só chamar que a gente continua de onde parou 🤙",
     forecast: "⏱️ Seu pedido sai daqui por volta das {hora}.",
     forecastLate: "Foi mal pela demora! 🙏 Seu pedido tá levando mais tempo que o normal.\nNova previsão de saída: por volta das {hora}.",
@@ -262,6 +268,7 @@ export const PERSONALITY_MESSAGES: Record<Personality, AutomationMessages> = {
     orderLinks: "Que bom que você vai pedir com a gente! 🧡 É só escolher por onde:",
     surveyQuestion: "Sua opinião é muito importante para nós 🧡 Que nota você dá para o nosso atendimento? Digite de 1 a 5",
     surveyThanks: "Muito obrigado pelo carinho e pela avaliação! 🧡",
+    reviewInvite: "Como foi o seu pedido #{pedido}? 🧡 Se puder, conte para nós avaliando a loja no app do iFood. Sua opinião é muito especial por aqui.",
     inactivityClose:
       "Como não tivemos mais notícias, vamos encerrar esta conversa por enquanto. Sempre que precisar, é só mandar uma mensagem que retomamos de onde paramos 🧡",
     forecast: "⏱️ Seu pedido está sendo preparado com carinho e deve sair do restaurante por volta das {hora}.",
@@ -301,6 +308,7 @@ export const PERSONALITY_MESSAGES: Record<Personality, AutomationMessages> = {
     orderLinks: "Faça seu pedido por aqui:",
     surveyQuestion: "Avalie nosso atendimento de 1 a 5.",
     surveyThanks: "Obrigado pela avaliação.",
+    reviewInvite: "Avalie o pedido #{pedido} no app do iFood. Sua avaliação nos ajuda.",
     inactivityClose: "Conversa encerrada por falta de interação. Mande uma mensagem se precisar de algo.",
     forecast: "Previsão de saída: por volta das {hora}.",
     forecastLate: "Desculpe a demora. Nova previsão de saída: por volta das {hora}.",

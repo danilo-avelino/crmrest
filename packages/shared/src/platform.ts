@@ -118,6 +118,17 @@ export type PlatformSuggestionDto = {
   createdAt: string;
 };
 
+/** Ticket ao suporte como a plataforma vê. `summary`: o resumo da IA; sem ela no ar, o que o parceiro escreveu. */
+export type PlatformTicketDto = {
+  id: string;
+  name: string;
+  phone: string;
+  summary: string;
+  tenantName: string;
+  userName: string;
+  createdAt: string;
+};
+
 /**
  * As LLMs do Atendimento com IA, conferidas na hora: a principal (o Ollama local) e a reserva (ex.: o Claude). Atende a
  * principal se ela está no ar; senão, a reserva. null: não configurada (sem a principal, a IA está desligada).

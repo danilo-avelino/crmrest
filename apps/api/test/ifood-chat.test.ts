@@ -263,15 +263,20 @@ describe("Chat do iFood na Inbox (trava IFOOD_CHAT_BRIDGE ligada)", () => {
     });
   });
 
-  it("cliente parou de responder: o atendimento é encerrado e a avaliação pedida; a nota fica marcada com o canal iFood", async () => {
+  it("cliente parou de responder: o atendimento é encerrado sem pesquisa, e quem já tinha sido perguntado ainda dá a nota", async () => {
     const chat = await conversation();
     for (const { id, createdAt } of await admin.message.findMany({ where: { conversationId: chat.id } })) {
       await admin.message.update({ where: { id }, data: { createdAt: new Date(createdAt.getTime() - INACTIVITY_CLOSE_MS - 60_000) } });
     }
     await app.get(InactivityService).close(fx.tenant.id, chat.id);
-    expect(await conversation()).toMatchObject({ status: "RESOLVED", automationState: { survey: "awaiting_rating" } });
-    expect((await timeline(chat.id)).slice(-2).map((m) => (m.content as { automation?: string }).automation)).toEqual(["inactivity_close", "survey"]);
-    expect((await typeOutbox()).at(-1)!.text).toBe("Qual nota você dá para nosso atendimento? Digite de 1 a 5");
+    const closed = await conversation();
+    expect(closed.status).toBe("RESOLVED");
+    expect(closed.automationState).not.toHaveProperty("survey");
+    expect((await timeline(chat.id)).at(-1)!.content).toMatchObject({ automation: "inactivity_close" });
+    await typeOutbox();
+
+    // Pesquisa enviada antes de ela sair do iFood: a resposta ainda vale.
+    await admin.conversation.update({ where: { id: chat.id }, data: { automationState: { ...(closed.automationState as object), survey: "awaiting_rating" } } });
 
     await post("/ifood-chat/sync", { orderCode: "6530", messages: [shown("INBOUND", "5", new Date())] }).expect(200);
     await settle();

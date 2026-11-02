@@ -37,6 +37,8 @@ export class SurveyService {
       const conversation = await this.load(tx, conversationId);
       const state = conversation.automationState as AutomationState;
       const capabilities = CHANNEL_CAPABILITIES[conversation.channel.type];
+      // No iFood, quem pede a avaliação é o convite do pedido (ReviewInviteService).
+      if (conversation.channel.type === "IFOOD") return null;
       if (conversation.status !== "RESOLVED" || state.survey || !state.linkedOrder) return null;
       if (localDate(new Date(state.linkedOrder.at)) !== localDate(now)) return null;
       const sends = channelSends(conversation.channel.type, this.env);

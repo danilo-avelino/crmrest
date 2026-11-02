@@ -5,14 +5,16 @@ import {
   type AgentEventKind,
   type AgentSessionDto,
   type AgentSessionKind,
-  type AgentSupportMessageDto,
+  type AgentTicketDto,
   type AgentTurnDto,
   type AgentTurnRequest,
+  type CreateSupportTicketRequest,
   ONBOARDING_STEPS,
   type OnboardingDto,
   OnboardingMark,
   type OnboardingStep,
   type PageSnapshot,
+  toE164,
 } from "@dishdesk/shared";
 import { ForbiddenException, Inject, Injectable, Logger, NotFoundException, UnprocessableEntityException } from "@nestjs/common";
 import { z } from "zod";
@@ -22,7 +24,7 @@ import { DatabaseService } from "../core/database.service.js";
 import { LlmClient } from "../ai/llm.client.js";
 import { markAccepted, markOnboardingStep, onboardingOf } from "../settings/onboarding.service.js";
 import { isTenantAdmin } from "../settings/tenant-admin.js";
-import { type Decision, guard } from "./agent-guard.js";
+import { type Decision, guard, TICKET_CONTACT } from "./agent-guard.js";
 import { GUIDE, STEP_LABEL } from "./guide.js";
 import { CARDAPIO_WEB_CREDENTIALS, type CardapioWebCredentials, cardapioWebRail, credentialsOf } from "./cardapio-web-rail.js";
 import { authCodeOf, IFOOD_PORTAL, type IfoodState, ifoodRail, LINK_CODE_HINT, linkCodeOf } from "./ifood-rail.js";
@@ -47,7 +49,7 @@ const SEEN_CHARS = 2000;
 
 export const AgentDecision = z.object({
   say: z.string().trim().min(1).max(700).describe("O que você diz ao parceiro, curto."),
-  action: z.enum(["click", "fill", "select", "navigate", "login", "switch", "mark", "reply", "done", "handoff"]),
+  action: z.enum(["click", "fill", "select", "navigate", "login", "switch", "mark", "reply", "done", "ticket"]),
   ref: z.number().int().min(0).describe("O número [ref] do elemento da PÁGINA; 0 quando a ação não usa elemento."),
   value: z
     .string()
@@ -55,9 +57,17 @@ export const AgentDecision = z.object({
     .describe('fill e select: o texto ou a opção; navigate e login: o endereço; switch: o site da aba (ex.: www.dishdesk.com.br); mark: skipped (o restaurante não usa ou não quer agora), confirmed (manter o padrão) ou in_progress (esperando um terceiro); senão, "".'),
   irreversible: z.boolean().describe("A ação não dá para desfazer ou fala em nome do restaurante."),
   step: z.enum([...ONBOARDING_STEPS, "none"]).describe('done e mark na implantação: o passo do PROGRESSO; senão, "none".'),
-  reason: z.string().max(200).describe('handoff: por que passou para o suporte; senão, "".'),
+  reason: z.string().max(200).describe('ticket: por que você não resolveu; senão, "".'),
 });
 type AgentDecision = z.infer<typeof AgentDecision>;
+
+const TicketSummary = z.object({ summary: z.string().trim().min(1).max(800) });
+
+const TICKET_PROMPT = `Você resume, para a equipe de suporte do Dish Desk, o problema que um restaurante não conseguiu resolver com o assistente. Em português do Brasil, de 2 a 4 frases: o que o parceiro queria, o que o assistente tentou e onde parou. Use só o que está na conversa. Nunca copie senhas, tokens, chaves nem códigos.`;
+/** A conversa cabe no contexto da LLM: fica o fim, onde o problema travou. */
+const TRANSCRIPT_CHARS = 6000;
+/** O que o ticket mostra se a IA não escrever o resumo. */
+const PARTNER_WORDS_CHARS = 2000;
 
 export function systemPrompt(restaurant: string, kind: AgentSessionKind, panel: string): string {
   const task =
@@ -79,10 +89,10 @@ Regras obrigatórias:
 - mark: se ele disser depois que não usa um sistema ou quer o padrão: value = skipped (ou confirmed numa configuração) e o step dele.
 - Não repita uma ação que o HISTÓRICO mostra que já deu certo: avance para o próximo passo do GUIA.
 - Use só os elementos da PÁGINA, pelo número [ref]. Se o que você procura não está nela, navegue até a tela certa.
-- Só afirme o que está no GUIA, no PROGRESSO e na PÁGINA. Sem a informação, passe para o suporte (handoff).
+- Só afirme o que está no GUIA, no PROGRESSO e na PÁGINA. Sem a informação, ofereça o ticket (action = ticket).
 - Nunca preencha senha, código de verificação nem dados de cartão, e nunca peça esses dados na conversa: o parceiro digita direto na página.
 - irreversible = true só num click que não dá para desfazer ou que fala em nome do restaurante: aceitar termos, enviar documentos, publicar, pagar, apagar, desconectar. Preencher, salvar e conectar uma integração NÃO são irreversíveis.
-- Passe para o suporte humano (handoff) quando o parceiro pedir, quando o assunto for cobrança, pagamento ou conta, ou quando você não souber resolver.
+- Use action = ticket quando o parceiro pedir uma pessoa, quando o assunto for cobrança, pagamento ou conta, ou quando você não souber resolver: o painel pergunta se ele quer enviar um ticket ao suporte, e a equipe entra em contato depois. Não existe chat com o suporte: nunca diga que vai transferir ou chamar alguém. Se ele aceitar o ticket escrevendo (ex.: "sim"), use action = ticket de novo.
 - Nunca invente o que preencher (usuário, e-mail, nome, chave): use só o que o parceiro disse ou o que apareceu na PÁGINA. Sem isso, pergunte a ele (reply).
 - Se o parceiro já pediu uma integração, ele usa aquele sistema: não pergunte de novo.
 - Se o parceiro só fez uma pergunta ou você precisa de uma resposta dele, use reply e espere.
@@ -233,9 +243,8 @@ export class AgentService {
     let { progress } = context;
 
     let next: AgentAction;
-    let finished: { status: "DONE" | "HANDED_OFF"; reason?: string } | null = null;
     if (session.failures >= MAX_FAILURES) {
-      next = { type: "lost", say: "Não estou conseguindo fazer isso nesta página. Quer que eu tente de novo ou prefere falar com o suporte?" };
+      next = { type: "lost", say: `Não estou conseguindo fazer isso nesta página. Quer que eu tente de novo ou prefere enviar um ticket ao suporte? ${TICKET_CONTACT}` };
     } else {
       const allowed = [...AGENT_HOSTS, new URL(this.env.WEB_ORIGIN).hostname, ...session.grantedHosts];
       const decided = await this.decideWithMarks(context, body.page, allowed, {
@@ -250,57 +259,50 @@ export class AgentService {
       });
       progress = decided.progress;
       next = decided.next;
-      if (next.type === "done") finished = { status: "DONE" };
-      if (next.type === "handoff") finished = { status: "HANDED_OFF", reason: next.reason };
     }
 
     const status = await this.db.withTenants(scope, async (tx) => {
       await event(tx, session, "agent", { next });
-      if (!finished) return session.status;
-      const updated = await tx.agentSession.update({ where: { id: session.id }, data: { status: finished.status, handoffReason: finished.reason ?? null } });
+      if (next.type !== "done") return session.status;
+      const updated = await tx.agentSession.update({ where: { id: session.id }, data: { status: "DONE" } });
       return updated.status;
     });
     return { sessionId, status, next, progress };
   }
 
-  /** O parceiro pediu o suporte humano (botão "Falar com o suporte"). */
-  async handoff(auth: RequestAuth, sessionId: string): Promise<AgentTurnDto> {
+  /**
+   * O parceiro aceitou enviar um ticket: ele é salvo na hora, com o que o parceiro escreveu, e a IA troca isso pelo
+   * resumo em seguida, fora da resposta (a IA pode estar fora do ar, e é justamente aí que o ticket mais importa).
+   */
+  async openTicket(auth: RequestAuth, sessionId: string, body: CreateSupportTicketRequest): Promise<AgentTicketDto> {
     const scope = { tenantIds: auth.scope.tenantIds, userId: auth.userId };
-    return this.db.withTenants(scope, async (tx) => {
+    const phone = toE164(body.phone)!;
+    const ticket = await this.db.withTenants(scope, async (tx) => {
       const session = await this.requireSession(tx, auth, sessionId);
-      const next: AgentAction = {
-        type: "handoff",
-        say: "Chamamos alguém da equipe Dish Desk. Ela já recebeu o histórico da conversa e das ações.",
-        reason: "O parceiro pediu o suporte",
-      };
-      await event(tx, session, "agent", { next });
-      await tx.agentSession.update({ where: { id: session.id }, data: { status: "HANDED_OFF", handoffReason: next.reason } });
-      const progress = session.kind === "SETUP" ? await onboardingOf(tx, session.tenantId) : null;
-      return { sessionId, status: "HANDED_OFF", next, progress };
+      const events = await tx.agentEvent.findMany({ where: { sessionId }, orderBy: { createdAt: "asc" }, select: { kind: true, content: true } });
+      const { id } = await tx.supportTicket.create({
+        data: { tenantId: session.tenantId, userId: auth.userId, sessionId, name: body.name, phone, summary: partnerWords(events) },
+        select: { id: true },
+      });
+      const offer = events.map(nextOf).findLast((next) => next?.type === "offer_ticket");
+      const handoffReason = offer?.type === "offer_ticket" ? offer.reason : "A IA parou e o parceiro enviou um ticket";
+      await tx.agentSession.update({ where: { id: session.id }, data: { status: "HANDED_OFF", handoffReason } });
+      return { id, tenantId: session.tenantId, transcript: ticketTranscript(events) };
     });
+    void this.summarizeTicket({ tenantIds: [ticket.tenantId], userId: auth.userId }, ticket.id, ticket.transcript);
+    return { phone };
   }
 
-  /** A conversa com o suporte: o que o parceiro escreveu depois da transferência e o que a equipe respondeu. */
-  async supportMessages(auth: RequestAuth, sessionId: string): Promise<AgentSupportMessageDto[]> {
-    return this.db.withTenants({ tenantIds: auth.scope.tenantIds, userId: auth.userId }, async (tx) => {
-      const session = await this.requireHandedOff(tx, auth, sessionId);
-      return supportConversation(tx, session.id);
-    });
-  }
-
-  async sendToSupport(auth: RequestAuth, sessionId: string, text: string): Promise<AgentSupportMessageDto[]> {
-    return this.db.withTenants({ tenantIds: auth.scope.tenantIds, userId: auth.userId }, async (tx) => {
-      const session = await this.requireHandedOff(tx, auth, sessionId);
-      await event(tx, session, "partner", { text });
-      return supportConversation(tx, session.id);
-    });
-  }
-
-  private async requireHandedOff(tx: TenantTx, auth: RequestAuth, sessionId: string) {
-    const session = await tx.agentSession.findUnique({ where: { id: sessionId }, select: { id: true, tenantId: true, userId: true, status: true } });
-    if (!session || session.userId !== auth.userId) throw new NotFoundException("Sessão não encontrada.");
-    if (session.status !== "HANDED_OFF") throw new UnprocessableEntityException("Esta conversa ainda não foi passada para o suporte.");
-    return session;
+  private async summarizeTicket(scope: { tenantIds: string[]; userId: string }, id: string, transcript: string): Promise<void> {
+    try {
+      const { summary } = await this.llm.json(scope.tenantIds[0]!, "resumo_ticket", TicketSummary, [
+        { role: "system", content: TICKET_PROMPT },
+        { role: "user", content: transcript },
+      ]);
+      await this.db.withTenants(scope, (tx) => tx.supportTicket.update({ where: { id }, data: { summary } }));
+    } catch (error) {
+      this.logger.warn(`Ticket ${id} sem resumo da IA: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   /**
@@ -396,7 +398,7 @@ export class AgentService {
         ], AGENT_TEMPERATURE);
       } catch (error) {
         this.logger.warn(`Agente sem resposta na sessão ${context.session.id}: ${error instanceof Error ? error.message : String(error)}`);
-        return { next: { type: "unavailable", say: "O assistente do Dish Desk está fora do ar agora. Quer falar com o suporte?" } };
+        return { next: { type: "unavailable", say: `O assistente do Dish Desk está fora do ar agora. Quer enviar um ticket ao suporte? ${TICKET_CONTACT}` } };
       }
       if (decision.action === "mark") {
         const mark = OnboardingMark.safeParse(decision.value);
@@ -432,7 +434,7 @@ export class AgentService {
       this.logger.debug(`Decisão recusada na sessão ${context.session.id}: ${guarded.invalid} | ${JSON.stringify(decision)}`);
       note = `\n\nATENÇÃO: a sua última decisão não serve: ${guarded.invalid} Decida de novo.`;
     }
-    return { next: { type: "lost", say: "Não encontrei o que procurava nesta página. Quer que eu tente de novo ou prefere falar com o suporte?" } };
+    return { next: { type: "lost", say: `Não encontrei o que procurava nesta página. Quer que eu tente de novo ou prefere enviar um ticket ao suporte? ${TICKET_CONTACT}` } };
   }
 
   /** Na implantação, com o iFood a fazer: o caminho fixo do portal (ifood-rail), antes da LLM. */
@@ -471,16 +473,30 @@ export function knownText(events: EventRow[], page: PageSnapshot | undefined): s
   return [...said, ...current].join("\n");
 }
 
-/** As mensagens depois da transferência (o evento da IA com `handoff`), do parceiro e da equipe do Dish Desk. */
-async function supportConversation(tx: TenantTx, sessionId: string): Promise<AgentSupportMessageDto[]> {
-  const events = await tx.agentEvent.findMany({ where: { sessionId, kind: { in: ["agent", "partner", "support"] } }, orderBy: { createdAt: "asc" } });
-  const start = events.findIndex((item) => item.kind === "agent" && (item.content as { next?: AgentAction }).next?.type === "handoff");
-  return events.slice(start + 1).flatMap((item) => {
-    if (item.kind === "agent") return [];
-    const content = item.content as { text?: unknown; author?: unknown };
-    const author = item.kind === "support" && typeof content.author === "string" ? content.author : null;
-    return [{ id: item.id, from: item.kind as "partner" | "support", author, text: String(content.text), createdAt: item.createdAt.toISOString() }];
+function nextOf({ kind, content }: EventRow): AgentAction | undefined {
+  return kind === "agent" ? (content as { next?: AgentAction }).next : undefined;
+}
+
+/**
+ * A conversa para o resumo do ticket: o que foi dito e as ações que falharam. Fica de fora o que foi preenchido nas
+ * páginas (ex.: a chave do Cardápio Web) e o texto delas, que o resumo levaria para a equipe.
+ */
+function ticketTranscript(events: EventRow[]): string {
+  const lines = events.flatMap((row) => {
+    const value = row.content as { text?: unknown; summary?: unknown; ok?: unknown };
+    if (row.kind === "partner") return [`Parceiro: ${String(value.text)}`];
+    if (row.kind === "result") return value.ok === false ? [`Falha: ${String(value.summary)}`] : [];
+    const next = nextOf(row);
+    if (!next) return [];
+    return [`Assistente: ${next.say}${next.type === "offer_ticket" ? ` (motivo: ${next.reason})` : ""}`];
   });
+  return lines.join("\n").slice(-TRANSCRIPT_CHARS);
+}
+
+/** O ticket nunca fica vazio: sem o resumo da IA, a equipe lê o que o parceiro escreveu. */
+function partnerWords(events: EventRow[]): string {
+  const said = events.flatMap(({ kind, content }) => (kind === "partner" ? [String((content as { text?: unknown }).text)] : []));
+  return said.join("\n").slice(-PARTNER_WORDS_CHARS) || "O parceiro não descreveu o problema na conversa.";
 }
 
 function resultSummary(body: AgentTurnRequest): string | null {

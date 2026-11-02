@@ -33,13 +33,16 @@ const tenantTables: Record<string, (db: TenantTx) => Promise<Row[]>> = {
   order_items: (db) => db.orderItem.findMany({ select: { id: true, tenantId: true } }),
   order_events: (db) => db.orderEvent.findMany({ select: { id: true, tenantId: true } }),
   ratings: (db) => db.rating.findMany({ select: { id: true, tenantId: true } }),
+  review_invites: (db) => db.reviewInvite.findMany({ select: { id: true, tenantId: true } }),
   conversation_evaluations: (db) => db.conversationEvaluation.findMany({ select: { id: true, tenantId: true } }),
+  ai_only_attendances: (db) => db.aiOnlyAttendance.findMany({ select: { id: true, tenantId: true } }),
   quick_replies: (db) => db.quickReply.findMany({ select: { id: true, tenantId: true } }),
   audit_logs: (db) => db.auditLog.findMany({ select: { id: true, tenantId: true } }),
   tenant_modules: (db) => db.tenantModule.findMany({ select: { id: true, tenantId: true } }),
   agent_sessions: (db) => db.agentSession.findMany({ select: { id: true, tenantId: true } }),
   agent_events: (db) => db.agentEvent.findMany({ select: { id: true, tenantId: true } }),
   product_suggestions: (db) => db.productSuggestion.findMany({ select: { id: true, tenantId: true } }),
+  support_tickets: (db) => db.supportTicket.findMany({ select: { id: true, tenantId: true } }),
   ai_usages: (db) => db.aiUsage.findMany({ select: { id: true, tenantId: true } }),
 };
 
@@ -115,18 +118,21 @@ async function seedTenant(label: string): Promise<Seeded> {
     },
   });
   await admin.rating.create({ data: { tenantId, conversationId: conversation.id, orderId: order.id, score: 5, channelType: "WHATSAPP" } });
+  await admin.reviewInvite.create({ data: { tenantId, orderId: order.id, status: "PENDING", text: "Avalie a loja", dueAt: new Date() } });
   await admin.conversationEvaluation.create({
     data: { tenantId, conversationId: conversation.id, resolved: true, satisfied: true, score: 5, summary: "Pedido entregue.", model: "teste" },
   });
+  await admin.aiOnlyAttendance.create({ data: { tenantId, conversationId: conversation.id } });
   await admin.orderEvent.create({
     data: { tenantId, orderId: order.id, externalEventId: `evento-${suffix}`, code: "CONFIRMED", occurredAt: new Date() },
   });
   await admin.quickReply.create({ data: { tenantId, shortcut: "atraso", content: "Já estamos verificando." } });
   await admin.tenantModule.create({ data: { tenantId, module: "CAMPAIGNS" } });
-  await admin.agentSession.create({
+  const agentSession = await admin.agentSession.create({
     data: { tenantId, userId: user.id, kind: "SETUP", events: { create: { tenantId, kind: "partner", content: { text: "Conecta o meu WhatsApp" } } } },
   });
   await admin.productSuggestion.create({ data: { tenantId, userId: user.id, text: "Modo escuro" } });
+  await admin.supportTicket.create({ data: { tenantId, userId: user.id, sessionId: agentSession.id, name: "Ana", phone: "+5511999990000", summary: "WhatsApp caiu" } });
   await admin.aiUsage.create({ data: { tenantId, model: "claude-haiku-5-5", inputTokens: 100, outputTokens: 20, costMicroUsd: 20 } });
   await admin.auditLog.create({
     data: { tenantId, userId: user.id, action: "contact.cpf_viewed", entity: "contact", entityId: contact.id },

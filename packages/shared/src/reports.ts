@@ -100,8 +100,10 @@ export type RatingsReportDto = {
     reacted: number;
     satisfied: number;
     lowScores: number;
-    /** Atendimentos avaliados em que só a IA (e as automações) atendeu; os outros passaram pela equipe. */
+    /** Atendimentos resolvidos em que só a IA (e as automações) atendeu: não são avaliados, só contados. */
     onlyAi: number;
+    /** Atendimentos que passaram pela equipe (os avaliados). */
+    withTeam: number;
     /** Motivos da passagem para a equipe, do mais comum ao menos. */
     teamReasons: { reason: TeamReason; count: number }[];
     /** Vezes que a IA precisou da equipe sem haver atendente, por motivo. */

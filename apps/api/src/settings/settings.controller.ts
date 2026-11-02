@@ -2,6 +2,7 @@ import {
   AdminNotifications,
   BusinessHours,
   OrderForecastSettings,
+  ReviewInviteSettings,
   type TenantSettingsDto,
   UpdateAutomationTextsRequest,
   UpdateOrderLinksRequest,
@@ -86,5 +87,14 @@ export class SettingsController {
     @CurrentAuth() auth: RequestAuth,
   ): Promise<TenantSettingsDto> {
     return this.settings.updateOrderForecast(auth, tenantId, body);
+  }
+
+  @Put(":tenantId/review-invite")
+  updateReviewInvite(
+    @Param("tenantId", ParseUUIDPipe) tenantId: string,
+    @Body(new ZodPipe(ReviewInviteSettings)) body: ReviewInviteSettings,
+    @CurrentAuth() auth: RequestAuth,
+  ): Promise<TenantSettingsDto> {
+    return this.settings.updateReviewInvite(auth, tenantId, body);
   }
 }

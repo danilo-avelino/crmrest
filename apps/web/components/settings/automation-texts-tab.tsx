@@ -50,6 +50,7 @@ export function AutomationTextsTab() {
       {/* Remonta ao trocar a personalidade: os textos que seguiam o padrão mudam junto. */}
       <AutomationTextsForm key={`${current.tenantId}-${current.personality}`} settings={current} />
       <OrderForecastForm key={`forecast-${current.tenantId}`} settings={current} />
+      <ReviewInviteForm key={`review-invite-${current.tenantId}`} settings={current} />
     </div>
   );
 }
@@ -225,6 +226,75 @@ function OrderForecastForm({ settings }: { settings: TenantSettingsDto }) {
             {failure}
           </p>
         )}
+      </div>
+    </section>
+  );
+}
+
+/** Convite de avaliação no iFood (E32): desligado por padrão, porque escreve a todo cliente com pedido entregue. */
+function ReviewInviteForm({ settings }: { settings: TenantSettingsDto }) {
+  const { request } = useAuth();
+  const queryClient = useQueryClient();
+  const toast = useToast();
+  const [enabled, setEnabled] = useState(settings.reviewInvite.enabled);
+  const [failure, setFailure] = useState<string | null>(null);
+
+  const save = async () => {
+    setFailure(null);
+    try {
+      const updated = await request<TenantSettingsDto>(`/settings/${settings.tenantId}/review-invite`, {
+        method: "PUT",
+        body: { enabled },
+      });
+      queryClient.setQueryData<TenantSettingsDto[]>(["settings"], (list) =>
+        list?.map((item) => (item.tenantId === updated.tenantId ? updated : item)),
+      );
+      toast("Convite de avaliação salvo");
+    } catch (error) {
+      setFailure(error instanceof ApiError ? error.message : "Não foi possível salvar.");
+    }
+  };
+
+  return (
+    <section className="overflow-hidden rounded-xl border border-rule">
+      <div className="border-b border-rule px-5 pt-4 pb-3.5">
+        <h2 className="font-heading text-title font-semibold">iFood</h2>
+        <p className="mt-1 text-ink-2">
+          Mensagem no chat do pedido, pedindo ao cliente que avalie a loja no app do iFood. Só sai com o Dish Desk aberto em um computador
+          com a extensão do iFood, e o texto segue a personalidade escolhida.
+        </p>
+      </div>
+      <div className="flex flex-col gap-3 px-5 py-4">
+        <label className="flex items-start gap-2.5">
+          <input
+            type="checkbox"
+            className="mt-0.5 size-4 accent-ink"
+            checked={enabled}
+            disabled={!settings.canEdit}
+            onChange={(event) => setEnabled(event.target.checked)}
+          />
+          <span>
+            <span className="block text-[13px] font-medium">Convidar o cliente a avaliar a loja</span>
+            <span className="text-[11px] text-ink-3">
+              10 minutos depois da entrega. Pedidos cancelados ou entregues depois do horário prometido pelo iFood ficam de fora.
+            </span>
+          </span>
+        </label>
+        {settings.canEdit && (
+          <div className="flex justify-end">
+            <Button size="sm" disabled={enabled === settings.reviewInvite.enabled} onClick={save}>
+              Salvar
+            </Button>
+          </div>
+        )}
+        {failure && (
+          <p role="alert" className="text-[11px] text-tomate">
+            {failure}
+          </p>
+        )}
+      </div>
+      <div className="border-t border-rule bg-paper px-5 py-4">
+        <AutomationBubble label="convite de avaliação" text={fillMessage(PERSONALITY_MESSAGES[settings.personality].reviewInvite, { pedido: "95" })} />
       </div>
     </section>
   );

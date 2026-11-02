@@ -414,6 +414,53 @@ describe("atendimento com IA: resposta, revisão e avaliação", () => {
     expect(body.evaluations).toEqual([]);
   });
 
+  it("sem resposta da equipe não chama a IA: só registra, e o atendimento seguinte não relê o anterior", async () => {
+    answers.atendimento = { reply: "Abrimos às 11h.", handoff: false, reason: "", order: "none" };
+    answers.revisao = { misconduct: false, reason: "", text: "Já estou vendo, um instante." };
+    answers.avaliacao = { resolved: true, satisfaction: "sem_reacao", score: 3, summary: "Cliente reclamou do atraso.", teamReason: "atraso" };
+    await say("5511980000077", "wamid.AI-SO-IA-1", "Vocês abrem hoje?");
+    await settle();
+    const { id } = await conversationOf("5511980000077");
+    const evaluation = app.get(AiEvaluationService);
+    const resolve = () =>
+      request(app.getHttpServer()).patch(`/api/conversations/${id}`).set("Authorization", `Bearer ${token}`).send({ status: "RESOLVED" }).expect(200);
+    const { role } = await admin.tenantMember.findFirstOrThrow({ where: { tenantId: fx.tenant.id, userId: fx.user.id } });
+    await admin.tenantMember.updateMany({ where: { tenantId: fx.tenant.id, userId: fx.user.id }, data: { role: "ADMIN" } });
+    onTestFinished(async () => {
+      await admin.tenantMember.updateMany({ where: { tenantId: fx.tenant.id, userId: fx.user.id }, data: { role } });
+    });
+    const adminToken = await accessTokenFor(app, fx.user.email, fx.tenant.id);
+    const report = async () =>
+      (await request(app.getHttpServer()).get(`/api/reports/ratings?tenantId=${fx.tenant.id}&period=today`).set("Authorization", `Bearer ${adminToken}`).expect(200)).body.ai;
+    const before = await report();
+
+    // Nota interna não é resposta ao cliente.
+    await request(app.getHttpServer()).post(`/api/conversations/${id}/notes`).set("Authorization", `Bearer ${token}`).send({ text: "Cliente antigo" }).expect(201);
+    await resolve();
+    const calls = llmCalls("avaliacao").length;
+    await evaluation.evaluate(fx.tenant.id, id);
+    await evaluation.evaluate(fx.tenant.id, id); // nada novo do cliente: não conta de novo
+
+    expect(llmCalls("avaliacao")).toHaveLength(calls);
+    expect(await admin.conversationEvaluation.count({ where: { conversationId: id } })).toBe(0);
+    expect(await admin.aiOnlyAttendance.count({ where: { conversationId: id } })).toBe(1);
+    expect((await report()).onlyAi).toBe(before.onlyAi + 1);
+
+    // O cliente volta e a equipe responde: esse é avaliado, sem o atendimento anterior na leitura.
+    await say("5511980000077", "wamid.AI-SO-IA-2", "Meu pedido atrasou");
+    await settle();
+    await request(app.getHttpServer()).post(`/api/conversations/${id}/messages`).set("Authorization", `Bearer ${token}`).send({ text: "Já estou vendo, um instante." }).expect(201);
+    await settle();
+    await resolve();
+    await evaluation.evaluate(fx.tenant.id, id);
+
+    expect(await admin.conversationEvaluation.count({ where: { conversationId: id, userId: fx.user.id } })).toBe(1);
+    const read = (llmCalls("avaliacao").at(-1)!.body as LlmBody).messages[1]!.content;
+    expect(read).toContain("Meu pedido atrasou");
+    expect(read).not.toContain("Vocês abrem hoje?");
+    expect((await report()).withTeam).toBe(before.withTeam + 1);
+  });
+
   it("Instagram: a IA acha o pedido pelo número, mas o telefone digitado não une os cadastros", async () => {
     // Cliente que já pediu, com telefone no cadastro. Quem escreve no Instagram diz o número e o telefone dela.
     const bruna = await admin.contact.create({

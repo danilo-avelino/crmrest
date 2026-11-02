@@ -28,6 +28,7 @@ export class IfoodAttendanceService {
 
   /** Roda depois de cada mensagem do cliente copiada do widget; `orderId` é o pedido da conversa. */
   async afterInbound(event: InboundEvent, orderId: string): Promise<void> {
+    // A pesquisa não sai mais no iFood; esta é a nota de quem já tinha sido perguntado.
     if (await this.survey.handleAnswer(event)) return;
     // Atendimento em andamento: só falta anotar o telefone, se o cliente o mandar.
     if (!event.newAttendance) return this.phoneCollection.afterInbound(event);
@@ -45,7 +46,7 @@ export class IfoodAttendanceService {
       await systemEvent(tx, conversation, { event: "handoff", text: "Cliente chamando pelo chat do iFood" });
       const missed = await missedNotice(tx, conversation.id, orderId, messages);
       if (missed) ids.push(await automationMessage(tx, conversation, missed.automation, missed.text));
-      // O pedido da conversa vale para a pesquisa de satisfação, no fim do atendimento.
+      // O pedido da conversa vale para a sugestão de resposta da IA.
       await setAutomationState(tx, conversation.id, {
         triage: "done",
         linkedOrder: { id: orderId, at: new Date().toISOString() },

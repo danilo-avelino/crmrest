@@ -12,6 +12,7 @@ import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import type { Queue } from "bullmq";
 import type { RequestAuth } from "../auth/auth.decorators.js";
 import { INACTIVITY_CLOSE_MS } from "../automations/inactivity.service.js";
+import { claimReviewInvites, settleReviewInvite } from "../automations/review-invite.service.js";
 import { ENV, type Env } from "../config/env.js";
 import { DatabaseService } from "../core/database.service.js";
 import { type AutomationJob, QUEUES } from "../queues/queues.module.js";
@@ -77,10 +78,13 @@ export class IfoodChatService {
           externalOrderId: true,
           placedAt: true,
           channel: { select: { connectedAt: true } },
+          reviewInvite: { select: { text: true } },
         },
       });
       if (!order) return null;
-      const entries = transcript(order, body.messages);
+      // O convite de avaliação não aparece na Inbox: sem ele na cópia, a resposta do cliente segue como numa conversa nova.
+      const invite = order.reviewInvite?.text;
+      const entries = transcript(order, body.messages).filter((entry) => !(entry.direction === "OUTBOUND" && invite && squash(entry.text) === squash(invite)));
       const known = await tx.message.findMany({
         where: { channelId: order.channelId, externalMessageId: { in: entries.map((entry) => entry.key) } },
         select: { externalMessageId: true },
@@ -163,7 +167,7 @@ export class IfoodChatService {
   }
 
   /** Respostas pendentes das conversas do iFood. Cada uma vai para um painel só, que a digita no chat do pedido. */
-  async claim(auth: RequestAuth): Promise<IfoodChatOutboxItem[]> {
+  async claim(auth: RequestAuth, now = new Date()): Promise<IfoodChatOutboxItem[]> {
     this.requireEnabled();
     const { items, failed } = await this.db.withTenants(await ifoodWidgetScope(this.db, auth), async (tx) => {
       const pending = await tx.message.findMany({
@@ -201,6 +205,7 @@ export class IfoodChatService {
           text: (message.content as MessageContent).text ?? "",
         });
       }
+      items.push(...(await claimReviewInvites(tx, now)));
       return { items, failed };
     });
     for (const message of failed) this.realtime.inboxChanged(message.tenantId, message.conversationId);
@@ -208,9 +213,11 @@ export class IfoodChatService {
   }
 
   /** O painel conta se conseguiu digitar a resposta no widget. */
-  async result(auth: RequestAuth, messageId: string, body: IfoodChatSendResult): Promise<void> {
+  async result(auth: RequestAuth, messageId: string, body: IfoodChatSendResult, now = new Date()): Promise<void> {
     this.requireEnabled();
     const message = await this.db.withTenants(await ifoodWidgetScope(this.db, auth), async (tx) => {
+      // Convite de avaliação: sem conversa, não agenda o encerramento por inatividade.
+      if (await settleReviewInvite(tx, messageId, body, now)) return null;
       // Já enviada: a conversa lida do widget confirmou antes. A que falhou por demora ainda pode ter saído.
       const message = await tx.message.findFirst({
         where: { id: messageId, direction: "OUTBOUND", status: { in: ["PENDING", "FAILED"] }, channel: { type: "IFOOD" } },

@@ -261,8 +261,11 @@ export type IfoodChatSync = z.infer<typeof IfoodChatSync>;
 /** `found: false` = o Dish Desk ainda não tem o pedido dessa conversa (o polling do iFood não o trouxe). */
 export type IfoodChatSyncResult = { found: boolean };
 
-/** Resposta escrita na Inbox que o painel deve digitar no chat do pedido, no widget. */
-export type IfoodChatOutboxItem = { messageId: string; conversationId: string; orderCode: string; text: string };
+/**
+ * O que o painel deve digitar no chat do pedido, no widget: uma resposta escrita na Inbox ou um convite de avaliação. O
+ * convite não tem conversa, e `messageId` é o id dele. `customer`: só digita na conversa desse cliente.
+ */
+export type IfoodChatOutboxItem = { messageId: string; conversationId?: string; orderCode: string; text: string; customer?: string };
 
 /** O que aconteceu com uma resposta da fila do chat do iFood. */
 export const IfoodChatSendResult = z.object({

@@ -8,6 +8,7 @@ import { type AdminMessageJob, type AiForwardJob, type AutomationJob, QUEUES } f
 import { IfoodAttendanceService } from "./ifood-attendance.service.js";
 import { InactivityService } from "./inactivity.service.js";
 import { PhoneCollectionService } from "./phone-collection.service.js";
+import { ReviewInviteService } from "./review-invite.service.js";
 import { SurveyService } from "./survey.service.js";
 
 /**
@@ -25,6 +26,7 @@ export class AutomationsProcessor extends JobProcessor {
     private readonly contactTags: ContactTagsService,
     private readonly aiForward: AiForwardService,
     private readonly adminNotifications: AdminNotificationsService,
+    private readonly reviewInvites: ReviewInviteService,
   ) {
     super();
   }
@@ -34,6 +36,7 @@ export class AutomationsProcessor extends JobProcessor {
     if (job.name === "admin-weekly-report") return this.adminNotifications.weeklyAll();
     if (job.name === "admin-message") return this.adminNotifications.send(job.data as AdminMessageJob);
     if (job.name === "ai-forward-sweep") return this.aiForward.sweep();
+    if (job.name === "review-invite-sweep") return this.reviewInvites.sweep();
     if (job.name === "ai-forward") return this.aiForward.forward(job.data.tenantId);
     const data = job.data as AutomationJob;
     const { tenantId, conversationId } = data;

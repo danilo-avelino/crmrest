@@ -10,6 +10,7 @@ import {
   ScrollTextIcon,
   SettingsIcon,
   StarIcon,
+  TicketIcon,
   UsersIcon,
 } from "lucide-react";
 import Link from "next/link";
@@ -46,6 +47,7 @@ const ITEMS = [
 const PLATFORM_ITEMS = [
   { label: "Gastos com IA", icon: CoinsIcon, href: "/plataforma/ia" },
   { label: "Sugestões dos restaurantes", icon: LightbulbIcon, href: "/plataforma/sugestoes" },
+  { label: "Tickets de suporte", icon: TicketIcon, href: "/plataforma/tickets" },
   { label: "Auditoria da plataforma", icon: ScrollTextIcon, href: "/plataforma/auditoria" },
   { label: "Restaurantes da plataforma", icon: Building2Icon, href: "/plataforma" },
 ];

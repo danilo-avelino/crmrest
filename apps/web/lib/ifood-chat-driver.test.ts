@@ -206,6 +206,27 @@ describe("motor do chat do iFood", () => {
     expect(chat.messages).toEqual([{ side: "store", text: "Olá! Estamos chamando um atendente.", time: "12:30:00" }]);
   });
 
+  it("convite de avaliação: número repetido entre lojas abre a conversa do cliente certo; sem o cliente na lista, não digita em nenhuma", async () => {
+    const widget = fakeWidget([
+      order([{ side: "customer", text: "Olá", time: "10:00:00" }], { customer: "JOANA LIMA" }),
+      order([{ side: "store", text: "Recebemos", time: "10:00:00" }], { customer: "JOÃO  SOUZA" }),
+    ]);
+    const { api, calls, outbox } = fakeApi();
+    const driver = new IfoodChatDriver(widget.bridge, api, instant);
+    await steps(driver, 2);
+
+    outbox.push({ messageId: "i-1", orderCode: "6530", text: "Avalie a loja", customer: "João Souza" });
+    await steps(driver, 1, true);
+    expect(widget.state.clicks).toContain(`click ${CHAT_ITEM} [1]`);
+    expect(calls.results).toEqual([["i-1", { status: "SENT" }]]);
+
+    const before = widget.state.clicks.length;
+    outbox.push({ messageId: "i-2", orderCode: "6530", text: "Avalie a loja", customer: "Outra Pessoa" });
+    await steps(driver, 1, true);
+    expect(calls.results.at(-1)).toEqual(["i-2", { status: "FAILED", error: "O chat deste pedido não está aberto no widget do iFood." }]);
+    expect(widget.state.clicks.slice(before).filter((click) => click.startsWith("fill"))).toEqual([]);
+  });
+
   it("loja que não autorizou o widget: para e avisa, sem mexer no widget enquanto ela autoriza; depois, volta a operar", async () => {
     const widget = fakeWidget([order([{ side: "customer", text: "Olá", time: "10:00:00" }])], { authorized: false });
     const { api, calls } = fakeApi();

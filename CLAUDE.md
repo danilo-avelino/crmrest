@@ -113,6 +113,8 @@ Resumo do Sistema de Design (marca **"Dish Desk"**, Next.js + Tailwind + shadcn/
 
 Toda nova integração que for desenvolvida, deve ser verificada a possibilidade de importar os contatos de clientes para aumentar nossa base.
 
+Toda nova integração também entra na landing page ([apps/web/public/index.html](apps/web/public/index.html) e [apps/web/public/funcionalidades/index.html](apps/web/public/funcionalidades/index.html)), no mínimo na faixa "Funciona com" e nas listas de canais e sistemas onde as outras aparecem.
+
 ## 10. Mensagens automáticas seguem a personalidade
 
 Todo texto que uma automação manda ao cliente segue a **personalidade do atendimento** escolhida pelo restaurante (Configurações → Mensagens automáticas: Cordial, Formal, Jovial, Descontraído, Acolhedor, Direto).

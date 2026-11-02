@@ -1,17 +1,18 @@
 import { ONBOARDING_STEPS, type OnboardingDto, type OnboardingStepStatus, type PageSnapshot } from "@dishdesk/shared";
 import type { INestApplication } from "@nestjs/common";
+import { hash } from "@node-rs/argon2";
 import request from "supertest";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { type Decision, guard } from "../src/agent/agent-guard.js";
 import { FIRST_QUESTION, firstMessageTurn } from "../src/agent/agent.service.js";
 import { type CardapioWebCredentials, cardapioWebRail, credentialsOf } from "../src/agent/cardapio-web-rail.js";
 import { authCodeOf, ifoodRail, linkCodeOf } from "../src/agent/ifood-rail.js";
 import { INTAKE_INTRO, INTAKE_QUESTIONS } from "../src/agent/intake.js";
-import { accessTokenFor, admin, createAuthFixture, createTestApp, startMockGraph } from "./helpers.js";
+import { accessTokenFor, admin, createAuthFixture, createTestApp, PASSWORD, startMockGraph } from "./helpers.js";
 
 type LlmBody = { response_format: { json_schema: { name: string } }; messages: { role: string; content: string }[] };
 
-const decision = (patch: Partial<Decision>): Decision => ({ say: "Vou fazer.", action: "click", ref: 1, value: "", irreversible: false, reason: "", ...patch });
+const decision =(patch: Partial<Decision>): Decision => ({ say: "Vou fazer.", action: "click", ref: 1, value: "", irreversible: false, reason: "", ...patch });
 const page = (url: string, elements: PageSnapshot["elements"]): PageSnapshot => ({ url, title: "Página", elements, text: "" });
 const ALLOWED = ["dishdesk.com.br", "portal.ifood.com.br"];
 
@@ -520,36 +521,90 @@ describe("agente da extensão: sessões", () => {
     expect((await turn(session.id, { message: "Tente de novo", page: dishDesk })).body.next.type).toBe("act");
   });
 
-  it("sem a LLM, a IA avisa que está fora do ar; o parceiro chama o suporte e a sessão termina", async () => {
-    const { body: session } = await start(fx.b.id, "SUPPORT").expect(201);
-    const { body } = await turn(session.id, { message: "Oi", page: dishDesk });
-    expect(body.next.type).toBe("unavailable");
+  const ticket = (sessionId: string, body: object) =>
+    api().post(`/api/agent/sessions/${sessionId}/ticket`).set("Authorization", `Bearer ${adminToken}`).send(body);
 
-    const { body: handed } = await api().post(`/api/agent/sessions/${session.id}/handoff`).set("Authorization", `Bearer ${adminToken}`).expect(200);
-    expect(handed).toMatchObject({ status: "HANDED_OFF", next: { type: "handoff" } });
-    expect(await admin.agentSession.findUniqueOrThrow({ where: { id: session.id } })).toMatchObject({ status: "HANDED_OFF", handoffReason: "O parceiro pediu o suporte" });
+  it("quando a IA não resolve, ela pergunta do ticket e avisa do contato; a sessão só termina se o parceiro enviar", async () => {
+    const { body: session } = await start(fx.b.id, "SUPPORT").expect(201);
+    answer({ say: "Vou transferir você para um atendente.", action: "ticket", reason: "Assunto de cobrança" });
+    const { body } = await turn(session.id, { message: "Quero mudar o meu plano", page: dishDesk });
+    expect(body.status).toBe("ACTIVE");
+    expect(body.next).toEqual({
+      type: "offer_ticket",
+      say: "Quer enviar um ticket ao suporte? Se enviar, a equipe do Dish Desk entrará em contato com você.",
+      reason: "Assunto de cobrança",
+    });
+
+    // O parceiro pode seguir conversando em vez de enviar.
+    answer({ say: "Pode perguntar.", action: "reply" });
+    expect((await turn(session.id, { message: "Deixa, tenho outra dúvida", page: dishDesk })).body.next.type).toBe("reply");
+  });
+
+  it("o ticket guarda o nome, o telefone e o resumo da IA, sem o que foi preenchido nas páginas, e encerra a sessão", async () => {
+    const { body: session } = await start(fx.b.id, "SUPPORT").expect(201);
+    answer({ say: "Vou preencher a chave.", action: "fill", ref: 3, value: "chave-secreta-123" });
+    answer({ action: "ticket", reason: "Não sei resolver" });
+    const form = page("http://localhost:3000/configuracoes", [{ ref: 3, role: "campo", name: "Chave de API" }]);
+    await turn(session.id, { message: "Meu Cardápio Web caiu, a chave é chave-secreta-123", page: form });
+    await turn(session.id, { result: { ok: false, error: "elemento sumiu" }, page: form });
+
+    await ticket(session.id, { name: "A", phone: "(11) 98765-4321" }).expect(400);
+    await ticket(session.id, { name: "Ana Souza", phone: "123" }).expect(400);
+
+    const calls = llm.requests.length;
+    answers.push({ summary: "O Cardápio Web parou e o assistente não conseguiu reconectar." });
+    const { body } = await ticket(session.id, { name: " Ana Souza ", phone: "(11) 98765-4321" }).expect(201);
+    expect(body).toEqual({ phone: "+5511987654321" });
+
+    await vi.waitFor(async () => {
+      const saved = await admin.supportTicket.findUniqueOrThrow({ where: { sessionId: session.id } });
+      expect(saved).toMatchObject({ tenantId: fx.b.id, name: "Ana Souza", phone: "+5511987654321", summary: "O Cardápio Web parou e o assistente não conseguiu reconectar." });
+    });
+    const sent = (llm.requests[calls]!.body as LlmBody).messages[1]!.content;
+    expect(sent).toContain("Falha: a ação falhou: elemento sumiu.");
+    expect(sent).toContain("motivo: Não sei resolver");
+    // A mensagem do parceiro é dele; o que a IA preencheu na página não vai para o resumo.
+    expect(sent).not.toContain('= "chave-secreta-123"');
+
+    expect(await admin.agentSession.findUniqueOrThrow({ where: { id: session.id } })).toMatchObject({ status: "HANDED_OFF", handoffReason: "Não sei resolver" });
+    await ticket(session.id, { name: "Ana Souza", phone: "(11) 98765-4321" }).expect(422);
     await api().post(`/api/agent/sessions/${session.id}/turn`).set("Authorization", `Bearer ${adminToken}`).send({ message: "Oi" }).expect(422);
   });
 
-  it("depois da transferência, o parceiro escreve no painel e a resposta da equipe aparece na mesma conversa", async () => {
+  it("com a IA fora do ar, o ticket fica salvo com o que o parceiro escreveu", async () => {
     const { body: session } = await start(fx.b.id, "SUPPORT").expect(201);
-    const messages = () => api().get(`/api/agent/sessions/${session.id}/messages`).set("Authorization", `Bearer ${adminToken}`);
-    const send = (text: string) => api().post(`/api/agent/sessions/${session.id}/messages`).set("Authorization", `Bearer ${adminToken}`).send({ text });
-    // Antes da transferência, a conversa é com a IA.
-    await messages().expect(422);
-    await send("Oi").expect(422);
+    const { body } = await turn(session.id, { message: "Minhas mensagens não chegam", page: dishDesk });
+    expect(body.next.type).toBe("unavailable");
+    expect(body.next.say).toContain("entrará em contato");
 
-    await turn(session.id, { message: "Quero mudar o meu plano", page: dishDesk });
-    await api().post(`/api/agent/sessions/${session.id}/handoff`).set("Authorization", `Bearer ${adminToken}`).expect(200);
-    expect((await messages().expect(200)).body).toEqual([]);
+    const calls = llm.requests.length;
+    await ticket(session.id, { name: "Ana Souza", phone: "11987654321" }).expect(201);
+    await vi.waitFor(() => expect(llm.requests.length).toBeGreaterThan(calls));
+    const saved = await admin.supportTicket.findUniqueOrThrow({ where: { sessionId: session.id } });
+    expect(saved.summary).toBe("Minhas mensagens não chegam");
+    expect(await admin.agentSession.findUniqueOrThrow({ where: { id: session.id } })).toMatchObject({ status: "HANDED_OFF", handoffReason: "A IA parou e o parceiro enviou um ticket" });
+  });
 
-    await send("Pode ser o plano anual?").expect(200);
-    await admin.agentEvent.create({ data: { tenantId: fx.b.id, sessionId: session.id, kind: "support", content: { text: "Pode sim!", author: "Juliana" } } });
-    const { body } = await messages().expect(200);
-    expect(body.map(({ from, author, text }: { from: string; author: string | null; text: string }) => ({ from, author, text }))).toEqual([
-      { from: "partner", author: null, text: "Pode ser o plano anual?" },
-      { from: "support", author: "Juliana", text: "Pode sim!" },
-    ]);
+  it("o ticket só vale no restaurante da sessão", async () => {
+    const { body: session } = await start(fx.a.id, "SUPPORT", agentToken).expect(201);
+    await ticket(session.id, { name: "Ana Souza", phone: "11987654321" }).expect(404);
+    expect(await admin.supportTicket.count({ where: { sessionId: session.id } })).toBe(0);
+  });
+
+  it("a plataforma vê os tickets de todos os restaurantes; os outros não", async () => {
+    const superAdmin = await admin.user.create({
+      data: { name: "Equipe Plataforma", email: `tickets-${fx.a.id}@teste.local`, passwordHash: await hash(PASSWORD), isSuperAdmin: true, memberships: { create: { tenantId: fx.c.id, role: "ADMIN" } } },
+    });
+    try {
+      const { body: session } = await start(fx.b.id, "SUPPORT").expect(201);
+      await ticket(session.id, { name: "Bia Lima", phone: "11987654321" }).expect(201);
+      const superToken = await accessTokenFor(app, superAdmin.email, fx.c.id);
+      const { body } = await api().get("/api/platform/tickets").set("Authorization", `Bearer ${superToken}`).expect(200);
+      expect(body).toContainEqual(expect.objectContaining({ name: "Bia Lima", phone: "+5511987654321", tenantName: "Teste B", userName: "Atendente Teste" }));
+      await api().get("/api/platform/tickets").set("Authorization", `Bearer ${adminToken}`).expect(403);
+    } finally {
+      await admin.user.delete({ where: { id: superAdmin.id } });
+    }
   });
 
   it("a sessão só aparece no restaurante dela", async () => {

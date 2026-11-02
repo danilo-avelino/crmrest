@@ -15,6 +15,7 @@ import { CourierMenuService } from "./automations/courier-menu.service.js";
 import { IfoodAttendanceService } from "./automations/ifood-attendance.service.js";
 import { InactivityService } from "./automations/inactivity.service.js";
 import { PhoneCollectionService } from "./automations/phone-collection.service.js";
+import { ReviewInviteService } from "./automations/review-invite.service.js";
 import { SurveyService } from "./automations/survey.service.js";
 import { TriageService } from "./automations/triage.service.js";
 import { ChannelTokensProcessor, ChannelTokensService } from "./channels/channel-tokens.service.js";
@@ -110,6 +111,7 @@ export class RealtimeRoleModule {}
     OutboundProcessor,
     PhoneCollectionService,
     SurveyService,
+    ReviewInviteService,
     CourierMenuService,
     TriageService,
     IfoodAttendanceService,

@@ -18,7 +18,7 @@ export const Evaluation = z.object({
   satisfaction: z.enum(["satisfeito", "insatisfeito", "sem_reacao"]),
   score: z.number().int().min(1).max(5),
   summary: z.string().trim().min(1).max(400).describe("O que o cliente queria e como terminou, em uma ou duas frases."),
-  teamReason: z.enum([...(Object.keys(TEAM_REASONS) as [TeamReason, ...TeamReason[]]), "sem_equipe"]),
+  teamReason: z.enum(Object.keys(TEAM_REASONS) as [TeamReason, ...TeamReason[]]),
 });
 
 export const SYSTEM_PROMPT = `Você avalia atendimentos de um restaurante a clientes, lendo a conversa inteira. Seja justo e objetivo.
@@ -33,15 +33,14 @@ Na conversa, "Restaurante (automação)" são mensagens automáticas; "(IA)", do
   2 = não resolvido ou cliente insatisfeito;
   1 = cliente muito insatisfeito ou atendimento ruim (grosseria, informação errada, cliente sem resposta).
 - summary: em português, uma ou duas frases: o que o cliente queria e como terminou.
-- teamReason: se alguém da equipe "(atendente)" respondeu, o principal motivo de o atendimento precisar da equipe:
+- teamReason: o principal motivo de o atendimento precisar da equipe:
   atraso = reclamação de atraso do pedido;
   problema_pedido = item errado, faltando ou com problema de qualidade;
   troca_reembolso = pediu troca, reembolso ou cancelamento;
   fora_do_cardapio = pergunta que a IA não soube responder;
   pediu_pessoa = o cliente pediu para falar com uma pessoa;
   pedido_grande = encomenda, pedido grande ou evento;
-  outro = outro motivo.
-  Sem nenhuma mensagem "(atendente)" na conversa: sem_equipe.`;
+  outro = outro motivo.`;
 
 /** Agenda a avaliação de um atendimento que acabou de ser resolvido (o job confere se o restaurante tem o módulo). */
 export async function scheduleEvaluation(queue: Queue<AiJob>, tenantId: string, conversationId: string): Promise<void> {
@@ -49,8 +48,9 @@ export async function scheduleEvaluation(queue: Queue<AiJob>, tenantId: string, 
 }
 
 /**
- * Avaliação automática (E29): quando a conversa é resolvida, a LLM lê o atendimento e registra se o problema foi
- * resolvido, se o cliente ficou satisfeito e uma nota. Roda na fila ai, fora do caminho do atendimento.
+ * Avaliação automática (E29): quando a conversa é resolvida e a equipe respondeu ao cliente, a LLM lê o atendimento e
+ * registra se o problema foi resolvido, se o cliente ficou satisfeito e uma nota. Sem resposta da equipe, não há chamada
+ * de IA: o atendimento só fica registrado. Roda na fila ai, fora do caminho do atendimento.
  */
 @Injectable()
 export class AiEvaluationService {
@@ -66,21 +66,24 @@ export class AiEvaluationService {
       if (!(await this.llm.activeFor(tx, tenantId))) return null;
       const conversation = await tx.conversation.findUnique({ where: { id: conversationId }, select: { status: true } });
       if (conversation?.status !== "RESOLVED") return null; // reaberta: será avaliada quando for resolvida de novo
-      // O atendimento é o que veio depois da última avaliação da conversa.
-      const previous = await tx.conversationEvaluation.findFirst({
-        where: { conversationId },
-        orderBy: { createdAt: "desc" },
-        select: { createdAt: true },
-      });
+      // O atendimento é o que veio depois do último já encerrado na conversa: avaliado ou registrado como só da IA.
+      const last = { where: { conversationId }, orderBy: { createdAt: "desc" }, select: { createdAt: true } } as const;
+      const evaluated = (await tx.conversationEvaluation.findFirst(last))?.createdAt;
+      const aiOnly = (await tx.aiOnlyAttendance.findFirst(last))?.createdAt;
+      const since = evaluated && aiOnly ? (evaluated > aiOnly ? evaluated : aiOnly) : (evaluated ?? aiOnly);
       const messages = (
         await tx.message.findMany({
-          where: { conversationId, direction: { in: ["INBOUND", "OUTBOUND"] }, ...(previous && { createdAt: { gt: previous.createdAt } }) },
+          where: { conversationId, direction: { in: ["INBOUND", "OUTBOUND"] }, ...(since && { createdAt: { gt: since } }) },
           orderBy: { createdAt: "desc" },
           take: TRANSCRIPT_LIMIT,
         })
       ).reverse();
       if (!messages.some((message) => message.direction === "INBOUND")) return null; // nada novo do cliente
-      const userId = messages.findLast((message) => message.direction === "OUTBOUND" && message.sentByUserId)?.sentByUserId ?? null;
+      const userId = messages.findLast((message) => message.direction === "OUTBOUND" && message.sentByUserId)?.sentByUserId;
+      if (!userId) {
+        await tx.aiOnlyAttendance.create({ data: { tenantId, conversationId } }); // a equipe não respondeu: sem chamada de IA
+        return null;
+      }
       return { messages, userId };
     });
     if (!attendance) return;
@@ -100,7 +103,7 @@ export class AiEvaluationService {
           satisfied: result.satisfaction === "sem_reacao" ? null : result.satisfaction === "satisfeito",
           score: result.score,
           summary: result.summary,
-          teamReason: attendance.userId && result.teamReason !== "sem_equipe" ? result.teamReason : null,
+          teamReason: result.teamReason,
           model,
         },
       }),

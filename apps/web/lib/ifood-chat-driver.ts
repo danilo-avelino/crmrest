@@ -128,7 +128,7 @@ export class IfoodChatDriver {
     let drawer: WidgetDrawer | null = null;
     let outcome: IfoodChatSendResult;
     try {
-      drawer = await this.open(reply.orderCode);
+      drawer = await this.open(reply.orderCode, reply.customer);
       if (!drawer) outcome = { status: "FAILED", error: "O chat deste pedido não está aberto no widget do iFood." };
       else if (!drawer.input) outcome = { status: "FAILED", error: "O iFood já encerrou a conversa deste pedido." };
       else {
@@ -148,11 +148,12 @@ export class IfoodChatDriver {
 
   /**
    * Abre a conversa do pedido e espera as mensagens carregarem (duas leituras seguidas com a mesma quantidade). Uma
-   * conversa ainda sem mensagens também abre: é nela que a loja escreve primeiro.
+   * conversa ainda sem mensagens também abre: é nela que a loja escreve primeiro. Com `customer`, só abre a conversa
+   * desse cliente: o número do pedido se repete entre as lojas, e nunca se digita no chat de outra pessoa.
    */
-  private async open(orderCode: string): Promise<WidgetDrawer | null> {
+  private async open(orderCode: string, customer?: string): Promise<WidgetDrawer | null> {
     // A posição na lista é lida logo antes do clique: ela muda quando chega mensagem em outra conversa.
-    const chats = (await this.read()).chats.filter((chat) => chat.orderCode === orderCode);
+    const chats = (await this.read()).chats.filter((chat) => chat.orderCode === orderCode && (customer === undefined || sameName(chat.customer, customer)));
     const chat = chats.find((item) => item.open) ?? chats[0];
     if (!chat) return null;
     await this.bridge("click", { selector: CHAT_ITEM, index: chat.index });
@@ -174,6 +175,12 @@ export class IfoodChatDriver {
     }
     return null;
   }
+}
+
+/** Nomes iguais, sem contar acentos, maiúsculas e espaços. */
+function sameName(a: string, b: string): boolean {
+  const plain = (name: string) => name.normalize("NFD").replace(/\p{M}/gu, "").replace(/\s+/g, " ").trim().toLowerCase();
+  return plain(a) === plain(b);
 }
 
 function shownAs(chat: WidgetChat): string {

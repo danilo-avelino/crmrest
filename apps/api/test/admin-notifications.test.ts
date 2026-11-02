@@ -106,6 +106,7 @@ describe("textos das notificações", () => {
       satisfied: 0,
       lowScores: 0,
       onlyAi: 15,
+      withTeam: 5,
       teamReasons: [],
       waiting: { closed: 0, full_auto: 0, offline: 0 },
       reviews: [],

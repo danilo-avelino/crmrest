@@ -1,12 +1,12 @@
 import {
-  AgentMessageRequest,
   type AgentSessionDto,
-  type AgentSupportMessageDto,
+  type AgentTicketDto,
   AgentTurnRequest,
   type AgentTurnDto,
+  CreateSupportTicketRequest,
   StartAgentSessionRequest,
 } from "@dishdesk/shared";
-import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Post } from "@nestjs/common";
+import { Body, Controller, HttpCode, Param, ParseUUIDPipe, Post } from "@nestjs/common";
 import { CurrentAuth, type RequestAuth } from "../auth/auth.decorators.js";
 import { ZodPipe } from "../common/zod.pipe.js";
 import { AgentService } from "./agent.service.js";
@@ -31,25 +31,13 @@ export class AgentController {
     return this.agent.turn(auth, id, body);
   }
 
-  @Post("sessions/:id/handoff")
-  @HttpCode(200)
-  handoff(@Param("id", ParseUUIDPipe) id: string, @CurrentAuth() auth: RequestAuth): Promise<AgentTurnDto> {
-    return this.agent.handoff(auth, id);
-  }
-
-  /** Depois da transferência: a conversa com o suporte (o painel consulta de tempos em tempos). */
-  @Get("sessions/:id/messages")
-  messages(@Param("id", ParseUUIDPipe) id: string, @CurrentAuth() auth: RequestAuth): Promise<AgentSupportMessageDto[]> {
-    return this.agent.supportMessages(auth, id);
-  }
-
-  @Post("sessions/:id/messages")
-  @HttpCode(200)
-  send(
+  /** A IA não resolveu e o parceiro aceitou enviar um ticket: o suporte entra em contato pelo telefone informado. */
+  @Post("sessions/:id/ticket")
+  ticket(
     @Param("id", ParseUUIDPipe) id: string,
-    @Body(new ZodPipe(AgentMessageRequest)) body: AgentMessageRequest,
+    @Body(new ZodPipe(CreateSupportTicketRequest)) body: CreateSupportTicketRequest,
     @CurrentAuth() auth: RequestAuth,
-  ): Promise<AgentSupportMessageDto[]> {
-    return this.agent.sendToSupport(auth, id, body.text);
+  ): Promise<AgentTicketDto> {
+    return this.agent.openTicket(auth, id, body);
   }
 }
