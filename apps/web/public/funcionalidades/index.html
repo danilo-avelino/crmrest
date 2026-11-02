@@ -199,30 +199,49 @@ a{color:inherit}a:hover{color:#C4341A}
   </div>
 </section>
 
-<!-- 4b · PREVENÇÃO DE FRAUDE (escuro) -->
+<!-- 4b · PREVENÇÃO DE FRAUDE (escuro): lista do que faz e o exemplo do alerta -->
 <section id="fraude" style="background: #24211C; color: #F7F4EF">
   <div style="max-width: 1200px; margin: 0 auto; padding: 64px 24px">
-    <h2 class="rv" style="margin: 0; font-family: Fraunces, Georgia, serif; font-weight: 700; font-size: clamp(28px, 3.2vw, 40px); letter-spacing: -0.6px; display: flex; align-items: center; gap: 14px">
-      <span aria-hidden="true" style="width: 40px; height: 40px; border-radius: 8px; background: #C4341A; display: inline-flex; align-items: center; justify-content: center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"></path><path d="M12 8v4M12 16h.01"></path></svg></span>
-      Prevenção de fraude
-    </h2>
-    <div style="margin-top: 32px; display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px">
-      <article class="rv feat" style="background: #1A1814; border: 1px solid #3A352F; border-radius: 10px; padding: 22px">
-        <h3 style="margin: 0; font-size: 16px; font-weight: 600">Alerta na Inbox</h3>
-        <p style="margin: 6px 0 0; font-size: 14px; color: #A2968A">O pedido de quem já cancelou abre a conversa com um alerta, visto só pela equipe.</p>
-      </article>
-      <article class="rv d1 feat" style="background: #1A1814; border: 1px solid #3A352F; border-radius: 10px; padding: 22px">
-        <h3 style="margin: 0; font-size: 16px; font-weight: 600">Cada cancelamento com motivo</h3>
-        <p style="margin: 6px 0 0; font-size: 14px; color: #A2968A">Data, origem, valor e motivo de cada pedido cancelado, do iFood e do Cardápio Web.</p>
-      </article>
-      <article class="rv d2 feat" style="background: #1A1814; border: 1px solid #3A352F; border-radius: 10px; padding: 22px">
-        <h3 style="margin: 0; font-size: 16px; font-weight: 600">Endereço marcado</h3>
-        <p style="margin: 6px 0 0; font-size: 14px; color: #A2968A">O pedido marcado como fraude aparece no alerta dos próximos pedidos para o mesmo endereço.</p>
-      </article>
-      <article class="rv feat" style="background: #1A1814; border: 1px solid #3A352F; border-radius: 10px; padding: 22px">
-        <h3 style="margin: 0; font-size: 16px; font-weight: 600">O atendente decide</h3>
-        <p style="margin: 6px 0 0; font-size: 14px; color: #A2968A">Manter ou cancelar é sempre da equipe. Quando a plataforma permite, o pedido é cancelado ali mesmo, com a mensagem no tom do restaurante.</p>
-      </article>
+    <div class="rv" style="display: flex; flex-wrap: wrap; gap: 12px 40px; align-items: flex-end; justify-content: space-between">
+      <h2 style="margin: 0; font-family: Fraunces, Georgia, serif; font-weight: 700; font-size: clamp(28px, 3.2vw, 40px); letter-spacing: -0.6px; display: flex; align-items: center; gap: 14px">
+        <span aria-hidden="true" style="width: 40px; height: 40px; border-radius: 8px; background: #C4341A; display: inline-flex; align-items: center; justify-content: center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"></path><path d="M12 8v4M12 16h.01"></path></svg></span>
+        Prevenção de fraude
+      </h2>
+      <p style="margin: 0; max-width: 440px; color: #A2968A">No golpe do cancelamento, o cliente pede, recebe e cancela. O Dish Desk mostra o histórico e o motivo de cada cancelamento antes de você produzir.</p>
+    </div>
+    <div style="margin-top: 32px; display: flex; flex-wrap: wrap; gap: 32px; align-items: flex-start">
+      <ol style="flex: 1 1 460px; min-width: 0; list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px">
+        <li class="rv" style="display: flex; gap: 14px; align-items: flex-start; background: #1A1814; border: 1px solid #3A352F; border-radius: 10px; padding: 18px 20px"><span class="tab" aria-hidden="true" style="flex: none; width: 26px; height: 26px; border-radius: 50%; background: #C4341A; color: #FFFFFF; font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center">1</span><span><strong style="font-size: 15px">Alerta ao abrir a conversa</strong><span style="display: block; margin-top: 4px; font-size: 14px; color: #A2968A">Um cancelamento no histórico já basta. O alerta fica no topo da conversa, com o pedido atual, e só a equipe vê.</span></span></li>
+        <li class="rv d1" style="display: flex; gap: 14px; align-items: flex-start; background: #1A1814; border: 1px solid #3A352F; border-radius: 10px; padding: 18px 20px"><span class="tab" aria-hidden="true" style="flex: none; width: 26px; height: 26px; border-radius: 50%; background: #C4341A; color: #FFFFFF; font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center">2</span><span><strong style="font-size: 15px">O motivo de cada cancelamento</strong><span style="display: block; margin-top: 4px; font-size: 14px; color: #A2968A">Data, origem, valor e motivo de cada pedido cancelado, do iFood e do Cardápio Web: a retirada que ninguém buscou, a entrega que ninguém recebeu.</span></span></li>
+        <li class="rv d2" style="display: flex; gap: 14px; align-items: flex-start; background: #1A1814; border: 1px solid #3A352F; border-radius: 10px; padding: 18px 20px"><span class="tab" aria-hidden="true" style="flex: none; width: 26px; height: 26px; border-radius: 50%; background: #C4341A; color: #FFFFFF; font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center">3</span><span><strong style="font-size: 15px">Endereço marcado como possível fraude</strong><span style="display: block; margin-top: 4px; font-size: 14px; color: #A2968A">Quando o atendente marca um pedido como fraude, os próximos pedidos para o mesmo endereço, de qualquer cliente, mostram o aviso. Só vale para endereço idêntico, com o mesmo número, bloco e apartamento.</span></span></li>
+        <li class="rv d3" style="display: flex; gap: 14px; align-items: flex-start; background: #1A1814; border: 1px solid #3A352F; border-radius: 10px; padding: 18px 20px"><span class="tab" aria-hidden="true" style="flex: none; width: 26px; height: 26px; border-radius: 50%; background: #C4341A; color: #FFFFFF; font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center">4</span><span><strong style="font-size: 15px">Quem decide é o atendente</strong><span style="display: block; margin-top: 4px; font-size: 14px; color: #A2968A">Manter ou cancelar é sempre da equipe. Nada é bloqueado nem cancelado sozinho.</span></span></li>
+        <li class="rv d3" style="display: flex; gap: 14px; align-items: flex-start; background: #1A1814; border: 1px solid #3A352F; border-radius: 10px; padding: 18px 20px"><span class="tab" aria-hidden="true" style="flex: none; width: 26px; height: 26px; border-radius: 50%; background: #C4341A; color: #FFFFFF; font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center">5</span><span><strong style="font-size: 15px">Cancelar pela Inbox</strong><span style="display: block; margin-top: 4px; font-size: 14px; color: #A2968A">Quando a plataforma permite, o pedido é cancelado ali mesmo e o cliente recebe a mensagem no tom do restaurante. Quando não permite, o aviso diz onde cancelar.</span></span></li>
+      </ol>
+      <figure class="rv d1" style="flex: 1 1 460px; min-width: 0; margin: 0; display: flex; flex-direction: column; gap: 12px">
+        <div aria-label="Exemplo do alerta na Inbox" style="background: #FFFFFF; color: #1A1814; border: 1px solid #C4341A; border-radius: 10px; overflow: hidden; font-size: 13px; box-shadow: 0 30px 60px -30px rgba(0,0,0,.7)">
+          <div style="background: #C4341A; color: #FFFFFF; padding: 10px 16px; display: flex; align-items: center; gap: 8px; font-weight: 600"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"></path><path d="M12 8v4M12 16h.01"></path></svg>Alerta de fraude<span style="margin-left: auto; font-weight: 400; font-size: 12px">Só a equipe vê</span></div>
+          <div style="padding: 14px 16px; display: flex; flex-direction: column; gap: 12px">
+            <p style="margin: 0; color: #4A4540">Marcos V. tem <strong style="color: #1A1814">3 pedidos cancelados</strong> de 7 feitos, e o endereço já teve um pedido marcado como fraude.</p>
+            <div style="display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; padding: 9px 12px; background: #F7F4EF; border: 1px solid #DDD8D0; border-radius: 6px"><span style="width: 8px; height: 8px; border-radius: 50%; background: #EA1D2C"></span><strong>iFood #4821</strong><span style="color: #4A4540; flex: 1 1 140px">2× Pizza calabresa G · Entrega</span><strong class="tab">R$ 186,40</strong></div>
+            <div style="border: 1px solid #DDD8D0; border-radius: 6px; overflow: hidden">
+            <div style="display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; padding: 8px 12px; font-size: 12.5px"><span class="tab" style="color: #4A4540">24/10</span><span style="display: inline-flex; align-items: center; gap: 5px"><span style="width: 7px; height: 7px; border-radius: 50%; background: #EA1D2C"></span>iFood</span><span style="color: #8C857D">#4710</span><span style="flex: 1 1 150px">Cliente desistiu</span><span class="tab" style="color: #4A4540">R$ 172,00</span></div>
+            <div style="display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; padding: 8px 12px; border-top: 1px solid #E8E4DE; font-size: 12.5px"><span class="tab" style="color: #4A4540">11/10</span><span style="display: inline-flex; align-items: center; gap: 5px"><span style="width: 7px; height: 7px; border-radius: 50%; background: #7C3AED"></span>Cardápio Web</span><span style="color: #8C857D">#4588</span><span style="flex: 1 1 150px">Ninguém recebeu na entrega <span style="margin-left: 4px; font-size: 11px; font-weight: 600; background: #C4341A; color: #FFFFFF; padding: 1px 6px; border-radius: 4px">Fraude</span></span><span class="tab" style="color: #4A4540">R$ 154,50</span></div>
+            <div style="display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; padding: 8px 12px; border-top: 1px solid #E8E4DE; font-size: 12.5px"><span class="tab" style="color: #4A4540">22/09</span><span style="display: inline-flex; align-items: center; gap: 5px"><span style="width: 7px; height: 7px; border-radius: 50%; background: #7C3AED"></span>Cardápio Web</span><span style="color: #8C857D">#4391</span><span style="flex: 1 1 150px">Não veio retirar o pedido</span><span class="tab" style="color: #4A4540">R$ 98,90</span></div>
+            </div>
+            <div style="background: #FDECEA; border: 1px solid #F5B5AC; border-radius: 6px; padding: 10px 12px; display: flex; flex-direction: column; gap: 2px">
+              <strong style="color: #9B2414; font-size: 12.5px">Este endereço tem um pedido marcado como fraude</strong>
+              <span style="font-weight: 500">Rua das Acácias, 120 · Cond. Jardim Sul · Bloco B, apto 34</span>
+              <span class="tab" style="font-size: 12px; color: #4A4540">Pedido de 11/10 · Ninguém recebeu na entrega · Marcado por Ana</span>
+            </div>
+          </div>
+          <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 12px 16px; border-top: 1px solid #E8E4DE">
+            <span style="font-size: 12px; color: #8C857D; margin-right: auto">Nada é cancelado sem você confirmar.</span>
+            <span style="height: 32px; padding: 0 12px; border-radius: 6px; border: 1px solid #DDD8D0; display: inline-flex; align-items: center; font-weight: 500">Manter pedido</span>
+            <span style="height: 32px; padding: 0 12px; border-radius: 6px; background: #C4341A; color: #FFFFFF; display: inline-flex; align-items: center; font-weight: 500">Cancelar pedido</span>
+          </div>
+        </div>
+        <figcaption style="font-size: 13px; color: #A2968A">Exemplo do alerta no topo da conversa, na Inbox.</figcaption>
+      </figure>
     </div>
   </div>
 </section>

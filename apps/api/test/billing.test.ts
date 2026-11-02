@@ -149,7 +149,7 @@ describe("cadastro pelo site, teste grátis e assinatura", () => {
       "payment_method_types[0]": "card",
       "line_items[0][quantity]": "1",
       "line_items[0][price_data][currency]": "brl",
-      "line_items[0][price_data][unit_amount]": "9900",
+      "line_items[0][price_data][unit_amount]": "14900",
       "line_items[0][price_data][product_data][name]": "Dish Desk · plano mensal",
       "line_items[0][price_data][recurring][interval]": "month",
       client_reference_id: cantina,
@@ -162,7 +162,7 @@ describe("cadastro pelo site, teste grátis e assinatura", () => {
     });
 
     await checkout(owner, cantina, "annual").expect(200);
-    expect(form(1)).toMatchObject({ mode: "payment", "line_items[0][price_data][unit_amount]": "99900" });
+    expect(form(1)).toMatchObject({ mode: "payment", "line_items[0][price_data][unit_amount]": "149000" });
     expect(String(stripe.requests[1]!.body)).not.toContain("recurring");
     // Sem meio de pagamento fixo: a Stripe mostra os que estão ativos no painel.
     expect(String(stripe.requests[1]!.body)).not.toContain("payment_method_types");
@@ -177,14 +177,14 @@ describe("cadastro pelo site, teste grátis e assinatura", () => {
   });
 
   it("webhook recusa assinatura errada e ignora pagamento ainda não confirmado", async () => {
-    const event = sessionEvent({ id: `cs_${suffix}_pix`, mode: "payment", client_reference_id: cantina, amount_total: 99_900 });
+    const event = sessionEvent({ id: `cs_${suffix}_pix`, mode: "payment", client_reference_id: cantina, amount_total: 149_000 });
     await postStripe(event, "whsec_outro").expect(401);
     await postStripe(sessionEvent({ ...event.data.object, payment_status: "unpaid" })).expect(200);
     expect((await tenant(cantina)).paidUntil).toBeNull();
   });
 
   it("Pix do plano anual libera o restaurante por um ano; o evento reenviado não conta de novo", async () => {
-    const event = sessionEvent({ id: `cs_${suffix}_pix`, mode: "payment", client_reference_id: cantina, amount_total: 99_900 });
+    const event = sessionEvent({ id: `cs_${suffix}_pix`, mode: "payment", client_reference_id: cantina, amount_total: 149_000 });
     await postStripe(event).expect(200);
 
     const paidUntil = (await tenant(cantina)).paidUntil!;
@@ -192,7 +192,7 @@ describe("cadastro pelo site, teste grátis e assinatura", () => {
     year.setFullYear(year.getFullYear() + 1);
     expect(Math.abs(paidUntil.getTime() - year.getTime())).toBeLessThan(60_000);
     expect(await admin.billingPayment.findMany({ where: { tenantId: cantina } })).toMatchObject([
-      { id: `cs_${suffix}_pix`, plan: "ANNUAL", amountCents: 99_900 },
+      { id: `cs_${suffix}_pix`, plan: "ANNUAL", amountCents: 149_000 },
     ]);
 
     await postStripe(event).expect(200);
@@ -215,7 +215,7 @@ describe("cadastro pelo site, teste grátis e assinatura", () => {
     const now = Math.floor(Date.now() / 1000);
     await admin.tenant.update({ where: { id: segunda }, data: { trialEndsAt: new Date(Date.now() - 60_000) } });
     await postStripe(
-      sessionEvent({ id: `cs_${suffix}_cartao`, mode: "subscription", client_reference_id: segunda, customer, invoice: `in_${suffix}_1`, amount_total: 9_900 }),
+      sessionEvent({ id: `cs_${suffix}_cartao`, mode: "subscription", client_reference_id: segunda, customer, invoice: `in_${suffix}_1`, amount_total: 14_900 }),
     ).expect(200);
 
     const first = await tenant(segunda);
@@ -227,7 +227,7 @@ describe("cadastro pelo site, teste grátis e assinatura", () => {
 
     const invoice = (id: string, periodEnd: number) => ({
       type: "invoice.paid",
-      data: { object: { id, customer, amount_paid: 9_900, lines: { data: [{ period: { start: now, end: periodEnd } }] } } },
+      data: { object: { id, customer, amount_paid: 14_900, lines: { data: [{ period: { start: now, end: periodEnd } }] } } },
     });
     // A fatura do primeiro pagamento também chega como invoice.paid: é o mesmo pagamento.
     await postStripe(invoice(`in_${suffix}_1`, now + 30 * 86_400)).expect(200);
@@ -304,7 +304,7 @@ describe("cadastro pelo site, teste grátis e assinatura", () => {
         customer: `cus_${suffix}`,
         subscription: "sub_nova",
         invoice: `in_${suffix}_novo`,
-        amount_total: 9_900,
+        amount_total: 14_900,
       }),
     ).expect(200);
     expect(calls()).toEqual([`GET /v1/subscriptions?customer=cus_${suffix}`, "DELETE /v1/subscriptions/sub_antiga"]);
@@ -323,7 +323,7 @@ describe("cadastro pelo site, teste grátis e assinatura", () => {
     subscriptions = ["sub_nova"];
     stripe.requests.length = 0;
     await postStripe(
-      sessionEvent({ id: `cs_${suffix}_anual`, mode: "payment", client_reference_id: segunda, customer: `cus_${suffix}`, amount_total: 99_900 }),
+      sessionEvent({ id: `cs_${suffix}_anual`, mode: "payment", client_reference_id: segunda, customer: `cus_${suffix}`, amount_total: 149_000 }),
     ).expect(200);
     expect(calls()).toEqual([`GET /v1/subscriptions?customer=cus_${suffix}`, "DELETE /v1/subscriptions/sub_nova"]);
     expect(await tenant(segunda)).toMatchObject({ billingPlan: "ANNUAL", trustUntil: null });

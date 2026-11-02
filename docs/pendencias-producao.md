@@ -91,7 +91,7 @@ Esta é a lista do que falta para o Dish Desk atender restaurantes de verdade. Q
 
 ## 2. Cadastro pelo site, teste grátis e cobrança
 
-Feito em 11/10 (Claude): o botão da landing leva a `/cadastro`, que cria o restaurante com 15 dias de teste. Depois do teste, o painel bloqueia e mostra `/assinatura`, com R$ 99 por mês no cartão (assinatura, débito automático) ou R$ 999 por ano em pagamento único, em qualquer meio de pagamento ativo na Stripe. O WhatsApp e o CPF ou CNPJ de quem se cadastrou aparecem em `/plataforma`.
+Feito em 11/10 (Claude): o botão da landing leva a `/cadastro`, que cria o restaurante com 15 dias de teste. Depois do teste, o painel bloqueia e mostra `/assinatura`, com R$ 149 por mês no cartão (assinatura, débito automático) ou R$ 1.490 por ano em pagamento único, em qualquer meio de pagamento ativo na Stripe. O WhatsApp e o CPF ou CNPJ de quem se cadastrou aparecem em `/plataforma`.
 
 Pagamento pendente (Claude, 11/10): a renovação do mensal tem 1 dia de folga; passado esse dia (ou vencido o plano anual), o painel bloqueia com a tela "Pagamento pendente". Nela, qualquer usuário do restaurante pode "Liberar acesso por confiança" por 3 dias, uma vez por atraso (o direito volta quando o pagamento chega). Durante esses dias o painel mostra no topo "Avise ao financeiro para concluir o pagamento. X dias restantes". Quem só fez o teste grátis não tem essa liberação. Em Configurações → Pagamento o administrador vê a situação, cadastra um cartão novo (plano mensal) ou gera o plano anual.
 

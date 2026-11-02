@@ -92,7 +92,7 @@ describe("adicionar restaurante na escolha de restaurante", () => {
     expect(body).toEqual({ url: CHECKOUT_URL });
     expect(Object.fromEntries(new URLSearchParams(String(stripe.requests.at(-1)!.body)))).toMatchObject({
       mode: "subscription",
-      "line_items[0][price_data][unit_amount]": "9900",
+      "line_items[0][price_data][unit_amount]": "14900",
       client_reference_id: filial,
       "metadata[cpf_cnpj]": "12345678909",
       customer_email: fx.user.email,
@@ -108,7 +108,7 @@ describe("adicionar restaurante na escolha de restaurante", () => {
           payment_status: "paid",
           client_reference_id: filial,
           customer: null,
-          amount_total: 99_900,
+          amount_total: 149_000,
           created: Math.floor(Date.now() / 1000),
         },
       },

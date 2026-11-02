@@ -11,8 +11,8 @@ export const TRIAL_REUSE_DAYS = 60;
 
 /** Planos da assinatura: mensal no cartão (renova sozinho) ou anual em pagamento único, no meio que o cliente escolher. */
 export const BILLING_PLANS = {
-  monthly: { amountCents: 9_900 },
-  annual: { amountCents: 99_900 },
+  monthly: { amountCents: 14_900 },
+  annual: { amountCents: 149_000 },
 } as const;
 export type BillingPlanKey = keyof typeof BILLING_PLANS;
 
