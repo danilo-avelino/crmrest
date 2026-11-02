@@ -4,7 +4,7 @@ import type { RequestAuth } from "../auth/auth.decorators.js";
 import { IfoodAuthService, type IfoodStore } from "../connectors/ifood-auth.service.js";
 import { IfoodError, type IfoodReview } from "../connectors/ifood.client.js";
 import { DatabaseService } from "../core/database.service.js";
-import { requireTenantAdmin } from "../settings/tenant-admin.js";
+import { adminScope } from "../settings/tenant-admin.js";
 
 const DAY = 24 * 60 * 60 * 1000;
 const PERIOD_DAYS: Record<IfoodReviewPeriod, number> = { "7d": 7, "30d": 30, "90d": 90 };
@@ -27,7 +27,6 @@ export class IfoodReviewsService {
   ) {}
 
   async list(auth: RequestAuth, tenantId: string, period: IfoodReviewPeriod, now = new Date()): Promise<IfoodReviewsDto> {
-    requireTenantAdmin(auth, tenantId);
     const stores = await this.stores(auth, tenantId);
     const from = new Date(now.getTime() - PERIOD_DAYS[period] * DAY);
     const result: IfoodReviewsDto = { stores: [], unavailable: [], reviews: [] };
@@ -58,7 +57,6 @@ export class IfoodReviewsService {
   }
 
   async answer(auth: RequestAuth, tenantId: string, storeId: string, reviewId: string, text: string): Promise<void> {
-    requireTenantAdmin(auth, tenantId);
     const store = (await this.stores(auth, tenantId)).find((s) => s.id === storeId);
     if (!store || !this.ifood.configured) throw new NotFoundException("Loja do iFood não encontrada.");
     try {
@@ -70,9 +68,9 @@ export class IfoodReviewsService {
     }
   }
 
-  /** Lojas do iFood conectadas no restaurante. */
-  private stores(auth: RequestAuth, tenantId: string): Promise<Store[]> {
-    return this.db.withTenants({ tenantIds: [tenantId], userId: auth.userId }, (tx) =>
+  /** Lojas do iFood conectadas no restaurante. Só o administrador. */
+  private async stores(auth: RequestAuth, tenantId: string): Promise<Store[]> {
+    return this.db.withTenants(adminScope(auth, tenantId), (tx) =>
       tx.channel.findMany({
         where: { tenantId, type: "IFOOD", status: "CONNECTED", deletedAt: null },
         select: { id: true, tenantId: true, name: true, externalId: true },

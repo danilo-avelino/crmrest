@@ -15,7 +15,7 @@ import {
 import { CurrentAuth, type RequestAuth } from "../auth/auth.decorators.js";
 import { ZodPipe } from "../common/zod.pipe.js";
 import { DatabaseService } from "../core/database.service.js";
-import { requireTenantAdmin } from "./tenant-admin.js";
+import { adminScope } from "./tenant-admin.js";
 
 const SELECT = { id: true, tenantId: true, shortcut: true, content: true } as const;
 
@@ -64,8 +64,7 @@ export class QuickRepliesController {
   }
 
   private write<T>(auth: RequestAuth, tenantId: string, fn: (tx: TenantTx) => Promise<T>): Promise<T> {
-    requireTenantAdmin(auth, tenantId);
-    return this.db.withTenants({ tenantIds: [tenantId], userId: auth.userId }, fn);
+    return this.db.withTenants(adminScope(auth, tenantId), fn);
   }
 }
 

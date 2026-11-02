@@ -4,7 +4,7 @@ import { Injectable } from "@nestjs/common";
 import type { RequestAuth } from "../auth/auth.decorators.js";
 import { localDate } from "../automations/automation.js";
 import { DatabaseService } from "../core/database.service.js";
-import { requireTenantAdmin } from "../settings/tenant-admin.js";
+import { adminScope } from "../settings/tenant-admin.js";
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -31,8 +31,7 @@ export class ReportsService {
   constructor(private readonly db: DatabaseService) {}
 
   async ratings(auth: RequestAuth, tenantId: string, period: ReportPeriod, now = new Date()): Promise<RatingsReportDto> {
-    requireTenantAdmin(auth, tenantId);
-    return this.report({ tenantIds: [tenantId], userId: auth.userId }, tenantId, periodStart(period, now));
+    return this.report(adminScope(auth, tenantId), tenantId, periodStart(period, now));
   }
 
   /** O relatório desde `from`, sem conferir quem pede (também o relatório semanal pelo WhatsApp). */

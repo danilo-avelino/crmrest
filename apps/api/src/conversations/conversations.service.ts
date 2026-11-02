@@ -16,7 +16,6 @@ import {
 import { InjectQueue } from "@nestjs/bullmq";
 import {
   BadRequestException,
-  ForbiddenException,
   Inject,
   Injectable,
   Logger,
@@ -36,7 +35,7 @@ import { DatabaseService } from "../core/database.service.js";
 import { type AiJob, type AutomationJob, type OutboundJob, QUEUES } from "../queues/queues.module.js";
 import { withOrderTenants } from "../orders/order-scope.js";
 import { RealtimeEmitter } from "../realtime/realtime.emitter.js";
-import { isTenantAdmin } from "../settings/tenant-admin.js";
+import { isTenantAdmin, memberScope } from "../settings/tenant-admin.js";
 import { conversationListInclude, listEvaluations, toListItem, toMessageDto, toOrderDto, withoutRatingScores } from "./conversation.mapper.js";
 
 const PAGE_SIZE = 50;
@@ -400,6 +399,5 @@ export class ConversationsService {
 /** No painel master, a lista pode ser filtrada por um dos restaurantes do usuário. */
 export function scopeFor(auth: RequestAuth, tenantId?: string) {
   if (!tenantId) return auth.scope;
-  if (!auth.scope.tenantIds.includes(tenantId)) throw new ForbiddenException("Sem acesso a este restaurante.");
-  return { tenantIds: [tenantId], userId: auth.userId };
+  return memberScope(auth, tenantId);
 }

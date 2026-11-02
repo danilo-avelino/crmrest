@@ -15,7 +15,7 @@ import { Injectable, UnprocessableEntityException } from "@nestjs/common";
 import type { RequestAuth } from "../auth/auth.decorators.js";
 import { preview } from "../conversations/conversation.mapper.js";
 import { DatabaseService } from "../core/database.service.js";
-import { requireTenantAdmin } from "./tenant-admin.js";
+import { adminScope } from "./tenant-admin.js";
 
 /** O que o admin pode marcar em cada tipo de passo: integração (pular, em andamento) ou configuração (pular, manter o padrão). */
 const INTEGRATION_MARKS: OnboardingMark[] = ["skipped", "in_progress"];
@@ -34,8 +34,7 @@ export class OnboardingService {
   constructor(private readonly db: DatabaseService) {}
 
   get(auth: RequestAuth, tenantId: string): Promise<OnboardingDto> {
-    requireTenantAdmin(auth, tenantId);
-    return this.db.withTenants({ tenantIds: [tenantId], userId: auth.userId }, (tx) => onboardingOf(tx, tenantId));
+    return this.db.withTenants(adminScope(auth, tenantId), (tx) => onboardingOf(tx, tenantId));
   }
 
   async mark(auth: RequestAuth, tenantId: string, step: OnboardingStep, mark: OnboardingMark | null): Promise<OnboardingDto> {
@@ -49,8 +48,7 @@ export class OnboardingService {
   }
 
   private update(auth: RequestAuth, tenantId: string, change: (state: OnboardingState) => OnboardingState): Promise<OnboardingDto> {
-    requireTenantAdmin(auth, tenantId);
-    return this.db.withTenants({ tenantIds: [tenantId], userId: auth.userId }, (tx) => updateOnboarding(tx, tenantId, change));
+    return this.db.withTenants(adminScope(auth, tenantId), (tx) => updateOnboarding(tx, tenantId, change));
   }
 }
 

@@ -40,7 +40,7 @@ import { ConnectorsService } from "../connectors/connectors.service.js";
 import { IfoodAuthService, type IfoodLinkCode } from "../connectors/ifood-auth.service.js";
 import { DatabaseService } from "../core/database.service.js";
 import { type CardapioWebHistoryJob, type CardapioWebImportJob, QUEUES } from "../queues/queues.module.js";
-import { isTenantAdmin, requireTenantAdmin } from "./tenant-admin.js";
+import { adminScope, isTenantAdmin, memberScope, requireTenantAdmin } from "./tenant-admin.js";
 
 /** O que vai para o canal depois de a credencial ser conferida no sistema de origem. */
 type VerifiedChannel = {
@@ -115,8 +115,7 @@ export class IntegrationsService {
   }
 
   async list(auth: RequestAuth, tenantId: string): Promise<IntegrationsDto> {
-    if (!auth.scope.tenantIds.includes(tenantId)) throw new ForbiddenException("Sem acesso a este restaurante.");
-    const channels = await this.db.withTenants({ tenantIds: [tenantId], userId: auth.userId }, (tx) =>
+    const channels = await this.db.withTenants(memberScope(auth, tenantId), (tx) =>
       tx.channel.findMany({
         where: { tenantId, deletedAt: null, type: { in: [...INTEGRATION_TYPES] } },
         select: SELECT,
@@ -139,7 +138,7 @@ export class IntegrationsService {
         whatsappQr: this.connectors.evolution.configured,
       },
       integrations: channels.map(toDto),
-      servableTenants: canEdit ? await this.servableTenants(auth.userId, tenantId) : [],
+      servableTenants: canEdit ? await this.servableTenants(auth, tenantId) : [],
     };
   }
 
@@ -149,11 +148,11 @@ export class IntegrationsService {
    * engano); a lista substitui a anterior.
    */
   async setServedTenants(auth: RequestAuth, tenantId: string, channelId: string, tenantIds: string[]): Promise<IntegrationDto> {
-    requireTenantAdmin(auth, tenantId);
-    const allowed = new Set((await this.servableTenants(auth.userId, tenantId)).map((tenant) => tenant.id));
+    const scope = adminScope(auth, tenantId);
+    const allowed = new Set((await this.servableTenants(auth, tenantId)).map((tenant) => tenant.id));
     const served = [...new Set(tenantIds)].filter((id) => id !== tenantId);
     if (served.some((id) => !allowed.has(id))) throw new ForbiddenException("Só dá para escolher restaurantes de que você é administrador.");
-    return this.db.withTenants({ tenantIds: [tenantId], userId: auth.userId }, async (tx) => {
+    return this.db.withTenants(scope, async (tx) => {
       const channel = await tx.channel.findFirst({
         where: { id: channelId, tenantId, deletedAt: null, type: { in: [...SERVING_TYPES] } },
         select: { id: true },
@@ -164,10 +163,10 @@ export class IntegrationsService {
   }
 
   /** Outros restaurantes ativos de que o usuário é administrador. */
-  private async servableTenants(userId: string, tenantId: string): Promise<{ id: string; name: string }[]> {
-    const memberships = await this.db.withTenants({ tenantIds: [tenantId], userId }, (tx) =>
+  private async servableTenants(auth: RequestAuth, tenantId: string): Promise<{ id: string; name: string }[]> {
+    const memberships = await this.db.withTenants(adminScope(auth, tenantId), (tx) =>
       tx.tenantMember.findMany({
-        where: { userId, role: "ADMIN", isActive: true, tenantId: { not: tenantId }, tenant: { status: "ACTIVE" } },
+        where: { userId: auth.userId, role: "ADMIN", isActive: true, tenantId: { not: tenantId }, tenant: { status: "ACTIVE" } },
         select: { tenant: { select: { id: true, name: true } } },
         orderBy: { tenant: { name: "asc" } },
       }),
@@ -395,7 +394,7 @@ export class IntegrationsService {
 
   /** Instâncias da Evolution dos WhatsApps deste restaurante (só do número informado, se houver). */
   private async whatsappInstances(auth: RequestAuth, tenantId: string, externalId?: string): Promise<string[]> {
-    const channels = await this.db.withTenants({ tenantIds: [tenantId], userId: auth.userId }, (tx) =>
+    const channels = await this.db.withTenants(adminScope(auth, tenantId), (tx) =>
       tx.channel.findMany({ where: { tenantId, type: "WHATSAPP", ...(externalId && { externalId }) }, select: { credentials: true } }),
     );
     return channels.flatMap((channel) => instanceOf(this.connectors, channel.credentials) ?? []);
@@ -452,8 +451,7 @@ export class IntegrationsService {
   }
 
   rename(auth: RequestAuth, tenantId: string, channelId: string, name: string): Promise<IntegrationDto> {
-    requireTenantAdmin(auth, tenantId);
-    return this.db.withTenants({ tenantIds: [tenantId], userId: auth.userId }, async (tx) => {
+    return this.db.withTenants(adminScope(auth, tenantId), async (tx) => {
       const channel = await tx.channel.findFirst({
         where: { id: channelId, tenantId, deletedAt: null, type: { in: [...INTEGRATION_TYPES] } },
         select: { id: true },
@@ -464,8 +462,7 @@ export class IntegrationsService {
   }
 
   private async turnOff(auth: RequestAuth, tenantId: string, channelId: string, extra: { deletedAt?: Date }): Promise<IntegrationDto> {
-    requireTenantAdmin(auth, tenantId);
-    const { saved, instance } = await this.db.withTenants({ tenantIds: [tenantId], userId: auth.userId }, async (tx) => {
+    const { saved, instance } = await this.db.withTenants(adminScope(auth, tenantId), async (tx) => {
       const channel = await tx.channel.findFirst({
         where: { id: channelId, tenantId, deletedAt: null, type: { in: [...INTEGRATION_TYPES] } },
         select: { id: true, credentials: true },

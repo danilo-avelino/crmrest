@@ -23,7 +23,7 @@ import { Injectable } from "@nestjs/common";
 import type { RequestAuth } from "../auth/auth.decorators.js";
 import { DatabaseService } from "../core/database.service.js";
 import { notificationChannelOf } from "../notifications/admin-notifications.service.js";
-import { isTenantAdmin, requireTenantAdmin } from "./tenant-admin.js";
+import { adminScope, isTenantAdmin } from "./tenant-admin.js";
 
 /**
  * Configurações do restaurante editadas pelo painel: links do menu, personalidade e mensagens automáticas, horário de
@@ -96,8 +96,7 @@ export class SettingsService {
     tenantId: string,
     patch: Prisma.InputJsonObject | ((current: Prisma.JsonObject) => Prisma.InputJsonObject),
   ): Promise<TenantSettingsDto> {
-    requireTenantAdmin(auth, tenantId);
-    const tenant = await this.db.withTenants({ tenantIds: [tenantId], userId: auth.userId }, async (tx) => {
+    const tenant = await this.db.withTenants(adminScope(auth, tenantId), async (tx) => {
       const { settings } = await tx.tenant.findUniqueOrThrow({ where: { id: tenantId }, select: { settings: true } });
       const current = settings && typeof settings === "object" && !Array.isArray(settings) ? settings : {};
       const tenant = await tx.tenant.update({

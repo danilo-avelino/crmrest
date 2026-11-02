@@ -544,7 +544,7 @@ export class ContactsService {
 
 /** Ações sobre dados do cliente que só o admin do restaurante faz (unir, exportar, anonimizar). */
 function requireAdmin(auth: RequestAuth, tenantId: string): void {
-  if (auth.tenants.find((tenant) => tenant.id === tenantId)?.role !== "ADMIN") {
+  if (!isTenantAdmin(auth, tenantId)) {
     throw new ForbiddenException("Só administradores do restaurante podem fazer isso.");
   }
 }

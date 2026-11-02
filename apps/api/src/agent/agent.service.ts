@@ -23,7 +23,7 @@ import { ENV, type Env } from "../config/env.js";
 import { DatabaseService } from "../core/database.service.js";
 import { LlmClient } from "../ai/llm.client.js";
 import { markAccepted, markOnboardingStep, onboardingOf } from "../settings/onboarding.service.js";
-import { isTenantAdmin } from "../settings/tenant-admin.js";
+import { isTenantAdmin, memberScope } from "../settings/tenant-admin.js";
 import { type Decision, guard, TICKET_CONTACT } from "./agent-guard.js";
 import { GUIDE, STEP_LABEL } from "./guide.js";
 import { CARDAPIO_WEB_CREDENTIALS, type CardapioWebCredentials, cardapioWebRail, credentialsOf } from "./cardapio-web-rail.js";
@@ -209,9 +209,9 @@ export class AgentService {
   ) {}
 
   async start(auth: RequestAuth, tenantId: string, kind: AgentSessionKind): Promise<AgentSessionDto> {
-    if (!auth.scope.tenantIds.includes(tenantId)) throw new ForbiddenException("Sem acesso a este restaurante.");
+    const scope = memberScope(auth, tenantId);
     if (kind === "SETUP" && !isTenantAdmin(auth, tenantId)) throw new ForbiddenException("Só o administrador do restaurante faz a implantação.");
-    const session = await this.db.withTenants({ tenantIds: [tenantId], userId: auth.userId }, (tx) =>
+    const session = await this.db.withTenants(scope, (tx) =>
       tx.agentSession.create({ data: { tenantId, userId: auth.userId, kind, grantedHosts: [] } }),
     );
     return { id: session.id, tenantId, kind, status: session.status, createdAt: session.createdAt.toISOString() };

@@ -11,3 +11,18 @@ export function requireTenantAdmin(auth: RequestAuth, tenantId: string): void {
     throw new ForbiddenException("Só o administrador do restaurante altera as configurações.");
   }
 }
+
+/**
+ * Escopo de um restaurante vindo da requisição (URL, query, corpo), para `withTenants`. A RLS confia na lista que recebe:
+ * um id que não foi conferido abre outro restaurante, então nunca monte `{ tenantIds: [tenantId] }` à mão a partir dele.
+ */
+export function memberScope(auth: RequestAuth, tenantId: string) {
+  if (!auth.scope.tenantIds.includes(tenantId)) throw new ForbiddenException("Sem acesso a este restaurante.");
+  return { tenantIds: [tenantId], userId: auth.userId };
+}
+
+/** Como `memberScope`, para o que só o administrador do restaurante faz. */
+export function adminScope(auth: RequestAuth, tenantId: string) {
+  requireTenantAdmin(auth, tenantId);
+  return { tenantIds: [tenantId], userId: auth.userId };
+}

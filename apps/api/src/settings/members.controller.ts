@@ -23,7 +23,7 @@ import { hasSupabaseAuth, sendInviteEmail, type SupabaseEnv } from "../auth/supa
 import { ZodPipe } from "../common/zod.pipe.js";
 import { ENV, type Env } from "../config/env.js";
 import { DatabaseService } from "../core/database.service.js";
-import { requireTenantAdmin } from "./tenant-admin.js";
+import { adminScope, memberScope } from "./tenant-admin.js";
 
 /**
  * Usuários do restaurante (Configurações → Usuários): a equipe vê quem tem acesso; o administrador cria acessos (com
@@ -41,8 +41,7 @@ export class MembersController {
 
   @Get()
   list(@Param("tenantId", ParseUUIDPipe) tenantId: string, @CurrentAuth() auth: RequestAuth): Promise<TeamMemberDto[]> {
-    if (!auth.scope.tenantIds.includes(tenantId)) throw new ForbiddenException("Sem acesso a este restaurante.");
-    return this.db.withTenants({ tenantIds: [tenantId], userId: auth.userId }, (tx) => members(tx, tenantId, auth.userId));
+    return this.db.withTenants(memberScope(auth, tenantId), (tx) => members(tx, tenantId, auth.userId));
   }
 
   /**
@@ -56,12 +55,12 @@ export class MembersController {
     @Body(new ZodPipe(CreateMemberRequest)) body: CreateMemberRequest,
     @CurrentAuth() auth: RequestAuth,
   ): Promise<TeamMemberDto[]> {
-    requireTenantAdmin(auth, tenantId);
+    const scope = adminScope(auth, tenantId);
     const invite = body.password === undefined;
     const env = invite ? this.inviteEnv() : null;
     const passwordHash = await hash(body.password ?? randomBytes(32).toString("base64url"));
     const newUserId = randomUUID();
-    const { list, created, pending } = await this.db.withTenants({ tenantIds: [tenantId], userId: auth.userId }, async (tx) => {
+    const { list, created, pending } = await this.db.withTenants(scope, async (tx) => {
       const existing = await tx.user.findFirst({ where: { email: body.email }, select: { id: true } });
       if (existing?.id === auth.userId) throw new ForbiddenException("Peça a outro administrador para alterar o seu acesso.");
       const [row] = await tx.$queryRaw<{ id: string }[]>`
@@ -94,9 +93,9 @@ export class MembersController {
     @Param("userId", ParseUUIDPipe) userId: string,
     @CurrentAuth() auth: RequestAuth,
   ): Promise<void> {
-    requireTenantAdmin(auth, tenantId);
+    const scope = adminScope(auth, tenantId);
     const env = this.inviteEnv();
-    const member = await this.db.withTenants({ tenantIds: [tenantId], userId: auth.userId }, (tx) =>
+    const member = await this.db.withTenants(scope, (tx) =>
       tx.tenantMember.findFirst({
         where: { tenantId, userId, OR: [{ isActive: true }, { invitePending: true }] },
         select: { user: { select: { email: true } } },
@@ -113,9 +112,9 @@ export class MembersController {
     @Body(new ZodPipe(UpdateMemberRequest)) body: UpdateMemberRequest,
     @CurrentAuth() auth: RequestAuth,
   ): Promise<TeamMemberDto[]> {
-    requireTenantAdmin(auth, tenantId);
+    const scope = adminScope(auth, tenantId);
     if (userId === auth.userId) throw new ForbiddenException("Peça a outro administrador para alterar o seu acesso.");
-    return this.db.withTenants({ tenantIds: [tenantId], userId: auth.userId }, async (tx) => {
+    return this.db.withTenants(scope, async (tx) => {
       const pending = await tx.tenantMember.count({ where: { tenantId, userId, invitePending: true } });
       if (pending && body.isActive) {
         throw new UnprocessableEntityException('Esta pessoa ainda não aceitou o convite. Use "Enviar convite" para mandar o e-mail de novo.');

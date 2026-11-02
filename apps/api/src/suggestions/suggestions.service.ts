@@ -1,9 +1,10 @@
 import { SUGGESTION_SUBJECTS, type SuggestionSubject } from "@dishdesk/shared";
-import { ForbiddenException, Injectable, Logger } from "@nestjs/common";
+import { Injectable, Logger } from "@nestjs/common";
 import { z } from "zod";
 import type { RequestAuth } from "../auth/auth.decorators.js";
 import { DatabaseService } from "../core/database.service.js";
 import { LlmClient } from "../ai/llm.client.js";
+import { memberScope } from "../settings/tenant-admin.js";
 
 const Classification = z.object({ subject: z.enum(Object.keys(SUGGESTION_SUBJECTS) as [SuggestionSubject, ...SuggestionSubject[]]) });
 
@@ -27,8 +28,7 @@ export class SuggestionsService {
   ) {}
 
   async create(auth: RequestAuth, tenantId: string, text: string): Promise<void> {
-    if (!auth.scope.tenantIds.includes(tenantId)) throw new ForbiddenException("Sem acesso a este restaurante.");
-    const scope = { tenantIds: [tenantId], userId: auth.userId };
+    const scope = memberScope(auth, tenantId);
     const { id } = await this.db.withTenants(scope, (tx) =>
       tx.productSuggestion.create({ data: { tenantId, userId: auth.userId, text }, select: { id: true } }),
     );
