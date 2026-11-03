@@ -110,7 +110,8 @@ Pagamento pendente (Claude, 11/10): a renovação do mensal tem 1 dia de folga; 
 ## 3. Riscos no código
 
 - [ ] **Prevenção de fraude (E40): testar com a API real do Cardápio Web.** O cancelamento (`POST /orders/{id}/cancel`) e o histórico (`GET /orders/history`) foram feitos pela documentação e só rodaram contra uma API falsa. A documentação se contradiz sobre até quando o histórico volta (1 ou 3 anos): a importação tenta 3 anos e para quando a API recusar.
-- [ ] **Prevenção de fraude (E40): ligar o cancelamento do iFood.** Decidido em 03/11: pôr `IFOOD_ORDER_CANCEL=true` na `api` da Railway. O alerta passa a cancelar pelo Dish Desk, sem liberar confirmar, marcar pronto nem despachar. Sem ela, o alerta aparece, mas manda cancelar no Gestor de Pedidos. Ver o E40 no [ROADMAP.md](../ROADMAP.md).
+- [x] **Prevenção de fraude (E40): ligar o cancelamento do iFood.** `IFOOD_ORDER_CANCEL=true` na `api` da Railway — Claude, 03/11. O alerta cancela pelo Dish Desk, sem liberar confirmar, marcar pronto nem despachar. Ver o E40 no [ROADMAP.md](../ROADMAP.md).
+- [ ] **Prevenção de fraude (E40): cancelar um pedido real do iFood pelo Dish Desk.** Até aqui, só com API falsa. A documentação do iFood avisa que cancelamentos em excesso geram penalidades, como fechar a loja temporariamente — você e Claude.
 
 - [ ] **Token do WhatsApp sem renovação.** O cadastro incorporado usa o modelo "token de 60 dias".
   - [x] Job diário (4h) que confere o token na Meta (`debug_token`): recusado, o canal fica "Com erro"; permanente, nada muda; de 60 dias, grava o vencimento e renova com `fb_exchange_token` + `set_token_expires_in_60_days` quando tem mais de 7 dias. Integrações e a Inbox avisam "vence em N dias" a partir de 10 dias do fim (WhatsApp e Instagram) — Claude, 21/10. Testado com a Meta simulada.

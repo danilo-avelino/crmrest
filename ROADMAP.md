@@ -13,7 +13,7 @@ Conferida no código. **✅ Feito** quer dizer que o épico está no código. **
 | Fase | Feito | Falta |
 |---|---|---|
 | **1 — MVP, com a IA no atendimento** | E1–E11, E27–E29 | **E12:** backup diário (o Supabase está no plano Free). Sentry (api e web) e Bull Board estão no ar desde 30/10/2026. |
-| **2 — Pós-MVP** | E13–E15, E17, E26, E30 | **E16:** entrar no painel de um restaurante para suporte (impersonação auditada). **E18:** Inbox para tablet. **E32–E39:** reputação e avaliações. **E40 (parcial):** no código desde 02/11/2026; falta ligar o cancelamento do iFood em produção e testar com a API real do Cardápio Web. |
+| **2 — Pós-MVP** | E13–E15, E17, E26, E30 | **E16:** entrar no painel de um restaurante para suporte (impersonação auditada). **E18:** Inbox para tablet. **E32–E39:** reputação e avaliações. **E40 (parcial):** no código desde 02/11/2026; falta testar com a API real do Cardápio Web e com um pedido real do iFood. |
 | **3 — Campanhas** | — | **E19:** os módulos já são ligados por restaurante pela plataforma; falta o estado bloqueado do módulo Campanhas. **E25:** a assinatura do Dish Desk pela Stripe existe; falta a cobrança do módulo. **E20–E24:** não começaram. |
 | **4 — Agente de implantação e suporte** | — | **E31:** falta o teste com o Chrome de verdade. |
 
@@ -351,11 +351,13 @@ O alerta na Inbox (board "Prevenção de fraude · Inbox e Landing"): o pedido d
 
 #### E40 — Prevenção de fraude: histórico completo e cancelamento em todas as integrações · **G** · depende de: E7, integração do Cardápio Web · **🟡 Parcial**
 - **Falta:**
-  - **Cancelamento do iFood em produção:** tem trava própria, `IFOOD_ORDER_CANCEL`, desligada por padrão; ligada, libera só o cancelamento, sem confirmar, marcar pronto, despachar nem responder negociação, que seguem em `IFOOD_ORDER_ACTIONS`. O usuário decidiu ligar em 03/11/2026, na `api` da Railway. Desligada, o alerta manda cancelar no Gestor de Pedidos.
   - **Testar com a API real do Cardápio Web:** o cancelamento e o histórico de pedidos só rodaram contra uma API falsa, feita a partir da documentação. Da última vez, a API real tinha limites que a documentação não contava.
-  - **iFood:** conferir na referência da API, num navegador, se há como consultar pedidos antigos da loja; a tela diz que não há. Em 02/11, sem acesso direto às páginas (403), a busca não achou listagem por loja, e o guia de boas práticas, visto só em resumo, pede para não consultar pedido depois de 8 horas da entrega. Isso não prova que não exista.
+  - **iFood real:** cancelar um pedido de uma loja real pelo Dish Desk. Até aqui, só com API falsa.
   - **Anota AI:** nasce com o histórico e o cancelamento, se a API permitir, quando a integração existir.
-- **Decidido ao implementar (02/11/2026):**
+- **Decidido ao implementar (02 e 03/11/2026):**
+  - **Cancelamento do iFood:** tem trava própria, `IFOOD_ORDER_CANCEL`, ligada na `api` da Railway em 03/11/2026 por decisão do usuário. Ela libera só o cancelamento; confirmar, marcar pronto, despachar e responder negociação seguem em `IFOOD_ORDER_ACTIONS`. A documentação do iFood avisa que cancelamentos em excesso geram penalidades, como fechar a loja temporariamente.
+  - **Pedidos antigos do iFood:** o módulo Order só tem consulta por id e os eventos do polling, sem listagem por loja (conferido na documentação em 03/11/2026). Por isso não há importação.
+  - **Recurso no iFood:** a API não tem rota para recorrer de cancelamento. Só existe a Plataforma de Negociação, para o que o cliente abre: aceitar, recusar ou contraproposta. A contraproposta não foi feita no Dish Desk.
   - **Endereço:** condomínio, bloco e apartamento são procurados em todos os campos, não só no complemento, em qualquer ordem e abreviação ([address-key.ts](apps/api/src/orders/address-key.ts)). Bairro e CEP não entram, porque a grafia varia entre os sistemas.
   - **Pedido sem conversa:** como iFood e Cardápio Web não abrem conversa, é o caso mais comum. Abre uma conversa só da equipe, em que só cabem notas. Se o cliente escrever no chat do iFood, ela vira uma conversa normal.
   - **Marcar como fraude:** vale também para pedido já cancelado e pode ser removida. Decisão do usuário: pedido que não foi cancelado não fica marcado. No Cardápio Web, a marca vale na hora, porque a API confirma o cancelamento na resposta. No iFood, a marca só vale quando ele confirmar; se recusar, o pedido volta a ter alerta, sem marca.
