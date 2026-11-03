@@ -18,6 +18,7 @@ import { type ReactNode, useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
 import { ClientAvatar, lastListHref, SectionLabel, useDuplicates, useIsAdmin } from "@/components/clients/bits";
 import { AnonymizeDialog, ExportDialog } from "@/components/clients/lgpd-dialogs";
+import { CustomerCancellationsCard } from "@/components/orders/fraud-alert";
 import { CHANNEL_DOT, StatusBadge } from "@/components/inbox/bits";
 import { Cpf, linkedChannels, Tags } from "@/components/inbox/client-panel";
 import { ORDER_STATUS } from "@/components/inbox/order-card";
@@ -233,6 +234,7 @@ export function ClientDetail({ id, onClose }: { id: string; onClose?: () => void
             <Metric label="Total gasto">{currencyWhole(data.metrics.ordersTotal)}</Metric>
             <Metric label="Cliente há">{duration(data.firstSeenAt, now)}</Metric>
           </div>
+          <CustomerCancellationsCard cancellations={data.cancellations} />
 
           <div role="tablist" className="mb-4 flex border-b border-rule-soft">
             <TabButton active={tab === "conversations"} count={data.conversationsCount} onClick={() => setTab("conversations")}>

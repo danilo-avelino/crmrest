@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
-import { blindIndex, decrypt, encrypt, parseEncryptionKey } from "@dishdesk/database";
+import { blindIndex, decrypt, encrypt, parseEncryptionKey, type TenantTx } from "@dishdesk/database";
 import { getQueueToken } from "@nestjs/bullmq";
 import type { INestApplication } from "@nestjs/common";
 import type { Queue } from "bullmq";
@@ -11,6 +11,7 @@ import { ENV } from "../src/config/env.js";
 import { IfoodAuthService } from "../src/connectors/ifood-auth.service.js";
 import { IfoodService } from "../src/inbound/ifood.service.js";
 import { QUEUES } from "../src/queues/queues.module.js";
+import { openIfoodConversation } from "../src/conversations/ifood-conversation.js";
 import { accessTokenFor, admin, createChannelFixture, createTestApp } from "./helpers.js";
 
 /** Merchant API falsa: token, polling (eventos na fila), detalhes do pedido e confirmação. */
@@ -568,13 +569,13 @@ describe("iFood (pedidos por polling)", () => {
     it("cancelar: mostra os motivos do iFood e pede o cancelamento com o escolhido", async () => {
       const order = await orderOf("pedido-6");
       const reasons = () => request(app.getHttpServer()).get(`/api/orders/${order.id}/cancellation-reasons`).set("Authorization", `Bearer ${token}`);
-      expect((await reasons().expect(200)).body).toEqual({ reasons: [] }); // o iFood não deixa cancelar agora
+      expect((await reasons().expect(200)).body).toMatchObject({ reasons: [], reasonMode: "list" }); // o iFood não deixa cancelar agora
 
       ifood.state.reasons = [
         { cancelCodeId: "501", description: "PROBLEMAS DE SISTEMA" },
         { cancelCodeId: "503", description: "ITEM INDISPONÍVEL" },
       ];
-      expect((await reasons().expect(200)).body).toEqual({
+      expect((await reasons().expect(200)).body).toMatchObject({
         reasons: [
           { code: "501", description: "PROBLEMAS DE SISTEMA" },
           { code: "503", description: "ITEM INDISPONÍVEL" },
@@ -585,7 +586,8 @@ describe("iFood (pedidos por polling)", () => {
       ifood.state.reasonsAsDocumented = false;
 
       await post(order.id, "cancel", { code: "999" }).expect(422);
-      await post(order.id, "cancel", {}).expect(400);
+      await post(order.id, "cancel", {}).expect(422);
+      await post(order.id, "cancel", { code: 503 }).expect(400);
       expect(ifood.state.cancellations).toEqual([]);
 
       await post(order.id, "cancel", { code: "503" }).expect(204);
@@ -596,6 +598,52 @@ describe("iFood (pedidos por polling)", () => {
       const canceled = await listed(order.id);
       expect(canceled).toMatchObject({ status: "CANCELED", nextAction: null, cancelable: false });
       expect(canceled.events.at(-1)).toMatchObject({ code: "CANCELLED", detail: "ITEM INDISPONÍVEL" });
+      expect(canceled.cancellation).toMatchObject({ reason: "ITEM INDISPONÍVEL", fraud: null });
+    });
+
+    it("cancelar com alerta de fraude: espera o iFood; se ele recusar, a decisão volta para a equipe; se confirmar, avisa o cliente", async () => {
+      ifood.state.reasons = [{ cancelCodeId: "503", description: "SUSPEITA DE GOLPE" }];
+      // Mesmo cliente de um pedido já cancelado: chega com o alerta e, sem conversa aberta, numa só da equipe.
+      await admin.conversation.updateMany({ where: { tenantId: fx.tenant.id }, data: { status: "RESOLVED" } });
+      const contact = (await orderOf("pedido-6")).contactId;
+      const customer = (await admin.contactIdentity.findFirstOrThrow({ where: { contactId: contact, channelType: "IFOOD" } })).externalId;
+      ifood.state.orders["pedido-alerta"] = ifoodOrder("pedido-alerta", "7700", customer);
+      await arrives("pedido-alerta", "PLACED");
+      const placed = await orderOf("pedido-alerta");
+      expect(placed.alertAt).toBeInstanceOf(Date);
+      const conversation = await admin.conversation.findUniqueOrThrow({ where: { id: placed.conversationId! } });
+      expect(conversation.teamOnly).toBe(true);
+
+      await post(placed.id, "cancel", { code: "503", markFraud: true }).expect(204);
+      // A marca só vale quando o iFood confirmar: por enquanto, nenhum pedido no mesmo endereço vê este.
+      expect((await listed(placed.id)).alert.decision).toMatchObject({ kind: "CANCELING", fraud: false });
+      expect(await orderOf("pedido-alerta")).toMatchObject({ status: "PLACED", fraudMarkedAt: null, fraudAddressKey: null });
+
+      await arrives("pedido-alerta", "CANCELLATION_REQUEST_FAILED");
+      const refused = await listed(placed.id);
+      expect(refused.status).toBe("PLACED");
+      expect(refused.alert.decision).toBeNull();
+      // Recusado: o pedido não foi cancelado, então não fica marcado.
+      expect(await orderOf("pedido-alerta")).toMatchObject({ fraudMarkedAt: null, fraudMarkedById: null, fraudAddressKey: null });
+      const last = await admin.message.findFirstOrThrow({ where: { conversationId: conversation.id }, orderBy: { createdAt: "desc" } });
+      expect(last.content).toMatchObject({ event: "order_cancel_refused", text: "O iFood recusou o cancelamento do pedido #7700. Ele continua ativo." });
+
+      // O cliente escreveu no chat do iFood: a conversa deixa de ser só da equipe e a mensagem de cancelamento vai para lá.
+      await post(placed.id, "cancel", { code: "503", markFraud: true }).expect(204);
+      await openIfoodConversation(admin as unknown as TenantTx, placed, new Date());
+      expect((await admin.conversation.findUniqueOrThrow({ where: { id: conversation.id } })).teamOnly).toBe(false);
+      await arrives("pedido-alerta", "CANCELLED", { CANCEL_REASON: "SUSPEITA DE GOLPE" });
+      const done = await orderOf("pedido-alerta");
+      expect(done).toMatchObject({ status: "CANCELED", cancellationReason: "SUSPEITA DE GOLPE" });
+      expect(done.canceledAt).toBeInstanceOf(Date);
+      expect((await listed(placed.id)).alert.decision).toMatchObject({ kind: "CANCELED", fraud: true });
+      // Confirmado: agora a marca vale, com o endereço, e aparece na conversa.
+      expect(done.fraudMarkedAt).toBeInstanceOf(Date);
+      expect(done.fraudMarkedById).not.toBeNull();
+      expect(done.fraudAddressKey).not.toBeNull();
+      const marked = await admin.message.findMany({ where: { conversationId: conversation.id, direction: "INTERNAL" } });
+      expect(marked.filter((message) => (message.content as { event?: string }).event === "fraud_marked")).toHaveLength(1);
+      ifood.state.reasons = [];
     });
 
     it("detalhe do pedido: pagamento com o troco, cupom e quem paga, código de coleta, documento da nota e observações", async () => {
@@ -733,6 +781,31 @@ describe("iFood (pedidos por polling)", () => {
         env.IFOOD_ORDER_ACTIONS = true;
       }
       expect((await listed(waiting.id)).dispute).toMatchObject({ answerable: true });
+    });
+
+    it("só a trava de cancelamento ligada: cancela, mas confirmar e as outras ações continuam recusadas", async () => {
+      const env = app.get<{ IFOOD_ORDER_ACTIONS: boolean; IFOOD_ORDER_CANCEL: boolean }>(ENV);
+      const order = await placed("pedido-12", "7008", "MERCHANT");
+      env.IFOOD_ORDER_ACTIONS = false;
+      try {
+        // As duas desligadas: cancelar é recusado.
+        expect(await listed(order.id)).toMatchObject({ nextAction: null, cancelable: false });
+        await post(order.id, "cancel", { code: "503" }).expect(422);
+        expect(ifood.state.cancellations.some((item) => (item as { orderId: string }).orderId === "pedido-12")).toBe(false);
+
+        env.IFOOD_ORDER_CANCEL = true;
+        ifood.state.reasons = [{ cancelCodeId: "503", description: "ITEM INDISPONÍVEL" }];
+        expect(await listed(order.id)).toMatchObject({ nextAction: null, cancelable: true });
+        const actions = ifood.state.actions.length;
+        expect((await post(order.id, "advance").expect(422)).body.message).toContain("só acompanha os pedidos do iFood");
+        expect(ifood.state.actions).toHaveLength(actions);
+        await request(app.getHttpServer()).get(`/api/orders/${order.id}/cancellation-reasons`).set("Authorization", `Bearer ${token}`).expect(200);
+        await post(order.id, "cancel", { code: "503" }).expect(204);
+        expect(ifood.state.cancellations.some((item) => (item as { orderId: string }).orderId === "pedido-12")).toBe(true);
+      } finally {
+        env.IFOOD_ORDER_CANCEL = false;
+        env.IFOOD_ORDER_ACTIONS = true;
+      }
     });
 
     it("o iFood recusa a etapa: o painel recebe o motivo, sem erro interno", async () => {

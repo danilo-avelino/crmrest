@@ -120,6 +120,17 @@ export class IntegrationsController {
   }
 
   /** WhatsApp ou Instagram: restaurantes, além deste, cujos pedidos o atendimento da conta também procura. */
+  /** Cardápio Web: importa em segundo plano os cancelamentos antigos da loja, para o alerta de fraude. */
+  @Post(":tenantId/:channelId/order-history")
+  @HttpCode(200)
+  importOrderHistory(
+    @Param("tenantId", ParseUUIDPipe) tenantId: string,
+    @Param("channelId", ParseUUIDPipe) channelId: string,
+    @CurrentAuth() auth: RequestAuth,
+  ): Promise<IntegrationDto> {
+    return this.integrations.importOrderHistory(auth, tenantId, channelId);
+  }
+
   @Patch(":tenantId/:channelId/served-tenants")
   setServedTenants(
     @Param("tenantId", ParseUUIDPipe) tenantId: string,

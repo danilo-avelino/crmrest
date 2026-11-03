@@ -13,7 +13,7 @@ Conferida no código. **✅ Feito** quer dizer que o épico está no código. **
 | Fase | Feito | Falta |
 |---|---|---|
 | **1 — MVP, com a IA no atendimento** | E1–E11, E27–E29 | **E12:** backup diário (o Supabase está no plano Free). Sentry (api e web) e Bull Board estão no ar desde 30/10/2026. |
-| **2 — Pós-MVP** | E13–E15, E17, E26, E30 | **E16:** entrar no painel de um restaurante para suporte (impersonação auditada). **E18:** Inbox para tablet. **E32–E39:** reputação e avaliações. **E40:** prevenção de fraude com o histórico importado e o cancelamento em todas as integrações. |
+| **2 — Pós-MVP** | E13–E15, E17, E26, E30 | **E16:** entrar no painel de um restaurante para suporte (impersonação auditada). **E18:** Inbox para tablet. **E32–E39:** reputação e avaliações. **E40 (parcial):** no código desde 02/11/2026; falta ligar o cancelamento do iFood em produção e testar com a API real do Cardápio Web. |
 | **3 — Campanhas** | — | **E19:** os módulos já são ligados por restaurante pela plataforma; falta o estado bloqueado do módulo Campanhas. **E25:** a assinatura do Dish Desk pela Stripe existe; falta a cobrança do módulo. **E20–E24:** não começaram. |
 | **4 — Agente de implantação e suporte** | — | **E31:** falta o teste com o Chrome de verdade. |
 
@@ -347,9 +347,25 @@ Problema: menos de 5% dos pedidos do iFood recebem avaliação. Quem teve proble
 **Ordem sugerida (reputação):** `E32 Convite → E33 Avisos para todos → E34 Alerta negativo + E35 Resumo diário → E36 Google → E37 Salão → E38 Assistente`. O E33 aproveita o trabalho do E32 na extensão. O E34 e o E35 entram assim que o módulo Review for homologado. O **E39 (comentários do Instagram)** não depende dos outros e pode entrar assim que a Meta aprovar a permissão de comentários.
 
 ### Prevenção de fraude (E40)
-A base é o alerta na Inbox (board "Prevenção de fraude · Inbox e Landing", em 01/11/2026): o pedido de um cliente que já cancelou algum pedido abre a conversa com o alerta, o pedido e a lista de cancelamentos; o atendente decide entre manter e cancelar. O E40 junta o que falta para o alerta valer em todas as integrações.
+O alerta na Inbox (board "Prevenção de fraude · Inbox e Landing"): o pedido de um cliente que já cancelou algum pedido abre a conversa com o alerta, o pedido e a lista de cancelamentos; o atendente decide entre manter e cancelar. A tag manual "Cancelamento recorrente" continua existindo, à parte.
 
-#### E40 — Prevenção de fraude: histórico completo e cancelamento em todas as integrações · **G** · depende de: o alerta na Inbox, E7, integração do Cardápio Web · **⬜ A fazer**
+#### E40 — Prevenção de fraude: histórico completo e cancelamento em todas as integrações · **G** · depende de: E7, integração do Cardápio Web · **🟡 Parcial**
+- **Falta:**
+  - **Cancelamento do iFood em produção:** tem trava própria, `IFOOD_ORDER_CANCEL`, desligada por padrão; ligada, libera só o cancelamento, sem confirmar, marcar pronto, despachar nem responder negociação, que seguem em `IFOOD_ORDER_ACTIONS`. O usuário decidiu ligar em 03/11/2026, na `api` da Railway. Desligada, o alerta manda cancelar no Gestor de Pedidos.
+  - **Testar com a API real do Cardápio Web:** o cancelamento e o histórico de pedidos só rodaram contra uma API falsa, feita a partir da documentação. Da última vez, a API real tinha limites que a documentação não contava.
+  - **iFood:** conferir na referência da API, num navegador, se há como consultar pedidos antigos da loja; a tela diz que não há. Em 02/11, sem acesso direto às páginas (403), a busca não achou listagem por loja, e o guia de boas práticas, visto só em resumo, pede para não consultar pedido depois de 8 horas da entrega. Isso não prova que não exista.
+  - **Anota AI:** nasce com o histórico e o cancelamento, se a API permitir, quando a integração existir.
+- **Decidido ao implementar (02/11/2026):**
+  - **Endereço:** condomínio, bloco e apartamento são procurados em todos os campos, não só no complemento, em qualquer ordem e abreviação ([address-key.ts](apps/api/src/orders/address-key.ts)). Bairro e CEP não entram, porque a grafia varia entre os sistemas.
+  - **Pedido sem conversa:** como iFood e Cardápio Web não abrem conversa, é o caso mais comum. Abre uma conversa só da equipe, em que só cabem notas. Se o cliente escrever no chat do iFood, ela vira uma conversa normal.
+  - **Marcar como fraude:** vale também para pedido já cancelado e pode ser removida. Decisão do usuário: pedido que não foi cancelado não fica marcado. No Cardápio Web, a marca vale na hora, porque a API confirma o cancelamento na resposta. No iFood, a marca só vale quando ele confirmar; se recusar, o pedido volta a ter alerta, sem marca.
+  - **Histórico importado:** só os cancelados do Cardápio Web, até 3 anos ou até a API recusar o período. Eles não entram nos relatórios, nas tags, nos totais da lista de Clientes nem em "Chateados". Cada pedido exige uma consulta, por isso só os cancelados: isso substitui, para este caso, a decisão de 07/10 de não contar pedido a pedido.
+  - **Progresso e aviso da importação:** mostra os cancelamentos importados e o período percorrido, porque a API não informa o total de pedidos. O aviso de fim só aparece com a tela aberta: o produto não tem e-mail nem sino para isso.
+  - **Cancelado fora do Dish Desk:** a linha só aparece sem decisão da equipe e sem pedido de cancelamento no histórico do pedido. Na dúvida, não aparece. Um pedido antigo cancelado pela equipe, sem esse evento, ainda pode mostrá-la.
+  - **Lista de Clientes:** Pedidos, Total e a ordenação por pedidos deixam de fora os cancelados e os importados, como o detalhe. O detalhe também soma cadastros ligados por telefone, CPF ou e-mail; a lista conta só o próprio cadastro, por decisão do usuário.
+  - **Bloco do endereço:** mostra data, motivo e quem marcou, sem nome, telefone nem itens do outro cliente.
+  - **LGPD:** anonimizar o cliente apaga o endereço marcado e o motivo; a marca deixa de valer para aquele endereço.
+  - **Só contadores:** o estado do board para fontes que só têm totais não foi feito, porque nenhuma integração atual é assim.
 - **Decidido em 01/11/2026:**
   - **Quando dispara:** um cancelamento no histórico já basta, sem janela de tempo (golpista não costuma pedir várias vezes seguidas). Quem decide se o pedido segue é o atendente.
   - **Qualquer histórico conta:** o do Dish Desk, de todas as fontes ligadas ao cliente (telefone, CPF, e-mail; [customer-history.ts](apps/api/src/orders/customer-history.ts)), e o que vier importado de uma integração.
@@ -368,9 +384,6 @@ A base é o alerta na Inbox (board "Prevenção de fraude · Inbox e Landing", e
   - **Anota AI:** mesma conferência quando a integração existir.
 - Como cliente, quero receber a mensagem de cancelamento no tom da personalidade do restaurante (CLAUDE.md §10), na conversa do canal de onde o pedido veio.
 - A definir:
-  - como normalizar o endereço de cada integração (iFood, Cardápio Web) para a comparação exata, já que cada uma manda os campos de um jeito;
-  - se o atendente pode marcar como fraude um pedido que já estava cancelado (por exemplo, um do histórico);
-  - se o alerta também aparece para pedidos que chegam sem conversa aberta (por exemplo, um pedido do iFood sem chat), abrindo a conversa só para a equipe;
   - **mobile e tablet:** o alerta e o painel do pedido entram na Inbox para tablet (E18) e na versão mobile, depois do MVP.
 
 #### E30 — Assistente de configuração (primeiro acesso) · **M** · depende de: E14, E15 · **✅ Feito**

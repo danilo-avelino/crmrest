@@ -3,23 +3,27 @@ import {
   CancelOrderRequest,
   type CurrentOrderDto,
   type OrderAction,
-  type OrderCancellationReason,
+  type OrderCancellationOptions,
   type OrderCustomerChat,
   OrderListQuery,
   type OrderPage,
   type OrderStageCounts,
 } from "@dishdesk/shared";
-import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Post, Query } from "@nestjs/common";
+import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Post, Query } from "@nestjs/common";
 import { z } from "zod";
 import { CurrentAuth, type RequestAuth } from "../auth/auth.decorators.js";
 import { ZodPipe } from "../common/zod.pipe.js";
+import { FraudService } from "./fraud.service.js";
 import { OrdersService } from "./orders.service.js";
 
 const ForecastQuery = z.object({ conversationId: z.uuid().optional() });
 
 @Controller("orders")
 export class OrdersController {
-  constructor(private readonly orders: OrdersService) {}
+  constructor(
+    private readonly orders: OrdersService,
+    private readonly fraud: FraudService,
+  ) {}
 
   @Get()
   list(@Query(new ZodPipe(OrderListQuery)) query: OrderListQuery, @CurrentAuth() auth: RequestAuth): Promise<OrderPage> {
@@ -58,7 +62,7 @@ export class OrdersController {
   }
 
   @Get(":id/cancellation-reasons")
-  cancellationReasons(@Param("id", ParseUUIDPipe) id: string, @CurrentAuth() auth: RequestAuth): Promise<{ reasons: OrderCancellationReason[] }> {
+  cancellationReasons(@Param("id", ParseUUIDPipe) id: string, @CurrentAuth() auth: RequestAuth): Promise<OrderCancellationOptions> {
     return this.orders.cancellationReasons(auth, id);
   }
 
@@ -69,7 +73,27 @@ export class OrdersController {
     @Body(new ZodPipe(CancelOrderRequest)) body: CancelOrderRequest,
     @CurrentAuth() auth: RequestAuth,
   ): Promise<void> {
-    return this.orders.cancel(auth, id, body.code);
+    return this.orders.cancel(auth, id, body);
+  }
+
+  /** "Manter pedido" no alerta de fraude. */
+  @Post(":id/keep")
+  @HttpCode(204)
+  keep(@Param("id", ParseUUIDPipe) id: string, @CurrentAuth() auth: RequestAuth): Promise<void> {
+    return this.fraud.keep(auth, id);
+  }
+
+  /** Marca como fraude um pedido já cancelado. */
+  @Post(":id/fraud")
+  @HttpCode(204)
+  markFraud(@Param("id", ParseUUIDPipe) id: string, @CurrentAuth() auth: RequestAuth): Promise<void> {
+    return this.fraud.mark(auth, id);
+  }
+
+  @Delete(":id/fraud")
+  @HttpCode(204)
+  unmarkFraud(@Param("id", ParseUUIDPipe) id: string, @CurrentAuth() auth: RequestAuth): Promise<void> {
+    return this.fraud.unmark(auth, id);
   }
 
   @Post(":id/dispute")

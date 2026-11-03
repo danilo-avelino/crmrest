@@ -366,6 +366,13 @@ function History({ contact }: { contact: ContactDetail }) {
         {contact.metrics.ordersBySource.length > 1 && (
           <div className="mt-2 text-[11px] text-ink-3">{sourcesText({ bySource: contact.metrics.ordersBySource })}</div>
         )}
+        {contact.cancellations.canceledCount > 0 && (
+          <div className="mt-2 text-[11.5px] font-medium text-tomate tabular-nums">
+            {contact.cancellations.canceledCount} {contact.cancellations.canceledCount === 1 ? "cancelado" : "cancelados"}
+            {contact.cancellations.fraudCount > 0 &&
+              ` · ${contact.cancellations.fraudCount} ${contact.cancellations.fraudCount === 1 ? "marcado" : "marcados"} como fraude`}
+          </div>
+        )}
       </div>
       {contact.recentOrders.length > 0 && (
         <div className="flex flex-col gap-2 px-4 py-3">

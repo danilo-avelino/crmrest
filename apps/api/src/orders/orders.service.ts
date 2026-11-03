@@ -2,11 +2,13 @@ import type { Prisma, TenantTx } from "@dishdesk/database";
 import type { ChannelType, OrderStatus } from "@dishdesk/database/enums";
 import {
   type AnswerDisputeRequest,
+  type CancelOrderRequest,
   CHANNEL_LABEL,
   type CurrentOrderDto,
+  type CustomerCancellations,
   type CustomerHistory,
   type OrderAction,
-  type OrderCancellationReason,
+  type OrderCancellationOptions,
   type OrderCustomerChat,
   type OrderListQuery,
   type OrderPage,
@@ -16,6 +18,8 @@ import { Inject, Injectable, Logger, NotFoundException, UnprocessableEntityExcep
 import type { RequestAuth } from "../auth/auth.decorators.js";
 import { tenantSettings } from "../automations/automation.js";
 import { ENV, type Env } from "../config/env.js";
+import { CardapioWebClient } from "../connectors/cardapio-web.client.js";
+import { ConnectorsService } from "../connectors/connectors.service.js";
 import { IfoodAuthService } from "../connectors/ifood-auth.service.js";
 import { toOrderDto } from "../conversations/conversation.mapper.js";
 import { scopeFor } from "../conversations/conversations.service.js";
@@ -23,6 +27,10 @@ import { openIfoodConversation } from "../conversations/ifood-conversation.js";
 import { DatabaseService } from "../core/database.service.js";
 import { RealtimeEmitter } from "../realtime/realtime.emitter.js";
 import { periodStart } from "../reports/reports.service.js";
+import { addressText } from "./address-key.js";
+import { customerCancellations, orderAlert, toCanceledRow } from "./fraud-alert.js";
+import { FraudService } from "./fraud.service.js";
+import { OrderNoticeService } from "./order-notice.service.js";
 import { forecastOrder, isTakeout, orderUpdateMessage, PlatformOrder, promisedAt, STALE_MS } from "./forecast.js";
 import { customerHistory } from "./customer-history.js";
 import { eventDetail, openDispute, platformInfo } from "./ifood-order.js";
@@ -37,13 +45,31 @@ const IN_PRODUCTION: OrderStatus[] = ["PLACED", "CONFIRMED", "PREPARING", "READY
 @Injectable()
 export class OrdersService {
   private readonly logger = new Logger(OrdersService.name);
+  private readonly cardapioWeb: CardapioWebClient;
 
   constructor(
     private readonly db: DatabaseService,
     private readonly realtime: RealtimeEmitter,
     private readonly ifood: IfoodAuthService,
+    private readonly connectors: ConnectorsService,
+    private readonly fraud: FraudService,
+    private readonly notices: OrderNoticeService,
     @Inject(ENV) private readonly env: Env,
-  ) {}
+  ) {
+    this.cardapioWeb = new CardapioWebClient(env);
+  }
+
+  /** Cancelar pedido do iFood: liberado pela trava própria (IFOOD_ORDER_CANCEL) ou pela das ações em geral. */
+  private ifoodCancelOn(): boolean {
+    return this.env.IFOOD_ORDER_CANCEL || this.env.IFOOD_ORDER_ACTIONS;
+  }
+
+  /** Dá para cancelar o pedido pelo Dish Desk? iFood: com a trava ligada (senão, o Dish Desk só acompanha). */
+  private canCancel(order: { status: OrderStatus; channel: { type: ChannelType } }): boolean {
+    if (!CANCELABLE.has(order.status)) return false;
+    if (order.channel.type === "IFOOD") return this.ifoodCancelOn() && this.ifood.configured;
+    return order.channel.type === "CARDAPIO_WEB" && this.cardapioWeb.configured;
+  }
 
   async list(auth: RequestAuth, query: OrderListQuery, now = new Date()): Promise<OrderPage> {
     const where: Prisma.OrderWhereInput = {
@@ -53,7 +79,7 @@ export class OrdersService {
       ...(query.production && { status: { in: IN_PRODUCTION }, dispatchedAt: null }),
     };
     const sort = query.production ? "asc" : "desc";
-    const [rows, total, histories, late] = await this.db.withTenants(scopeFor(auth, query.tenantId), async (tx) => {
+    const [rows, total, histories, late, alerts, cancellations] = await this.db.withTenants(scopeFor(auth, query.tenantId), async (tx) => {
       const [rows, total] = await Promise.all([
         tx.order.findMany({
           where,
@@ -63,6 +89,8 @@ export class OrdersService {
             tenant: { select: { id: true, name: true } },
             contact: { select: { id: true, name: true, phone: true, phoneSource: true, cpfHash: true, email: true } },
             events: { orderBy: { occurredAt: "asc" }, select: { code: true, occurredAt: true, metadata: true } },
+            alertDecidedBy: { select: { name: true } },
+            fraudMarkedBy: { select: { name: true } },
           },
           orderBy: [{ placedAt: sort }, { id: sort }],
           skip: (query.page - 1) * PAGE_SIZE,
@@ -84,7 +112,13 @@ export class OrdersService {
         const promised = promisedAt(order.raw);
         if (forecast ? forecast.late : promised !== null && promised < now) late.add(order.id);
       }
-      return [rows, total, histories, late] as const;
+      const alerts = new Map<string, Awaited<ReturnType<typeof orderAlert>>>();
+      const cancellations = new Map<string, CustomerCancellations>();
+      for (const order of rows) {
+        if (!cancellations.has(order.contact.id)) cancellations.set(order.contact.id, await customerCancellations(tx, order.contact));
+        alerts.set(order.id, await orderAlert(tx, order, order.contact, true));
+      }
+      return [rows, total, histories, late, alerts, cancellations] as const;
     });
     return {
       items: rows.map((order) => {
@@ -103,15 +137,23 @@ export class OrdersService {
           store: order.channel.name,
           contact: { id: order.contact.id, name: order.contact.name },
           history: histories.get(order.contact.id)!,
-          events: order.events.map((event) => ({ code: event.code, occurredAt: event.occurredAt.toISOString(), detail: eventDetail(event) })),
+          events: order.events.map((event) => ({
+            code: event.code,
+            occurredAt: event.occurredAt.toISOString(),
+            // O Cardápio Web informa o motivo só nos detalhes do pedido, não na etapa.
+            detail: eventDetail(event) ?? (event.code === "CANCELLED" ? order.cancellationReason : null),
+          })),
           preparationSeconds: confirmed && ready ? Math.round((ready.getTime() - confirmed.getTime()) / 1000) : null,
           readySkipped: Boolean(confirmed && !marked && order.dispatchedAt),
           takeout: isTakeout(order.raw),
           late: late.has(order.id),
           nextAction: actions ? nextOrderAction(order) : null,
-          cancelable: actions && CANCELABLE.has(order.status),
+          cancelable: this.canCancel(order),
           platform: ifood ? platformInfo(order.raw) : null,
           dispute: dispute && { ...dispute, answerable: actions },
+          alert: alerts.get(order.id) ?? null,
+          cancellation: order.status === "CANCELED" ? { ...toCanceledRow(order), outsideAt: canceledOutsideAt(order) } : null,
+          customerCanceled: cancellations.get(order.contact.id)!.canceledCount,
         };
       }),
       total,
@@ -158,7 +200,8 @@ export class OrdersService {
 
   /**
    * Botão do pedido: informa ao iFood a próxima etapa. O status só muda quando o evento do iFood chega pelo polling.
-   * Esta e as outras ações do pedido só existem com a trava IFOOD_ORDER_ACTIONS ligada.
+   * Esta e as outras ações do pedido só existem com a trava IFOOD_ORDER_ACTIONS ligada (o cancelamento tem também a
+   * IFOOD_ORDER_CANCEL).
    */
   async advance(auth: RequestAuth, orderId: string): Promise<{ action: OrderAction }> {
     const order = await this.ifoodOrder(auth, orderId);
@@ -168,20 +211,78 @@ export class OrdersService {
     return { action };
   }
 
-  /** Motivos que o iFood aceita para cancelar o pedido agora (lista vazia: não dá para cancelar). */
-  async cancellationReasons(auth: RequestAuth, orderId: string): Promise<{ reasons: OrderCancellationReason[] }> {
-    const order = await this.ifoodOrder(auth, orderId);
+  /** O que o modal de cancelamento mostra: os motivos do iFood (lista vazia: não dá para cancelar agora) e a mensagem ao cliente. */
+  async cancellationReasons(auth: RequestAuth, orderId: string): Promise<OrderCancellationOptions> {
+    const type = await this.channelTypeOf(auth, orderId);
+    if (type !== "IFOOD") {
+      const order = await this.cardapioWebOrder(auth, orderId);
+      return {
+        reasons: [],
+        reasonMode: "text",
+        message: await this.notices.canceledPreview(order.tenantId, orderId),
+        address: addressText(order.deliveryAddress),
+      };
+    }
+    const order = await this.ifoodOrder(auth, orderId, true);
     const reasons = await this.askIfood(() => order.client.cancellationReasons(order.externalOrderId));
-    return { reasons };
+    return {
+      reasons,
+      reasonMode: "list",
+      message: await this.notices.canceledPreview(order.channel.tenantId, orderId),
+      address: addressText(order.deliveryAddress),
+    };
   }
 
-  /** Pede o cancelamento ao iFood com um dos motivos que ele ofereceu; o pedido vira cancelado quando o evento chega. */
-  async cancel(auth: RequestAuth, orderId: string, code: string): Promise<void> {
-    const order = await this.ifoodOrder(auth, orderId);
-    const reasons = await this.askIfood(() => order.client.cancellationReasons(order.externalOrderId));
-    const reason = reasons.find((item) => item.code === code);
-    if (!reason) throw new UnprocessableEntityException("O iFood não aceita este motivo para o pedido. Escolha outro.");
-    await this.askIfood(() => order.client.requestCancellation(order.externalOrderId, reason));
+  /**
+   * Cancela pelo Dish Desk. iFood: pede com um dos motivos que ele ofereceu, e o pedido vira cancelado (com a mensagem ao
+   * cliente) quando o evento chega. Cardápio Web: a API confirma na hora.
+   */
+  async cancel(auth: RequestAuth, orderId: string, body: CancelOrderRequest): Promise<void> {
+    const markFraud = body.markFraud ?? false;
+    if ((await this.channelTypeOf(auth, orderId)) === "IFOOD") {
+      const order = await this.ifoodOrder(auth, orderId, true);
+      const reasons = await this.askIfood(() => order.client.cancellationReasons(order.externalOrderId));
+      const reason =reasons.find((item) => item.code === body.code);
+      if (!reason) throw new UnprocessableEntityException("O iFood não aceita este motivo para o pedido. Escolha outro.");
+      await this.askIfood(() => order.client.requestCancellation(order.externalOrderId, reason));
+      await this.fraud.canceledByTeam(auth, orderId, { reason: reason.description, markFraud, confirmed: false });
+      return;
+    }
+    const order = await this.cardapioWebOrder(auth, orderId);
+    const reason = body.reason?.trim() || null;
+    try {
+      await this.cardapioWeb.cancel(this.connectors.secrets(order.channel.credentials).accessToken, order.externalOrderId, reason);
+    } catch (error) {
+      this.logger.warn(`Cardápio Web recusou o cancelamento: ${error instanceof Error ? error.message : String(error)}`);
+      throw new UnprocessableEntityException("O Cardápio Web não aceitou e o pedido continua ativo. Tente de novo ou cancele no painel do Cardápio Web.");
+    }
+    await this.fraud.canceledByTeam(auth, orderId, { reason, markFraud, confirmed: true });
+  }
+
+  private async channelTypeOf(auth: RequestAuth, orderId: string): Promise<ChannelType> {
+    const order = await this.db.withTenants(auth.scope, (tx) =>
+      tx.order.findUnique({ where: { id: orderId }, select: { channel: { select: { type: true } } } }),
+    );
+    if (!order) throw new NotFoundException("Pedido não encontrado.");
+    return order.channel.type;
+  }
+
+  private async cardapioWebOrder(auth: RequestAuth, orderId: string) {
+    const order = await this.db.withTenants(auth.scope, (tx) =>
+      tx.order.findUnique({
+        where: { id: orderId },
+        select: {
+          tenantId: true,
+          externalOrderId: true,
+          status: true,
+          deliveryAddress: true,
+          channel: { select: { type: true, credentials: true } },
+        },
+      }),
+    );
+    if (!order) throw new NotFoundException("Pedido não encontrado.");
+    if (!this.canCancel(order)) throw new UnprocessableEntityException("Este pedido não pode ser cancelado pelo Dish Desk.");
+    return order;
   }
 
   /**
@@ -199,7 +300,7 @@ export class OrdersService {
     await this.askIfood(() => order.client.answerDispute(dispute.id, answer.accept ? "accept" : "reject", answer.reason));
   }
 
-  private async ifoodOrder(auth: RequestAuth, orderId: string) {
+  private async ifoodOrder(auth: RequestAuth, orderId: string, cancelling = false) {
     const order = await this.db.withTenants(auth.scope, (tx) =>
       tx.order.findUnique({
         where: { id: orderId },
@@ -207,6 +308,7 @@ export class OrdersService {
           externalOrderId: true,
           status: true,
           raw: true,
+          deliveryAddress: true,
           channel: { select: { id: true, tenantId: true, type: true } },
           events: { orderBy: { occurredAt: "asc" }, select: { code: true, metadata: true } },
         },
@@ -216,7 +318,7 @@ export class OrdersService {
     if (order.channel.type !== "IFOOD" || !this.ifood.configured) {
       throw new UnprocessableEntityException("Este pedido não pode ser alterado pelo Dish Desk.");
     }
-    if (!this.env.IFOOD_ORDER_ACTIONS) {
+    if (!(cancelling ? this.ifoodCancelOn() : this.env.IFOOD_ORDER_ACTIONS)) {
       throw new UnprocessableEntityException("O Dish Desk só acompanha os pedidos do iFood: a ação é feita no sistema de pedidos da loja.");
     }
     return { ...order, client: this.ifood.clientFor(order.channel) };
@@ -326,6 +428,7 @@ export class OrdersService {
             items: true,
             channel: { select: { type: true } },
             tenant: { select: { name: true } },
+            alertDecidedBy: { select: { name: true } },
             events: {
               where: { code: { in: ["CONFIRMED", "READY_TO_PICKUP"] } },
               orderBy: { occurredAt: "asc" },
@@ -346,6 +449,9 @@ export class OrdersService {
           forecast: forecast && { departAt: forecast.departAt.toISOString(), late: forecast.late, ahead: forecast.ahead },
           history: await customerHistory(tx, conversation.contact),
           stale: !order.dispatchedAt && ["PLACED", "CONFIRMED", "PREPARING", "READY"].includes(order.status) && now.getTime() - order.placedAt.getTime() > STALE_MS,
+          // De outra unidade em que quem vê não atende: mostra o alerta, mas a decisão é de quem atende lá.
+          alert: await orderAlert(tx, order, conversation.contact, auth.scope.tenantIds.includes(order.tenantId)),
+          cancelable: this.canCancel(order),
         };
       });
     });
@@ -356,6 +462,16 @@ const IFOOD_STEP = { CONFIRM: "confirm", READY: "readyToPickup", DISPATCH: "disp
 
 /** Depois de entregue (ou cancelado) não há o que cancelar; antes disso, o iFood decide pelos motivos que oferece. */
 const CANCELABLE = new Set<OrderStatus>(["PLACED", "CONFIRMED", "PREPARING", "READY", "DISPATCHED"]);
+
+/**
+ * Quando o pedido foi cancelado fora do Dish Desk (null: não foi, ou não dá para afirmar). Todo cancelamento da equipe
+ * grava a decisão "CANCELED"; sem ela, e sem pedido de cancelamento da loja nos eventos do iFood (pedidos anteriores à
+ * decisão gravada), o cancelamento veio da plataforma, do cliente ou do histórico importado. Sem data, não afirma.
+ */
+function canceledOutsideAt(order: { alertDecision: string | null; canceledAt: Date | null; events: { code: string }[] }): string | null {
+  if (order.alertDecision || !order.canceledAt || order.events.some((event) => event.code === "CANCELLATION_REQUESTED")) return null;
+  return order.canceledAt.toISOString();
+}
 
 /**
  * Próxima etapa que a loja informa ao iFood. O despacho só existe na entrega feita pela própria loja: com entregador do

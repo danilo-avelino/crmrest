@@ -156,6 +156,7 @@ describe("Integrações (Configurações)", () => {
       status: "CONNECTED",
       servedTenantIds: [],
       tokenExpiresAt: null, // a Meta não informou vencimento: token permanente
+      orderHistory: null,
     });
     expect(graph.requests).toContainEqual(
       expect.objectContaining({ method: "POST", path: "/999000222/subscribed_apps", authorization: "Bearer token-do-system-user-123" }),

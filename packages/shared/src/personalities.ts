@@ -67,6 +67,8 @@ export type AutomationMessages = {
   dispatchNotice: string;
   /** Aviso na hora em que o pedido é entregue. {pedido} */
   deliveredNotice: string;
+  /** A equipe cancelou o pedido pelo Dish Desk (prevenção de fraude). {pedido} */
+  orderCanceled: string;
   /** Aviso na hora em que o pedido fica pronto (só no chat do iFood do pedido). {pedido} */
   readyNotice: string;
   /** Saudação do menu do entregador (cadastro com a tag Entregador); as opções 1, 2 e 3 entram no fim. {nome} */
@@ -117,6 +119,7 @@ export const PERSONALITY_MESSAGES: Record<Personality, AutomationMessages> = {
     dispatched: "🛵 Seu pedido já saiu para entrega às {hora} ({tempo}).",
     dispatchNotice: "🛵 Boa notícia! Seu pedido #{pedido} saiu para entrega às {hora}.",
     deliveredNotice: "✅ Seu pedido #{pedido} foi entregue! Bom apetite 😋",
+    orderCanceled: "Olá, {nome}! Não conseguimos seguir com o seu pedido #{pedido} e ele foi cancelado. Qualquer dúvida, é só responder aqui.",
     readyNotice: "✅ Seu pedido #{pedido} ficou pronto!",
     courierGreeting: "Olá, {nome}! 👋 Como podemos ajudar na entrega?",
     courierOrderNumberRequest: "Qual é o número do pedido?",
@@ -160,6 +163,7 @@ export const PERSONALITY_MESSAGES: Record<Personality, AutomationMessages> = {
     dispatched: "Seu pedido saiu para entrega às {hora} ({tempo}).",
     dispatchNotice: "Informamos que o seu pedido #{pedido} saiu para entrega às {hora}.",
     deliveredNotice: "Seu pedido #{pedido} foi entregue. Agradecemos a preferência e desejamos uma ótima refeição.",
+    orderCanceled: "Olá, {nome}. Informamos que não foi possível dar continuidade ao pedido #{pedido}, que foi cancelado. Em caso de dúvida, estamos à disposição por aqui.",
     readyNotice: "Informamos que o seu pedido #{pedido} está pronto.",
     courierGreeting: "Olá, {nome}. Como podemos auxiliar na entrega?",
     courierOrderNumberRequest: "Por gentileza, informe o número do pedido.",
@@ -199,6 +203,7 @@ export const PERSONALITY_MESSAGES: Record<Personality, AutomationMessages> = {
     dispatched: "🛵 Seu pedido já tá a caminho! Saiu às {hora} ({tempo}).",
     dispatchNotice: "🛵 Oba! Seu pedido #{pedido} saiu para entrega às {hora}! Já já chega aí!",
     deliveredNotice: "🎉 Pedido #{pedido} entregue! Bom apetite! 😋",
+    orderCanceled: "Oi, {nome}! Infelizmente não deu para seguir com o seu pedido #{pedido} e ele foi cancelado. Qualquer dúvida, é só chamar aqui!",
     readyNotice: "🎉 Oba! Seu pedido #{pedido} ficou prontinho!",
     courierGreeting: "Oiê, {nome}! 🛵 Como a gente pode te ajudar na entrega?",
     courierOrderNumberRequest: "Manda aí o número do pedido! 🔎",
@@ -237,6 +242,7 @@ export const PERSONALITY_MESSAGES: Record<Personality, AutomationMessages> = {
     dispatched: "🛵 Seu pedido já saiu, foi às {hora} ({tempo}).",
     dispatchNotice: "🛵 Opa! Seu pedido #{pedido} saiu pra entrega às {hora}.",
     deliveredNotice: "✅ Pedido #{pedido} entregue! Bom apetite 🤙",
+    orderCanceled: "E aí, {nome}! Não rolou seguir com o seu pedido #{pedido}, então ele foi cancelado. Qualquer dúvida, só chamar aqui.",
     readyNotice: "✅ Opa! Seu pedido #{pedido} tá pronto.",
     courierGreeting: "E aí, {nome}! 😎 No que a gente te ajuda na entrega?",
     courierOrderNumberRequest: "Qual o número do pedido?",
@@ -279,6 +285,7 @@ export const PERSONALITY_MESSAGES: Record<Personality, AutomationMessages> = {
     dispatched: "🛵 Seu pedido já está a caminho! Saiu às {hora} ({tempo}).",
     dispatchNotice: "🛵 Que notícia boa! Seu pedido #{pedido} saiu para entrega às {hora}.",
     deliveredNotice: "✅ Seu pedido #{pedido} foi entregue! Esperamos que você aproveite cada pedacinho 🧡",
+    orderCanceled: "Oi, {nome}! Sentimos muito, mas não conseguimos seguir com o seu pedido #{pedido} e ele foi cancelado. Qualquer dúvida, estamos aqui para ajudar.",
     readyNotice: "✅ Seu pedido #{pedido} ficou pronto, feito com todo carinho 🧡",
     courierGreeting: "Olá, {nome}! 🧡 Como podemos te ajudar na entrega?",
     courierOrderNumberRequest: "Pode nos dizer o número do pedido?",
@@ -317,6 +324,7 @@ export const PERSONALITY_MESSAGES: Record<Personality, AutomationMessages> = {
     dispatched: "Seu pedido saiu para entrega às {hora} ({tempo}).",
     dispatchNotice: "Pedido #{pedido} saiu para entrega às {hora}.",
     deliveredNotice: "Pedido #{pedido} entregue. Bom apetite.",
+    orderCanceled: "Olá, {nome}. Pedido #{pedido} cancelado. Dúvidas, responda aqui.",
     readyNotice: "Pedido #{pedido} pronto.",
     courierGreeting: "Olá, {nome}. Como podemos ajudar?",
     courierOrderNumberRequest: "Qual é o número do pedido?",

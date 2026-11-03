@@ -349,7 +349,8 @@ describe("Chat do iFood na Inbox (trava IFOOD_CHAT_BRIDGE ligada)", () => {
     try {
       // Pedido e mensagem do cliente de antes da conexão (dentro da janela em que a automação responderia).
       const before = await ifoodOrder("6580", "Elisa Rocha", minutesAgo(40));
-      await post("/ifood-chat/sync", { orderCode: "6580", messages: [shown("INBOUND", "Esqueci de pedir guardanapo", minutesAgo(30))] }).expect(200);
+      const askedAt = minutesAgo(30); // um instante só: outra leitura do relógio pode cair no minuto seguinte e o widget (só mostra a hora) o trataria como mensagem nova
+      await post("/ifood-chat/sync", { orderCode: "6580", messages: [shown("INBOUND", "Esqueci de pedir guardanapo", askedAt)] }).expect(200);
       await settle();
       const chat = await admin.conversation.findFirstOrThrow({ where: { contactId: before.contactId, channelId: fx.ifood.id } });
       expect(chat).toMatchObject({ unreadCount: 1, awaitingAgentSince: null, automationState: {} });
@@ -360,7 +361,7 @@ describe("Chat do iFood na Inbox (trava IFOOD_CHAT_BRIDGE ligada)", () => {
       // O cliente escreve de novo depois da conexão: aí sim a automação atende.
       await post("/ifood-chat/sync", {
         orderCode: "6580",
-        messages: [shown("INBOUND", "Esqueci de pedir guardanapo", minutesAgo(30)), shown("INBOUND", "Alguém aí?", new Date())],
+        messages: [shown("INBOUND", "Esqueci de pedir guardanapo", askedAt), shown("INBOUND", "Alguém aí?", new Date())],
       }).expect(200);
       // A fila pode estar vazia antes de o job da mensagem nova entrar: espera o resultado, não só a fila.
       await until(async () => expect((await admin.conversation.findUniqueOrThrow({ where: { id: chat.id } })).awaitingAgentSince).not.toBeNull());

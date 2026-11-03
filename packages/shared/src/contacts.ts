@@ -1,5 +1,5 @@
 import type { ChannelType, OrderStatus } from "@dishdesk/database/enums";
-import type { CustomerHistory } from "./orders.js";
+import type { CustomerCancellations, CustomerHistory } from "./orders.js";
 import { ChannelType as ChannelTypeEnum } from "@dishdesk/database/enums";
 import { parsePhoneNumberFromString } from "libphonenumber-js/min";
 import { z } from "zod";
@@ -110,6 +110,8 @@ export type ContactDetail = {
   }[];
   /** Pedidos em todas as fontes ligadas ao cliente (mesmo telefone, CPF ou e-mail), sem os cancelados. */
   metrics: { ordersCount: number; ordersTotal: string; ordersBySource: CustomerHistory["bySource"] };
+  /** Cancelamentos em todas as fontes, com o motivo de cada um e as marcas de fraude. */
+  cancellations: CustomerCancellations;
   recentOrders: ContactOrderSummary[];
   lastSeenAt: string | null;
   conversationsCount: number;

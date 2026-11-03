@@ -1,10 +1,20 @@
 "use client";
 
-import { DISPUTE_REASON_LABEL, type OrderAction, type OrderCancellationReason, type OrderDispute, type OrderListItem } from "@dishdesk/shared";
-import { useQueryClient } from "@tanstack/react-query";
+import {
+  DISPUTE_REASON_LABEL,
+  type OrderAction,
+  type OrderCancellationReason,
+  type OrderCustomerChat,
+  type OrderDispute,
+  type OrderListItem,
+} from "@dishdesk/shared";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertCircleIcon } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useEffect, useId, useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
+import { CancelOrderDialog } from "@/components/orders/cancel-order-dialog";
+import { useFraudRefresh } from "@/components/orders/fraud-alert";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/toast";
@@ -29,19 +39,23 @@ type ReasonPicker = {
 };
 
 /**
- * O que a equipe informa ao iFood pela aba Pedidos: um botão só, que muda com o status; o cancelamento, com os motivos
- * do iFood; e a resposta ao pedido de cancelamento do cliente. O iFood só aceita o pedido de mudança: o resultado chega
- * pelo polling, então os botões dão lugar a um aviso até o pedido mudar. Com a trava IFOOD_ORDER_ACTIONS desligada na
- * API, o Dish Desk só acompanha: não há botões, e o pedido do cliente aparece como aviso.
+ * O que a equipe informa pela aba Pedidos: um botão só, que muda com o status; o cancelamento (iFood e Cardápio Web); e a
+ * resposta ao pedido de cancelamento do cliente. O iFood só aceita o pedido de mudança: o resultado chega pelo polling,
+ * então os botões dão lugar a um aviso até o pedido mudar. Com a trava IFOOD_ORDER_ACTIONS desligada na API, o Dish Desk
+ * só acompanha o iFood: não há botões, e o pedido do cliente aparece como aviso. Com alerta de fraude, o cancelamento
+ * fica no próprio alerta.
  */
 export function OrderActions({ order }: { order: OrderListItem }) {
   const { request } = useAuth();
   const queryClient = useQueryClient();
   const toast = useToast();
+  const router = useRouter();
   const id = useId();
   /** Situação do pedido quando o iFood aceitou a última ação: enquanto for a mesma, o resultado ainda não chegou. */
   const [sentAt, setSentAt] = useState<string | null>(null);
   const [picker, setPicker] = useState<ReasonPicker | null>(null);
+  const [canceling, setCanceling] = useState(false);
+  const refresh = useFraudRefresh();
   const [code, setCode] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const { dispute } = order;
@@ -58,7 +72,16 @@ export function OrderActions({ order }: { order: OrderListItem }) {
     };
   }, [waiting, queryClient]);
 
-  if (!order.nextAction && !order.cancelable && !dispute) return null;
+  // Por onde a equipe fala com o cliente (a mesma consulta do card do pedido na Inbox): sem canal, o botão não aparece.
+  const chat = useQuery({
+    queryKey: ["order-customer-chat", order.id],
+    queryFn: () => request<OrderCustomerChat>(`/orders/${order.id}/customer-chat`),
+  });
+  const canChat = Boolean(chat.data?.channel);
+
+  // Com alerta de fraude em aberto, a decisão de cancelar é tomada no próprio alerta.
+  const showCancel = order.cancelable && !order.alert;
+  if (!order.nextAction && !showCancel && !dispute && !canChat) return null;
 
   const open = (next: ReasonPicker) => {
     setCode(null);
@@ -75,20 +98,6 @@ export function OrderActions({ order }: { order: OrderListItem }) {
       failed(failure);
     }
   };
-  const openCancel = async () => {
-    try {
-      const { reasons } = await request<{ reasons: OrderCancellationReason[] }>(`/orders/${order.id}/cancellation-reasons`);
-      open({
-        title: "Cancelar pedido",
-        confirm: "Cancelar pedido",
-        reasons,
-        empty: { text: "O iFood não permite cancelar este pedido agora.", blocked: true },
-        run: (chosen) => request(`/orders/${order.id}/cancel`, { method: "POST", body: { code: chosen } }),
-      });
-    } catch (failure) {
-      failed(failure);
-    }
-  };
   const answer = (accept: boolean, pending: OrderDispute) =>
     open({
       title: accept ? "Aceitar o pedido do cliente" : "Recusar o pedido do cliente",
@@ -100,6 +109,16 @@ export function OrderActions({ order }: { order: OrderListItem }) {
       empty: { text: "Ao aceitar, o iFood cancela o que o cliente pediu.", blocked: false },
       run: (chosen) => request(`/orders/${order.id}/dispute`, { method: "POST", body: { accept, ...(chosen && { reason: chosen }) } }),
     });
+  /** Abre (ou cria) a conversa com o cliente do pedido e leva a Inbox até ela. */
+  const openChat = async () => {
+    try {
+      const { conversationId } = await request<{ conversationId: string }>(`/orders/${order.id}/customer-chat`, { method: "POST" });
+      void queryClient.invalidateQueries({ queryKey: ["conversations"] });
+      router.push(`/inbox?conversa=${conversationId}`);
+    } catch (failure) {
+      toast(failure instanceof ApiError ? failure.message : "Não foi possível abrir a conversa.");
+    }
+  };
   const confirm = async () => {
     setError(null);
     try {
@@ -147,8 +166,8 @@ export function OrderActions({ order }: { order: OrderListItem }) {
           </span>
         ) : (
           <>
-            {order.cancelable && (
-              <Button variant="ghost" size="xs" onClick={openCancel}>
+            {showCancel && (
+              <Button variant="ghost" size="xs" onClick={() => setCanceling(true)}>
                 Cancelar pedido
               </Button>
             )}
@@ -157,9 +176,23 @@ export function OrderActions({ order }: { order: OrderListItem }) {
                 {ACTION_LABEL[order.nextAction]}
               </Button>
             )}
+            {canChat && (
+              <Button variant="outline" size="xs" onClick={openChat}>
+                Abrir conversa
+              </Button>
+            )}
           </>
         )}
       </div>
+      <CancelOrderDialog
+        order={order}
+        open={canceling}
+        onOpenChange={setCanceling}
+        onDone={() => {
+          refresh();
+          if (order.channelType === "IFOOD") setSentAt(situation);
+        }}
+      />
       <Dialog open={picker !== null} onOpenChange={(next) => !next && setPicker(null)}>
         <DialogContent className="w-[440px]">
           <div className="border-b border-rule px-6 py-5">

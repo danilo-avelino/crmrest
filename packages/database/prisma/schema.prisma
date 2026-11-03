@@ -116,6 +116,8 @@ model User {
   agentSessions         AgentSession[]
   productSuggestions    ProductSuggestion[]
   supportTickets        SupportTicket[]
+  alertDecidedOrders    Order[] @relation("OrderAlertDecidedBy")
+  fraudMarkedOrders     Order[] @relation("OrderFraudMarkedBy")
 
   @@map("users")
 }
@@ -202,6 +204,8 @@ model Channel {
   servedTenantIds String[] @default([]) @map("served_tenant_ids") @db.Uuid
   // Vencimento do token do WhatsApp ou do Instagram (o job diário renova antes); null = não vence ou não conferido.
   tokenExpiresAt DateTime? @map("token_expires_at") @db.Timestamptz(3)
+  // Importação dos cancelamentos antigos (Cardápio Web): andamento e resultado (OrderHistoryImport, no pacote shared).
+  orderHistoryImport Json? @map("order_history_import")
 
   tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   conversations Conversation[]
@@ -363,6 +367,7 @@ model Conversation {
   awaitingAgentSince DateTime?          @map("awaiting_agent_since") @db.Timestamptz(3) // automação chamou a equipe e ninguém respondeu ainda
   awaitingAgentQuiet Boolean            @default(false) @map("awaiting_agent_quiet") // chamado sem urgência: aviso sonoro discreto no lugar do alarme
   unreadCount        Int                @default(0) @map("unread_count")
+  teamOnly           Boolean            @default(false) @map("team_only") // aberta pelo alerta de fraude: o cliente não está nela
   createdAt          DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
 
   tenant       Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -447,7 +452,20 @@ model Order {
   dispatchedAt    DateTime?   @map("dispatched_at") @db.Timestamptz(3)
   deliveredAt     DateTime?   @map("delivered_at") @db.Timestamptz(3)
   raw             Json // payload original
+  canceledAt         DateTime? @map("canceled_at") @db.Timestamptz(3)
+  cancellationReason String?   @map("cancellation_reason") // motivo como a plataforma ou o atendente informou
+  importedAt         DateTime? @map("imported_at") @db.Timestamptz(3) // veio do histórico da integração, não do polling
+  // Prevenção de fraude (E40): o alerta disparou quando o pedido chegou; a decisão é do atendente.
+  alertAt          DateTime? @map("alert_at") @db.Timestamptz(3)
+  alertDecision    String?   @map("alert_decision") // KEPT (mantido) ou CANCELED (cancelado ou à espera da plataforma)
+  alertDecidedAt   DateTime? @map("alert_decided_at") @db.Timestamptz(3)
+  alertDecidedById String?   @map("alert_decided_by_id") @db.Uuid
+  fraudMarkedAt    DateTime? @map("fraud_marked_at") @db.Timestamptz(3)
+  fraudMarkedById  String?   @map("fraud_marked_by_id") @db.Uuid
+  fraudAddressKey  String?   @map("fraud_address_key") // endereço normalizado (orders/address-key.ts); null sem endereço
 
+  alertDecidedBy User? @relation("OrderAlertDecidedBy", fields: [alertDecidedById], references: [id], onDelete: SetNull)
+  fraudMarkedBy  User? @relation("OrderFraudMarkedBy", fields: [fraudMarkedById], references: [id], onDelete: SetNull)
   tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   contact      Contact       @relation(fields: [contactId], references: [id], onDelete: NoAction)
   channel      Channel       @relation(fields: [channelId], references: [id], onDelete: NoAction)
@@ -459,6 +477,7 @@ model Order {
 
   @@unique([channelId, externalOrderId])
   @@index([tenantId, contactId, placedAt])
+  @@index([tenantId, fraudAddressKey])
   @@map("orders")
 }
 

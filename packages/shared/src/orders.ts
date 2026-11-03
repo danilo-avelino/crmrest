@@ -32,8 +32,74 @@ export type OrderAction = "CONFIRM" | "READY" | "DISPATCH";
 /** Motivo de cancelamento que a plataforma aceita para o pedido, no estado em que ele está. */
 export type OrderCancellationReason = { code: string; description: string };
 
-export const CancelOrderRequest = z.object({ code: z.string().min(1) });
+/**
+ * Cancelar pelo Dish Desk. iFood: `code` é um dos motivos que ele ofereceu. Cardápio Web: `reason`, em texto, é opcional.
+ * `markFraud`: marca o pedido como fraude junto com o cancelamento.
+ */
+export const CancelOrderRequest = z.object({
+  code: z.string().min(1).optional(),
+  reason: z.string().trim().max(200).optional(),
+  markFraud: z.boolean().optional(),
+});
 export type CancelOrderRequest = z.infer<typeof CancelOrderRequest>;
+
+/** O que o modal de cancelamento mostra. */
+export type OrderCancellationOptions = {
+  /** Motivos que o iFood aceita agora (vazio: não dá para cancelar agora). Cardápio Web: sempre vazio. */
+  reasons: OrderCancellationReason[];
+  /** "list": escolher um dos motivos; "text": motivo em texto, opcional. */
+  reasonMode: "list" | "text";
+  /** Prévia da mensagem ao cliente; null: sem conversa com ele, o cancelamento não envia mensagem. */
+  message: { text: string; via: string; tone: string } | null;
+  /** Endereço que fica marcado com "Marcar como fraude"; null: retirada, sem endereço. */
+  address: string | null;
+};
+
+/** Pedido cancelado, como aparece no alerta, na aba Pedidos e no cadastro do cliente. */
+export type CanceledOrderRow = {
+  id: string;
+  displayCode: string | null;
+  channelType: ChannelType;
+  /** Unidade do pedido, quando o cliente tem pedidos em mais de uma do grupo. */
+  restaurantName: string | null;
+  total: string;
+  placedAt: string;
+  /** null: a plataforma não informou. */
+  reason: string | null;
+  /** Veio do histórico da integração. */
+  imported: boolean;
+  /** Marcado como fraude: por quem e quando. */
+  fraud: { by: string | null; at: string } | null;
+  /** Endereço que fica marcado; null: retirada, sem endereço. */
+  address: string | null;
+};
+
+/** Cancelamentos do cliente em todas as fontes ligadas a ele. */
+export type CustomerCancellations = {
+  /** Pedidos feitos, com os cancelados. */
+  ordersCount: number;
+  canceledCount: number;
+  fraudCount: number;
+  bySource: { channelType: ChannelType; orders: number }[];
+  /** Do mais recente para o mais antigo. */
+  rows: CanceledOrderRow[];
+};
+
+/** Decisão do atendente sobre o pedido com alerta. "CANCELING": a plataforma ainda não respondeu. */
+export type OrderAlertDecision = { kind: "KEPT" | "CANCELING" | "CANCELED"; by: string | null; at: string; fraud: boolean };
+
+/** Pedido de um cliente com cancelamentos no histórico ou para um endereço marcado como fraude. Só a equipe vê. */
+export type OrderAlertDto = {
+  customerName: string | null;
+  cancellations: CustomerCancellations;
+  /** Endereço de entrega do pedido, para o bloco do endereço marcado. */
+  address: string | null;
+  /** Pedidos marcados como fraude no mesmo endereço, sem nome, telefone nem itens do outro cliente. */
+  addressMatches: { placedAt: string; reason: string | null; markedBy: string | null }[];
+  decision: OrderAlertDecision | null;
+  /** Quem vê pode decidir (false: pedido de outra unidade, em que não atende). */
+  actionable: boolean;
+};
 
 /** Pagamento, descontos e dados da entrega como a plataforma informou (iFood). */
 export type OrderPlatformInfo = {
@@ -118,6 +184,15 @@ export type OrderListItem = OrderDto & {
   platform: OrderPlatformInfo | null;
   /** Pedido do cliente à espera da resposta da loja. */
   dispute: OrderDispute | null;
+  /** Alerta de fraude do pedido; null: sem motivo para alerta, ou o pedido já terminou sem decisão. */
+  alert: OrderAlertDto | null;
+  /**
+   * Pedido cancelado: o motivo e a marca de fraude. `outsideAt`: quando foi cancelado fora do Dish Desk; null se foi a
+   * equipe, se não dá para afirmar (pedido antigo com pedido de cancelamento da loja) ou se a data não é conhecida.
+   */
+  cancellation: (CanceledOrderRow & { outsideAt: string | null }) | null;
+  /** Total de cancelamentos do cliente (a aba Pedidos mostra ao lado do total de pedidos). */
+  customerCanceled: number;
 };
 
 export type OrderPage = { items: OrderListItem[]; total: number; page: number; pageSize: number };
@@ -147,4 +222,8 @@ export type CurrentOrderDto = {
   history: CustomerHistory;
   /** Na cozinha há mais de 4 h sem a plataforma avisar a saída: sem andamento nem previsão (status desatualizado). */
   stale: boolean;
+  /** Alerta de fraude do pedido; null: sem motivo para alerta, ou o pedido já terminou sem decisão. */
+  alert: OrderAlertDto | null;
+  /** Dá para cancelar pelo Dish Desk (false: o aviso manda cancelar no sistema de origem). */
+  cancelable: boolean;
 };

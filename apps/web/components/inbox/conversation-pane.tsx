@@ -12,10 +12,11 @@ import { CheckIcon, EllipsisIcon, LoaderCircleIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
 import { ClientDetail } from "@/components/clients/client-detail";
-import { Avatar, ChannelDot } from "@/components/inbox/bits";
+import { Avatar, ChannelDot, TeamOnlyBadge } from "@/components/inbox/bits";
 import { ClientPanel } from "@/components/inbox/client-panel";
 import { Composer } from "@/components/inbox/composer";
 import { MessageTimeline } from "@/components/inbox/message-timeline";
+import { ConversationFraudAlert } from "@/components/orders/fraud-alert";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import {
@@ -89,6 +90,7 @@ export function ConversationPane({
           onResolved={onOpenConversation}
           nextConversationId={nextConversationId}
         />
+        <ConversationFraudAlert conversationId={conversationId} teamOnly={conversation.data.teamOnly} />
         <MessageTimeline data={messages.data} contact={conversation.data.contact} onOpenConversation={onOpenConversation} />
         <Composer conversation={conversation.data} />
       </section>
@@ -138,7 +140,8 @@ function ConversationHeader({
   const assigned = conversation.assignedUser;
   const subtitle = [
     session?.context?.mode === "master" && conversation.tenant.name,
-    assigned ? `Atribuído a: ${shortName(assigned.name)}` : "Sem responsável",
+    conversation.teamOnly ? "Aberta pelo Dish Desk para o alerta" : null,
+    assigned ? `Atribuído a: ${shortName(assigned.name)}` : conversation.teamOnly ? "sem atendente" : "Sem responsável",
     `Aberto há ${ago(conversation.createdAt, now)}`,
   ].filter(Boolean);
 
@@ -155,6 +158,7 @@ function ConversationHeader({
             {CHANNEL_LABEL[conversation.channel.type]}
             {conversation.orderCode && ` · #${conversation.orderCode}`}
           </span>
+          {conversation.teamOnly && <TeamOnlyBadge />}
         </div>
         <div className="truncate text-[10.5px] text-ink-3">{subtitle.join(" · ")}</div>
       </div>

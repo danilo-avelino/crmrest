@@ -10,6 +10,7 @@ import { ORDER_TONE } from "@/components/clients/client-detail";
 import { CHANNEL_DOT, StatusBadge } from "@/components/inbox/bits";
 import { ORDER_STATUS } from "@/components/inbox/order-card";
 import { CustomerHistoryLine } from "@/components/orders/customer-history";
+import { FraudAlert, FraudBadge, FraudMarkControl } from "@/components/orders/fraud-alert";
 import { ItemOptions } from "@/components/orders/item-options";
 import { OrderActions } from "@/components/orders/order-actions";
 import { Button } from "@/components/ui/button";
@@ -21,7 +22,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useNow } from "@/hooks/use-now";
-import { clock, count, currency, dayTime, responseTime } from "@/lib/format";
+import { clock, count, currency, dayMonth, dayTime, responseTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 type Status = OrderListItem["status"];
@@ -194,7 +195,12 @@ export function OrderList() {
                       aria-expanded={open}
                       className={cn("cursor-pointer border-b border-rule-soft", open ? "bg-tomate-lt" : "hover:bg-paper")}
                     >
-                      <Td className="font-medium">#{order.displayCode ?? order.id.slice(0, 6)}</Td>
+                      <Td className="font-medium">
+                        <span className="flex items-center gap-1.5">
+                          #{order.displayCode ?? order.id.slice(0, 6)}
+                          {order.alert && !order.alert.decision && <FraudBadge>Alerta</FraudBadge>}
+                        </span>
+                      </Td>
                       <Td>
                         <span className="flex items-center gap-[5px] text-ink-2">
                           <span className={cn("size-2 rounded-full", CHANNEL_DOT[order.channelType])} />
@@ -210,7 +216,12 @@ export function OrderList() {
                           {order.contact.name ?? "Cliente sem nome"}
                         </Link>
                         <div className="text-[11px] text-ink-3">
-                          {order.history.orders <= 1 ? "primeiro pedido" : `${count(order.history.orders)} pedidos`}
+                          {order.customerCanceled > 0
+                            ? // Como no alerta: "4 cancelados de 9 feitos".
+                              `${count(order.history.orders + order.customerCanceled)} pedidos · ${count(order.customerCanceled)} ${order.customerCanceled === 1 ? "cancelado" : "cancelados"}`
+                            : order.history.orders <= 1
+                              ? "primeiro pedido"
+                              : `${count(order.history.orders)} pedidos`}
                         </div>
                       </Td>
                       {master && <Td className="text-ink-2">{order.tenant.name}</Td>}
@@ -277,9 +288,28 @@ export function OrderDetails({ order }: { order: OrderListItem }) {
   const timeline = order.events.filter((event) => EVENT_LABEL[event.code]);
   return (
     <div className="grid grid-cols-2 gap-3">
+      {order.alert && (
+        <div className="col-span-2">
+          <FraudAlert order={order} alert={order.alert} cancelable={order.cancelable} />
+        </div>
+      )}
       <div className="col-span-2">
         <CustomerHistoryLine history={order.history} />
       </div>
+      {order.cancellation && (
+        <div className="col-span-2 flex flex-col gap-1 rounded-[7px] border border-tomate-line bg-surface px-3.5 py-2.5 text-xs">
+          <div className="text-[11px] font-medium tracking-[0.05em] text-ink-3 uppercase">Cancelamento</div>
+          <div>
+            <span className="font-medium">Motivo:</span> {order.cancellation.reason ?? <span className="text-ink-3 italic">Motivo não informado</span>}
+          </div>
+          {order.cancellation.outsideAt && (
+            <div className="text-[12px] text-ink-3">
+              Cancelado no {CHANNEL_LABEL[order.channelType]}, fora do Dish Desk, em {dayMonth(order.cancellation.outsideAt)} às {clock(order.cancellation.outsideAt)}.
+            </div>
+          )}
+          <FraudMarkControl row={order.cancellation} />
+        </div>
+      )}
       <div className="overflow-hidden rounded-[7px] border border-tomate-line bg-surface text-xs">
         {order.items.map((item, index) => (
           <div key={index} className="flex justify-between border-b border-surface-2 px-3.5 py-2.5">

@@ -5,7 +5,8 @@ import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { BellIcon, BellRingIcon, BikeIcon, CheckIcon, ListFilterIcon, SearchIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
-import { Avatar, StatusBadge } from "@/components/inbox/bits";
+import { Avatar, StatusBadge, TeamOnlyBadge } from "@/components/inbox/bits";
+import { FraudBadge } from "@/components/orders/fraud-alert";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -286,6 +287,12 @@ function ConversationRow({
         <div className={cn("truncate text-[11.5px]", unread ? "font-medium text-ink" : active ? "text-ink-2" : "text-ink-3")}>
           {conversation.lastMessage?.preview ?? ""}
         </div>
+        {(conversation.fraudAlert || conversation.teamOnly) && (
+          <div className="mt-1 flex flex-wrap items-center gap-1">
+            {conversation.fraudAlert && <FraudBadge />}
+            {conversation.teamOnly && <TeamOnlyBadge />}
+          </div>
+        )}
       </div>
     </button>
   );

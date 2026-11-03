@@ -47,6 +47,9 @@ const EnvSchema = z.object({
   // Ações do pedido do iFood (confirmar, pronto, despachar, cancelar, responder ao cancelamento do cliente). Desligada,
   // o Dish Desk só acompanha os pedidos: quem opera é o sistema de pedidos da loja. Ligar para a homologação do iFood.
   IFOOD_ORDER_ACTIONS: z.stringbool().default(false),
+  // Só o cancelamento do pedido do iFood (alerta de fraude), sem liberar confirmar, pronto, despachar nem a resposta ao
+  // cancelamento do cliente. Vale também com IFOOD_ORDER_ACTIONS ligada.
+  IFOOD_ORDER_CANCEL: z.stringbool().default(false),
   // Página da extensão na Chrome Web Store: o painel sem a extensão mostra o botão "Instalar" com este endereço.
   IFOOD_EXTENSION_URL: z.url().optional(),
   // Cardápio Web: a chave de API é de cada loja (fica no canal); aqui só o endereço da API. Sem ele, o polling fica desligado.

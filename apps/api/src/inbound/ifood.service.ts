@@ -7,6 +7,8 @@ import type { Queue } from "bullmq";
 import { IfoodAuthService } from "../connectors/ifood-auth.service.js";
 import { IFOOD_STATUS, type IfoodClient, IfoodError, type IfoodEvent, type IfoodOrder } from "../connectors/ifood.client.js";
 import { DatabaseService } from "../core/database.service.js";
+import { applyPendingMark, cancelRefused, FraudService } from "../orders/fraud.service.js";
+import { eventDetail } from "../orders/ifood-order.js";
 import { type NoticeStatus, OrderNoticeService } from "../orders/order-notice.service.js";
 import { JobProcessor } from "../queues/job-processor.js";
 import { QUEUES } from "../queues/queues.module.js";
@@ -25,6 +27,7 @@ export class IfoodService implements OnModuleInit {
     private readonly inbound: InboundService,
     private readonly realtime: RealtimeEmitter,
     private readonly notices: OrderNoticeService,
+    private readonly fraud: FraudService,
     private readonly auth: IfoodAuthService,
     @InjectQueue(QUEUES.ifood) private readonly queue: Queue,
   ) {
@@ -138,7 +141,19 @@ export class IfoodService implements OnModuleInit {
     const updated = await this.db.withTenants({ tenantIds: [channel.tenantId] }, async (tx) => {
       const order = await tx.order.findUniqueOrThrow({
         where: { channelId_externalOrderId: { channelId: channel.id, externalOrderId: event.orderId } },
-        select: { id: true, conversationId: true, status: true, dispatchedAt: true },
+        select: {
+          id: true,
+          conversationId: true,
+          status: true,
+          dispatchedAt: true,
+          displayCode: true,
+          externalOrderId: true,
+          alertDecision: true,
+          deliveryAddress: true,
+          fraudMarkedAt: true,
+          fraudMarkedById: true,
+          contact: { select: { id: true, phone: true, phoneSource: true, cpfHash: true, email: true } },
+        },
       });
       const { count } = await tx.orderEvent.createMany({
         data: {
@@ -151,6 +166,10 @@ export class IfoodService implements OnModuleInit {
         },
         skipDuplicates: true,
       });
+      // Cancelamento pedido pelo Dish Desk que o iFood não aceitou: a decisão volta para a equipe.
+      if (count && event.fullCode === "CANCELLATION_REQUEST_FAILED" && order.alertDecision === "CANCELED") {
+        return { conversationId: await cancelRefused(tx, order), notice: null };
+      }
       // Evento reenviado (já registrado) ou que faria o pedido voltar de etapa: só fica na linha do tempo.
       if (!count || !status || (status !== "CANCELED" && STATUS_RANK[status] <= STATUS_RANK[order.status])) {
         return { conversationId: patched ? order.conversationId : null, notice: null };
@@ -163,8 +182,17 @@ export class IfoodService implements OnModuleInit {
           ...(status === "DISPATCHED" && !order.dispatchedAt && { dispatchedAt: at }),
           // CONCLUDED chega até horas depois da entrega: só a entrega de fato marca o horário de entrega.
           ...(DELIVERED_EVENTS.has(event.fullCode) && { deliveredAt: at }),
+          ...(status === "CANCELED" && {
+            canceledAt: at,
+            ...((reason) => reason && { cancellationReason: reason })(eventDetail({ code: "CANCELLED", metadata: event.metadata })),
+          }),
         },
       });
+      // A equipe pediu o cancelamento pelo Dish Desk: agora que o iFood confirmou, vale a marca e o cliente recebe a mensagem.
+      if (status === "CANCELED" && order.alertDecision === "CANCELED") {
+        await applyPendingMark(tx, order, at);
+        return { conversationId: order.conversationId, notice: null, canceledByTeam: order.id };
+      }
       // Aviso ao cliente: ficou pronto, saiu para entrega, ou entregue (não pelo CONCLUDED, que chega horas depois).
       const notice: NoticeStatus | null =
         status === "READY" || status === "DISPATCHED" ? status : DELIVERED_EVENTS.has(event.fullCode) ? "DELIVERED" : null;
@@ -172,6 +200,7 @@ export class IfoodService implements OnModuleInit {
     });
     if (updated.conversationId) this.realtime.inboxChanged(channel.tenantId, updated.conversationId);
     if (updated.notice) await this.notices.statusChanged(channel.tenantId, updated.notice.orderId, updated.notice.status);
+    if ("canceledByTeam" in updated && updated.canceledByTeam) await this.notices.canceled(channel.tenantId, updated.canceledByTeam);
   }
 
   /** Itens e totais atualizados pelo iFood (ORDER_PATCHED). Devolve true se o pedido existia. */
@@ -213,7 +242,7 @@ export class IfoodService implements OnModuleInit {
     const cpf = order.customer.documentNumber?.replace(/\D/g, "");
     const address = order.delivery?.deliveryAddress;
 
-    await this.db.withTenants({ tenantIds: [channel.tenantId] }, async (tx) => {
+    const created = await this.db.withTenants({ tenantIds: [channel.tenantId] }, async (tx) => {
       const contact = await this.inbound.resolveContact(tx, channel.tenantId, {
         channelType: "IFOOD",
         externalContactId: order.customer.id,
@@ -232,7 +261,8 @@ export class IfoodService implements OnModuleInit {
         });
       }
 
-      await tx.order.create({
+      return tx.order.create({
+        select: { id: true },
         data: {
           tenantId: channel.tenantId,
           contactId: contact.id,
@@ -250,6 +280,7 @@ export class IfoodService implements OnModuleInit {
         },
       });
     });
+    await this.fraud.orderArrived(channel.tenantId, created.id);
   }
 }
 

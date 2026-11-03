@@ -49,6 +49,7 @@ describe("personalidade do atendimento", () => {
     dispatched: ["hora", "tempo"],
     dispatchNotice: ["pedido", "hora"],
     deliveredNotice: ["pedido"],
+    orderCanceled: ["nome", "pedido"],
     readyNotice: ["pedido"],
     courierGreeting: ["nome"],
     courierArrivalConfirmed: ["pedido"],

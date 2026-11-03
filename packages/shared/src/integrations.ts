@@ -19,6 +19,22 @@ export type IntegrationDto = {
   servedTenantIds: string[];
   /** WhatsApp e Instagram: quando o token vence (ISO); null = não vence ou ainda não conferido. */
   tokenExpiresAt: string | null;
+  /** Cardápio Web: a importação dos cancelamentos antigos; null = ainda não foi feita. */
+  orderHistory: OrderHistoryImport | null;
+};
+
+/** Importação dos cancelamentos antigos da loja, para o alerta de fraude. */
+export type OrderHistoryImport = {
+  status: "running" | "done" | "partial" | "error";
+  /** 0 a 100. */
+  progress: number;
+  /** Cancelamentos que entraram no histórico até agora. */
+  imported: number;
+  /** Primeiro dia e último alcançados (ISO). */
+  from: string | null;
+  to: string;
+  startedAt: string;
+  updatedAt: string;
 };
 
 /** A partir de quantos dias antes do vencimento do token o painel avisa para reconectar. */

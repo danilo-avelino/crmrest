@@ -389,4 +389,50 @@ describe("API de Clientes", () => {
     expect(await ids("tag=sem%20gl%C3%BAten", adminToken)).toEqual([]);
   });
 
+  it("lista e detalhe contam os mesmos pedidos: cancelados e importados ficam fora, também da ordenação", async () => {
+    const ifoodA = await admin.channel.findFirstOrThrow({ where: { tenantId: fx.a.id, type: "IFOOD" } });
+    const make = (code: string, status: "DELIVERED" | "CANCELED", total: string, importedAt: Date | null) => ({
+      tenantId: fx.a.id,
+      channelId: ifoodA.id,
+      externalOrderId: `o-${code}-${fx.a.id}`,
+      displayCode: code,
+      status,
+      subtotal: total,
+      deliveryFee: "0",
+      total,
+      placedAt: daysAgo(4),
+      importedAt,
+      raw: {},
+    });
+    const zeca = await admin.contact.create({ data: { tenantId: fx.a.id, name: "Zeca Misto", firstSeenAt: daysAgo(5), lastSeenAt: daysAgo(4) } });
+    const yara = await admin.contact.create({ data: { tenantId: fx.a.id, name: "Yara Cancelou", firstSeenAt: daysAgo(5), lastSeenAt: daysAgo(4) } });
+    try {
+      await admin.order.createMany({
+        data: [
+          { ...make("zeca-1", "DELIVERED", "10.00", null), contactId: zeca.id },
+          { ...make("zeca-2", "CANCELED", "100.00", null), contactId: zeca.id },
+          { ...make("zeca-3", "CANCELED", "200.00", daysAgo(4)), contactId: zeca.id },
+          { ...make("yara-1", "CANCELED", "50.00", null), contactId: yara.id },
+          { ...make("yara-2", "CANCELED", "60.00", daysAgo(4)), contactId: yara.id },
+        ],
+      });
+      const list = (await get("/contacts?sort=orders&order=desc").expect(200)).body.items as { id: string; ordersCount: number; ordersTotal: string }[];
+      for (const [contact, count, total] of [[zeca, 1, 10], [yara, 0, 0]] as const) {
+        const row = list.find((item) => item.id === contact.id);
+        const detail = (await get(`/contacts/${contact.id}`).expect(200)).body;
+        expect(row?.ordersCount).toBe(count);
+        expect(Number(row?.ordersTotal)).toBe(total);
+        expect(detail.metrics.ordersCount).toBe(count);
+        expect(Number(detail.metrics.ordersTotal)).toBe(total);
+      }
+      // A ordenação segue os números exibidos: Mariana (2), João e Zeca (1), Ana e Yara (0).
+      expect(list.map((item) => item.ordersCount)).toEqual([2, 1, 1, 0, 0]);
+      const asc = (await get("/contacts?sort=orders&order=asc").expect(200)).body.items as { ordersCount: number }[];
+      expect(asc.map((item) => item.ordersCount)).toEqual([0, 0, 1, 1, 2]);
+    } finally {
+      await admin.order.deleteMany({ where: { contactId: { in: [zeca.id, yara.id] } } });
+      await admin.contact.deleteMany({ where: { id: { in: [zeca.id, yara.id] } } });
+    }
+  });
+
 });

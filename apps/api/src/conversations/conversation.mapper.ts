@@ -85,7 +85,7 @@ function hidesRating(conversation: ConversationWithList, auth: RequestAuth): boo
   return content.event === "rating" || (last.direction === "INBOUND" && survey === "awaiting_rating" && RATING_ANSWER.test(content.text ?? ""));
 }
 
-export function toListItem(conversation: ConversationWithList, auth: RequestAuth): ConversationListItem {
+export function toListItem(conversation: ConversationWithList, auth: RequestAuth, awaitingDecision?: Set<string>): ConversationListItem {
   const last = conversation.messages[0];
   return {
     id: conversation.id,
@@ -95,6 +95,8 @@ export function toListItem(conversation: ConversationWithList, auth: RequestAuth
     createdAt: conversation.createdAt.toISOString(),
     lastMessageAt: conversation.lastMessageAt?.toISOString() ?? null,
     windowExpiresAt: conversation.windowExpiresAt?.toISOString() ?? null,
+    teamOnly: conversation.teamOnly,
+    fraudAlert: awaitingDecision?.has(conversation.contactId) ?? false,
     awaitingAgentSince: conversation.awaitingAgentSince?.toISOString() ?? null,
     awaitingAgentQuiet: conversation.awaitingAgentQuiet,
     channel: conversation.channel,

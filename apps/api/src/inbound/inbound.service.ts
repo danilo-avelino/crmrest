@@ -23,7 +23,10 @@ import { RealtimeEmitter } from "../realtime/realtime.emitter.js";
 export type ResolvedChannel = { id: string; tenantId: string; type: ChannelType };
 
 /** O que a resolução de identidade precisa saber de quem chegou (mensagem ou pedido). */
-export type ContactSource = Pick<NormalizedMessage, "channelType" | "externalContactId" | "contactProfile" | "metadata" | "timestamp">;
+export type ContactSource = Pick<NormalizedMessage, "channelType" | "externalContactId" | "contactProfile" | "metadata" | "timestamp"> & {
+  /** Pedido antigo, importado do histórico da loja: não conta como contato recente do cliente. */
+  historical?: boolean;
+};
 
 /**
  * Conversa que recebeu a mensagem e o status que ela tinha antes (null = conversa nova).
@@ -270,7 +273,7 @@ export class InboundService {
       ? await tx.contact.update({
           where: { id: existing.id },
           data: {
-            lastSeenAt: message.timestamp,
+            ...(!message.historical && { lastSeenAt: message.timestamp }),
             ...missingFields(existing, profile),
             ...(cpfHash && !existing.cpfHash && { cpfEncrypted: encrypt(profile.cpf!, this.key), cpfHash }),
           },
@@ -281,7 +284,7 @@ export class InboundService {
             name: profile.name,
             email: profile.email,
             firstSeenAt: message.timestamp,
-            lastSeenAt: message.timestamp,
+            ...(!message.historical && { lastSeenAt: message.timestamp }),
             ...(profile.phone && { phone: profile.phone, phoneSource: "channel", phoneStatus: "ok" }),
             ...(cpfHash && { cpfEncrypted: encrypt(profile.cpf!, this.key), cpfHash }),
           },

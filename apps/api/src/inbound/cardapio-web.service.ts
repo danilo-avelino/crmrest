@@ -1,6 +1,6 @@
 import type { Prisma, TenantTx } from "@dishdesk/database";
 import type { OrderStatus } from "@dishdesk/database/enums";
-import { isValidCpf, toE164 } from "@dishdesk/shared";
+import { isValidCpf, type OrderHistoryImport, toE164 } from "@dishdesk/shared";
 import { InjectQueue, Processor } from "@nestjs/bullmq";
 import { Inject, Injectable, Logger, type OnModuleInit } from "@nestjs/common";
 import * as Sentry from "@sentry/nestjs";
@@ -12,12 +12,14 @@ import {
   CardapioWebClient,
   type CardapioWebCustomer,
   type CardapioWebOrder,
+  CardapioWebPeriodError,
 } from "../connectors/cardapio-web.client.js";
 import { ConnectorsService } from "../connectors/connectors.service.js";
 import { DatabaseService } from "../core/database.service.js";
+import { FraudService } from "../orders/fraud.service.js";
 import { OrderNoticeService } from "../orders/order-notice.service.js";
 import { JobProcessor } from "../queues/job-processor.js";
-import { type CardapioWebImportJob, QUEUES } from "../queues/queues.module.js";
+import { type CardapioWebHistoryJob, type CardapioWebImportJob, QUEUES } from "../queues/queues.module.js";
 import { InboundService, type ResolvedChannel } from "./inbound.service.js";
 import { rememberAddress } from "./orders.js";
 
@@ -27,6 +29,13 @@ const MAX_LOOKBACK_MS = 23 * 60 * 60 * 1000 + 50 * 60 * 1000;
 const OVERLAP_MS = 60_000;
 /** A API de clientes aceita 300 requisições a cada 3 minutos: uma página a cada 0,6 s fica dentro do limite. */
 const CUSTOMERS_PAGE_INTERVAL_MS = 600;
+/** O histórico de pedidos aceita 5 consultas por minuto e um período de até 6 meses por consulta. */
+const HISTORY_PAGE_INTERVAL_MS = 12_500;
+const HISTORY_WINDOW_MONTHS = 6;
+/** A documentação diz ora 1 ano, ora 3 anos: tenta até 3 anos e para quando a API recusar o período. */
+const HISTORY_WINDOWS = 6;
+/** Os detalhes de cada pedido contam no limite geral (300 a cada 3 minutos). */
+const ORDER_DETAIL_INTERVAL_MS = 600;
 
 /**
  * Pedidos do Cardápio Web (cardápio digital do restaurante). Eles trazem o telefone, então entram no cadastro
@@ -44,6 +53,7 @@ export class CardapioWebService implements OnModuleInit {
     private readonly connectors: ConnectorsService,
     private readonly inbound: InboundService,
     private readonly notices: OrderNoticeService,
+    private readonly fraud: FraudService,
     @InjectQueue(QUEUES.cardapioWeb) private readonly queue: Queue,
     @Inject(ENV) env: Env,
   ) {
@@ -88,13 +98,86 @@ export class CardapioWebService implements OnModuleInit {
       const status = CARDAPIO_WEB_STATUS[summary.status];
       if (!status) continue;
       const updated = await this.updateStatus(channel, summary.id, status, CARDAPIO_WEB_EVENT[summary.status], new Date(summary.updated_at));
-      if (!updated) await this.createOrder(channel, await this.client.order(apiKey, summary.id));
-      else if (updated.changed && (status === "READY" || status === "DISPATCHED" || status === "DELIVERED")) {
+      if (!updated) {
+        const created = await this.createOrder(channel, await this.client.order(apiKey, summary.id));
+        if (created && status !== "DELIVERED" && status !== "CANCELED") await this.fraud.orderArrived(channel.tenantId, created);
+      } else if (updated.changed && (status === "READY" || status === "DISPATCHED" || status === "DELIVERED")) {
         await this.notices.statusChanged(channel.tenantId, updated.id, status);
+      } else if (updated.changed && status === "CANCELED") {
+        await this.saveCancellation(channel, apiKey, updated.id, summary.id, new Date(summary.updated_at));
       }
     }
     // Só avança depois de processar tudo: com erro, a próxima rodada relê o mesmo período.
     this.readUntil.set(channel.id, new Date(startedAt.getTime() - OVERLAP_MS));
+  }
+
+  /** Cancelado fora do Dish Desk: o motivo vem só nos detalhes do pedido. Sem ele, o alerta mostra "Motivo não informado". */
+  private async saveCancellation(channel: ResolvedChannel, apiKey: string, orderId: string, externalOrderId: string, at: Date): Promise<void> {
+    let reason: string | null = null;
+    try {
+      reason = (await this.client.order(apiKey, externalOrderId)).cancellation_reason?.trim() || null;
+    } catch (error) {
+      this.logger.warn({ tenantId: channel.tenantId, orderId, err: error }, "Motivo do cancelamento não lido");
+    }
+    await this.db.withTenants({ tenantIds: [channel.tenantId] }, (tx) =>
+      tx.order.update({ where: { id: orderId }, data: { canceledAt: at, ...(reason && { cancellationReason: reason }) } }),
+    );
+  }
+
+  /**
+   * Importa uma página dos cancelamentos antigos da loja, para o alerta de fraude considerar o histórico, e agenda a
+   * próxima. Só os cancelados: os relatórios e as tags não contam cancelados, então o passado da loja não muda os
+   * números de hoje. Cada pedido exige uma consulta (a lista vem sem cliente, motivo nem endereço), daí o ritmo lento.
+   */
+  async importOrderHistory(data: CardapioWebHistoryJob): Promise<void> {
+    if (!this.client.configured) return;
+    const scope = { tenantIds: [data.tenantId] };
+    const channel = await this.db.withTenants(scope, async (tx) => ({
+      row: await tx.channel.findFirst({ where: { id: data.channelId, status: "CONNECTED" }, select: { credentials: true } }),
+      hasIfood: (await tx.channel.count({ where: { type: "IFOOD", status: "CONNECTED" } })) > 0,
+    }));
+    const save = (patch: Partial<OrderHistoryImport>) =>
+      this.db.withTenants(scope, async (tx) => {
+        const { orderHistoryImport } = await tx.channel.findUniqueOrThrow({ where: { id: data.channelId }, select: { orderHistoryImport: true } });
+        const state = { ...(orderHistoryImport as OrderHistoryImport), ...patch, imported: patch.imported ?? data.imported, updatedAt: new Date().toISOString() };
+        await tx.channel.update({ where: { id: data.channelId }, data: { orderHistoryImport: state } });
+      });
+    const failed = () => save({ status: data.imported > 0 || data.window > 0 ? "partial" : "error" });
+    if (!channel.row) return failed(); // desconectada no meio da importação
+
+    const until = new Date(data.until);
+    const end = monthsBefore(until, data.window * HISTORY_WINDOW_MONTHS);
+    const start = monthsBefore(until, (data.window + 1) * HISTORY_WINDOW_MONTHS);
+    const { accessToken: apiKey } = this.connectors.secrets(channel.row.credentials);
+    const resolved: ResolvedChannel = { id: data.channelId, tenantId: data.tenantId, type: "CARDAPIO_WEB" };
+    let imported = data.imported;
+    try {
+      const { orders, pagination } = await this.client.canceledHistory(apiKey, start, end, data.page);
+      const known = new Set(
+        (
+          await this.db.withTenants(scope, (tx) =>
+            tx.order.findMany({ where: { channelId: data.channelId, externalOrderId: { in: orders.map((order) => order.id) } }, select: { externalOrderId: true } }),
+          )
+        ).map((order) => order.externalOrderId),
+      );
+      for (const summary of orders) {
+        if (known.has(summary.id) || (channel.hasIfood && summary.sales_channel === "ifood")) continue;
+        await new Promise((resolve) => setTimeout(resolve, ORDER_DETAIL_INTERVAL_MS));
+        if (await this.createOrder(resolved, await this.client.order(apiKey, summary.id), new Date())) imported++;
+      }
+      const lastPage = data.page >= pagination.total_pages;
+      const lastWindow = data.window + 1 >= HISTORY_WINDOWS;
+      const done = (data.window + (lastPage ? 1 : data.page / pagination.total_pages)) / HISTORY_WINDOWS;
+      if (lastPage && lastWindow) return await save({ status: "done", progress: 100, imported, from: start.toISOString() });
+      await save({ progress: Math.round(done * 100), imported, from: start.toISOString() });
+      const next: CardapioWebHistoryJob = { ...data, imported, ...(lastPage ? { window: data.window + 1, page: 1 } : { page: data.page + 1 }) };
+      await this.queue.add("import-orders", next, { delay: HISTORY_PAGE_INTERVAL_MS });
+    } catch (error) {
+      // Passou do que a API guarda: terminou. Na primeira consulta, é erro de verdade.
+      if (error instanceof CardapioWebPeriodError && data.window > 0) return await save({ status: "done", progress: 100, imported });
+      this.logger.warn({ tenantId: data.tenantId, channelId: data.channelId, err: error }, "Histórico de pedidos do Cardápio Web não importado");
+      await save({ status: imported > 0 || data.window > 0 ? "partial" : "error", imported });
+    }
   }
 
   /**
@@ -208,19 +291,23 @@ export class CardapioWebService implements OnModuleInit {
     });
   }
 
-  /** Pedido novo: cliente (pelo telefone), endereço e o pedido com os itens. Pedidos sem cliente (mesa, balcão) ficam de fora. */
-  private async createOrder(channel: ResolvedChannel, order: CardapioWebOrder): Promise<void> {
+  /**
+   * Pedido novo: cliente (pelo telefone), endereço e o pedido com os itens. Pedidos sem cliente (mesa, balcão) ficam de
+   * fora. `importedAt`: veio do histórico da loja, então não conta como contato recente do cliente. Devolve o id do pedido.
+   */
+  private async createOrder(channel: ResolvedChannel, order: CardapioWebOrder, importedAt?: Date): Promise<string | null> {
     const customer = order.customer;
     const phone = customer?.phone ? customerPhone(customer.phone, customer.ddi) : null;
     const externalContactId = customer?.id ?? phone;
-    if (!externalContactId) return;
+    if (!externalContactId) return null;
     const cpf = order.fiscal_document?.replace(/\D/g, "");
     const at = new Date(order.created_at);
 
-    await this.db.withTenants({ tenantIds: [channel.tenantId] }, async (tx) => {
+    return this.db.withTenants({ tenantIds: [channel.tenantId] }, async (tx) => {
       const contact = await this.inbound.resolveContact(tx, channel.tenantId, {
         channelType: "CARDAPIO_WEB",
         externalContactId,
+        historical: Boolean(importedAt),
         contactProfile: {
           ...(customer?.name && { name: customer.name }),
           ...(phone && { phone }),
@@ -240,7 +327,7 @@ export class CardapioWebService implements OnModuleInit {
           zipCode: address.postal_code,
         });
       }
-      await tx.order.create({
+      const created = await tx.order.create({
         data: {
           tenantId: channel.tenantId,
           contactId: contact.id,
@@ -248,6 +335,8 @@ export class CardapioWebService implements OnModuleInit {
           externalOrderId: order.id,
           displayCode: order.display_id ?? null,
           status: CARDAPIO_WEB_STATUS[order.status] ?? "PLACED",
+          ...(order.status === "canceled" && { canceledAt: new Date(order.updated_at), cancellationReason: order.cancellation_reason?.trim() || null }),
+          ...(importedAt && { importedAt }),
           subtotal: cents(order.items.reduce((sum, item) => sum + item.total_price, 0)),
           deliveryFee: order.delivery_fee,
           total: order.total,
@@ -266,9 +355,17 @@ export class CardapioWebService implements OnModuleInit {
           },
           events: { create: stagesOf(order).map((stage) => ({ tenantId: channel.tenantId, externalEventId: stage.code, ...stage })) },
         },
+        select: { id: true },
       });
+      return created.id;
     });
   }
+}
+
+function monthsBefore(date: Date, months: number): Date {
+  const result = new Date(date);
+  result.setUTCMonth(result.getUTCMonth() - months);
+  return result;
 }
 
 /** "85994197929" + DDI "55" → "+5585994197929"; aceita também o número já com o código do país. */
@@ -298,6 +395,7 @@ export class CardapioWebProcessor extends JobProcessor {
 
   async process(job: Job): Promise<void> {
     if (job.name === "import-customers") await this.cardapioWeb.importCustomers(job.data as CardapioWebImportJob);
+    else if (job.name === "import-orders") await this.cardapioWeb.importOrderHistory(job.data as CardapioWebHistoryJob);
     else await this.cardapioWeb.poll();
   }
 }

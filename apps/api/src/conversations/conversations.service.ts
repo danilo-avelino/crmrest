@@ -28,6 +28,7 @@ import { scheduleEvaluation } from "../ai/ai-evaluation.service.js";
 import { LlmClient } from "../ai/llm.client.js";
 import type { RequestAuth } from "../auth/auth.decorators.js";
 import { type AutomationState, channelSends } from "../automations/automation.js";
+import { contactsAwaitingDecision } from "../orders/fraud-alert.js";
 import { ENV, type Env } from "../config/env.js";
 import { ConnectorsService } from "../connectors/connectors.service.js";
 import { contactSearch } from "../contacts/contact-search.js";
@@ -40,6 +41,9 @@ import { conversationListInclude, listEvaluations, toListItem, toMessageDto, toO
 
 const PAGE_SIZE = 50;
 const MESSAGES_LIMIT = 200;
+
+/** Conversa aberta pelo alerta de fraude para um pedido sem conversa. */
+const TEAM_ONLY_REPLY = "O cliente não está nesta conversa: use uma nota interna.";
 
 @Injectable()
 export class ConversationsService {
@@ -64,17 +68,20 @@ export class ConversationsService {
       ...(query.status && { status: query.status === "ACTIVE" ? { not: "RESOLVED" } : query.status }),
       ...(query.search && { contact: contactSearch(query.search, this.key) }),
     };
-    const rows = await this.db.withTenants(scopeFor(auth, query.tenantId), (tx) =>
-      tx.conversation.findMany({
-        where,
-        include: conversationListInclude,
-        // Quem está chamando o atendente fica no topo, da espera mais longa para a mais curta.
-        orderBy: [{ awaitingAgentSince: { sort: "asc", nulls: "last" } }, { lastMessageAt: { sort: "desc", nulls: "last" } }, { id: "desc" }],
-        take: PAGE_SIZE + 1,
-        ...(query.cursor && { cursor: { id: query.cursor }, skip: 1 }),
-      }),
+    const [rows, awaitingDecision] = await this.db.withTenants(scopeFor(auth, query.tenantId), (tx) =>
+      Promise.all([
+        tx.conversation.findMany({
+          where,
+          include: conversationListInclude,
+          // Quem está chamando o atendente fica no topo, da espera mais longa para a mais curta.
+          orderBy: [{ awaitingAgentSince: { sort: "asc", nulls: "last" } }, { lastMessageAt: { sort: "desc", nulls: "last" } }, { id: "desc" }],
+          take: PAGE_SIZE + 1,
+          ...(query.cursor && { cursor: { id: query.cursor }, skip: 1 }),
+        }),
+        contactsAwaitingDecision(tx),
+      ]),
     );
-    const items = rows.slice(0, PAGE_SIZE).map((row) => toListItem(row, auth));
+    const items = rows.slice(0, PAGE_SIZE).map((row) => toListItem(row, auth, awaitingDecision));
     return { items, nextCursor: rows.length > PAGE_SIZE ? (items.at(-1)?.id ?? null) : null };
   }
 
@@ -100,11 +107,11 @@ export class ConversationsService {
   }
 
   async get(auth: RequestAuth, id: string) {
-    const conversation = await this.db.withTenants(auth.scope, (tx) =>
-      tx.conversation.findUnique({ where: { id }, include: conversationListInclude }),
+    const [conversation, awaitingDecision] = await this.db.withTenants(auth.scope, (tx) =>
+      Promise.all([tx.conversation.findUnique({ where: { id }, include: conversationListInclude }), contactsAwaitingDecision(tx)]),
     );
     if (!conversation) throw new NotFoundException("Conversa não encontrada.");
-    return toListItem(conversation, auth);
+    return toListItem(conversation, auth, awaitingDecision);
   }
 
   async messages(auth: RequestAuth, id: string): Promise<ConversationMessages> {
@@ -177,6 +184,7 @@ export class ConversationsService {
     const message = await this.db.withTenants(auth.scope, async (tx) => {
       const conversation = await this.requireConversation(tx, conversationId);
       const capabilities = CHANNEL_CAPABILITIES[conversation.channel.type];
+      if (conversation.teamOnly) throw new UnprocessableEntityException(TEAM_ONLY_REPLY);
       if (!this.canSend(conversation.channel.type)) throw new UnprocessableEntityException("Este canal não permite responder pelo Dish Desk.");
       if (capabilities.window24h && (!conversation.windowExpiresAt || conversation.windowExpiresAt < new Date())) {
         throw new UnprocessableEntityException("A janela de 24h para resposta livre terminou.");
@@ -285,6 +293,7 @@ export class ConversationsService {
 
     const message = await this.db.withTenants(auth.scope, async (tx) => {
       const conversation = await this.requireConversation(tx, conversationId);
+      if (conversation.teamOnly) throw new UnprocessableEntityException(TEAM_ONLY_REPLY);
       const created = await tx.message.create({
         data: {
           tenantId: conversation.tenantId,
@@ -366,7 +375,8 @@ export class ConversationsService {
       return { conversation: updated, resolved: body.status === "RESOLVED" && current.status !== "RESOLVED" };
     });
     // Fim do atendimento: a pesquisa de satisfação decide no worker se pergunta a nota; a IA avalia o atendimento.
-    if (resolved) {
+    // A conversa só da equipe não teve atendimento: o cliente nem está nela.
+    if (resolved && !conversation.teamOnly) {
       await this.automations.add("survey", { tenantId: conversation.tenantId, conversationId });
       await scheduleEvaluation(this.ai, conversation.tenantId, conversationId);
     }

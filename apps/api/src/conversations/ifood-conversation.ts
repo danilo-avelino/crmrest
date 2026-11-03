@@ -10,9 +10,11 @@ type IfoodOrder = { id: string; tenantId: string; contactId: string; channelId: 
  */
 export async function openIfoodConversation(tx: TenantTx, order: IfoodOrder, at: Date, status: ConversationStatus = "OPEN") {
   const where = { contactId: order.contactId, channelId: order.channelId };
-  const select = { id: true, lastMessageAt: true, status: true };
+  const select = { id: true, lastMessageAt: true, status: true, teamOnly: true };
   const latest = await tx.conversation.findFirst({ where, orderBy: { createdAt: "desc" }, select });
   const conversation = latest ?? (await tx.conversation.create({ data: { tenantId: order.tenantId, ...where, status, createdAt: at }, select }));
+  // Aberta só para a equipe pelo alerta de fraude: agora o cliente está nela.
+  if (latest?.teamOnly) await tx.conversation.update({ where: { id: latest.id }, data: { teamOnly: false } });
   const event = (content: MessageContent, createdAt: Date) =>
     tx.message.create({
       data: { tenantId: order.tenantId, conversationId: conversation.id, channelId: order.channelId, direction: "INTERNAL", type: "SYSTEM", content, createdAt },

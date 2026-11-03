@@ -1,6 +1,6 @@
 # Pendências para produção — Dish Desk
 
-Atualizado em 31 de outubro de 2026.
+Atualizado em 3 de novembro de 2026.
 
 Esta é a lista do que falta para o Dish Desk atender restaurantes de verdade. Quando um item for concluído, marque `[x]` e troque a data acima.
 
@@ -108,6 +108,9 @@ Pagamento pendente (Claude, 11/10): a renovação do mensal tem 1 dia de folga; 
 - [ ] **Canais durante o teste.** Enquanto a Meta não aprovar o app (item 1), quem se cadastra pelo site não consegue conectar WhatsApp nem Instagram: só contas testadoras conectam.
 
 ## 3. Riscos no código
+
+- [ ] **Prevenção de fraude (E40): testar com a API real do Cardápio Web.** O cancelamento (`POST /orders/{id}/cancel`) e o histórico (`GET /orders/history`) foram feitos pela documentação e só rodaram contra uma API falsa. A documentação se contradiz sobre até quando o histórico volta (1 ou 3 anos): a importação tenta 3 anos e para quando a API recusar.
+- [ ] **Prevenção de fraude (E40): ligar o cancelamento do iFood.** Decidido em 03/11: pôr `IFOOD_ORDER_CANCEL=true` na `api` da Railway. O alerta passa a cancelar pelo Dish Desk, sem liberar confirmar, marcar pronto nem despachar. Sem ela, o alerta aparece, mas manda cancelar no Gestor de Pedidos. Ver o E40 no [ROADMAP.md](../ROADMAP.md).
 
 - [ ] **Token do WhatsApp sem renovação.** O cadastro incorporado usa o modelo "token de 60 dias".
   - [x] Job diário (4h) que confere o token na Meta (`debug_token`): recusado, o canal fica "Com erro"; permanente, nada muda; de 60 dias, grava o vencimento e renova com `fb_exchange_token` + `set_token_expires_in_60_days` quando tem mais de 7 dias. Integrações e a Inbox avisam "vence em N dias" a partir de 10 dias do fim (WhatsApp e Instagram) — Claude, 21/10. Testado com a Meta simulada.

@@ -39,7 +39,9 @@ export function Composer({ conversation }: { conversation: ConversationListItem 
   const queryClient = useQueryClient();
   const now = useNow(1_000);
   const [, setSentTick] = useState(0);
-  const [mode, setMode] = useState<Mode>("reply");
+  const [chosenMode, setMode] = useState<Mode>("reply");
+  // O cliente não está na conversa aberta pelo alerta de fraude: só cabem notas.
+  const mode: Mode = conversation.teamOnly ? "note" : chosenMode;
   const [text, setText] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [highlight, setHighlight] = useState(0);
@@ -181,6 +183,7 @@ export function Composer({ conversation }: { conversation: ConversationListItem 
             type="button"
             role="tab"
             aria-selected={mode === value}
+            disabled={conversation.teamOnly && value === "reply"}
             onClick={() => {
               setMode(value);
               setError(null);
@@ -188,11 +191,13 @@ export function Composer({ conversation }: { conversation: ConversationListItem 
             className={cn(
               "-mb-px border-b-2 px-3.5 py-2 text-[12px]",
               mode === value ? "border-ink font-medium text-ink" : "border-transparent text-ink-3 hover:text-ink-2",
+              conversation.teamOnly && value === "reply" && "cursor-not-allowed opacity-55 hover:text-ink-3",
             )}
           >
             {label}
           </button>
         ))}
+        {conversation.teamOnly && <span className="ml-auto self-center text-[11px] text-ink-3">Responder fica desligado: o cliente não está na conversa.</span>}
       </div>
 
       <div className="relative flex flex-col gap-2 px-3.5 pt-2.5 pb-2">

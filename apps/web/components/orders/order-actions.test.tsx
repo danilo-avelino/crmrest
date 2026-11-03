@@ -1,11 +1,19 @@
 import type { OrderListItem } from "@dishdesk/shared";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { OrderActions } from "./order-actions";
 
 const request = vi.fn();
-vi.mock("@/components/auth/auth-provider", () => ({ useAuth: () => ({ request }) }));
+/** Por onde a equipe fala com o cliente (consulta do botão "Abrir conversa"); fora dos testes dele, sem canal. */
+const customerChat = vi.fn();
+const push = vi.fn();
+vi.mock("@/components/auth/auth-provider", () => ({
+  useAuth: () => ({
+    request: (...args: [string, { method?: string }?]) => (args[0].endsWith("/customer-chat") && !args[1] ? customerChat(args[0]) : request(...args)),
+  }),
+}));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
 vi.mock("@/components/ui/toast", () => ({ useToast: () => vi.fn() }));
 
 const order = (patch: Partial<OrderListItem>) =>
@@ -47,9 +55,27 @@ function show(patch: Partial<OrderListItem> = {}) {
 }
 
 describe("ações do pedido do iFood", () => {
+  beforeEach(() => customerChat.mockResolvedValue({ channel: null, contactName: null }));
   afterEach(() => {
     cleanup();
     request.mockReset();
+    customerChat.mockReset();
+    push.mockReset();
+  });
+
+  it("Abrir conversa: só com canal para falar com o cliente; abre a conversa e leva à Inbox", async () => {
+    customerChat.mockResolvedValue({ channel: "WHATSAPP", contactName: "Marcos" });
+    request.mockResolvedValueOnce({ conversationId: "conversa-9" });
+    show({ status: "DELIVERED", nextAction: null, cancelable: false });
+    fireEvent.click(await screen.findByRole("button", { name: "Abrir conversa" }));
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/inbox?conversa=conversa-9"));
+    expect(request).toHaveBeenCalledWith("/orders/pedido-1/customer-chat", { method: "POST" });
+  });
+
+  it("sem canal para falar com o cliente: não mostra Abrir conversa", async () => {
+    show();
+    await waitFor(() => expect(customerChat).toHaveBeenCalled());
+    expect(screen.queryByRole("button", { name: "Abrir conversa" })).toBeNull();
   });
 
   it("o botão muda com o status do pedido", () => {
@@ -80,7 +106,9 @@ describe("ações do pedido do iFood", () => {
   });
 
   it("cancelar: escolhe um dos motivos do iFood e só então pede o cancelamento", async () => {
-    request.mockResolvedValueOnce({ reasons: [{ code: "503", description: "ITEM INDISPONÍVEL" }] }).mockResolvedValueOnce(undefined);
+    request
+      .mockResolvedValueOnce({ reasons: [{ code: "503", description: "ITEM INDISPONÍVEL" }], reasonMode: "list", message: null, address: null })
+      .mockResolvedValueOnce(undefined);
     show();
     fireEvent.click(screen.getByRole("button", { name: "Cancelar pedido" }));
     const reason = await screen.findByRole("radio", { name: "ITEM INDISPONÍVEL" });
@@ -90,15 +118,16 @@ describe("ações do pedido do iFood", () => {
     expect(confirm.hasAttribute("disabled")).toBe(true);
     fireEvent.click(reason);
     fireEvent.click(screen.getAllByRole("button", { name: "Cancelar pedido" }).at(-1)!);
-    await waitFor(() => expect(request).toHaveBeenCalledWith("/orders/pedido-1/cancel", { method: "POST", body: { code: "503" } }));
-    await waitFor(() => expect(screen.getByRole("status").textContent).toContain("Enviado ao iFood"));
+    await waitFor(() => expect(request).toHaveBeenCalledWith("/orders/pedido-1/cancel", { method: "POST", body: { code: "503", markFraud: false } }));
+    expect(await screen.findByText("Cancelamento pedido, aguardando o iFood.")).toBeTruthy();
+    await waitFor(() => expect(screen.getByRole("status", { hidden: true }).textContent).toContain("Enviado ao iFood"));
   });
 
   it("o iFood não oferece motivos: avisa que não dá para cancelar", async () => {
-    request.mockResolvedValueOnce({ reasons: [] });
+    request.mockResolvedValueOnce({ reasons: [], reasonMode: "list", message: null, address: null });
     show();
     fireEvent.click(screen.getByRole("button", { name: "Cancelar pedido" }));
-    expect(await screen.findByText("O iFood não permite cancelar este pedido agora.")).toBeTruthy();
+    expect(await screen.findByText("Não dá para cancelar agora")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Fechar" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Cancelar pedido" })).toBeNull(); // o modal não oferece confirmar
   });

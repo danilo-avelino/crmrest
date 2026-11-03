@@ -32,6 +32,7 @@ import { IfoodProcessor, IfoodService } from "./inbound/ifood.service.js";
 import { InboundProcessor } from "./inbound/inbound.processor.js";
 import { InboundService } from "./inbound/inbound.service.js";
 import { OrdersController } from "./orders/orders.controller.js";
+import { FraudService } from "./orders/fraud.service.js";
 import { OrderNoticeService } from "./orders/order-notice.service.js";
 import { OrdersService } from "./orders/orders.service.js";
 import { OutboundProcessor } from "./outbound/outbound.processor.js";
@@ -85,6 +86,8 @@ import { StripeWebhookController } from "./webhooks/stripe-webhook.controller.js
     ReportsService,
     IfoodReviewsService,
     OrdersService,
+    OrderNoticeService,
+    FraudService,
     LlmClient,
     AiSuggestionService,
     OnboardingService,
@@ -123,6 +126,7 @@ export class RealtimeRoleModule {}
     CardapioWebService,
     CardapioWebProcessor,
     OrderNoticeService,
+    FraudService,
     ChannelTokensService,
     ChannelTokensProcessor,
     LlmClient,

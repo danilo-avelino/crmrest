@@ -24,6 +24,7 @@ import { useAuth } from "@/components/auth/auth-provider";
 import { IFOOD_WIDGET_KEY } from "@/components/ifood-widget";
 import { SettingsTenantPicker, TabLoading, useSettingsTenant } from "@/components/settings/settings-shell";
 import { Button } from "@/components/ui/button";
+import { IfoodHistoryNote, OrderHistorySection } from "@/components/settings/order-history-section";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -531,6 +532,10 @@ function IntegrationPanel({ system, data, adding, onClose }: { system: System; d
                   <ServedTenants data={data} item={item} />
                 </div>
               )}
+              {item.type === "CARDAPIO_WEB" && item.status === "CONNECTED" && data.platform.cardapioWeb && (
+                <OrderHistorySection tenantId={data.tenantId} item={item} canEdit={data.canEdit} queryKey={["integrations", data.tenantId]} />
+              )}
+              {item.type === "IFOOD" && <IfoodHistoryNote />}
             </div>
           ))}
           {tip && (

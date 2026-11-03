@@ -94,6 +94,11 @@ export function monthYear(iso: string): string {
   return `${month}/${parts.find((part) => part.type === "year")?.value}`;
 }
 
+/** "04/10" */
+export function dayMonth(iso: string): string {
+  return dateFormat.format(new Date(iso));
+}
+
 /** "04/10/2026" */
 export function fullDate(iso: string): string {
   return fullDateFormat.format(new Date(iso));

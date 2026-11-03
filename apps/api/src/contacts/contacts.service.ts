@@ -30,6 +30,7 @@ import { ENV, type Env } from "../config/env.js";
 import { conversationListInclude, listEvaluations, toListItem, toOrderDto } from "../conversations/conversation.mapper.js";
 import { DatabaseService } from "../core/database.service.js";
 import { customerHistory, linkedOrdersWhere } from "../orders/customer-history.js";
+import { customerCancellations } from "../orders/fraud-alert.js";
 import { RealtimeEmitter } from "../realtime/realtime.emitter.js";
 import { isTenantAdmin } from "../settings/tenant-admin.js";
 import { findDuplicatePairs } from "./contact-duplicates.js";
@@ -78,19 +79,26 @@ export class ContactsService {
         : query.sort === "phone"
           ? { phone: sort }
           : query.sort === "orders"
-            ? { orders: { _count: query.order } }
+            ? { id: "desc" } // a ordem por pedidos vem da consulta abaixo, que não conta cancelados nem importados
             : { lastSeenAt: sort },
       { id: "desc" },
     ];
 
     return this.db.withTenants(auth.scope, async (tx) => {
       if (query.upset) where.id = { in: await upsetContactIds(tx) };
-      const total = await tx.contact.count({ where });
-      const rows = await tx.contact.findMany({
-        where,
+      let total: number;
+      let pageIds: string[] | null = null;
+      if (query.sort === "orders") {
+        const matching = (await tx.contact.findMany({ where, select: { id: true } })).map((row) => row.id);
+        total = matching.length;
+        pageIds = await idsByOrdersCount(tx, matching, query.order, (query.page - 1) * CONTACT_PAGE_SIZE);
+      } else {
+        total = await tx.contact.count({ where });
+      }
+      const found = await tx.contact.findMany({
+        where: pageIds ? { id: { in: pageIds } } : where,
         orderBy,
-        skip: (query.page - 1) * CONTACT_PAGE_SIZE,
-        take: CONTACT_PAGE_SIZE,
+        ...(!pageIds && { skip: (query.page - 1) * CONTACT_PAGE_SIZE, take: CONTACT_PAGE_SIZE }),
         select: {
           id: true,
           name: true,
@@ -106,9 +114,11 @@ export class ContactsService {
           addresses: { where: { district: { not: null } }, orderBy: { id: "asc" }, take: 1, select: { district: true } },
         },
       });
+      const rows = pageIds ? pageIds.map((id) => found.find((row) => row.id === id)).filter((row) => row !== undefined) : found;
       const totals = await tx.order.groupBy({
         by: ["contactId"],
-        where: { contactId: { in: rows.map((row) => row.id) } },
+        // Como no detalhe do cliente: cancelados e o histórico importado (para o alerta de fraude) não entram nos totais.
+        where: { contactId: { in: rows.map((row) => row.id) }, importedAt: null, status: { not: "CANCELED" } },
         _count: { _all: true },
         _sum: { total: true },
       });
@@ -435,7 +445,8 @@ export class ContactsService {
       await tx.contactIdentity.deleteMany({ where: { contactId: id } });
       await tx.contactAddress.deleteMany({ where: { contactId: id } });
       await tx.consent.deleteMany({ where: { contactId: id } });
-      await tx.order.updateMany({ where: { contactId: id }, data: { deliveryAddress: Prisma.DbNull, raw: {} } });
+      // A marca de fraude fica no pedido, mas sem o endereço ela deixa de valer para os próximos pedidos dali.
+      await tx.order.updateMany({ where: { contactId: id }, data: { deliveryAddress: Prisma.DbNull, raw: {}, fraudAddressKey: null, cancellationReason: null } });
       await tx.orderItem.updateMany({ where: { order: { contactId: id } }, data: { notes: null } });
 
       const conversations = await tx.conversation.findMany({ where: { contactId: id }, select: { id: true } });
@@ -513,6 +524,7 @@ export class ContactsService {
       })),
       addresses: contact.addresses.map(({ tenantId: _t, contactId: _c, ...address }) => address),
       metrics: { ordersCount: history.orders, ordersTotal: history.total, ordersBySource: history.bySource },
+      cancellations: await customerCancellations(tx, contact),
       recentOrders: recent.map((order) => ({
         id: order.id,
         displayCode: order.displayCode,
@@ -537,13 +549,28 @@ function requireAdmin(auth: RequestAuth, tenantId: string): void {
   }
 }
 
+/** Uma página de ids dos clientes dados, ordenada pelos pedidos que a lista exibe (sem cancelados nem importados). */
+async function idsByOrdersCount(tx: TenantTx, ids: string[], order: "asc" | "desc", skip: number): Promise<string[]> {
+  const rows = await tx.$queryRaw<{ id: string }[]>`
+    SELECT c.id FROM contacts c
+    LEFT JOIN (
+      SELECT contact_id, count(*) AS n FROM orders
+      WHERE status <> 'CANCELED' AND imported_at IS NULL
+      GROUP BY contact_id
+    ) o ON o.contact_id = c.id
+    WHERE c.id = ANY(${ids}::uuid[])
+    ORDER BY COALESCE(o.n, 0) ${Prisma.raw(order === "asc" ? "ASC" : "DESC")}, c.id DESC
+    LIMIT ${CONTACT_PAGE_SIZE} OFFSET ${skip}`;
+  return rows.map((row) => row.id);
+}
+
 /** Chateados: clientes (não anonimizados) cujo pedido mais recente foi cancelado. */
 async function upsetContactIds(tx: TenantTx): Promise<string[]> {
   const rows = await tx.$queryRaw<{ contact_id: string }[]>`
     SELECT contact_id FROM (
       SELECT DISTINCT ON (o.contact_id) o.contact_id, o.status
       FROM orders o JOIN contacts c ON c.id = o.contact_id
-      WHERE c.deleted_at IS NULL
+      WHERE c.deleted_at IS NULL AND o.imported_at IS NULL
       ORDER BY o.contact_id, o.placed_at DESC, o.id DESC
     ) latest
     WHERE status = 'CANCELED'`;

@@ -9,6 +9,7 @@ import {
   type IfoodStoresResultDto,
   INTEGRATION_TYPES,
   type IntegrationDto,
+  type OrderHistoryImport,
   type IntegrationsDto,
   type IntegrationType,
   phoneFromWhatsAppId,
@@ -38,7 +39,7 @@ import { IfoodError, type IfoodGrant, type IfoodMerchant } from "../connectors/i
 import { ConnectorsService } from "../connectors/connectors.service.js";
 import { IfoodAuthService, type IfoodLinkCode } from "../connectors/ifood-auth.service.js";
 import { DatabaseService } from "../core/database.service.js";
-import { type CardapioWebImportJob, QUEUES } from "../queues/queues.module.js";
+import { type CardapioWebHistoryJob, type CardapioWebImportJob, QUEUES } from "../queues/queues.module.js";
 import { isTenantAdmin, requireTenantAdmin } from "./tenant-admin.js";
 
 /** O que vai para o canal depois de a credencial ser conferida no sistema de origem. */
@@ -51,7 +52,10 @@ type VerifiedChannel = {
   tokenExpiresAt?: Date | null;
 };
 
-const SELECT = { id: true, type: true, name: true, externalId: true, status: true, servedTenantIds: true, tokenExpiresAt: true } as const;
+const SELECT = { id: true, type: true, name: true, externalId: true, status: true, servedTenantIds: true, tokenExpiresAt: true, orderHistoryImport: true } as const;
+
+/** Importação "em andamento" sem notícia há este tempo: o worker caiu no meio dela. */
+const HISTORY_IMPORT_STALE_MS = 15 * 60_000;
 
 /** Tokens de longa duração do Instagram valem 60 dias (o job semanal os renova). */
 const INSTAGRAM_TOKEN_LIFETIME_MS = 60 * 24 * 60 * 60 * 1000;
@@ -422,6 +426,31 @@ export class IntegrationsService {
   }
 
   /** Troca o nome que a integração mostra no painel e na Inbox. */
+  /** "Importar histórico": traz os cancelamentos antigos da loja, em segundo plano. */
+  async importOrderHistory(auth: RequestAuth, tenantId: string, channelId: string, now = new Date()): Promise<IntegrationDto> {
+    requireTenantAdmin(auth, tenantId);
+    const saved = await this.db.withTenants({ tenantIds: [tenantId], userId: auth.userId }, async (tx) => {
+      const channel = await tx.channel.findFirst({ where: { id: channelId, type: "CARDAPIO_WEB", status: "CONNECTED", deletedAt: null }, select: SELECT });
+      if (!channel) throw new NotFoundException("Integração não encontrada.");
+      if (orderHistoryOf(channel.orderHistoryImport)?.status === "running") return toDto(channel);
+      const state: OrderHistoryImport = {
+        status: "running",
+        progress: 0,
+        imported: 0,
+        from: null,
+        to: now.toISOString(),
+        startedAt: now.toISOString(),
+        updatedAt: now.toISOString(),
+      };
+      return toDto(await tx.channel.update({ where: { id: channel.id }, data: { orderHistoryImport: state }, select: SELECT }));
+    });
+    if (saved.orderHistory?.startedAt === now.toISOString()) {
+      const job: CardapioWebHistoryJob = { tenantId, channelId, until: now.toISOString(), window: 0, page: 1, imported: 0 };
+      await this.cardapioWebQueue.add("import-orders", job);
+    }
+    return saved;
+  }
+
   rename(auth: RequestAuth, tenantId: string, channelId: string, name: string): Promise<IntegrationDto> {
     requireTenantAdmin(auth, tenantId);
     return this.db.withTenants({ tenantIds: [tenantId], userId: auth.userId }, async (tx) => {
@@ -668,6 +697,20 @@ function toDto(channel: {
   status: IntegrationDto["status"];
   servedTenantIds: string[];
   tokenExpiresAt: Date | null;
+  orderHistoryImport: unknown;
 }): IntegrationDto {
-  return { ...channel, type: channel.type as IntegrationType, tokenExpiresAt: channel.tokenExpiresAt?.toISOString() ?? null };
+  const { orderHistoryImport, ...rest } = channel;
+  return {
+    ...rest,
+    type: channel.type as IntegrationType,
+    tokenExpiresAt: channel.tokenExpiresAt?.toISOString() ?? null,
+    orderHistory: orderHistoryOf(orderHistoryImport),
+  };
+}
+
+function orderHistoryOf(saved: unknown): OrderHistoryImport | null {
+  if (!saved) return null;
+  const state = saved as OrderHistoryImport;
+  const stale = state.status === "running" && Date.now() - Date.parse(state.updatedAt) > HISTORY_IMPORT_STALE_MS;
+  return stale ? { ...state, status: state.imported > 0 ? "partial" : "error" } : state;
 }

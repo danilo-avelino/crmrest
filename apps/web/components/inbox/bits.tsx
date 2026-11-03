@@ -75,6 +75,13 @@ const BADGE = {
   neutral: "border-rule bg-surface-2 text-ink-2",
 } as const;
 
+/** Conversa aberta pelo alerta de fraude: o cliente não está nela. */
+export function TeamOnlyBadge() {
+  return (
+    <span className="shrink-0 rounded-sm border border-rule bg-surface-2 px-[7px] text-[10.5px] leading-[17px] font-medium whitespace-nowrap text-ink-2">Só a equipe</span>
+  );
+}
+
 /** Selo pequeno de status da lista ("Pendente", "Resolvida", "⚠"). */
 export function StatusBadge({
   tone,

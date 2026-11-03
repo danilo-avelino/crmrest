@@ -28,6 +28,7 @@ export type MessageContent = {
     | "order_ready"
     | "order_dispatched"
     | "order_delivered"
+    | "order_canceled"
     | "order_links"
     | "handoff"
     | "no_agents_online"
@@ -59,7 +60,14 @@ export type MessageContent = {
     | "awaiting_agent"
     /** A principal e a reserva da IA não responderam: o atendimento segue no menu. */
     | "ai_fallback"
-    | "cancellation_alert";
+    | "cancellation_alert"
+    /** Prevenção de fraude: só a equipe vê. */
+    | "fraud_alert"
+    | "order_kept"
+    | "order_canceled_by_team"
+    | "order_cancel_refused"
+    | "fraud_marked"
+    | "fraud_unmarked";
   orderId?: string;
   /** O card do pedido traz o botão de conversar com o cliente (pedido informado por um entregador). */
   customerChat?: boolean;
@@ -153,6 +161,10 @@ export type ConversationListItem = {
   createdAt: string;
   lastMessageAt: string | null;
   windowExpiresAt: string | null;
+  /** Aberta pelo alerta de fraude para um pedido sem conversa: o cliente não está nela, só cabem notas internas. */
+  teamOnly: boolean;
+  /** O cliente tem um pedido com alerta de fraude à espera da decisão da equipe. */
+  fraudAlert: boolean;
   /** Desde quando o cliente espera um atendente (a automação chamou a equipe e ninguém respondeu); null = não espera. */
   awaitingAgentSince: string | null;
   /** O chamado não é urgente (entregador com outro assunto): aviso sonoro discreto, sem o alarme. */

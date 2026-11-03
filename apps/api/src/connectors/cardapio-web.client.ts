@@ -23,6 +23,7 @@ export const CardapioWebOrder = z.looseObject({
   created_at: z.string(),
   updated_at: z.string(),
   fiscal_document: z.string().nullish(),
+  cancellation_reason: z.string().nullish(),
   customer: z
     .looseObject({ id: Id.nullish(), name: z.string().nullish(), phone: z.string().nullish(), ddi: z.string().nullish() })
     .nullish(),
@@ -45,6 +46,12 @@ export const CardapioWebOrder = z.looseObject({
   total: Money,
 });
 export type CardapioWebOrder = z.infer<typeof CardapioWebOrder>;
+
+const CardapioWebHistoryPage = z.looseObject({
+  orders: z.array(CardapioWebOrderSummary),
+  pagination: z.looseObject({ current_page: z.number(), total_pages: z.number(), total_orders: z.number() }),
+});
+export type CardapioWebHistoryPage = z.infer<typeof CardapioWebHistoryPage>;
 
 /** Cliente da base do restaurante. Data de nascimento inválida vira null em vez de recusar a página inteira. */
 export const CardapioWebCustomer = z.looseObject({
@@ -97,6 +104,9 @@ export const CARDAPIO_WEB_EVENT: Record<string, string> = {
   canceled: "CANCELLED",
 };
 
+/** A API recusou o período pedido (HTTP 400): é até onde o histórico dela alcança. */
+export class CardapioWebPeriodError extends Error {}
+
 export class CardapioWebClient {
   constructor(private readonly env: Pick<Env, "CARDAPIO_WEB_API_URL">) {}
 
@@ -121,11 +131,28 @@ export class CardapioWebClient {
     return CardapioWebCustomersPage.parse(await response.json());
   }
 
-  private async call(apiKey: string, path: string): Promise<Response> {
+  /** Pedidos cancelados criados no período (uma página, 100 no máximo; a API aceita 5 consultas por minuto). */
+  async canceledHistory(apiKey: string, start: Date, end: Date, page: number): Promise<CardapioWebHistoryPage> {
+    const query = new URLSearchParams({ start_date: start.toISOString(), end_date: end.toISOString(), "status[]": "canceled", page: String(page), per_page: "100" });
+    const response = await this.call(apiKey, `/api/partner/v1/orders/history?${query.toString()}`, undefined, () => new CardapioWebPeriodError());
+    return CardapioWebHistoryPage.parse(await response.json());
+  }
+
+  /** Cancela o pedido na loja. Não dá para desfazer. */
+  async cancel(apiKey: string, orderId: string, reason: string | null): Promise<void> {
+    await this.call(apiKey, `/api/partner/v1/orders/${encodeURIComponent(orderId)}/cancel`, {
+      method: "POST",
+      ...(reason && { body: JSON.stringify({ cancellation_reason: reason }), headers: { "Content-Type": "application/json" } }),
+    });
+  }
+
+  private async call(apiKey: string, path: string, init?: { method: string; body?: string; headers?: Record<string, string> }, on400?: () => Error): Promise<Response> {
     const response = await fetch(`${this.env.CARDAPIO_WEB_API_URL}${path}`, {
-      headers: { "X-API-KEY": apiKey, Accept: "application/json" },
+      ...init,
+      headers: { "X-API-KEY": apiKey, Accept: "application/json", ...init?.headers },
       signal: AbortSignal.timeout(15_000),
     });
+    if (response.status === 400 && on400) throw on400();
     if (!response.ok) throw new Error(`Cardápio Web ${path.split("?")[0]}: HTTP ${response.status}`);
     return response;
   }
