@@ -13,7 +13,8 @@ const admin = createPrismaClient(requireEnv("DATABASE_ADMIN_URL")); // dono das 
 const app = createPrismaClient(requireEnv("DATABASE_URL")); // role da aplicação: sujeita à RLS
 
 // Tabelas da plataforma: RLS com regras próprias (login e escolha de restaurante), sem tenant_isolation.
-const PLATFORM_TABLES = ["tenants", "users", "tenant_members", "sessions", "billing_payments"];
+// site_visits: tráfego do site institucional, sem restaurante (qualquer um grava, só a plataforma lê).
+const PLATFORM_TABLES = ["tenants", "users", "tenant_members", "sessions", "billing_payments", "site_visits"];
 const ISOLATION_POLICY =
   "(tenant_id = ANY (app.current_tenant_ids())) WITH CHECK (tenant_id = ANY (app.current_tenant_ids()))";
 
