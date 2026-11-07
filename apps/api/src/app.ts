@@ -4,11 +4,15 @@ import cookieParser from "cookie-parser";
 import { Logger } from "nestjs-pino";
 import { mountBullBoard } from "./admin/bull-board.js";
 import { type Env, hasRole } from "./config/env.js";
+import { defenseMiddleware } from "./defense/defense.middleware.js";
+import { DefenseService } from "./defense/defense.service.js";
 import { RedisIoAdapter } from "./realtime/redis-io.adapter.js";
 
 /** Configuração comum ao servidor e aos testes. */
 export function configureApp(app: INestApplication, env: Env): INestApplication {
   app.useLogger(app.get(Logger));
+  // Primeiro de tudo: o IP banido não chega a nenhuma rota (nem ao 404 do Nest).
+  app.use(defenseMiddleware(app.get(DefenseService)));
   // O Next repassa /api/* para cá: navegador e API ficam na mesma origem.
   app.setGlobalPrefix("api");
   // Os webhooks da Evolution (WhatsApp por QR Code) trazem a miniatura das fotos e arquivos: passam dos 100 KB padrão.

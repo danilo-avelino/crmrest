@@ -3,6 +3,7 @@ import type { TenantTx } from "@dishdesk/database";
 import type { ModuleKey } from "@dishdesk/database/enums";
 import {
   CreateTenantRequest,
+  type DefenseEventDto,
   MODULES,
   type PlatformAiStatusDto,
   type PlatformAiUsageDto,
@@ -46,6 +47,7 @@ import { LlmClient } from "../ai/llm.client.js";
 import { ZodPipe } from "../common/zod.pipe.js";
 import { ENV, type Env } from "../config/env.js";
 import { DatabaseService } from "../core/database.service.js";
+import { DefenseService } from "../defense/defense.service.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 /** Sugestões que a página da plataforma mostra (as mais recentes). */
@@ -64,6 +66,7 @@ export class PlatformController {
     private readonly db: DatabaseService,
     @Inject(ENV) private readonly env: Env,
     private readonly llm: LlmClient,
+    private readonly defense: DefenseService,
   ) {}
 
   @Get("tenants")
@@ -186,6 +189,29 @@ export class PlatformController {
         createdAt: row.created_at.toISOString(),
       }));
     });
+  }
+
+  /** Defesa da API: os IPs banidos e as suspeitas, com a análise do Jev, dos mais recentes aos mais antigos. */
+  @Get("defense")
+  async defenseEvents(@CurrentAuth() auth: RequestAuth): Promise<DefenseEventDto[]> {
+    await this.db.withTenants({ tenantIds: [], userId: auth.userId }, (tx) => requireSuperAdmin(tx, auth.userId));
+    return this.defense.list();
+  }
+
+  @Post("defense/:eventId/unban")
+  async unban(@Param("eventId", ParseUUIDPipe) eventId: string, @CurrentAuth() auth: RequestAuth): Promise<DefenseEventDto> {
+    await this.db.withTenants({ tenantIds: [], userId: auth.userId }, (tx) => requireSuperAdmin(tx, auth.userId));
+    const event = await this.defense.unban(eventId);
+    if (!event) throw new NotFoundException("Caso não encontrado.");
+    return event;
+  }
+
+  @Post("defense/:eventId/ban")
+  async ban(@Param("eventId", ParseUUIDPipe) eventId: string, @CurrentAuth() auth: RequestAuth): Promise<DefenseEventDto> {
+    await this.db.withTenants({ tenantIds: [], userId: auth.userId }, (tx) => requireSuperAdmin(tx, auth.userId));
+    const event = await this.defense.banManually(eventId);
+    if (!event) throw new NotFoundException("Caso não encontrado.");
+    return event;
   }
 
   /** Qual LLM do Atendimento com IA está no ar agora: a principal (local) ou a reserva. */

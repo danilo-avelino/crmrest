@@ -5,6 +5,7 @@ import { AuthModule } from "./auth/auth.module.js";
 import { type AppRole, type Env, hasRole } from "./config/env.js";
 import { ConnectorsModule } from "./connectors/connectors.module.js";
 import { CoreModule } from "./core/core.module.js";
+import { DefenseModule } from "./defense/defense.module.js";
 import { HealthController } from "./health/health.controller.js";
 import { QueuesModule } from "./queues/queues.module.js";
 import { RealtimeEmitterModule } from "./realtime/realtime.module.js";
@@ -30,6 +31,7 @@ export class AppModule {
         QueuesModule.forRoot(env),
         RealtimeEmitterModule,
         ConnectorsModule,
+        DefenseModule,
         ...roles.flatMap((role) => ROLE_MODULES[role] ?? []),
       ],
       controllers: [HealthController],

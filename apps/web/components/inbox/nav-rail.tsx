@@ -10,6 +10,7 @@ import {
   ReceiptTextIcon,
   ScrollTextIcon,
   SettingsIcon,
+  ShieldIcon,
   StarIcon,
   TicketIcon,
   UsersIcon,
@@ -50,6 +51,7 @@ const PLATFORM_ITEMS = [
   { label: "Gastos com IA", icon: CoinsIcon, href: "/plataforma/ia" },
   { label: "Sugestões dos restaurantes", icon: LightbulbIcon, href: "/plataforma/sugestoes" },
   { label: "Tickets de suporte", icon: TicketIcon, href: "/plataforma/tickets" },
+  { label: "Defesa da API", icon: ShieldIcon, href: "/plataforma/seguranca" },
   { label: "Auditoria da plataforma", icon: ScrollTextIcon, href: "/plataforma/auditoria" },
   { label: "Restaurantes da plataforma", icon: Building2Icon, href: "/plataforma" },
 ];

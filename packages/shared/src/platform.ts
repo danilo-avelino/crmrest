@@ -147,6 +147,49 @@ export type PlatformAiUsageDto = {
   tenants: { tenantId: string; tenantName: string; calls: number; inputTokens: number; outputTokens: number; costUsd: number }[];
 };
 
+/** Por que a defesa da API agiu sobre um IP (a regra que disparou). */
+export const DEFENSE_REASON_LABEL = {
+  sensitive_probe: "Sondagem de arquivo sensível",
+  endpoint_enumeration: "Enumeração de endpoints",
+  auth_abuse: "Abuso de autenticação",
+} as const;
+export type DefenseReason = keyof typeof DEFENSE_REASON_LABEL;
+
+/** Como o Jev classificou o caso: uma das regras ou uso legítimo. */
+export const DEFENSE_CATEGORY_LABEL = { ...DEFENSE_REASON_LABEL, legitimate: "Uso legítimo" } as const;
+export type DefenseCategory = keyof typeof DEFENSE_CATEGORY_LABEL;
+
+/**
+ * Análise do Jev: a categoria, a chance de ser ataque (0 a 1) e a conclusão. `reused`: o mesmo padrão já tinha sido
+ * analisado, e a conclusão foi reaproveitada sem chamar o Jev de novo.
+ */
+export type DefenseAnalysisDto = {
+  category: DefenseCategory | null;
+  attack: number | null;
+  conclusion: "attack" | "legitimate" | "uncertain";
+  model: string;
+  reused: boolean;
+};
+
+/**
+ * Caso da defesa da API (painel da plataforma), do mais recente ao mais antigo. `banned`: a regra baniu o IP na hora,
+ * com prazo; `suspected`: só suspeita, o Jev analisa e a plataforma decide se bane. `active`: o banimento vale agora.
+ */
+export type DefenseEventDto = {
+  id: string;
+  createdAt: string;
+  ip: string;
+  method: string;
+  path: string;
+  userAgent: string | null;
+  reason: DefenseReason;
+  action: "banned" | "suspected";
+  bannedUntil: string | null;
+  active: boolean;
+  unbannedAt: string | null;
+  analysis: { state: "off" } | { state: "pending" } | { state: "failed" } | ({ state: "done" } & DefenseAnalysisDto);
+};
+
 /** "Grupo Moby Dick" → "grupo-moby-dick". */
 export function slugify(name: string): string {
   return name

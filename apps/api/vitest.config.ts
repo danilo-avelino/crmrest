@@ -21,6 +21,8 @@ for (const key of ["EVOLUTION_API_URL", "EVOLUTION_API_KEY", "EVOLUTION_WEBHOOK_
 for (const key of ["SUPABASE_URL", "SUPABASE_SECRET_KEY"]) delete process.env[key];
 // A LLM de dev (Ollama) é lenta e muda de resposta: os testes usam uma falsa e passam o próprio AI_BASE_URL.
 for (const key of ["AI_BASE_URL", "AI_API_KEY", "AI_MODEL", "AI_FALLBACK_PROVIDER", "AI_FALLBACK_BASE_URL", "AI_FALLBACK_API_KEY", "AI_FALLBACK_MODEL"]) delete process.env[key];
+// O Jev de verdade é pago: os testes usam um falso e passam a própria chave.
+for (const key of ["JEV_API_KEY", "JEV_URL", "JEV_MODEL"]) delete process.env[key];
 process.env.CHANNELS_DRY_RUN = "true";
 
 export default defineConfig({
