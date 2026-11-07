@@ -77,8 +77,9 @@ const EnvSchema = z.object({
   AI_FALLBACK_API_KEY: z.string().min(1).optional(),
   AI_FALLBACK_MODEL: z.string().min(1).optional(),
   AI_FALLBACK_TIMEOUT_MS: z.coerce.number().int().positive().default(180_000),
-  // Defesa da API: o Jev (modelo de decisão da TypeSafe AI) analisa os casos suspeitos pela API Decisions do
-  // OpenRouter. JEV_API_KEY é a chave do OpenRouter. Sem ela, as regras continuam banindo, só sem a análise.
+  // Jev (modelo de decisão da TypeSafe AI), pela API Decisions do OpenRouter: analisa os casos suspeitos da defesa e
+  // avalia os atendimentos (E29). JEV_API_KEY é a chave do OpenRouter. Sem ela, as regras continuam banindo, só sem a
+  // análise, e os atendimentos não são avaliados.
   JEV_API_KEY: z.string().min(1).optional(),
   JEV_URL: z.url().default("https://openrouter.ai/api/alpha/decisions"),
   JEV_MODEL: z.string().min(1).default("typesafe/jev-1.14"),

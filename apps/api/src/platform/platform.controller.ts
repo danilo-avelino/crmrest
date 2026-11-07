@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import type { TenantTx } from "@dishdesk/database";
 import type { ModuleKey } from "@dishdesk/database/enums";
 import {
+  type AiUsageProvider,
+  type AiUsageTotals,
   CreateTenantRequest,
   type DefenseEventDto,
   MODULES,
@@ -221,7 +223,10 @@ export class PlatformController {
     return this.llm.status();
   }
 
-  /** Gastos com o Claude num mês (AAAA-MM; sem ele, o mês atual), horário de Brasília: o total e por restaurante. */
+  /**
+   * Uso de IA num mês (AAAA-MM; sem ele, o mês atual), horário de Brasília: o Claude, o Jev e a LLM local, no total e
+   * por restaurante. O Jev da defesa da API fica numa linha da plataforma.
+   */
   @Get("ai-usage")
   async aiUsage(@CurrentAuth() auth: RequestAuth, @Query("month") month?: string): Promise<PlatformAiUsageDto> {
     const current = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().slice(0, 7);
@@ -235,32 +240,45 @@ export class PlatformController {
       await requireSuperAdmin(tx, auth.userId);
       return tx.tenant.findMany({ select: { id: true, name: true } });
     });
-    const rows = tenants.length
-      ? await this.db.withTenants({ tenantIds: tenants.map((t) => t.id), userId: auth.userId }, (tx) =>
-          tx.aiUsage.groupBy({
-            by: ["tenantId"],
-            where: { createdAt: { gte: from, lt: to } },
-            _count: { _all: true },
-            _sum: { inputTokens: true, outputTokens: true, costMicroUsd: true },
-          }),
-        )
-      : [];
+    const where = { createdAt: { gte: from, lt: to } };
+    const aggregate = { _count: { _all: true }, _sum: { inputTokens: true, outputTokens: true, costMicroUsd: true } } as const;
+    const rows = await this.db.withTenants({ tenantIds: tenants.map((t) => t.id), userId: auth.userId }, async (tx) => [
+      ...(tenants.length ? await tx.aiUsage.groupBy({ by: ["tenantId", "provider"], where, ...aggregate }) : []),
+      // O gasto da plataforma (o Jev na defesa da API) fica numa linha sem restaurante.
+      ...(await tx.platformAiUsage.groupBy({ by: ["provider"], where, ...aggregate })).map((row) => ({ ...row, tenantId: null })),
+    ]);
     const names = new Map(tenants.map((t) => [t.id, t.name]));
-    const usage = rows
-      .map((row) => ({
-        tenantId: row.tenantId,
-        tenantName: names.get(row.tenantId) ?? "",
+    const zero = (): AiUsageTotals => ({ calls: 0, inputTokens: 0, outputTokens: 0, costUsd: 0 });
+    const add = (into: AiUsageTotals, from: AiUsageTotals) => {
+      into.calls += from.calls;
+      into.inputTokens += from.inputTokens;
+      into.outputTokens += from.outputTokens;
+      into.costUsd = Math.round((into.costUsd + from.costUsd) * 1_000_000) / 1_000_000; // em milionésimos, sem resto de ponto flutuante
+    };
+    const total = zero();
+    const providers: Record<AiUsageProvider, AiUsageTotals> = { CLAUDE: zero(), JEV: zero(), LOCAL: zero() };
+    const byTenant = new Map<string | null, PlatformAiUsageDto["tenants"][number]>();
+    for (const row of rows) {
+      const totals = {
         calls: row._count._all,
         inputTokens: row._sum.inputTokens ?? 0,
         outputTokens: row._sum.outputTokens ?? 0,
         costUsd: (row._sum.costMicroUsd ?? 0) / 1_000_000,
-      }))
-      .sort((a, b) => b.costUsd - a.costUsd || b.calls - a.calls);
+      };
+      const name = row.tenantId ? (names.get(row.tenantId) ?? "") : "Plataforma (defesa da API)";
+      const tenant = byTenant.get(row.tenantId) ?? { tenantId: row.tenantId, tenantName: name, ...zero(), providers: {} };
+      byTenant.set(row.tenantId, tenant);
+      tenant.providers[row.provider] = totals;
+      add(tenant, totals);
+      add(providers[row.provider], totals);
+      add(total, totals);
+    }
+    const tokens = (row: AiUsageTotals) => row.inputTokens + row.outputTokens;
     return {
       month: chosen,
-      costUsd: usage.reduce((sum, row) => sum + row.costUsd, 0),
-      calls: usage.reduce((sum, row) => sum + row.calls, 0),
-      tenants: usage,
+      ...total,
+      providers,
+      tenants: [...byTenant.values()].sort((a, b) => b.costUsd - a.costUsd || tokens(b) - tokens(a)),
     };
   }
 

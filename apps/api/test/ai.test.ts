@@ -32,10 +32,13 @@ describe("atendimento com IA: resposta, revisão e avaliação", () => {
   let withoutAi: Awaited<ReturnType<typeof createChannelFixture>>;
   let graph: Awaited<ReturnType<typeof startMockGraph>>;
   let llm: Awaited<ReturnType<typeof startMockGraph>>;
+  let jev: Awaited<ReturnType<typeof startMockGraph>>;
   let aiQueue: Queue;
   let token: string;
   // O que a LLM falsa responde, por tarefa (o nome do schema); sem resposta, ela devolve HTTP 500.
   const answers: Record<string, unknown> = {};
+  // O que o Jev falso responde na avaliação; sem resposta, HTTP 500.
+  let jevAnswers: Record<string, unknown> | undefined;
 
   beforeAll(async () => {
     graph = await startMockGraph();
@@ -45,7 +48,16 @@ describe("atendimento com IA: resposta, revisão e avaliação", () => {
       if (answer === undefined) return { status: 500, body: {} };
       return { status: 200, body: { choices: [{ message: { content: JSON.stringify(answer) } }] } };
     });
-    app = await createTestApp({ CHANNELS_DRY_RUN: "false", META_GRAPH_URL: graph.url, INSTAGRAM_GRAPH_URL: graph.url, AI_BASE_URL: llm.url });
+    jev = await startMockGraph();
+    jev.reply(() => (jevAnswers ? { status: 200, body: { model: "typesafe/jev-1.14-20261101", answers: jevAnswers, usage: { input_tokens: 2000, output_tokens: 8, cost: 0.000084 } } } : { status: 500, body: {} }));
+    app = await createTestApp({
+      CHANNELS_DRY_RUN: "false",
+      META_GRAPH_URL: graph.url,
+      INSTAGRAM_GRAPH_URL: graph.url,
+      AI_BASE_URL: llm.url,
+      JEV_API_KEY: "chave-de-teste",
+      JEV_URL: `${jev.url}/api/alpha/decisions`,
+    });
     aiQueue = app.get<Queue>(getQueueToken(QUEUES.ai));
     fx = await createChannelFixture();
     withoutAi = await createChannelFixture();
@@ -64,6 +76,7 @@ describe("atendimento com IA: resposta, revisão e avaliação", () => {
     await app?.close();
     await graph?.close();
     await llm?.close();
+    await jev?.close();
   });
 
   /** Espera as respostas da IA (fila ai) e os envios que elas geram; as avaliações ficam agendadas para depois. */
@@ -94,6 +107,8 @@ describe("atendimento com IA: resposta, revisão e avaliação", () => {
       include: { messages: { orderBy: { createdAt: "asc" } } },
     });
   const contents = async (waId: string) => (await conversationOf(waId)).messages.map((m) => m.content as Content);
+  type JevBody = { state: { conversa: string }; questions: Record<string, unknown>; provider?: unknown };
+  const evaluationCalls = () => jev.requests.filter((req) => "resolved" in (req.body as JevBody).questions);
   const llmCalls = (name: string) => llm.requests.filter((req) => (req.body as LlmBody).response_format.json_schema.name === name);
   const sentText = () => (graph.requests.at(-1)!.body as { text: { body: string } }).text.body;
   const reply = (conversationId: string, text: string) =>
@@ -392,16 +407,29 @@ describe("atendimento com IA: resposta, revisão e avaliação", () => {
     expect(scheduled).toHaveLength(1);
     await scheduled[0]!.remove();
 
-    answers.avaliacao = { resolved: true, satisfaction: "satisfeito", score: 5, summary: "Cliente perguntou o horário e agradeceu.", teamReason: "atraso" };
-    const evaluation = app.get(AiEvaluationService);
-    await evaluation.evaluate(fx.tenant.id, id);
-    await evaluation.evaluate(fx.tenant.id, id); // nada novo do cliente: não avalia de novo
+    // A nota vem como a posição na escala (0 a 4, fracionada): 3,6 é a nota 5.
+    jevAnswers = {
+      resolved: { type: "noul", noul: 0.93 },
+      satisfaction: { type: "choice", choice: "satisfeito", confidence: 0.9, probabilities: {} },
+      score: { type: "score", score: 3.6, legend: {}, probabilities: {} },
+      teamReason: { type: "choice", choice: "atraso" },
+    };
+    const service = app.get(AiEvaluationService);
+    await service.evaluate(fx.tenant.id, id);
+    await service.evaluate(fx.tenant.id, id); // nada novo do cliente: não avalia de novo
 
     const rows = await admin.conversationEvaluation.findMany({ where: { conversationId: id } });
     expect(rows).toMatchObject([
-      { resolved: true, satisfied: true, score: 5, summary: "Cliente perguntou o horário e agradeceu.", teamReason: "atraso", userId: fx.user.id, model: "gemma4:12b" },
+      { resolved: true, satisfied: true, score: 5, summary: null, teamReason: "atraso", userId: fx.user.id, model: "typesafe/jev-1.14-20261101" },
     ]);
-    const conversation = (llmCalls("avaliacao").at(-1)!.body as LlmBody).messages[1]!.content;
+    const sent = evaluationCalls().at(-1)!;
+    expect(evaluationCalls()).toHaveLength(1);
+    expect(sent.authorization).toBe("Bearer chave-de-teste");
+    expect((sent.body as JevBody).provider).toEqual({ data_collection: "deny" }); // conversa de cliente: sem guardar para treino
+    expect(await admin.aiUsage.findMany({ where: { tenantId: fx.tenant.id, provider: "JEV" } })).toMatchObject([
+      { model: "typesafe/jev-1.14-20261101", inputTokens: 2000, outputTokens: 8, costMicroUsd: 84 },
+    ]);
+    const conversation = (sent.body as JevBody).state.conversa;
     expect(conversation).toMatch(/^\[\d\d:\d\d\] Cliente: Que horas vocês abrem\?/);
     expect(conversation).toContain("Restaurante (IA): Abrimos às 11h! 😊");
     expect(conversation).toContain("Restaurante (atendente): Claro! Seu pedido chega às 20:40.");
@@ -417,7 +445,13 @@ describe("atendimento com IA: resposta, revisão e avaliação", () => {
   it("sem resposta da equipe não chama a IA: só registra, e o atendimento seguinte não relê o anterior", async () => {
     answers.atendimento = { reply: "Abrimos às 11h.", handoff: false, reason: "", order: "none" };
     answers.revisao = { misconduct: false, reason: "", text: "Já estou vendo, um instante." };
-    answers.avaliacao = { resolved: true, satisfaction: "sem_reacao", score: 3, summary: "Cliente reclamou do atraso.", teamReason: "atraso" };
+    // Recusa na reação e no motivo: fica sem reação e com outro motivo.
+    jevAnswers = {
+      resolved: { type: "noul", noul: 0.2 },
+      satisfaction: { type: "refusal" },
+      score: { type: "score", score: 2 },
+      teamReason: { type: "refusal" },
+    };
     await say("5511980000077", "wamid.AI-SO-IA-1", "Vocês abrem hoje?");
     await settle();
     const { id } = await conversationOf("5511980000077");
@@ -437,11 +471,11 @@ describe("atendimento com IA: resposta, revisão e avaliação", () => {
     // Nota interna não é resposta ao cliente.
     await request(app.getHttpServer()).post(`/api/conversations/${id}/notes`).set("Authorization", `Bearer ${token}`).send({ text: "Cliente antigo" }).expect(201);
     await resolve();
-    const calls = llmCalls("avaliacao").length;
+    const calls = evaluationCalls().length;
     await evaluation.evaluate(fx.tenant.id, id);
     await evaluation.evaluate(fx.tenant.id, id); // nada novo do cliente: não conta de novo
 
-    expect(llmCalls("avaliacao")).toHaveLength(calls);
+    expect(evaluationCalls()).toHaveLength(calls);
     expect(await admin.conversationEvaluation.count({ where: { conversationId: id } })).toBe(0);
     expect(await admin.aiOnlyAttendance.count({ where: { conversationId: id } })).toBe(1);
     expect((await report()).onlyAi).toBe(before.onlyAi + 1);
@@ -454,8 +488,10 @@ describe("atendimento com IA: resposta, revisão e avaliação", () => {
     await resolve();
     await evaluation.evaluate(fx.tenant.id, id);
 
-    expect(await admin.conversationEvaluation.count({ where: { conversationId: id, userId: fx.user.id } })).toBe(1);
-    const read = (llmCalls("avaliacao").at(-1)!.body as LlmBody).messages[1]!.content;
+    expect(await admin.conversationEvaluation.findMany({ where: { conversationId: id, userId: fx.user.id } })).toMatchObject([
+      { resolved: false, satisfied: null, score: 3, teamReason: "outro" },
+    ]);
+    const read = (evaluationCalls().at(-1)!.body as JevBody).state.conversa;
     expect(read).toContain("Meu pedido atrasou");
     expect(read).not.toContain("Vocês abrem hoje?");
     expect((await report()).withTeam).toBe(before.withTeam + 1);

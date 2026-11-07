@@ -1,6 +1,6 @@
 "use client";
 
-import type { ConversationEvaluationDto, ConversationMessages, MessageContent, MessageDto } from "@dishdesk/shared";
+import { type ConversationEvaluationDto, type ConversationMessages, type MessageContent, type MessageDto, TEAM_REASONS } from "@dishdesk/shared";
 import {
   AlertCircleIcon,
   CheckCircle2Icon,
@@ -272,8 +272,9 @@ function Evaluation({ evaluation }: { evaluation: ConversationEvaluationDto }) {
         ) : (
           <Pill tone="danger">Insatisfeito</Pill>
         )}
+        {evaluation.teamReason && <Pill tone="warning">{TEAM_REASONS[evaluation.teamReason]}</Pill>}
       </div>
-      <div className="mt-2.5 text-[13px] leading-[1.5] text-ink-2">{evaluation.summary}</div>
+      {evaluation.summary && <div className="mt-2.5 text-[13px] leading-[1.5] text-ink-2">{evaluation.summary}</div>}
       <div className="mt-2 text-xs text-ink-3 tabular-nums">
         {evaluation.agentName ? `Atendido por ${evaluation.agentName}` : "Só a IA atendeu"} · {clock(evaluation.createdAt)}
       </div>

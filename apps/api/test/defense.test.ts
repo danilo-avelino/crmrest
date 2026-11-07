@@ -36,6 +36,7 @@ describe("defesa da API", () => {
             category: { type: "choice", choice: auth ? "auth_abuse" : "sensitive_probe", confidence: 0.9, probabilities: {} },
             attack: { type: "noul", noul: auth ? 0.5 : 0.97 },
           },
+          usage: { input_tokens: 900, output_tokens: 4, cost: 0.000038 },
         },
       };
     });
@@ -61,6 +62,8 @@ describe("defesa da API", () => {
   });
 
   afterAll(async () => {
+    // O banco é o de dev: o gasto do Jev falso não fica no painel da plataforma.
+    await admin.platformAiUsage.deleteMany({ where: { inputTokens: 900, outputTokens: 4, costMicroUsd: 38 } });
     await admin.user.deleteMany({ where: { id: superAdmin?.id } });
     await fx?.cleanup();
     await app?.close();
@@ -93,6 +96,7 @@ describe("defesa da API", () => {
   });
 
   it("quem sonda um .env é banido na hora; o Jev confirma o ataque e o banimento passa a 7 dias", async () => {
+    const start = new Date();
     await from("203.0.113.10").get("/.env").expect(404);
     await vi.waitFor(() => from("203.0.113.10").get("/api/health/live").expect(403));
     await from("203.0.113.11").get("/api/health/live").expect(200);
@@ -114,6 +118,10 @@ describe("defesa da API", () => {
     expect(sent).toContain("/.env");
     expect(sent).not.toContain("203.0.113.10");
     expect(jev.requests.at(-1)?.authorization).toBe("Bearer chave-de-teste");
+    // O gasto do Jev na defesa fica com a plataforma, sem restaurante.
+    expect(await admin.platformAiUsage.findMany({ where: { createdAt: { gte: start } } })).toContainEqual(
+      expect.objectContaining({ provider: "JEV", inputTokens: 900, outputTokens: 4, costMicroUsd: 38 }),
+    );
   });
 
   it("o mesmo padrão de outro IP reaproveita a conclusão, sem chamar o Jev de novo", async () => {

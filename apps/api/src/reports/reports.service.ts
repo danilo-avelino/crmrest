@@ -243,7 +243,7 @@ export class ReportsService {
                 score: row.score,
                 resolved: row.resolved,
                 satisfied: row.satisfied,
-                summary: row.summary,
+                teamReason: row.teamReason as TeamReason | null,
                 createdAt: row.createdAt.toISOString(),
               })),
               misconduct: misconduct.map((row) => {

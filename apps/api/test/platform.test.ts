@@ -187,31 +187,78 @@ describe("painel da plataforma (Super Admin)", () => {
     await api("patch", `tenants/${fx.b.id}/access`, userToken).send({ plan: "MONTHLY", paidUntil: until }).expect(403);
   });
 
-  it("gastos com o Claude: o total do mês e os restaurantes de quem gastou mais; o mês vazio vem zerado", async () => {
+  it("gastos com IA: o total do mês, cada provedor e os restaurantes de quem gastou mais; o mês vazio vem zerado", async () => {
     await api("get", "ai-usage", userToken).expect(403);
     await api("get", "ai-usage?month=2026-13", superToken).expect(422);
     // 31/10 às 23h em Brasília ainda é outubro; 01/11 às 00h30 já é novembro.
     await admin.aiUsage.createMany({
       data: [
-        { tenantId: fx.b.id, model: "claude-haiku-5-5", inputTokens: 1000, outputTokens: 200, costMicroUsd: 200, createdAt: new Date("2026-10-31T23:00:00-03:00") },
-        { tenantId: fx.c.id, model: "claude-haiku-5-5", inputTokens: 3000, outputTokens: 600, costMicroUsd: 600, createdAt: new Date("2026-10-05T12:00:00-03:00") },
-        { tenantId: fx.c.id, model: "claude-haiku-5-5", inputTokens: 3000, outputTokens: 600, costMicroUsd: 600, createdAt: new Date("2026-10-06T12:00:00-03:00") },
-        { tenantId: fx.b.id, model: "claude-haiku-5-5", inputTokens: 1000, outputTokens: 200, costMicroUsd: 200, createdAt: new Date("2026-11-01T00:30:00-03:00") },
+        { tenantId: fx.b.id, provider: "CLAUDE", model: "claude-haiku-5-5", inputTokens: 1000, outputTokens: 200, costMicroUsd: 200, createdAt: new Date("2026-10-31T23:00:00-03:00") },
+        { tenantId: fx.b.id, provider: "JEV", model: "typesafe/jev-1.14", inputTokens: 2000, outputTokens: 10, costMicroUsd: 84, createdAt: new Date("2026-10-31T22:00:00-03:00") },
+        { tenantId: fx.b.id, provider: "LOCAL", model: "gemma4:12b", inputTokens: 5000, outputTokens: 300, costMicroUsd: 0, createdAt: new Date("2026-10-20T12:00:00-03:00") },
+        { tenantId: fx.c.id, provider: "CLAUDE", model: "claude-haiku-5-5", inputTokens: 3000, outputTokens: 600, costMicroUsd: 600, createdAt: new Date("2026-10-05T12:00:00-03:00") },
+        { tenantId: fx.c.id, provider: "CLAUDE", model: "claude-haiku-5-5", inputTokens: 3000, outputTokens: 600, costMicroUsd: 600, createdAt: new Date("2026-10-06T12:00:00-03:00") },
+        { tenantId: fx.b.id, provider: "CLAUDE", model: "claude-haiku-5-5", inputTokens: 1000, outputTokens: 200, costMicroUsd: 200, createdAt: new Date("2026-11-01T00:30:00-03:00") },
       ],
     });
+    // A defesa da API: sem restaurante, na linha da plataforma.
+    await admin.platformAiUsage.create({
+      data: { provider: "JEV", model: "typesafe/jev-1.14", inputTokens: 900, outputTokens: 5, costMicroUsd: 38, createdAt: new Date("1998-12-15T12:00:00-03:00") },
+    });
+    const db = createPrismaClient(process.env.DATABASE_URL ?? "");
     try {
       const { body } = await api("get", "ai-usage?month=2026-10", superToken).expect(200);
       const ours = body.tenants.filter((t: { tenantId: string }) => [fx.b.id, fx.c.id].includes(t.tenantId));
       expect(ours).toEqual([
-        { tenantId: fx.c.id, tenantName: "Teste C", calls: 2, inputTokens: 6000, outputTokens: 1200, costUsd: 0.0012 },
-        { tenantId: fx.b.id, tenantName: "Teste B", calls: 1, inputTokens: 1000, outputTokens: 200, costUsd: 0.0002 },
+        {
+          tenantId: fx.c.id,
+          tenantName: "Teste C",
+          calls: 2,
+          inputTokens: 6000,
+          outputTokens: 1200,
+          costUsd: 0.0012,
+          providers: { CLAUDE: { calls: 2, inputTokens: 6000, outputTokens: 1200, costUsd: 0.0012 } },
+        },
+        {
+          tenantId: fx.b.id,
+          tenantName: "Teste B",
+          calls: 3,
+          inputTokens: 8000,
+          outputTokens: 510,
+          costUsd: 0.000284,
+          providers: {
+            CLAUDE: { calls: 1, inputTokens: 1000, outputTokens: 200, costUsd: 0.0002 },
+            JEV: { calls: 1, inputTokens: 2000, outputTokens: 10, costUsd: 0.000084 },
+            LOCAL: { calls: 1, inputTokens: 5000, outputTokens: 300, costUsd: 0 },
+          },
+        },
       ]);
       expect(body.month).toBe("2026-10");
-      expect(body.costUsd).toBeGreaterThanOrEqual(0.0014);
+      expect(body.costUsd).toBeGreaterThanOrEqual(0.001484);
+      expect(body.providers.JEV.calls).toBeGreaterThanOrEqual(1);
+      expect(body.providers.LOCAL.inputTokens).toBeGreaterThanOrEqual(5000);
+      // O mês vazio vem zerado.
       const { body: empty } = await api("get", "ai-usage?month=1999-01", superToken).expect(200);
-      expect(empty).toEqual({ month: "1999-01", costUsd: 0, calls: 0, tenants: [] });
+      const none = { calls: 0, inputTokens: 0, outputTokens: 0, costUsd: 0 };
+      expect(empty).toEqual({ month: "1999-01", ...none, providers: { CLAUDE: none, JEV: none, LOCAL: none }, tenants: [] });
+      // O Jev da defesa vem na linha da plataforma, que nenhum restaurante lê.
+      const { body: platform } = await api("get", "ai-usage?month=1998-12", superToken).expect(200);
+      expect(platform.tenants).toEqual([
+        {
+          tenantId: null,
+          tenantName: "Plataforma (defesa da API)",
+          calls: 1,
+          inputTokens: 900,
+          outputTokens: 5,
+          costUsd: 0.000038,
+          providers: { JEV: { calls: 1, inputTokens: 900, outputTokens: 5, costUsd: 0.000038 } },
+        },
+      ]);
+      expect(await withTenants(db, { tenantIds: [fx.b.id], userId: fx.user.id }, (tx) => tx.platformAiUsage.count())).toBe(0);
     } finally {
+      await db.$disconnect();
       await admin.aiUsage.deleteMany({ where: { tenantId: { in: [fx.b.id, fx.c.id] } } });
+      await admin.platformAiUsage.deleteMany({ where: { createdAt: { lt: new Date("1999-01-01") } } });
     }
   });
 });

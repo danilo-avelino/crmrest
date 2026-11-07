@@ -14,7 +14,8 @@ const app = createPrismaClient(requireEnv("DATABASE_URL")); // role da aplicaç�
 
 // Tabelas da plataforma: RLS com regras próprias (login e escolha de restaurante), sem tenant_isolation.
 // site_visits: tráfego do site institucional, sem restaurante (qualquer um grava, só a plataforma lê).
-const PLATFORM_TABLES = ["tenants", "users", "tenant_members", "sessions", "billing_payments", "site_visits"];
+// platform_ai_usages: gasto com IA da plataforma (o Jev na defesa da API), com as mesmas regras.
+const PLATFORM_TABLES = ["tenants", "users", "tenant_members", "sessions", "billing_payments", "site_visits", "platform_ai_usages"];
 const ISOLATION_POLICY =
   "(tenant_id = ANY (app.current_tenant_ids())) WITH CHECK (tenant_id = ANY (app.current_tenant_ids()))";
 
@@ -134,7 +135,7 @@ async function seedTenant(label: string): Promise<Seeded> {
   });
   await admin.productSuggestion.create({ data: { tenantId, userId: user.id, text: "Modo escuro" } });
   await admin.supportTicket.create({ data: { tenantId, userId: user.id, sessionId: agentSession.id, name: "Ana", phone: "+5511999990000", summary: "WhatsApp caiu" } });
-  await admin.aiUsage.create({ data: { tenantId, model: "claude-haiku-5-5", inputTokens: 100, outputTokens: 20, costMicroUsd: 20 } });
+  await admin.aiUsage.create({ data: { tenantId, provider: "CLAUDE", model: "claude-haiku-5-5", inputTokens: 100, outputTokens: 20, costMicroUsd: 20 } });
   await admin.auditLog.create({
     data: { tenantId, userId: user.id, action: "contact.cpf_viewed", entity: "contact", entityId: contact.id },
   });

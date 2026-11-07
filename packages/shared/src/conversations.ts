@@ -103,7 +103,8 @@ export type ConversationEvaluationDto = {
   /** null = o cliente não reagiu. */
   satisfied: boolean | null;
   score: number;
-  summary: string;
+  /** Só nas avaliações antigas (feitas pela LLM); as do Jev não têm resumo. */
+  summary: string | null;
   /** Quem da equipe respondeu por último; null = só a IA e as automações atenderam. */
   agentName: string | null;
   /** Por que precisou da equipe; null = só a IA atendeu. */

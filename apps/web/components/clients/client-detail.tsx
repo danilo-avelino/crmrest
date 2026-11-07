@@ -575,7 +575,7 @@ function EvaluationLog({ evaluation, now }: { evaluation: ConversationEvaluation
         )}
         {evaluation.teamReason && <Pill tone="warning">{TEAM_REASONS[evaluation.teamReason]}</Pill>}
       </div>
-      <p className="mt-2 text-[12.5px] leading-[1.5] text-ink-2">{evaluation.summary}</p>
+      {evaluation.summary && <p className="mt-2 text-[12.5px] leading-[1.5] text-ink-2">{evaluation.summary}</p>}
       <div className="mt-1.5 text-[11px] text-ink-3 tabular-nums">
         {evaluation.agentName ? `Atendido por ${evaluation.agentName}` : "Só a IA atendeu"} · {dayTime(evaluation.createdAt, now)} · {evaluation.model}
       </div>

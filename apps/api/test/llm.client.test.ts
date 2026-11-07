@@ -25,7 +25,7 @@ describe("LlmClient: LLM reserva", () => {
       AI_FALLBACK_TIMEOUT_MS: 5_000,
     }) as Env;
 
-  // O banco só recebe os gastos com o Claude: guarda o que seria gravado.
+  // O banco recebe o uso de cada chamada: guarda o que seria gravado.
   const usages: { tenantIds: string[]; data: unknown }[] = [];
   const db = {
     withTenants: (scope: { tenantIds: string[] }, fn: (tx: unknown) => Promise<unknown>) =>
@@ -49,10 +49,14 @@ describe("LlmClient: LLM reserva", () => {
   });
 
   it("com a principal no ar, a reserva não é chamada", async () => {
+    main.reply(() => ({ status: 200, body: { ...ok("principal").body, usage: { prompt_tokens: 120, completion_tokens: 30 } } }));
     const llm = new LlmClient(env(), db);
     expect(await llm.answer(TENANT, "teste", Answer, [{ role: "user", content: "oi" }])).toEqual({ result: { text: "principal" }, model: "gemma4:12b" });
     expect(backup.requests).toHaveLength(0);
-    expect(usages).toHaveLength(0); // a LLM local não entra nos gastos
+    // A IA local entra no painel só com os tokens, sem custo.
+    expect(usages).toEqual([
+      { tenantIds: [TENANT], data: { tenantId: TENANT, provider: "LOCAL", model: "gemma4:12b", inputTokens: 120, outputTokens: 30, costMicroUsd: 0 } },
+    ]);
   });
 
   it("com a principal em erro HTTP (ex.: túnel do ngrok sem o PC), a reserva responde com o modelo e a chave dela", async () => {
@@ -110,7 +114,7 @@ describe("LlmClient: LLM reserva", () => {
     expect((sent.body as { output_config: { format: { type: string } } }).output_config.format.type).toBe("json_schema");
     // Haiku 5.5: 10 tokens de entrada a US$ 0,10 e 5 de saída a US$ 0,50 por milhão = 3,5 milionésimos de dólar, arredondados para 4.
     expect(usages).toEqual([
-      { tenantIds: [TENANT], data: { tenantId: TENANT, model: "claude-haiku-5-5", inputTokens: 10, outputTokens: 5, costMicroUsd: 4 } },
+      { tenantIds: [TENANT], data: { tenantId: TENANT, provider: "CLAUDE", model: "claude-haiku-5-5", inputTokens: 10, outputTokens: 5, costMicroUsd: 4 } },
     ]);
   });
 

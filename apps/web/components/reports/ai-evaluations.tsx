@@ -208,14 +208,14 @@ export function AiEvaluations({ ai, now, hint }: { ai: Ai; now: number; hint?: s
       </div>
       <Table
         cols="44px 120px minmax(0,2.4fr) 120px 76px 96px 92px 100px"
-        head={["Nota", "Cliente", "Resumo da IA", "Quem atendeu", "Resolvido", "Reação", "Quando", ""]}
+        head={["Nota", "Cliente", "Motivo", "Quem atendeu", "Resolvido", "Reação", "Quando", ""]}
         empty={<EmptyState title={ai.recent.length ? "Nenhuma avaliação com esse filtro." : "Nenhum atendimento avaliado neste período."} hint={ai.recent.length ? undefined : hint} />}
       >
         {shown.map((evaluation) => (
           <Row key={evaluation.id}>
             <ScoreBadge value={evaluation.score} />
             <b className="block truncate font-semibold">{evaluation.contactName ?? "Cliente sem nome"}</b>
-            <span className="text-ink-2">{evaluation.summary}</span>
+            <span className="text-ink-2">{evaluation.teamReason ? TEAM_REASONS[evaluation.teamReason] : "—"}</span>
             {evaluation.agentName ?? <span className="text-ink-2">Só a IA atendeu</span>}
             {evaluation.resolved ? <Pill tone="success">Sim</Pill> : <Pill tone="danger">Não</Pill>}
             {evaluation.satisfied === null ? (

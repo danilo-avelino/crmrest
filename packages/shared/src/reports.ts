@@ -124,7 +124,8 @@ export type RatingsReportDto = {
       score: number;
       resolved: boolean;
       satisfied: boolean | null;
-      summary: string;
+      /** Por que precisou da equipe; null = só a IA atendeu. */
+      teamReason: TeamReason | null;
       createdAt: string;
     }[];
     /** Respostas que a revisão da IA bloqueou por má conduta (ofensa, grosseria), com o texto que o atendente escreveu. */

@@ -139,12 +139,20 @@ export type PlatformAiStatusDto = {
   checkedAt: string;
 };
 
-/** Gastos com a IA paga (o Claude) num mês (AAAA-MM, horário de Brasília): o total e os restaurantes, de quem gastou mais. */
-export type PlatformAiUsageDto = {
+/** Quem respondeu as chamadas de IA: o Claude (a reserva paga), o Jev (pelo OpenRouter) e a LLM local (sem custo). */
+export const AI_USAGE_PROVIDER_LABEL = { CLAUDE: "Claude", JEV: "Jev", LOCAL: "IA local" } as const;
+export type AiUsageProvider = keyof typeof AI_USAGE_PROVIDER_LABEL;
+
+export type AiUsageTotals = { calls: number; inputTokens: number; outputTokens: number; costUsd: number };
+
+/**
+ * Uso de IA num mês (AAAA-MM, horário de Brasília): o total, cada provedor e os restaurantes, de quem gastou mais.
+ * `tenantId` null: a plataforma (o Jev na defesa da API). `providers` do restaurante: só os que ele usou.
+ */
+export type PlatformAiUsageDto = AiUsageTotals & {
   month: string;
-  costUsd: number;
-  calls: number;
-  tenants: { tenantId: string; tenantName: string; calls: number; inputTokens: number; outputTokens: number; costUsd: number }[];
+  providers: Record<AiUsageProvider, AiUsageTotals>;
+  tenants: (AiUsageTotals & { tenantId: string | null; tenantName: string; providers: Partial<Record<AiUsageProvider, AiUsageTotals>> })[];
 };
 
 /** Por que a defesa da API agiu sobre um IP (a regra que disparou). */

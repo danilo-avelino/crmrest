@@ -1,11 +1,10 @@
-import { TEAM_REASONS, type TeamReason } from "@dishdesk/shared";
+import type { TeamReason } from "@dishdesk/shared";
 import { Injectable } from "@nestjs/common";
 import type { Queue } from "bullmq";
-import { z } from "zod";
 import { DatabaseService } from "../core/database.service.js";
+import { JevClient, type JevQuestion } from "../defense/jev.client.js";
 import type { AiJob } from "../queues/queues.module.js";
 import { RealtimeEmitter } from "../realtime/realtime.emitter.js";
-import { LlmClient } from "./llm.client.js";
 import { transcript } from "./prompts.js";
 
 /** Espera depois de resolvida: a reação do cliente (a nota da pesquisa, o "obrigado") entra na avaliação. */
@@ -13,34 +12,42 @@ export const EVALUATION_DELAY_MS = 5 * 60_000;
 /** Mensagens do atendimento que a IA lê (as mais recentes). */
 const TRANSCRIPT_LIMIT = 80;
 
-export const Evaluation = z.object({
-  resolved: z.boolean().describe("O pedido ou o problema do cliente foi resolvido ou respondido."),
-  satisfaction: z.enum(["satisfeito", "insatisfeito", "sem_reacao"]),
-  score: z.number().int().min(1).max(5),
-  summary: z.string().trim().min(1).max(400).describe("O que o cliente queria e como terminou, em uma ou duas frases."),
-  teamReason: z.enum(Object.keys(TEAM_REASONS) as [TeamReason, ...TeamReason[]]),
-});
+/** Como ler a conversa que vai para o Jev (cada linha começa com o horário e diz quem escreveu). */
+const READING_GUIDE =
+  'Conversa de um restaurante com um cliente. "Restaurante (automação)" são mensagens automáticas; "(IA)", do atendente virtual; "(atendente)", de uma pessoa da equipe. Cada linha começa com o horário.';
 
-export const SYSTEM_PROMPT = `Você avalia atendimentos de um restaurante a clientes, lendo a conversa inteira. Seja justo e objetivo.
-Na conversa, "Restaurante (automação)" são mensagens automáticas; "(IA)", do atendente virtual; "(atendente)", de uma pessoa da equipe. Cada linha começa com o horário.
+/** Do pior para o melhor: a posição na escala mais 1 é a nota. */
+const SCORE_LEVELS = [
+  "1: cliente muito insatisfeito ou atendimento ruim (grosseria, informação errada, cliente sem resposta).",
+  "2: não resolvido ou cliente insatisfeito.",
+  "3: resolvido em parte, demorado ou não dá para saber.",
+  "4: resolvido, sem sinal de insatisfação.",
+  "5: resolvido e cliente satisfeito.",
+];
 
-- resolved: o pedido ou o problema do cliente foi resolvido ou respondido?
-- satisfaction: "satisfeito" se o cliente mostrou satisfação (agradeceu, elogiou, deu nota alta); "insatisfeito" se reclamou, se irritou ou deu nota baixa; "sem_reacao" se não dá para saber (ex.: parou de responder).
-- score: nota de 1 a 5 para o atendimento, pela reação do cliente:
-  5 = resolvido e cliente satisfeito;
-  4 = resolvido, sem sinal de insatisfação;
-  3 = resolvido em parte, demorado ou não dá para saber;
-  2 = não resolvido ou cliente insatisfeito;
-  1 = cliente muito insatisfeito ou atendimento ruim (grosseria, informação errada, cliente sem resposta).
-- summary: em português, uma ou duas frases: o que o cliente queria e como terminou.
-- teamReason: o principal motivo de o atendimento precisar da equipe:
-  atraso = reclamação de atraso do pedido;
-  problema_pedido = item errado, faltando ou com problema de qualidade;
-  troca_reembolso = pediu troca, reembolso ou cancelamento;
-  fora_do_cardapio = pergunta que a IA não soube responder;
-  pediu_pessoa = o cliente pediu para falar com uma pessoa;
-  pedido_grande = encomenda, pedido grande ou evento;
-  outro = outro motivo.`;
+const SATISFACTION = {
+  satisfeito: "O cliente mostrou satisfação: agradeceu, elogiou ou deu nota alta.",
+  insatisfeito: "O cliente reclamou, se irritou ou deu nota baixa.",
+  sem_reacao: "Não dá para saber (por exemplo, o cliente parou de responder).",
+};
+
+const TEAM_REASON_CRITERIA: Record<TeamReason, string> = {
+  atraso: "Reclamação de atraso do pedido.",
+  problema_pedido: "Item errado, faltando ou com problema de qualidade.",
+  troca_reembolso: "Pediu troca, reembolso ou cancelamento.",
+  fora_do_cardapio: "Pergunta que a IA não soube responder.",
+  pediu_pessoa: "O cliente pediu para falar com uma pessoa.",
+  pedido_grande: "Encomenda, pedido grande ou evento.",
+  outro: "Outro motivo.",
+};
+
+/** As perguntas da avaliação ao Jev. */
+export const EVALUATION_QUESTIONS = {
+  resolved: { type: "noul", instructions: "O pedido ou o problema do cliente foi resolvido ou respondido?" },
+  satisfaction: { type: "choice", instructions: "Como o cliente reagiu ao atendimento?", criteria: SATISFACTION },
+  score: { type: "score", instructions: "Que nota o atendimento merece, pela reação do cliente? Seja justo e objetivo.", criteria: SCORE_LEVELS },
+  teamReason: { type: "choice", instructions: "Qual o principal motivo de o atendimento precisar da equipe?", criteria: TEAM_REASON_CRITERIA },
+} satisfies Record<string, JevQuestion>;
 
 /** Agenda a avaliação de um atendimento que acabou de ser resolvido (o job confere se o restaurante tem o módulo). */
 export async function scheduleEvaluation(queue: Queue<AiJob>, tenantId: string, conversationId: string): Promise<void> {
@@ -48,22 +55,25 @@ export async function scheduleEvaluation(queue: Queue<AiJob>, tenantId: string, 
 }
 
 /**
- * Avaliação automática (E29): quando a conversa é resolvida e a equipe respondeu ao cliente, a LLM lê o atendimento e
- * registra se o problema foi resolvido, se o cliente ficou satisfeito e uma nota. Sem resposta da equipe, não há chamada
- * de IA: o atendimento só fica registrado. Roda na fila ai, fora do caminho do atendimento.
+ * Avaliação automática (E29): quando a conversa é resolvida e a equipe respondeu ao cliente, o Jev (modelo de decisão,
+ * sem texto) lê o atendimento e registra se o problema foi resolvido, se o cliente ficou satisfeito, uma nota e o motivo
+ * de precisar da equipe. Sem resposta da equipe, não há chamada de IA: o atendimento só fica registrado. Roda na fila ai,
+ * fora do caminho do atendimento.
  */
 @Injectable()
 export class AiEvaluationService {
   constructor(
     private readonly db: DatabaseService,
     private readonly realtime: RealtimeEmitter,
-    private readonly llm: LlmClient,
+    private readonly jev: JevClient,
   ) {}
 
   async evaluate(tenantId: string, conversationId: string): Promise<void> {
     const scope = { tenantIds: [tenantId] };
     const attendance = await this.db.withTenants(scope, async (tx) => {
-      if (!(await this.llm.activeFor(tx, tenantId))) return null;
+      if (!this.jev.enabled) return null;
+      const module = await tx.tenantModule.findUnique({ where: { tenantId_module: { tenantId, module: "AI" } }, select: { id: true } });
+      if (!module) return null;
       const conversation = await tx.conversation.findUnique({ where: { id: conversationId }, select: { status: true } });
       if (conversation?.status !== "RESOLVED") return null; // reaberta: será avaliada quando for resolvida de novo
       // O atendimento é o que veio depois do último já encerrado na conversa: avaliado ou registrado como só da IA.
@@ -88,22 +98,29 @@ export class AiEvaluationService {
     });
     if (!attendance) return;
 
-    // Uma falha da LLM lança: o BullMQ tenta de novo, sem afetar a conversa.
-    const { result, model } = await this.llm.answer(tenantId, "avaliacao", Evaluation, [
-      { role: "system", content: SYSTEM_PROMPT },
-      { role: "user", content: transcript(attendance.messages, { withTime: true }) },
-    ]);
+    // Uma falha do Jev lança: o BullMQ tenta de novo, sem afetar a conversa. A conversa é de um cliente do restaurante:
+    // só vai a provedores que não guardam os dados para treino.
+    const { answers, model } = await this.jev.decide(
+      tenantId,
+      { como_ler: READING_GUIDE, conversa: transcript(attendance.messages, { withTime: true }) },
+      EVALUATION_QUESTIONS,
+      { privateData: true },
+    );
+    const { resolved, satisfaction, score, teamReason } = answers;
+    if (resolved.type !== "noul" || score.type !== "score") throw new Error("O Jev recusou avaliar o atendimento.");
+    // Recusa na reação ou no motivo: sem reação e outro motivo, em vez de perder a avaliação.
+    const reaction = satisfaction.type === "choice" ? satisfaction.choice : "sem_reacao";
+    const reason = teamReason.type === "choice" && teamReason.choice in TEAM_REASON_CRITERIA ? (teamReason.choice as TeamReason) : "outro";
     await this.db.withTenants(scope, (tx) =>
       tx.conversationEvaluation.create({
         data: {
           tenantId,
           conversationId,
           userId: attendance.userId,
-          resolved: result.resolved,
-          satisfied: result.satisfaction === "sem_reacao" ? null : result.satisfaction === "satisfeito",
-          score: result.score,
-          summary: result.summary,
-          teamReason: result.teamReason,
+          resolved: resolved.noul >= 0.5,
+          satisfied: reaction === "satisfeito" ? true : reaction === "insatisfeito" ? false : null,
+          score: Math.min(5, Math.max(1, Math.round(score.score) + 1)),
+          teamReason: reason,
           model,
         },
       }),

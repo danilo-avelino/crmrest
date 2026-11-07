@@ -4,5 +4,5 @@ import { JevClient } from "./jev.client.js";
 
 /** Defesa da API: vale em todos os papéis que recebem HTTP (o middleware é montado no configureApp). */
 @Global()
-@Module({ providers: [DefenseService, JevClient], exports: [DefenseService] })
+@Module({ providers: [DefenseService, JevClient], exports: [DefenseService, JevClient] })
 export class DefenseModule {}

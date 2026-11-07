@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import type { TenantTx } from "@dishdesk/database";
+import type { AiProvider } from "@dishdesk/database/enums";
 import type { PlatformAiStatusDto } from "@dishdesk/shared";
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import { z } from "zod";
@@ -140,7 +141,9 @@ export class LlmClient {
     for (const [index, endpoint] of endpoints.entries()) {
       try {
         const content =
-          endpoint.provider === "anthropic" ? await this.completeClaude(tenantId, endpoint, schema, messages) : await this.complete(endpoint, name, schema, messages, temperature);
+          endpoint.provider === "anthropic"
+            ? await this.completeClaude(tenantId, endpoint, schema, messages)
+            : await this.complete(tenantId, endpoint, name, schema, messages, temperature);
         return { content, model: endpoint.model };
       } catch (error) {
         if (index === endpoints.length - 1) throw error;
@@ -168,30 +171,40 @@ export class LlmClient {
       messages: messages.filter((message) => message.role === "user").map((message) => ({ role: "user", content: message.content })),
       output_config: { effort: "low", format: zodOutputFormat(schema) },
     });
-    await this.recordUsage(tenantId, endpoint.model, response.usage); // a recusa também é cobrada
+    await this.recordUsage(tenantId, "CLAUDE", endpoint.model, response.usage); // a recusa também é cobrada
     if (response.stop_reason === "refusal") throw new Error(`O Claude recusou (${response.stop_details?.category ?? "sem categoria"}).`);
     if (response.parsed_output == null) throw new Error("A LLM não respondeu.");
     return JSON.stringify(response.parsed_output);
   }
 
-  /** Grava o gasto da chamada; uma falha aqui não derruba a resposta, que já foi paga. */
-  private async recordUsage(tenantId: string, model: string, usage: { input_tokens: number; output_tokens: number }): Promise<void> {
-    const price = CLAUDE_PRICES[model];
-    if (!price) this.logger.warn(`Sem preço para o modelo ${model}: o gasto fica registrado só em tokens.`);
+  /**
+   * Grava o uso da chamada (o Claude com o custo pelo preço do modelo; a LLM local, só os tokens). Uma falha aqui não
+   * derruba a resposta, que já foi dada.
+   */
+  private async recordUsage(
+    tenantId: string,
+    provider: Exclude<AiProvider, "JEV">,
+    model: string,
+    usage: { input_tokens: number; output_tokens: number },
+  ): Promise<void> {
+    const price = provider === "CLAUDE" ? CLAUDE_PRICES[model] : undefined;
+    if (provider === "CLAUDE" && !price) this.logger.warn(`Sem preço para o modelo ${model}: o gasto fica registrado só em tokens.`);
     const costMicroUsd = price ? Math.round(usage.input_tokens * price.input + usage.output_tokens * price.output) : 0;
     try {
       await this.db.withTenants({ tenantIds: [tenantId] }, (tx) =>
         tx.aiUsage.create({
-          data: { tenantId, model, inputTokens: usage.input_tokens, outputTokens: usage.output_tokens, costMicroUsd },
+          data: { tenantId, provider, model, inputTokens: usage.input_tokens, outputTokens: usage.output_tokens, costMicroUsd },
           select: { id: true },
         }),
       );
     } catch (error) {
-      this.logger.warn(`Gasto com o Claude não registrado: ${error instanceof Error ? error.message : String(error)}`);
+      this.logger.warn(`Uso da IA não registrado: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
+  /** Formato da OpenAI (o Ollama local): os tokens entram no painel de gastos, sem custo. */
   private async complete<T>(
+    tenantId: string,
     endpoint: Extract<Endpoint, { provider: "openai" }>,
     name: string,
     schema: z.ZodType<T>,
@@ -213,7 +226,14 @@ export class LlmClient {
       signal: AbortSignal.timeout(endpoint.timeoutMs),
     });
     if (!response.ok) throw new Error(`A LLM respondeu HTTP ${response.status}.`);
-    const body = (await response.json()) as { choices?: { message?: { content?: string | null } }[] };
+    const body = (await response.json()) as {
+      choices?: { message?: { content?: string | null } }[];
+      usage?: { prompt_tokens?: number; completion_tokens?: number };
+    };
+    if (body.usage) {
+      const usage = { input_tokens: body.usage.prompt_tokens ?? 0, output_tokens: body.usage.completion_tokens ?? 0 };
+      await this.recordUsage(tenantId, "LOCAL", endpoint.model, usage);
+    }
     const content = body.choices?.[0]?.message?.content;
     if (!content) throw new Error("A LLM não respondeu.");
     return content;

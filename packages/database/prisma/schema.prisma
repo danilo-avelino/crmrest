@@ -545,7 +545,7 @@ model ConversationEvaluation {
   resolved       Boolean // o problema do cliente foi resolvido
   satisfied      Boolean? // null = o cliente não reagiu
   score          Int // 1 a 5
-  summary        String
+  summary        String? // só nas avaliações feitas pela LLM, até 07/11/2026; o Jev não escreve texto
   teamReason     String?  @map("team_reason") // TeamReason: por que precisou da equipe; null = só a IA atendeu
   model          String
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
@@ -697,9 +697,17 @@ model SupportTicket {
 // Uma chamada paga à IA (hoje, o Claude como reserva do Atendimento com IA): os tokens e o custo, em milionésimos de
 // dólar pelo preço do modelo na hora da chamada. A LLM local não entra (não custa por chamada). O painel da plataforma
 // soma por mês e por restaurante.
+// Quem respondeu a chamada de IA: o Claude (a reserva paga), o Jev (pelo OpenRouter, pago) ou a LLM local (sem custo).
+enum AiProvider {
+  CLAUDE
+  JEV
+  LOCAL
+}
+
 model AiUsage {
-  id            String   @id @default(uuid(7)) @db.Uuid
-  tenantId      String   @map("tenant_id") @db.Uuid
+  id            String     @id @default(uuid(7)) @db.Uuid
+  tenantId      String     @map("tenant_id") @db.Uuid
+  provider      AiProvider
   model         String
   inputTokens   Int      @map("input_tokens")
   outputTokens  Int      @map("output_tokens")
@@ -710,6 +718,20 @@ model AiUsage {
 
   @@index([tenantId, createdAt])
   @@map("ai_usages")
+}
+
+// Gasto com IA que não serve a um restaurante (o Jev na defesa da API): qualquer um grava, só a plataforma lê.
+model PlatformAiUsage {
+  id           String     @id @default(uuid(7)) @db.Uuid
+  provider     AiProvider
+  model        String
+  inputTokens  Int        @map("input_tokens")
+  outputTokens Int        @map("output_tokens")
+  costMicroUsd Int        @map("cost_micro_usd")
+  createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([createdAt])
+  @@map("platform_ai_usages")
 }
 
 // ---------- Tráfego do site institucional ----------
