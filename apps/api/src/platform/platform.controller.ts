@@ -10,6 +10,13 @@ import {
   type PlatformSuggestionDto,
   type PlatformTenantDto,
   type PlatformTicketDto,
+  type PlatformTrafficDto,
+  type SiteDevice,
+  TRAFFIC_PERIODS,
+  type TrafficPeriod,
+  type TrafficTotals,
+  DIRECT_SOURCE,
+  trafficInsights,
   UpdateTenantAccessRequest,
   UpdateTenantModuleRequest,
   type SuggestionSubject,
@@ -282,6 +289,70 @@ export class PlatformController {
       userName: row.user.name,
       createdAt: row.createdAt.toISOString(),
     }));
+  }
+
+  /** Tráfego do site institucional nos últimos 7, 30 ou 90 dias (horário de Brasília), com o período anterior. */
+  @Get("traffic")
+  traffic(@CurrentAuth() auth: RequestAuth, @Query("days") daysParam?: string): Promise<PlatformTrafficDto> {
+    const days = Number(daysParam ?? 30) as TrafficPeriod;
+    if (!TRAFFIC_PERIODS.includes(days)) throw new UnprocessableEntityException("Período inválido: use 7, 30 ou 90 dias.");
+    const today = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const from = new Date(new Date(`${today}T00:00:00-03:00`).getTime() - (days - 1) * DAY_MS);
+    const previousFrom = new Date(from.getTime() - days * DAY_MS);
+    const to = new Date();
+
+    return this.db.withTenants({ tenantIds: [], userId: auth.userId }, async (tx) => {
+      await requireSuperAdmin(tx, auth.userId);
+      const totals = async (start: Date, end: Date): Promise<TrafficTotals> => {
+        const [visits] = await tx.$queryRaw<{ pageviews: number; visitors: number; cta: number }[]>`
+          SELECT count(*) FILTER (WHERE kind = 'PAGEVIEW')::int AS pageviews, count(DISTINCT visitor_id)::int AS visitors,
+                 count(*) FILTER (WHERE kind = 'CTA')::int AS cta
+          FROM site_visits WHERE created_at >= ${start} AND created_at < ${end}`;
+        // Cadastro pelo site = restaurante com teste grátis (os criados pela plataforma ou por quem já tem conta não têm).
+        const [signups] = await tx.$queryRaw<{ count: number }[]>`
+          SELECT count(*)::int AS count FROM tenants
+          WHERE trial_ends_at > created_at AND created_at >= ${start} AND created_at < ${end}`;
+        return { pageviews: visits?.pageviews ?? 0, visitors: visits?.visitors ?? 0, ctaClicks: visits?.cta ?? 0, signups: signups?.count ?? 0 };
+      };
+      const [current, previous, daily, pages, sources, devices, hours] = await Promise.all([
+        totals(from, to),
+        totals(previousFrom, from),
+        tx.$queryRaw<{ date: string; pageviews: number; visitors: number }[]>`
+          SELECT to_char(created_at AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM-DD') AS date,
+                 count(*) FILTER (WHERE kind = 'PAGEVIEW')::int AS pageviews, count(DISTINCT visitor_id)::int AS visitors
+          FROM site_visits WHERE created_at >= ${from} GROUP BY 1`,
+        tx.$queryRaw<{ path: string; pageviews: number; visitors: number }[]>`
+          SELECT path, count(*)::int AS pageviews, count(DISTINCT visitor_id)::int AS visitors
+          FROM site_visits WHERE kind = 'PAGEVIEW' AND created_at >= ${from}
+          GROUP BY path ORDER BY pageviews DESC, path LIMIT 10`,
+        tx.$queryRaw<{ source: string; visitors: number }[]>`
+          SELECT coalesce(source, ${DIRECT_SOURCE}) AS source, count(DISTINCT visitor_id)::int AS visitors
+          FROM site_visits WHERE created_at >= ${from}
+          GROUP BY 1 ORDER BY visitors DESC, source LIMIT 8`,
+        tx.$queryRaw<{ device: SiteDevice; visitors: number }[]>`
+          SELECT lower(device::text) AS device, count(DISTINCT visitor_id)::int AS visitors
+          FROM site_visits WHERE created_at >= ${from} GROUP BY 1 ORDER BY visitors DESC`,
+        tx.$queryRaw<{ hour: number; pageviews: number }[]>`
+          SELECT extract(hour FROM created_at AT TIME ZONE 'America/Sao_Paulo')::int AS hour, count(*)::int AS pageviews
+          FROM site_visits WHERE kind = 'PAGEVIEW' AND created_at >= ${from} GROUP BY 1`,
+      ]);
+
+      const byDate = new Map(daily.map((row) => [row.date, row]));
+      const data: Omit<PlatformTrafficDto, "insights"> = {
+        days,
+        totals: current,
+        previous,
+        daily: Array.from({ length: days }, (_, index) => {
+          const date = new Date(from.getTime() + index * DAY_MS - 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
+          return { date, pageviews: byDate.get(date)?.pageviews ?? 0, visitors: byDate.get(date)?.visitors ?? 0 };
+        }),
+        pages,
+        sources,
+        devices,
+        hours: Array.from({ length: 24 }, (_, hour) => hours.find((row) => row.hour === hour)?.pageviews ?? 0),
+      };
+      return { ...data, insights: trafficInsights(data) };
+    });
   }
 
   private async tenants(userId: string): Promise<PlatformTenantDto[]> {

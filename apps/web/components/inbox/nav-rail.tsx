@@ -2,6 +2,7 @@
 
 import {
   Building2Icon,
+  ChartColumnIcon,
   CoinsIcon,
   LightbulbIcon,
   MegaphoneIcon,
@@ -45,6 +46,7 @@ const ITEMS = [
 
 // Painel da plataforma (só super admin): no pé da barra, de baixo para cima a partir do avatar.
 const PLATFORM_ITEMS = [
+  { label: "Tráfego do site", icon: ChartColumnIcon, href: "/plataforma/trafego" },
   { label: "Gastos com IA", icon: CoinsIcon, href: "/plataforma/ia" },
   { label: "Sugestões dos restaurantes", icon: LightbulbIcon, href: "/plataforma/sugestoes" },
   { label: "Tickets de suporte", icon: TicketIcon, href: "/plataforma/tickets" },

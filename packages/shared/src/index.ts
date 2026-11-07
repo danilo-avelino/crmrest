@@ -12,3 +12,4 @@ export * from "./personalities.js";
 export * from "./platform.js";
 export * from "./reports.js";
 export * from "./settings.js";
+export * from "./traffic.js";

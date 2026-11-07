@@ -712,6 +712,35 @@ model AiUsage {
   @@map("ai_usages")
 }
 
+// ---------- Tráfego do site institucional ----------
+
+enum SiteVisitKind {
+  PAGEVIEW
+  CTA // clique num link para /cadastro (Teste grátis)
+}
+
+enum SiteDevice {
+  DESKTOP
+  MOBILE
+  TABLET
+}
+
+// Uma página vista (ou um clique em "Teste grátis") no site, sem cookie e sem o IP. visitorId: hash do dia + IP +
+// navegador, que muda a cada dia. source: utm_source ou o site de onde veio, já com o nome legível ("Instagram"); null =
+// direto. Qualquer um grava (o site é público); só a plataforma lê.
+model SiteVisit {
+  id        String        @id @default(uuid(7)) @db.Uuid
+  kind      SiteVisitKind
+  path      String
+  source    String?
+  device    SiteDevice
+  visitorId String        @map("visitor_id")
+  createdAt DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([createdAt])
+  @@map("site_visits")
+}
+
 // ---------- Auditoria ----------
 
 model AuditLog {

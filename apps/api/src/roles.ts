@@ -49,6 +49,7 @@ import { OnboardingService } from "./settings/onboarding.service.js";
 import { QuickRepliesController } from "./settings/quick-replies.controller.js";
 import { SettingsController } from "./settings/settings.controller.js";
 import { SettingsService } from "./settings/settings.service.js";
+import { SiteController } from "./site/site.controller.js";
 import { SuggestionsController } from "./suggestions/suggestions.controller.js";
 import { SuggestionsService } from "./suggestions/suggestions.service.js";
 import { EvolutionWebhookController } from "./webhooks/evolution-webhook.controller.js";
@@ -76,6 +77,7 @@ import { StripeWebhookController } from "./webhooks/stripe-webhook.controller.js
     OnboardingController,
     AgentController,
     SuggestionsController,
+    SiteController,
   ],
   providers: [
     ConversationsService,
