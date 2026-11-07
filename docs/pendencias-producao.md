@@ -1,6 +1,6 @@
 # Pendências para produção — Dish Desk
 
-Atualizado em 3 de novembro de 2026.
+Atualizado em 4 de novembro de 2026.
 
 Esta é a lista do que falta para o Dish Desk atender restaurantes de verdade. Quando um item for concluído, marque `[x]` e troque a data acima.
 
@@ -32,7 +32,7 @@ Esta é a lista do que falta para o Dish Desk atender restaurantes de verdade. Q
   - [x] CNAME `www` e TXT `_railway-verify.www` criados no Registro.br; `https://www.dishdesk.com.br` responde com HTTPS (site, painel e API) — 11/10.
   - [x] Meta: redirect do Instagram `https://www.dishdesk.com.br/api/integrations/instagram/callback` e domínio do SDK do JavaScript `https://www.dishdesk.com.br/`, já sem os endereços antigos do `app` — 11/10.
   - [x] Política de privacidade e exclusão de dados do app da Meta apontando para `https://www.dishdesk.com.br/privacidade` e `/exclusao-de-dados` (substitui o documento publicado) — 11/10.
-  - [ ] `dishdesk.com.br` sem `www` não abre: a Railway exige CNAME na raiz e o DNS do Registro.br não aceita. Decisão de 11/10: nada fora da Railway (sem Cloudflare). Resta testar, com você logado no Registro.br, se o redirecionamento do "modo básico" convive com o CNAME do `www`; se substituir a zona avançada, a raiz fica sem responder.
+  - [x] `dishdesk.com.br` sem `www` redireciona (301) para `https://www.dishdesk.com.br`, mantendo caminho e parâmetros: registro A da raiz → `89.106.200.1` no Registro.br e redirecionamento no redirect.pizza (plano gratuito, 250 mil acessos/mês, conta do usuário). A Railway exige CNAME na raiz, que o Registro.br não aceita; a escolha substitui a decisão de 11/10 de nada fora da Railway — 04/11.
   - [ ] Apagar na zona do Registro.br os registros antigos `app` (CNAME) e `_railway-verify.app` (TXT). Não atrapalham — você, ou o Claude com o Registro.br logado.
 - [ ] **WhatsApp por QR Code (Evolution API)** — decisão de 21/10, depois de a Meta desabilitar o portfólio Dish Desk no WhatsApp. Substitui o "número real de WhatsApp" da API oficial (pagamento, nome de exibição e templates não se aplicam).
   - [x] Conector, webhook `/api/webhooks/evolution`, modal do QR Code em Integrações e testes — Claude, 21/10. Testado no dev com a Evolution 2.3.7 no Docker; QR escaneado com celular de verdade pelo usuário em 21/10.
