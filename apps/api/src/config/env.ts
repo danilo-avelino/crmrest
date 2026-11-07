@@ -82,6 +82,11 @@ const EnvSchema = z.object({
   JEV_API_KEY: z.string().min(1).optional(),
   JEV_URL: z.url().default("https://openrouter.ai/api/alpha/decisions"),
   JEV_MODEL: z.string().min(1).default("typesafe/jev-1.14"),
+  // "watch": a defesa só registra o que teria banido (a plataforma confere os IPs na tela e bane à mão); "ban": as
+  // regras banem sozinhas. Começa em "watch" para conferir que o X-Real-IP da Railway traz o IP do visitante.
+  DEFENSE_MODE: z.enum(["watch", "ban"]).default("watch"),
+  // IPs ou faixas que nunca são banidos, separados por vírgula (ex.: o do escritório: 200.1.2.3,2804:14c::/32).
+  DEFENSE_ALLOW_IPS: z.string().optional(),
   // Desenvolvimento sem credenciais reais: envios aos canais são simulados (nunca em produção).
   CHANNELS_DRY_RUN: z.stringbool().default(false),
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),

@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { once } from "node:events";
+import type { BlockList } from "node:net";
 import { DEFENSE_REASON_LABEL, type DefenseAnalysisDto, type DefenseEventDto, type DefenseReason } from "@dishdesk/shared";
 import { Inject, Injectable, Logger, type OnModuleDestroy, type OnModuleInit } from "@nestjs/common";
 import type { Request } from "express";
@@ -11,11 +12,13 @@ import {
   AUTH_SUSPECT,
   AUTH_WINDOW_MS,
   BAN_MS,
+  clientIp,
   CONFIRMED_BAN_MS,
   isFailedLogin,
   MANUAL_BAN_MS,
   NOT_FOUND_LIMIT,
   NOT_FOUND_WINDOW_MS,
+  neverBanList,
   routePattern,
 } from "./defense.rules.js";
 import { JevClient } from "./jev.client.js";
@@ -35,6 +38,7 @@ const key = {
   auth: (ip: string) => `${P}auth:${ip}`,
   emails: (ip: string) => `${P}emails:${ip}`,
   suspect: (ip: string) => `${P}suspect:${ip}`,
+  watch: (ip: string, reason: DefenseReason) => `${P}watch:${reason}:${ip}`,
   recent: (ip: string) => `${P}recent:${ip}`,
   event: (id: string) => `${P}event:${id}`,
   verdict: (signature: string) => `${P}verdict:${signature}`,
@@ -51,6 +55,9 @@ type StoredEvent = Omit<DefenseEventDto, "active">;
 export class DefenseService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(DefenseService.name);
   private readonly redis: Redis;
+  private readonly neverBan: BlockList;
+  /** DEFENSE_MODE=watch: as regras só registram o que teriam banido. */
+  private readonly watchOnly: boolean;
 
   constructor(
     @Inject(ENV) env: Env,
@@ -59,6 +66,13 @@ export class DefenseService implements OnModuleInit, OnModuleDestroy {
     // Sem fila offline e com prazo curto: com o Redis fora, o pedido passa na hora em vez de esperar.
     this.redis = new Redis(env.REDIS_URL, { maxRetriesPerRequest: 1, enableOfflineQueue: false, commandTimeout: 1_000 });
     this.redis.on("error", () => {});
+    this.neverBan = neverBanList(env.DEFENSE_ALLOW_IPS);
+    this.watchOnly = env.DEFENSE_MODE === "watch";
+  }
+
+  /** O IP do pedido, ou null se a defesa nunca age sobre ele (rede interna, Fastly, DEFENSE_ALLOW_IPS). */
+  ipOf(req: Request): string | null {
+    return clientIp(req, this.neverBan);
   }
 
   async onModuleInit(): Promise<void> {
@@ -137,7 +151,8 @@ export class DefenseService implements OnModuleInit, OnModuleDestroy {
     const event = await this.event(id);
     if (!event) return null;
     if ((await this.redis.get(key.ban(event.ip))) === id) await this.redis.del(key.ban(event.ip));
-    await this.redis.del(key.notFound(event.ip), key.auth(event.ip), key.emails(event.ip), key.suspect(event.ip), key.recent(event.ip));
+    const watched = (Object.keys(DEFENSE_REASON_LABEL) as DefenseReason[]).map((reason) => key.watch(event.ip, reason));
+    await this.redis.del(key.notFound(event.ip), key.auth(event.ip), key.emails(event.ip), key.suspect(event.ip), key.recent(event.ip), ...watched);
     return this.save({ ...event, unbannedAt: new Date().toISOString() });
   }
 
@@ -149,7 +164,9 @@ export class DefenseService implements OnModuleInit, OnModuleDestroy {
     return this.save({ ...event, action: "banned", bannedUntil: new Date(Date.now() + MANUAL_BAN_MS).toISOString(), unbannedAt: null });
   }
 
-  private async open(ip: string, req: Request, reason: DefenseReason, action: StoredEvent["action"]): Promise<void> {
+  private async open(ip: string, req: Request, reason: DefenseReason, rule: "banned" | "suspected"): Promise<void> {
+    // Em DEFENSE_MODE=watch, o que a regra banaria fica só registrado ("watched").
+    const action: StoredEvent["action"] = rule === "banned" && this.watchOnly ? "watched" : rule;
     const userAgent = req.headers["user-agent"]?.slice(0, 200) ?? null;
     const event: StoredEvent = {
       id: randomUUID(),
@@ -166,11 +183,13 @@ export class DefenseService implements OnModuleInit, OnModuleDestroy {
     };
     // Só um caso por banimento: os pedidos que chegam juntos (o robô manda vários de uma vez) não abrem outros.
     if (action === "banned" && !(await this.redis.set(key.ban(ip), event.id, "PX", BAN_MS[reason], "NX"))) return;
+    // Sem banimento, o robô que segue sondando abriria um caso por pedido: um por regra e IP dentro do mesmo prazo.
+    if (action === "watched" && !(await this.redis.set(key.watch(ip, reason), event.id, "PX", BAN_MS[reason], "NX"))) return;
     const multi = this.redis.multi();
     // O pedido que disparou a regra entra no que o Jev vê (a sondagem é recusada antes de chegar na contagem).
     if (reason === "sensitive_probe") multi.lpush(key.recent(ip), `${req.method} ${routePattern(req.path)} 404`).pexpire(key.recent(ip), AUTH_WINDOW_MS);
     await multi.set(key.event(event.id), JSON.stringify(event), "EX", EVENT_TTL_S).lpush(EVENTS, event.id).ltrim(EVENTS, 0, EVENTS_LIMIT - 1).exec();
-    this.logger.warn(`Defesa: ${DEFENSE_REASON_LABEL[reason]} de ${ip} (${req.method} ${event.path}): ${action === "banned" ? "IP banido" : "suspeita"}`);
+    this.logger.warn(`Defesa: ${DEFENSE_REASON_LABEL[reason]} de ${ip} (${req.method} ${event.path}): ${{ banned: "IP banido", watched: "só registrado (DEFENSE_MODE=watch)", suspected: "suspeita" }[action]}`);
     if (this.jev.enabled) void this.analyze(event, userAgent);
   }
 

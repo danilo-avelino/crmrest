@@ -3,7 +3,7 @@ import type { INestApplication } from "@nestjs/common";
 import { hash } from "@node-rs/argon2";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { AUTH_SUSPECT, NOT_FOUND_LIMIT } from "../src/defense/defense.rules.js";
+import { AUTH_SUSPECT, NOT_FOUND_LIMIT, neverBanList } from "../src/defense/defense.rules.js";
 import { accessTokenFor, admin, createAuthFixture, createTestApp, PASSWORD, startMockGraph } from "./helpers.js";
 
 describe("defesa da API", () => {
@@ -39,7 +39,12 @@ describe("defesa da API", () => {
         },
       };
     });
-    app = await createTestApp({ JEV_API_KEY: "chave-de-teste", JEV_URL: `${jev.url}/api/alpha/decisions` });
+    app = await createTestApp({
+      DEFENSE_MODE: "ban",
+      DEFENSE_ALLOW_IPS: "198.51.100.0/24, 2001:db8::7",
+      JEV_API_KEY: "chave-de-teste",
+      JEV_URL: `${jev.url}/api/alpha/decisions`,
+    });
     fx = await createAuthFixture();
     superAdmin = await admin.user.create({
       data: {
@@ -72,6 +77,19 @@ describe("defesa da API", () => {
     await request(app.getHttpServer()).get("/api/health/live").expect(200);
     await from("10.0.0.5").get("/.git/config").expect(404);
     await from("10.0.0.5").get("/api/health/live").expect(200);
+  });
+
+  it("nunca bane a Fastly (IP de muita gente) nem os IPs da DEFENSE_ALLOW_IPS", async () => {
+    for (const ip of ["151.101.1.140", "2a04:4e42::1", "198.51.100.99", "2001:db8::7"]) {
+      await from(ip).get("/.env").expect(404);
+      await from(ip).get("/api/health/live").expect(200);
+    }
+    expect((await events()).filter((event) => ["151.101.1.140", "198.51.100.99"].includes(event.ip))).toEqual([]);
+  });
+
+  it("uma entrada inválida na DEFENSE_ALLOW_IPS impede a API de subir", () => {
+    expect(() => neverBanList("200.1.2.3, escritorio")).toThrow('DEFENSE_ALLOW_IPS: "escritorio"');
+    expect(() => neverBanList("200.1.2.0/abc")).toThrow("DEFENSE_ALLOW_IPS");
   });
 
   it("quem sonda um .env é banido na hora; o Jev confirma o ataque e o banimento passa a 7 dias", async () => {
@@ -134,5 +152,50 @@ describe("defesa da API", () => {
     expect(unbanned.active).toBe(false);
     expect(unbanned.unbannedAt).not.toBeNull();
     await from("203.0.113.40").get("/api/health/live").expect(200);
+  });
+});
+
+describe("defesa da API em DEFENSE_MODE=watch (o padrão)", () => {
+  let app: INestApplication;
+  let fx: Awaited<ReturnType<typeof createAuthFixture>>;
+  let superAdmin: { id: string };
+  let superToken: string;
+
+  beforeAll(async () => {
+    app = await createTestApp();
+    fx = await createAuthFixture();
+    superAdmin = await admin.user.create({
+      data: {
+        name: "Equipe Plataforma",
+        email: `defesa-watch-${fx.a.id}@teste.local`,
+        passwordHash: await hash(PASSWORD),
+        isSuperAdmin: true,
+        memberships: { create: { tenantId: fx.a.id, role: "ADMIN" } },
+      },
+      select: { id: true },
+    });
+    superToken = await accessTokenFor(app, `defesa-watch-${fx.a.id}@teste.local`, fx.a.id);
+  });
+
+  afterAll(async () => {
+    await admin.user.deleteMany({ where: { id: superAdmin?.id } });
+    await fx?.cleanup();
+    await app?.close();
+  });
+
+  it("só registra o que banaria: o IP segue entrando e a plataforma bane à mão", async () => {
+    const from = (path: string) => request(app.getHttpServer()).get(path).set("X-Real-IP", "203.0.113.50");
+    const list = async (): Promise<DefenseEventDto[]> =>
+      (await request(app.getHttpServer()).get("/api/platform/defense").set("Authorization", `Bearer ${superToken}`).expect(200)).body;
+
+    await from("/.env").expect(404);
+    await from("/.git/config").expect(404);
+    await vi.waitFor(async () => expect((await list()).filter((event) => event.ip === "203.0.113.50")).toHaveLength(1));
+    const [event] = (await list()).filter((item) => item.ip === "203.0.113.50");
+    expect(event).toMatchObject({ reason: "sensitive_probe", action: "watched", active: false, bannedUntil: null, analysis: { state: "off" } });
+    await from("/api/health/live").expect(200);
+
+    await request(app.getHttpServer()).post(`/api/platform/defense/${event!.id}/ban`).set("Authorization", `Bearer ${superToken}`).expect(201);
+    await from("/api/health/live").expect(403);
   });
 });

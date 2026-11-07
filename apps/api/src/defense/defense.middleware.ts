@@ -1,5 +1,5 @@
 import type { RequestHandler } from "express";
-import { clientIp, isSensitiveProbe } from "./defense.rules.js";
+import { isSensitiveProbe } from "./defense.rules.js";
 import type { DefenseService } from "./defense.service.js";
 
 /**
@@ -8,7 +8,7 @@ import type { DefenseService } from "./defense.service.js";
  */
 export function defenseMiddleware(defense: DefenseService): RequestHandler {
   return (req, res, next) => {
-    const ip = clientIp(req);
+    const ip = defense.ipOf(req);
     if (!ip) return next();
     void defense.isBanned(ip).then((banned) => {
       if (banned) {
