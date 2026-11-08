@@ -483,7 +483,7 @@ Objetivo: a IA da extensão do Chrome faz a implantação com o restaurante e at
 ---
 
 ## Itens ainda sem fase
-- **Login com Google (OAuth real).** Feito em 07/11/2026: só entra quem já tem conta com o mesmo e-mail (o Google não cria conta). Falta configurar em produção (docs/pendencias-producao.md).
+- **Login com Google (OAuth real).** Feito em 07/11/2026 e no ar em produção: só entra quem já tem conta com o mesmo e-mail (o Google não cria conta).
 - **Versões mobile** de todas as telas (CLAUDE.md §7), adiadas no MVP.
 - **Envio de mídia** pelo atendente (o design mostra só texto). Sugestão: logo após o MVP.
 - **Vídeos UGC para divulgar o Dish Desk** (marketing, não é funcionalidade do produto). Vídeos curtos de criadores ou de donos de restaurante mostrando o Dish Desk no dia a dia, para anúncios no Instagram e no Facebook e para a landing. Referência: a página de creators para SaaS da Turbo Partners (pages.turbopartners.com.br/creators/saas), não analisada ainda porque a rede desta sessão bloqueia o site. Para o marketing automatizado, avaliar o [Crush](https://trycrush.ai) e o [Holo](https://tryholo.ai) (também não analisados, pelo mesmo bloqueio). A definir: contratar uma agência ou criadores diretamente, roteiros (atendimento com IA, prevenção de fraude) e quantos vídeos por mês.
