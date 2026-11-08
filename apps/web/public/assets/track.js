@@ -1,6 +1,10 @@
 // Tráfego do site, medido pelo próprio Dish Desk (Painel da plataforma → Tráfego do site): a página vista e os cliques
 // em "Teste grátis". Sem cookie e sem dado pessoal; a API guarda só um hash diário do visitante.
 (function () {
+  // Quem está com sessão no painel (equipe e restaurantes clientes) não é visitante: o AuthProvider marca o navegador.
+  try {
+    if (localStorage.getItem("dishdesk_painel")) return;
+  } catch (e) {}
   var params = new URLSearchParams(location.search);
   function send(kind) {
     var body = { kind: kind, path: location.pathname };

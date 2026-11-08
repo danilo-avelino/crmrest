@@ -2,7 +2,7 @@
 
 import type { AuthSession, SelectContextRequest, SignupRequest } from "@dishdesk/shared";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { createContext, type ReactNode, useContext, useMemo } from "react";
+import { createContext, type ReactNode, useContext, useEffect, useMemo } from "react";
 import { ApiError, apiDownload, apiRequest } from "@/lib/api";
 
 type AuthValue = {
@@ -26,6 +26,9 @@ type AuthValue = {
 
 export const SESSION_KEY = ["auth", "session"] as const;
 
+/** Lido pelo `public/assets/track.js`: navegador com sessão no painel não conta como visitante do site. */
+const SIGNED_IN_KEY = "dishdesk_painel";
+
 /** A sessão sobrevive ao reload pelo cookie httpOnly; o access token fica só em memória (cache da query). */
 async function fetchSession(): Promise<AuthSession | null> {
   try {
@@ -40,7 +43,7 @@ const AuthContext = createContext<AuthValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
-  const { data: session = null, isPending } = useQuery({
+  const { data: session = null, isPending, isSuccess } = useQuery({
     queryKey: SESSION_KEY,
     queryFn: fetchSession,
     retry: false,
@@ -51,6 +54,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     refetchInterval: 12 * 60_000,
     refetchIntervalInBackground: true,
   });
+
+  const signedIn = session !== null;
+  useEffect(() => {
+    // Só com a resposta da API: uma falha de rede não é sinal de que a sessão acabou.
+    if (!isSuccess) return;
+    try {
+      if (signedIn) localStorage.setItem(SIGNED_IN_KEY, "1");
+      else localStorage.removeItem(SIGNED_IN_KEY);
+    } catch {}
+  }, [isSuccess, signedIn]);
 
   const value = useMemo<AuthValue>(() => {
     const setSession = (next: AuthSession | null) => {
