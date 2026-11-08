@@ -8,16 +8,22 @@ import {
   SelectContextRequest,
   SignupRequest,
 } from "@dishdesk/shared";
-import { Body, Controller, Get, HttpCode, Inject, Post, Req, Res, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, HttpCode, Inject, Post, Query, Redirect, Req, Res, UseGuards } from "@nestjs/common";
 import { Throttle, ThrottlerGuard } from "@nestjs/throttler";
 import type { Request, Response } from "express";
+import { z } from "zod";
 import { ZodPipe } from "../common/zod.pipe.js";
 import { ENV, type Env } from "../config/env.js";
 import { CurrentAuth, Public, type RequestAuth } from "./auth.decorators.js";
 import { AuthService } from "./auth.service.js";
+import type { GoogleCallback } from "./google-auth.js";
 
 const SESSION_COOKIE = "dishdesk_session";
 const SESSION_COOKIE_PATH = "/api/auth";
+// Prende o login com Google ao navegador que o abriu (state, PKCE e nonce); vale uma volta só.
+const GOOGLE_COOKIE = "dd_google_login";
+const GOOGLE_COOKIE_PATH = "/api/auth/google";
+const GoogleCallbackQuery = z.looseObject({ code: z.string().optional(), state: z.string().optional(), error: z.string().optional() });
 
 @Controller("auth")
 export class AuthController {
@@ -39,6 +45,42 @@ export class AuthController {
     const { refreshToken, session } = await this.auth.login(body.email, body.password, request.headers["user-agent"]);
     this.setSessionCookie(response, refreshToken);
     return session;
+  }
+
+  /** "Continuar com Google": leva o navegador ao Google, com o cookie que só a volta para este navegador lê. */
+  @Public()
+  @Get("google")
+  @Redirect()
+  googleStart(@Res({ passthrough: true }) response: Response): { url: string } {
+    const start = this.auth.googleStart();
+    if (!start) return { url: `${this.env.WEB_ORIGIN}/login?google=indisponivel` };
+    response.cookie(GOOGLE_COOKIE, start.pending, {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: this.env.NODE_ENV === "production",
+      path: GOOGLE_COOKIE_PATH,
+      maxAge: 10 * 60_000,
+    });
+    return { url: start.url };
+  }
+
+  /** Volta do Google: com conta, abre a sessão e volta ao login (a escolha do restaurante); sem, volta com o motivo. */
+  @Public()
+  @Get("google/callback")
+  @Redirect()
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  async googleCallback(
+    @Query(new ZodPipe(GoogleCallbackQuery)) query: GoogleCallback,
+    @Req() request: Request,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<{ url: string }> {
+    const pending = (request.cookies as Record<string, string> | undefined)?.[GOOGLE_COOKIE];
+    response.clearCookie(GOOGLE_COOKIE, { path: GOOGLE_COOKIE_PATH });
+    const result = await this.auth.googleLogin(query, pending, request.headers["user-agent"]);
+    if ("error" in result) return { url: `${this.env.WEB_ORIGIN}/login?google=${result.error}` };
+    this.setSessionCookie(response, result.refreshToken);
+    return { url: `${this.env.WEB_ORIGIN}/login` };
   }
 
   /** Cadastro pelo site (teste grátis). Não confirma o e-mail: o limite por hora segura os cadastros em massa. */

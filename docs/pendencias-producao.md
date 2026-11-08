@@ -1,6 +1,6 @@
 # Pendências para produção — Dish Desk
 
-Atualizado em 4 de novembro de 2026.
+Atualizado em 7 de novembro de 2026.
 
 Esta é a lista do que falta para o Dish Desk atender restaurantes de verdade. Quando um item for concluído, marque `[x]` e troque a data acima.
 
@@ -126,7 +126,9 @@ Pagamento pendente (Claude, 11/10): a renovação do mensal tem 1 dia de folga; 
   - [ ] SMTP próprio (Resend, por exemplo) em Authentication → SMTP Settings: o e-mail padrão do Supabase só entrega para os membros da sua equipe no Supabase, poucos por hora — você.
   - [ ] Traduzir o modelo "Reset Password" em Authentication → Email Templates, mantendo o `{{ .ConfirmationURL }}`. O Supabase só libera a edição depois do SMTP próprio — você ou Claude.
 - [x] **Convite de usuário** — Claude, 21/10. Em Configurações → Usuários, com a senha em branco a pessoa recebe o e-mail "Invite user" do Supabase e cria a senha em `/redefinir-senha`; "Enviar convite" manda de novo. Usa a mesma configuração do "Esqueceu?" (variáveis `SUPABASE_*` na `api` e SMTP próprio, itens acima); falta traduzir o modelo "Invite user" em Authentication → Email Templates, como o de "Reset Password".
-- [ ] **Botão "Continuar com Google".** Aparece no login de produção, mas só mostra "em breve". Decidir: esconder até existir ou implementar.
+- [ ] **Botão "Continuar com Google".** Implementado em 07/11 (OAuth direto na API, sem o Supabase): só entra quem já tem conta com o mesmo e-mail; sem conta, volta ao login com o aviso. Falta:
+  - [x] No Google Cloud (projeto `dish-desk-514023`), o cliente OAuth "Dish Desk" (Aplicativo da Web) com o retorno `https://www.dishdesk.com.br/api/auth/google/callback` (e `http://localhost:3000/api/auth/google/callback` para o dev) e a tela de consentimento "Dish Desk" publicada (em produção) — feito em 07/11. As credenciais estão no `.env` local.
+  - [ ] Na Railway, na `api`: `GOOGLE_CLIENT_ID` e `GOOGLE_CLIENT_SECRET`. Sem elas, o botão avisa que o login com Google não está disponível — você.
 - [ ] **Monitoramento.** Sentry e painel das filas estão prontos no código, mas só ligam com as variáveis `SENTRY_DSN`, `NEXT_PUBLIC_SENTRY_DSN` e `BULL_BOARD_PASSWORD` na Railway. Falta conferir se estão lá.
 - [x] **Trava do login por conta** — Claude, 31/10. 5 senhas erradas seguidas travam o e-mail por 15 minutos, mesmo vindas de IPs diferentes e mesmo com a senha certa depois; e-mail sem conta trava igual, com a mesma resposta. O login certo zera a contagem, e a redefinição pelo "Esqueceu?" libera o e-mail na hora. A contagem fica no Redis (vale para todas as réplicas da `api`).
 - [ ] **Cabeçalhos de segurança.** A API e o painel não enviam cabeçalhos como CSP — Claude.

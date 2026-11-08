@@ -26,6 +26,7 @@ import {
 } from "@nestjs/common";
 import { ENV, type Env } from "../config/env.js";
 import { DatabaseService } from "../core/database.service.js";
+import { type GoogleCallback, googleLoginStart, googleVerifiedEmail, hasGoogleAuth } from "./google-auth.js";
 import { LoginLimitsService } from "./login-limits.service.js";
 import { consumeRecoveryToken, hasSupabaseAuth, sendRecoveryEmail, type SupabaseEnv } from "./supabase-auth.js";
 import {
@@ -72,6 +73,36 @@ export class AuthService implements OnModuleInit {
     const refreshToken = await this.openSession(found.id, userAgent);
     const profile = await this.loadProfile(found.id);
     return { refreshToken, session: { ...profile, context: null, accessToken: null } satisfies AuthSession };
+  }
+
+  /** "Continuar com Google": endereço da tela do Google e o que o navegador guarda até a volta; null sem o cliente OAuth. */
+  googleStart(): { url: string; pending: string } | null {
+    return hasGoogleAuth(this.env) ? googleLoginStart(this.env) : null;
+  }
+
+  /**
+   * Volta do Google: abre a sessão do usuário ativo com o e-mail verificado da conta Google, como o login com senha.
+   * Sem conta (ou desativada), não cria nenhuma: quem não tem acesso pede ao admin ou faz o teste grátis.
+   */
+  async googleLogin(
+    query: GoogleCallback,
+    pending: string | undefined,
+    userAgent?: string,
+  ): Promise<{ refreshToken: string } | { error: "cancelado" | "sem-conta" | "erro" | "indisponivel" }> {
+    if (!hasGoogleAuth(this.env)) return { error: "indisponivel" };
+    if (query.error) return { error: "cancelado" };
+    let email: string | null;
+    try {
+      email = await googleVerifiedEmail(this.env, query, pending);
+    } catch (error) {
+      this.logger.warn({ err: error }, "Login com Google sem o token do Google");
+      return { error: "erro" };
+    }
+    if (!email) return { error: "erro" };
+    const [found] = await this.db.client.$queryRaw<{ id: string; is_active: boolean }[]>`
+      SELECT id, is_active FROM app.find_login_user(${email})`;
+    if (!found?.is_active) return { error: "sem-conta" };
+    return { refreshToken: await this.openSession(found.id, userAgent) };
   }
 
   /** Cadastro pelo site: cria o restaurante em teste e já entra nele como administrador. */

@@ -2,7 +2,8 @@
 
 import { TRIAL_DAYS } from "@dishdesk/shared";
 import Link from "next/link";
-import { useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { useEffect, useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
 import { LogoMark } from "@/components/brand/logo-mark";
 import { Button } from "@/components/ui/button";
@@ -11,14 +12,40 @@ import { Label } from "@/components/ui/label";
 import { usePendingAction } from "@/hooks/use-pending-action";
 import { ApiError, apiRequest } from "@/lib/api";
 
+/** Motivos da volta do Google sem sessão (a API manda em /login?google=). */
+const GOOGLE_NOTICES: Record<string, string> = {
+  "sem-conta": "Esta conta Google não tem acesso ao Dish Desk. Entre com o e-mail da sua conta ou peça acesso ao admin do restaurante.",
+  cancelado: "O login com Google foi cancelado.",
+  indisponivel: "O login com Google ainda não está disponível. Entre com e-mail e senha.",
+  erro: "Não foi possível entrar com o Google. Tente de novo.",
+};
+
 /** Painel esquerdo do board "Login · Escolha de restaurante". */
 export function LoginForm() {
   const { session, login, logout } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
   const [forgot, setForgot] = useState(false);
+  const [toGoogle, setToGoogle] = useState(false);
+  // Volta do Google sem sessão (/login?google=motivo): o motivo, até a próxima ida ao Google.
+  const googleReason = useSearchParams().get("google");
+  const notice = googleReason && !toGoogle ? (GOOGLE_NOTICES[googleReason] ?? GOOGLE_NOTICES.erro) : null;
+
+  // Voltando do Google pelo botão "voltar" do navegador, a página sai do cache ainda em "Carregando".
+  useEffect(() => {
+    const reset = (event: PageTransitionEvent) => event.persisted && setToGoogle(false);
+    window.addEventListener("pageshow", reset);
+    return () => window.removeEventListener("pageshow", reset);
+  }, []);
+
+  /** A API leva ao Google e, na volta, abre a sessão (ou volta aqui com o motivo). */
+  function goToGoogle() {
+    if (toGoogle) return;
+    setToGoogle(true);
+    // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- é a API (proxy /api), não uma página do Next
+    window.location.assign("/api/auth/google");
+  }
 
   const [submit, submitting] = usePendingAction(async () => {
     setError(null);
@@ -124,18 +151,16 @@ export function LoginForm() {
             <div className="h-px flex-1 bg-rule" />
           </div>
 
-          {/* Só visual por enquanto: a integração com o Google vem depois. */}
-          <Button
-            type="button"
-            variant="outline"
-            className="h-10 w-full gap-[9px]"
-            onClick={() => setNotice("O login com Google estará disponível em breve.")}
-          >
+          <Button type="button" variant="outline" className="h-10 w-full gap-[9px]" loading={toGoogle} onClick={goToGoogle}>
             <GoogleIcon />
             Continuar com Google
           </Button>
 
-          {notice && <p className="text-[11px] text-ink-3">{notice}</p>}
+          {notice && (
+            <p role="alert" className="text-[11px] text-tomate">
+              {notice}
+            </p>
+          )}
         </form>
       )}
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { Suspense, useEffect } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
 import { LoginForm } from "@/components/auth/login-form";
 import { TenantChooser } from "@/components/auth/tenant-chooser";
@@ -19,7 +19,10 @@ export default function LoginPage() {
 
   return (
     <main className="flex min-h-screen">
-      <LoginForm />
+      {/* O formulário lê o motivo da volta do Google no endereço (useSearchParams pede o Suspense). */}
+      <Suspense>
+        <LoginForm />
+      </Suspense>
       <TenantChooser />
     </main>
   );

@@ -62,6 +62,13 @@ const EnvSchema = z.object({
   // A chave é a secreta (service_role). Sem as duas, a recuperação de senha responde 503.
   SUPABASE_URL: z.url().optional(),
   SUPABASE_SECRET_KEY: z.string().min(1).optional(),
+  // "Continuar com Google" no login: o cliente OAuth do Google Cloud, com o retorno WEB_ORIGIN + /api/auth/google/callback.
+  // Sem os dois, o botão avisa que o login com Google não está disponível.
+  GOOGLE_CLIENT_ID: z.string().min(1).optional(),
+  GOOGLE_CLIENT_SECRET: z.string().min(1).optional(),
+  GOOGLE_AUTH_URL: z.url().default("https://accounts.google.com/o/oauth2/v2/auth"),
+  GOOGLE_TOKEN_URL: z.url().default("https://oauth2.googleapis.com/token"),
+  GOOGLE_JWKS_URL: z.url().default("https://www.googleapis.com/oauth2/v3/certs"),
   // LLM do módulo Atendimento com IA, no formato da OpenAI (/chat/completions): o Ollama local do docker-compose
   // (http://localhost:11434/v1) ou um provedor. Sem o endereço, a IA fica desligada mesmo com o módulo ligado.
   AI_BASE_URL: z.url().optional(),
