@@ -193,7 +193,7 @@ describe("canal que atende outros restaurantes", () => {
       await courierSay("wamid.E4", "Oi");
       expect((await contents(courierWa)).at(-1)?.automation).toBe("courier_menu");
       expect((await conversationOf(courierWa)).status).toBe("OPEN");
-      await courierSay("wamid.E5", "2");
+      await courierSay("wamid.E5", "3");
       await courierSay("wamid.E6", "7102");
 
       const conversation = await conversationOf(courierWa);

@@ -19,9 +19,20 @@ import type { Step } from "./triage.service.js";
 
 type Conversation = { id: string; tenantId: string; channelId: string; automationState: unknown; contact: Contact };
 
+/** O aviso que o entregador manda ao cliente: que chegou, ou que deixou o pedido na portaria. */
+type Notice = "arrival" | "front_desk";
+
+/** Opção do menu que pede o número do pedido → a etapa que espera por ele. */
+const ORDER_STEP: Partial<Record<string, AutomationState["triage"]>> = {
+  "1": "awaiting_arrival_order",
+  "2": "awaiting_front_desk_order",
+  "3": "awaiting_problem_order",
+};
+
 /**
  * Menu de quem tem a tag Entregador, no lugar do menu de atendimento (sem aviso de fora do horário nem coleta de telefone):
- * avisar o cliente que chegou (pelo chat do iFood do pedido), relatar um problema com um pedido ou falar de outro assunto.
+ * avisar o cliente que chegou ou que deixou o pedido na portaria (pelo chat do iFood do pedido), relatar um problema com
+ * um pedido ou falar de outro assunto.
  * Só o problema relatado chama a equipe com o alarme; nos outros casos, o chamado é sem urgência. O pedido é procurado
  * também nos restaurantes que o canal atende (o WhatsApp de um grupo; Configurações → Integrações).
  */
@@ -37,7 +48,8 @@ export class CourierMenuService {
     const state = conversation.automationState as AutomationState;
     if (event.newAttendance) return this.sendMenu(tx, conversation, { triage: "awaiting_option" }, messages);
     if (state.triage === "awaiting_option") return this.chooseOption(tx, conversation, state, messages, event.text);
-    if (state.triage === "awaiting_arrival_order") return this.notifyArrival(tx, conversation, state, messages, event.text);
+    if (state.triage === "awaiting_arrival_order") return this.notifyCustomer(tx, conversation, state, messages, event.text, "arrival");
+    if (state.triage === "awaiting_front_desk_order") return this.notifyCustomer(tx, conversation, state, messages, event.text, "front_desk");
     if (state.triage === "awaiting_problem_order") return this.findProblemOrder(tx, conversation, state, messages, event.text);
     if (state.triage === "awaiting_problem") {
       const id = await automationMessage(tx, conversation, "handoff", messages.courierProblemForwarded);
@@ -55,10 +67,12 @@ export class CourierMenuService {
   }
 
   private async chooseOption(tx: TenantTx, conversation: Conversation, state: AutomationState, messages: AutomationMessages, text?: string): Promise<Step> {
-    const option = /^\s*([123])(?!\d)/.exec(text ?? "")?.[1];
-    if (option === "1" || option === "2") {
+    const option = /^\s*([1234])(?!\d)/.exec(text ?? "")?.[1];
+    // 1, 2 e 3 pedem o número do pedido; 4 (outro assunto) chama a equipe.
+    const next = option && ORDER_STEP[option];
+    if (next) {
       const id = await automationMessage(tx, conversation, "order_number_request", messages.courierOrderNumberRequest);
-      await setAutomationState(tx, conversation.id, { ...state, triage: option === "1" ? "awaiting_arrival_order" : "awaiting_problem_order" });
+      await setAutomationState(tx, conversation.id, { ...state, triage: next });
       return { send: [id], done: false };
     }
     // Resposta fora das opções: repete o menu uma vez; na segunda, chama a equipe.
@@ -66,30 +80,49 @@ export class CourierMenuService {
     return this.callTeam(tx, conversation, state, await automationMessage(tx, conversation, "handoff", messages.handoff), "Entregador chamando");
   }
 
-  /** "Avisar que cheguei": o aviso vai para o cliente no chat do iFood do pedido e o atendimento do entregador se resolve sozinho. */
-  private async notifyArrival(tx: TenantTx, conversation: Conversation, state: AutomationState, messages: AutomationMessages, text?: string): Promise<Step> {
+  /**
+   * "Avisar que cheguei" e "Avisar que deixei na portaria": o aviso vai para o cliente no chat do iFood do pedido e o
+   * atendimento do entregador se resolve sozinho. O status do pedido não muda: a entrega vale pelo evento do iFood.
+   */
+  private async notifyCustomer(
+    tx: TenantTx,
+    conversation: Conversation,
+    state: AutomationState,
+    messages: AutomationMessages,
+    text: string | undefined,
+    kind: Notice,
+  ): Promise<Step> {
     const found = await this.findOrder(tx, conversation, text, true);
     // Sem o pedido (ou sem o chat do iFood na Inbox), é a equipe que avisa o cliente.
     if (!found?.order || !this.env.IFOOD_CHAT_BRIDGE) {
-      const note = found ? `Entregador avisou que chegou com o pedido #${found.code}` : "Entregador avisou que chegou";
+      const note =
+        kind === "arrival"
+          ? found
+            ? `Entregador avisou que chegou com o pedido #${found.code}`
+            : "Entregador avisou que chegou"
+          : found
+            ? `Entregador avisou que deixou o pedido #${found.code} na portaria`
+            : "Entregador avisou que deixou um pedido na portaria";
       return this.callTeam(tx, conversation, state, await this.passOn(tx, conversation, messages, found), note);
     }
+    const noticeOf = (texts: AutomationMessages) => (kind === "arrival" ? texts.courierArrivalNotice : texts.courierFrontDeskNotice);
     const order = found.order;
     // O aviso vai para o chat do iFood da loja do pedido, que pode ser outra unidade atendida por este canal: lá ele é
     // gravado numa transação dela, no tom dela.
     const notify = async (store: TenantTx, notice: string) => {
       const chat = await openIfoodConversation(store, order, new Date(), "RESOLVED");
-      const messageId = await automationMessage(store, { id: chat.id, tenantId: order.tenantId, channelId: order.channelId }, "courier_arrival", notice);
+      const label = kind === "arrival" ? "courier_arrival" : "courier_front_desk";
+      const messageId = await automationMessage(store, { id: chat.id, tenantId: order.tenantId, channelId: order.channelId }, label, notice);
       return { tenantId: order.tenantId, conversationId: chat.id, messageId };
     };
     const alsoSend =
       order.tenantId === conversation.tenantId
-        ? await notify(tx, messages.courierArrivalNotice)
+        ? await notify(tx, noticeOf(messages))
         : await this.db.withTenants({ tenantIds: [order.tenantId] }, async (store) =>
-            notify(store, automationMessagesOf(await tenantSettings(store, order.tenantId)).courierArrivalNotice),
+            notify(store, noticeOf(automationMessagesOf(await tenantSettings(store, order.tenantId)))),
           );
-    const confirmation = fillMessage(messages.courierArrivalConfirmed, { pedido: found.code });
-    const id = await automationMessage(tx, conversation, "courier_arrival_confirmed", confirmation);
+    const confirmation = fillMessage(kind === "arrival" ? messages.courierArrivalConfirmed : messages.courierFrontDeskConfirmed, { pedido: found.code });
+    const id = await automationMessage(tx, conversation, kind === "arrival" ? "courier_arrival_confirmed" : "courier_front_desk_confirmed", confirmation);
     await setAutomationState(tx, conversation.id, { ...state, triage: "done" });
     await tx.conversation.update({ where: { id: conversation.id }, data: { status: "RESOLVED", unreadCount: 0 } });
     return { send: [id], done: false, alsoSend };

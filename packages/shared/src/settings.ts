@@ -157,7 +157,8 @@ export function adminNotificationsOf(settings: unknown): AdminNotifications {
 export const MENU_OPTIONS = "1 - Falar sobre um pedido\n2 - Fazer um pedido\n3 - Outro assunto";
 
 /** As opções do menu do entregador (cadastro com a tag Entregador), também lidas pelo número. */
-export const COURIER_MENU_OPTIONS = "1 - Avisar que cheguei (iFood)\n2 - Problema com um pedido\n3 - Outro assunto";
+export const COURIER_MENU_OPTIONS =
+  "1 - Avisar que cheguei (iFood)\n2 - Avisar que deixei na portaria (iFood)\n3 - Problema com um pedido\n4 - Outro assunto";
 
 /** Saudação + opções. Sem nome, "{nome}" sai junto com a vírgula: "Olá, {nome}!" vira "Olá!". */
 export function menuMessage(greeting: string, name?: string, options = MENU_OPTIONS): string {

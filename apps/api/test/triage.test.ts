@@ -505,7 +505,8 @@ describe("menu de atendimento, busca do pedido e pesquisa de satisfação", () =
   };
 
   const api = (path: string) => request(app.getHttpServer()).get(`/api${path}`).set("Authorization", `Bearer ${token}`).expect(200);
-  const COURIER_MENU = "1 - Avisar que cheguei (iFood)\n2 - Problema com um pedido\n3 - Outro assunto";
+  const COURIER_MENU =
+    "1 - Avisar que cheguei (iFood)\n2 - Avisar que deixei na portaria (iFood)\n3 - Problema com um pedido\n4 - Outro assunto";
 
   it("entregador: recebe o menu dele; outro assunto chama a equipe sem urgência, e só uma vez", async () => {
     await tagged("5511970000021", "Entregador");
@@ -515,7 +516,7 @@ describe("menu de atendimento, busca do pedido e pesquisa de satisfação", () =
     expect(opened.automationState).toEqual({ triage: "awaiting_option" });
     expect(opened.awaitingAgentSince).toBeNull();
 
-    await say("5511970000021", "wamid.ENT2", "3");
+    await say("5511970000021", "wamid.ENT2", "4");
     const conversation = await conversationOf("5511970000021");
     expect(conversation).toMatchObject({ awaitingAgentQuiet: true, automationState: { triage: "done" } });
     expect(conversation.awaitingAgentSince).not.toBeNull();
@@ -543,7 +544,7 @@ describe("menu de atendimento, busca do pedido e pesquisa de satisfação", () =
     const order = await ifoodOrder("7171", new Date());
     await tagged("5511970000023", "Entregador");
     await say("5511970000023", "wamid.PRB1", "Oi");
-    await say("5511970000023", "wamid.PRB2", "2");
+    await say("5511970000023", "wamid.PRB2", "3");
     expect((await contents("5511970000023")).at(-1)).toEqual({ automation: "order_number_request", text: "Qual é o número do pedido?" });
 
     await say("5511970000023", "wamid.PRB3", "pedido 7171");
@@ -567,7 +568,7 @@ describe("menu de atendimento, busca do pedido e pesquisa de satisfação", () =
   it("entregador informa um pedido que não existe, ou avisa que chegou sem o chat do iFood na Inbox: a equipe assume, sem urgência", async () => {
     await tagged("5511970000024", "Entregador");
     await say("5511970000024", "wamid.NF1", "Oi");
-    await say("5511970000024", "wamid.NF2", "2");
+    await say("5511970000024", "wamid.NF2", "3");
     await say("5511970000024", "wamid.NF3", "0998877");
     const missing = await conversationOf("5511970000024");
     expect(missing.messages.map((m) => m.content)).toContainEqual({
@@ -591,6 +592,17 @@ describe("menu de atendimento, busca do pedido e pesquisa de satisfação", () =
     expect(await automations("5511970000025")).toEqual(["courier_menu", "order_number_request", "handoff"]);
     expect(arrived.messages.map((m) => m.content)).toContainEqual({ event: "handoff", text: "Entregador avisou que chegou com o pedido #7272" });
     expect(arrived).toMatchObject({ status: "OPEN", awaitingAgentQuiet: true });
+
+    // Deixou na portaria, também sem a ponte: a equipe avisa o cliente.
+    await ifoodOrder("7676", new Date());
+    await tagged("5511970000026", "Entregador");
+    await say("5511970000026", "wamid.PRT1", "Oi");
+    await say("5511970000026", "wamid.PRT2", "2");
+    await say("5511970000026", "wamid.PRT3", "7676");
+    const left = await conversationOf("5511970000026");
+    expect(await automations("5511970000026")).toEqual(["courier_menu", "order_number_request", "handoff"]);
+    expect(left.messages.map((m) => m.content)).toContainEqual({ event: "handoff", text: "Entregador avisou que deixou o pedido #7676 na portaria" });
+    expect(left).toMatchObject({ status: "OPEN", awaitingAgentQuiet: true });
   });
 
   it("card do pedido informado pelo entregador: a equipe conversa com o cliente pelo WhatsApp quando o cadastro tem telefone", async () => {

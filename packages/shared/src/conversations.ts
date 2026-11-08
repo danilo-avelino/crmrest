@@ -39,6 +39,8 @@ export type MessageContent = {
     | "courier_menu"
     | "courier_arrival"
     | "courier_arrival_confirmed"
+    | "courier_front_desk"
+    | "courier_front_desk_confirmed"
     | "courier_problem_request";
   /** Evento do sistema mostrado na conversa. */
   event?:

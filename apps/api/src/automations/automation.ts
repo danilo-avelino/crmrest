@@ -8,13 +8,14 @@ import type { RealtimeEmitter } from "../realtime/realtime.emitter.js";
 
 /** Estado das automações guardado em `conversation.automationState`; zera a cada novo atendimento. */
 export type AutomationState = {
-  /** Menu "Em que podemos ajudar?"; as três últimas etapas são do menu do entregador. */
+  /** Menu "Em que podemos ajudar?"; as quatro últimas etapas são do menu do entregador. */
   triage?:
     | "awaiting_option"
     | "awaiting_order_number"
     | "awaiting_order_confirmation"
     | "done"
     | "awaiting_arrival_order"
+    | "awaiting_front_desk_order"
     | "awaiting_problem_order"
     | "awaiting_problem";
   /** O menu já foi repetido por uma resposta fora das opções: a próxima chama a equipe. */

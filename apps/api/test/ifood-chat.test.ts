@@ -461,4 +461,46 @@ describe("Chat do iFood na Inbox (trava IFOOD_CHAT_BRIDGE ligada)", () => {
     expect(reopened.awaitingAgentSince).not.toBeNull();
     expect((await timeline(chat.id)).filter((m) => (m.content as { text?: string }).text === notice.text)).toHaveLength(1);
   });
+
+  it("entregador avisa que deixou na portaria: o cliente recebe o aviso no chat do iFood do pedido e a conversa do entregador se resolve sozinha", async () => {
+    const delivery = await ifoodOrder("6541", "Rita Souza");
+    const waId = "5511970000032";
+    await admin.contact.create({
+      data: { tenantId: fx.tenant.id, name: "Pedro Entregador", tags: ["Entregador"], identities: { create: { tenantId: fx.tenant.id, channelType: "WHATSAPP", externalId: waId } } },
+    });
+    const courier = () =>
+      admin.conversation.findFirstOrThrow({
+        where: { channelId: fx.whatsapp.id, contact: { identities: { some: { channelType: "WHATSAPP", externalId: waId } } } },
+        include: { messages: { orderBy: { createdAt: "asc" } } },
+      });
+    const say = async (id: string, body: string, automation: string) => {
+      const message = { from: waId, id, timestamp: String(Math.floor(Date.now() / 1000)), type: "text", text: { body } };
+      await postMetaWebhook(app, metaPayload(fx.whatsapp.externalId, { contacts: [{ profile: { name: "Pedro" }, wa_id: waId }], messages: [message] })).expect(200);
+      await until(async () => expect((await courier()).messages.at(-1)!.content).toMatchObject({ automation }));
+    };
+    await say("wamid.PRT1", "Oi", "courier_menu");
+    await say("wamid.PRT2", "2", "order_number_request");
+    await say("wamid.PRT3", "6541", "courier_front_desk_confirmed");
+
+    const done = await courier();
+    expect(done).toMatchObject({ status: "RESOLVED", unreadCount: 0, awaitingAgentSince: null });
+    expect(done.messages.at(-1)!.content).toEqual({
+      automation: "courier_front_desk_confirmed",
+      text: "Pronto! Avisamos o cliente do pedido #6541 que o pedido ficou na portaria.",
+    });
+    const chat = await admin.conversation.findFirstOrThrow({ where: { contactId: delivery.contactId, channelId: fx.ifood.id } });
+    expect(chat.status).toBe("RESOLVED");
+    expect((await timeline(chat.id)).map((m) => m.content)).toContainEqual({
+      automation: "courier_front_desk",
+      text: "📦 O entregador deixou seu pedido na portaria! Bom apetite 😋",
+    });
+    expect(await typeOutbox()).toContainEqual({
+      messageId: expect.any(String),
+      conversationId: chat.id,
+      orderCode: "6541",
+      text: "📦 O entregador deixou seu pedido na portaria! Bom apetite 😋",
+    });
+    // O aviso não muda o status do pedido: a entrega vale pelo evento do iFood.
+    expect((await admin.order.findUniqueOrThrow({ where: { id: delivery.id } })).status).toBe("CONFIRMED");
+  });
 });

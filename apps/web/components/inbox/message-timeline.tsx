@@ -46,6 +46,8 @@ const AUTOMATION_LABEL: Record<NonNullable<MessageContent["automation"]>, string
   courier_menu: "Automação · menu do entregador",
   courier_arrival: "Automação · entregador chegou",
   courier_arrival_confirmed: "Automação · cliente avisado da chegada",
+  courier_front_desk: "Automação · deixado na portaria",
+  courier_front_desk_confirmed: "Automação · cliente avisado da portaria",
   courier_problem_request: "Automação · problema com o pedido",
 };
 

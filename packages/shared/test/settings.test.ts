@@ -25,7 +25,7 @@ describe("mensagens automáticas", () => {
     expect(menuMessage(CORDIAL.greeting).split("\n")[0]).toBe("Olá! 👋 Em que podemos ajudar?");
     expect(menuMessage("Bem-vindo à Cantina!").split("\n")[0]).toBe("Bem-vindo à Cantina!");
     expect(menuMessage(PERSONALITY_MESSAGES.cordial.courierGreeting, "João", COURIER_MENU_OPTIONS)).toBe(
-      "Olá, João! 👋 Como podemos ajudar na entrega?\n1 - Avisar que cheguei (iFood)\n2 - Problema com um pedido\n3 - Outro assunto",
+      "Olá, João! 👋 Como podemos ajudar na entrega?\n1 - Avisar que cheguei (iFood)\n2 - Avisar que deixei na portaria (iFood)\n3 - Problema com um pedido\n4 - Outro assunto",
     );
   });
 
@@ -53,6 +53,7 @@ describe("personalidade do atendimento", () => {
     readyNotice: ["pedido"],
     courierGreeting: ["nome"],
     courierArrivalConfirmed: ["pedido"],
+    courierFrontDeskConfirmed: ["pedido"],
     courierOrderNotFound: ["pedido"],
     courierProblemRequest: ["pedido"],
     reviewInvite: ["pedido"],
