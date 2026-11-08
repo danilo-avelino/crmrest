@@ -2,6 +2,7 @@ import { Processor } from "@nestjs/bullmq";
 import type { Job } from "bullmq";
 import { AiForwardService } from "../ai/ai-forward.service.js";
 import { ContactTagsService } from "../contacts/contact-tags.service.js";
+import { DatabaseService } from "../core/database.service.js";
 import { AdminNotificationsService } from "../notifications/admin-notifications.service.js";
 import { JobProcessor } from "../queues/job-processor.js";
 import { type AdminMessageJob, type AiForwardJob, type AutomationJob, QUEUES } from "../queues/queues.module.js";
@@ -9,6 +10,7 @@ import { IfoodAttendanceService } from "./ifood-attendance.service.js";
 import { InactivityService } from "./inactivity.service.js";
 import { PhoneCollectionService } from "./phone-collection.service.js";
 import { ReviewInviteService } from "./review-invite.service.js";
+import { tenantPaused } from "./automation.js";
 import { SurveyService } from "./survey.service.js";
 
 /**
@@ -27,6 +29,7 @@ export class AutomationsProcessor extends JobProcessor {
     private readonly aiForward: AiForwardService,
     private readonly adminNotifications: AdminNotificationsService,
     private readonly reviewInvites: ReviewInviteService,
+    private readonly db: DatabaseService,
   ) {
     super();
   }
@@ -40,6 +43,8 @@ export class AutomationsProcessor extends JobProcessor {
     if (job.name === "ai-forward") return this.aiForward.forward(job.data.tenantId);
     const data = job.data as AutomationJob;
     const { tenantId, conversationId } = data;
+    // Dish Desk pausado: as etapas agendadas (mesmo as de antes da pausa) não rodam.
+    if (await tenantPaused(this.db, tenantId)) return;
     if (job.name === "phone-reminder") await this.phoneCollection.remind(tenantId, conversationId);
     if (job.name === "phone-give-up") await this.phoneCollection.giveUp(tenantId, conversationId);
     if (job.name === "survey") await this.survey.request(tenantId, conversationId);

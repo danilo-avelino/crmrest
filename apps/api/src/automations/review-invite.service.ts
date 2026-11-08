@@ -1,6 +1,6 @@
 import type { Prisma, TenantTx } from "@dishdesk/database";
 import type { OrderStatus } from "@dishdesk/database/enums";
-import { automationMessagesOf, fillMessage, type IfoodChatOutboxItem, type IfoodChatSendResult, reviewInviteOf } from "@dishdesk/shared";
+import { automationMessagesOf, fillMessage, type IfoodChatOutboxItem, type IfoodChatSendResult, pausedOf, reviewInviteOf } from "@dishdesk/shared";
 import { InjectQueue } from "@nestjs/bullmq";
 import { Inject, Injectable, Logger, type OnModuleInit } from "@nestjs/common";
 import type { Queue } from "bullmq";
@@ -77,7 +77,8 @@ export class ReviewInviteService implements OnModuleInit {
   async sweepTenant(tenantId: string, now = new Date()): Promise<void> {
     await this.db.withTenants({ tenantIds: [tenantId] }, async (tx) => {
       const settings = await tenantSettings(tx, tenantId);
-      const { enabled } = reviewInviteOf(settings);
+      // Pausado: como desligado, os convites que esperavam expiram e nenhum novo é criado.
+      const enabled = reviewInviteOf(settings).enabled && !pausedOf(settings);
       const limit = new Date(now.getTime() - REVIEW_INVITE_WAIT_MS);
       await tx.reviewInvite.updateMany({
         where: { tenantId, status: "PENDING", claimedAt: null, ...(enabled && { dueAt: { lt: limit } }) },

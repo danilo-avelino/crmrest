@@ -2,6 +2,7 @@ import {
   AdminNotifications,
   BusinessHours,
   OrderForecastSettings,
+  PauseSettings,
   ReviewInviteSettings,
   type TenantSettingsDto,
   UpdateAutomationTextsRequest,
@@ -96,5 +97,14 @@ export class SettingsController {
     @CurrentAuth() auth: RequestAuth,
   ): Promise<TenantSettingsDto> {
     return this.settings.updateReviewInvite(auth, tenantId, body);
+  }
+
+  @Put(":tenantId/pause")
+  updatePause(
+    @Param("tenantId", ParseUUIDPipe) tenantId: string,
+    @Body(new ZodPipe(PauseSettings)) body: PauseSettings,
+    @CurrentAuth() auth: RequestAuth,
+  ): Promise<TenantSettingsDto> {
+    return this.settings.updatePause(auth, tenantId, body);
   }
 }

@@ -1,8 +1,9 @@
 import type { TenantTx } from "@dishdesk/database";
 import type { ChannelType, ConversationStatus } from "@dishdesk/database/enums";
-import { CHANNEL_CAPABILITIES, type MessageContent } from "@dishdesk/shared";
+import { CHANNEL_CAPABILITIES, type MessageContent, pausedOf } from "@dishdesk/shared";
 import type { Queue } from "bullmq";
 import type { Env } from "../config/env.js";
+import type { DatabaseService } from "../core/database.service.js";
 import type { OutboundJob } from "../queues/queues.module.js";
 import type { RealtimeEmitter } from "../realtime/realtime.emitter.js";
 
@@ -76,6 +77,18 @@ export function channelSends(type: ChannelType, env: Pick<Env, "IFOOD_CHAT_BRIDG
 /** `tenant.settings` do restaurante (textos automáticos, horário, links de pedido), como o admin salvou. */
 export async function tenantSettings(tx: TenantTx, tenantId: string): Promise<unknown> {
   return (await tx.tenant.findUniqueOrThrow({ where: { id: tenantId }, select: { settings: true } })).settings;
+}
+
+/**
+ * Dish Desk pausado pelo restaurante (Configurações → Pausa): nenhuma automação nem a IA age nos canais dele. As
+ * mensagens só chegam e esperam a equipe.
+ */
+export async function isPaused(tx: TenantTx, tenantId: string): Promise<boolean> {
+  return pausedOf(await tenantSettings(tx, tenantId));
+}
+
+export function tenantPaused(db: DatabaseService, tenantId: string): Promise<boolean> {
+  return db.withTenants({ tenantIds: [tenantId] }, (tx) => isPaused(tx, tenantId));
 }
 
 export async function setAutomationState(tx: TenantTx, conversationId: string, state: AutomationState): Promise<void> {

@@ -1,5 +1,7 @@
 import { Processor } from "@nestjs/bullmq";
 import type { Job } from "bullmq";
+import { tenantPaused } from "../automations/automation.js";
+import { DatabaseService } from "../core/database.service.js";
 import { JobProcessor } from "../queues/job-processor.js";
 import { type AiJob, QUEUES } from "../queues/queues.module.js";
 import { AiAttendantService } from "./ai-attendant.service.js";
@@ -11,12 +13,15 @@ export class AiProcessor extends JobProcessor {
   constructor(
     private readonly attendant: AiAttendantService,
     private readonly evaluation: AiEvaluationService,
+    private readonly db: DatabaseService,
   ) {
     super();
   }
 
   async process(job: Job<AiJob>): Promise<void> {
     const { tenantId, conversationId } = job.data;
+    // Dish Desk pausado: a IA não responde nem avalia (nem o que foi agendado antes da pausa).
+    if (await tenantPaused(this.db, tenantId)) return;
     if (job.name === "reply") await this.attendant.reply(tenantId, conversationId);
     if (job.name === "evaluate") await this.evaluation.evaluate(tenantId, conversationId);
   }

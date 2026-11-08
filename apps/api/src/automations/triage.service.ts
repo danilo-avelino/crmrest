@@ -35,6 +35,7 @@ import {
   setAutomationState,
   startOfYesterday,
   systemEvent,
+  tenantPaused,
   tenantSettings,
 } from "./automation.js";
 import { CourierMenuService } from "./courier-menu.service.js";
@@ -108,9 +109,13 @@ export class TriageService {
     private readonly llm: LlmClient,
   ) {}
 
-  /** Roda depois de cada mensagem recebida: nota da pesquisa, menu (ou a IA) e, terminado o menu, a coleta de telefone. */
+  /**
+   * Roda depois de cada mensagem recebida: nota da pesquisa, menu (ou a IA) e, terminado o menu, a coleta de telefone.
+   * Com o Dish Desk pausado, nada roda.
+   */
   async afterInbound(event: InboundEvent): Promise<void> {
     if (!CHANNEL_CAPABILITIES[event.channel.type].send) return;
+    if (await tenantPaused(this.db, event.channel.tenantId)) return;
     if (await this.survey.handleAnswer(event)) return;
     if (await this.aiTakes(event)) return;
 

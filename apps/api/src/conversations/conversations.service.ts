@@ -26,7 +26,7 @@ import type { Queue } from "bullmq";
 import { scheduleEvaluation } from "../ai/ai-evaluation.service.js";
 import { LlmClient } from "../ai/llm.client.js";
 import type { RequestAuth } from "../auth/auth.decorators.js";
-import { type AutomationState, channelSends } from "../automations/automation.js";
+import { type AutomationState, channelSends, isPaused } from "../automations/automation.js";
 import { contactsAwaitingDecision } from "../orders/fraud-alert.js";
 import { ENV, type Env } from "../config/env.js";
 import { ConnectorsService } from "../connectors/connectors.service.js";
@@ -188,8 +188,8 @@ export class ConversationsService {
       if (capabilities.window24h && (!conversation.windowExpiresAt || conversation.windowExpiresAt < new Date())) {
         throw new UnprocessableEntityException("A janela de 24h para resposta livre terminou.");
       }
-      // Atendimento com IA: a resposta é revisada pela IA no worker, antes do envio.
-      const review = await this.llm.activeFor(tx, conversation.tenantId);
+      // Atendimento com IA: a resposta é revisada pela IA no worker, antes do envio (menos com o Dish Desk pausado).
+      const review = (await this.llm.activeFor(tx, conversation.tenantId)) && !(await isPaused(tx, conversation.tenantId));
       const created = await tx.message.create({
         data: {
           tenantId: conversation.tenantId,

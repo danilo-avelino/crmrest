@@ -10,6 +10,8 @@ import {
   type OrderForecastSettings,
   orderForecastOf,
   orderLinksOf,
+  type PauseSettings,
+  pausedOf,
   PERSONALITY_MESSAGES,
   personalityOf,
   type ReviewInviteSettings,
@@ -71,6 +73,11 @@ export class SettingsService {
     return this.merge(auth, tenantId, { adminNotifications: body });
   }
 
+  /** Pausa (ou retoma) as automações e a IA do restaurante; as mensagens continuam chegando. */
+  updatePause(auth: RequestAuth, tenantId: string, body: PauseSettings): Promise<TenantSettingsDto> {
+    return this.merge(auth, tenantId, { paused: body.paused });
+  }
+
   /**
    * Troca o tom das mensagens automáticas. Os textos editáveis que o admin não personalizou (iguais aos da personalidade
    * anterior) passam a ser os da nova; os personalizados ficam como estão.
@@ -125,6 +132,7 @@ function toDto(
     orderForecast: orderForecastOf(tenant.settings),
     reviewInvite: reviewInviteOf(tenant.settings),
     adminNotifications: adminNotificationsOf(tenant.settings),
+    paused: pausedOf(tenant.settings),
     notificationChannel: tenant.channel?.name ?? null,
   };
 }

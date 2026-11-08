@@ -1,5 +1,5 @@
 import type { TenantTx } from "@dishdesk/database";
-import { adminNotificationsOf, type MessageContent, type RatingsReportDto, TEAM_REASONS } from "@dishdesk/shared";
+import { adminNotificationsOf, type MessageContent, pausedOf, type RatingsReportDto, TEAM_REASONS } from "@dishdesk/shared";
 import { InjectQueue } from "@nestjs/bullmq";
 import { Injectable, Logger, type OnModuleInit, UnprocessableEntityException } from "@nestjs/common";
 import * as Sentry from "@sentry/nestjs";
@@ -166,7 +166,8 @@ export class AdminNotificationsService implements OnModuleInit {
       return { ...tenant, conversations: total };
     });
     const settings = adminNotificationsOf(tenant.settings);
-    if (!test && !settings.weeklyReport) return 0;
+    // Pausado: o relatório automático não sai (o de teste, pedido pelo botão, sai).
+    if (!test && (!settings.weeklyReport || pausedOf(tenant.settings))) return 0;
     const report = await this.reports.report(scope, tenantId, from);
     return this.enqueue(tenantId, weeklyReportText(tenant.name, tenant.conversations, report, from, now), test);
   }

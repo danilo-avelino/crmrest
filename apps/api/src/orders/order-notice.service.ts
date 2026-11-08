@@ -4,7 +4,7 @@ import { automationMessagesOf, CHANNEL_CAPABILITIES, CHANNEL_LABEL, fillMessage,
 import { InjectQueue } from "@nestjs/bullmq";
 import { Inject, Injectable } from "@nestjs/common";
 import type { Queue } from "bullmq";
-import { automationMessage, dispatch, firstName, tenantSettings } from "../automations/automation.js";
+import { automationMessage, dispatch, firstName, isPaused, tenantSettings } from "../automations/automation.js";
 import { ENV, type Env } from "../config/env.js";
 import { DatabaseService } from "../core/database.service.js";
 import type { TenantTx } from "@dishdesk/database";
@@ -42,6 +42,7 @@ export class OrderNoticeService {
    */
   async statusChanged(tenantId: string, orderId: string, status: NoticeStatus, now = new Date()): Promise<void> {
     const sent = await this.db.withTenants({ tenantIds: [tenantId] }, async (tx) => {
+      if (await isPaused(tx, tenantId)) return [];
       const order = await tx.order.findUniqueOrThrow({
         where: { id: orderId },
         select: {
@@ -78,6 +79,7 @@ export class OrderNoticeService {
   /** A equipe cancelou o pedido pelo Dish Desk: a mensagem, no tom do restaurante, vai pelas mesmas conversas dos avisos. */
   async canceled(tenantId: string, orderId: string, now = new Date()): Promise<void> {
     const sent = await this.db.withTenants({ tenantIds: [tenantId] }, async (tx) => {
+      if (await isPaused(tx, tenantId)) return [];
       const order = await this.noticeOrder(tx, orderId);
       const targets = await this.targetsOf(tx, order, now);
       const text = canceledText(order, automationMessagesOf(await tenantSettings(tx, tenantId)));
@@ -91,6 +93,7 @@ export class OrderNoticeService {
   /** Prévia para o modal de cancelamento; null: sem conversa com o cliente, a mensagem não sai. */
   async canceledPreview(tenantId: string, orderId: string, now = new Date()): Promise<{ text: string; via: string; tone: string } | null> {
     return this.db.withTenants({ tenantIds: [tenantId] }, async (tx) => {
+      if (await isPaused(tx, tenantId)) return null; // pausado: a mensagem não sai
       const order = await this.noticeOrder(tx, orderId);
       const [target] = await this.targetsOf(tx, order, now);
       if (!target) return null;

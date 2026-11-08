@@ -9,6 +9,7 @@ import { ConversationPane } from "@/components/inbox/conversation-pane";
 import { IfoodExtensionAlert } from "@/components/inbox/ifood-extension-alert";
 import { InboxHome, TodayOrders } from "@/components/inbox/inbox-home";
 import { NavRail } from "@/components/inbox/nav-rail";
+import { PauseAlert } from "@/components/inbox/pause-alert";
 import { useInboxRealtime } from "@/hooks/use-inbox-realtime";
 
 /** Inbox unificada (board "Inbox · Conversa ativa · Painel do cliente"). Desktop no MVP. */
@@ -49,6 +50,7 @@ export function InboxView() {
       )}
       <NavRail onHome={() => setSelectedId(null)} />
       <div className="flex min-w-0 flex-1 flex-col">
+        <PauseAlert />
         <ChannelAlert />
         <IfoodExtensionAlert />
         <div className="flex min-h-0 flex-1">

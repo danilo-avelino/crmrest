@@ -21,6 +21,7 @@ const TABS = [
   { href: "/configuracoes/integracoes", label: "Integrações" },
   { href: "/configuracoes/usuarios", label: "Usuários" },
   { href: "/configuracoes/pagamento", label: "Pagamento" },
+  { href: "/configuracoes/pausa", label: "Pausa" },
 ];
 
 type SettingsTenants = { tenant: SettingsTenant; tenants: SettingsTenant[]; choose: (tenantId: string) => void };

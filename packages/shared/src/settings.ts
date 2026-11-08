@@ -33,6 +33,8 @@ export type TenantSettingsDto = {
   orderForecast: OrderForecastSettings;
   reviewInvite: ReviewInviteSettings;
   adminNotifications: AdminNotifications;
+  /** Dish Desk pausado: sem automações nem IA (ver PauseSettings). */
+  paused: boolean;
   /** WhatsApp do restaurante por onde as notificações saem (null: nenhum conectado). */
   notificationChannel: string | null;
 };
@@ -122,6 +124,19 @@ export type ReviewInviteSettings = z.infer<typeof ReviewInviteSettings>;
 export function reviewInviteOf(settings: unknown): ReviewInviteSettings {
   const saved = z.looseObject({ reviewInvite: ReviewInviteSettings.optional() }).safeParse(settings).data?.reviewInvite;
   return saved ?? { enabled: false };
+}
+
+// ---------- Dish Desk pausado ----------
+
+/**
+ * paused: nenhuma automação nem a IA age nos canais do restaurante. As mensagens continuam chegando e ficam não lidas,
+ * esperando a equipe, que ainda responde pela Inbox (desligado por padrão).
+ */
+export const PauseSettings = z.object({ paused: z.boolean() });
+export type PauseSettings = z.infer<typeof PauseSettings>;
+
+export function pausedOf(settings: unknown): boolean {
+  return z.looseObject({ paused: z.boolean().optional() }).safeParse(settings).data?.paused ?? false;
 }
 
 // ---------- Notificações ao administrador pelo WhatsApp ----------
