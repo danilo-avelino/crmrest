@@ -3,7 +3,7 @@ import type { INestApplication } from "@nestjs/common";
 import type { Queue } from "bullmq";
 import request from "supertest";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
-import { orderNumbersIn } from "../src/ai/ai-attendant.service.js";
+import { orderNumbersIn, periodGreeting } from "../src/ai/ai-attendant.service.js";
 import { AiEvaluationService } from "../src/ai/ai-evaluation.service.js";
 import { AiForwardService } from "../src/ai/ai-forward.service.js";
 import { InactivityService } from "../src/automations/inactivity.service.js";
@@ -133,6 +133,26 @@ describe("atendimento com IA: resposta, revisão e avaliação", () => {
     expect(user!.content).toContain("Restaurante: Restaurante Pipeline");
     expect(user!.content).toContain("CONVERSA\nCliente: Que horas vocês abrem?");
     expect((await conversationOf("5511980000001")).automationState).toMatchObject({ ai: "on", aiReplies: 1 });
+  });
+
+  it("a primeira resposta cumprimenta pelo horário e pelo nome; as seguintes, não", async () => {
+    answers.atendimento = { reply: "Boa noite, Ana! Em que posso ajudar?", handoff: false, reason: "", order: "none" };
+    await say("5511980000009", "wamid.AI-GREET-1", "teste");
+    await settle();
+    const first = (llmCalls("atendimento").at(-1)!.body as LlmBody).messages[1]!.content;
+    expect(first).toMatch(/Cumprimento: esta é a sua primeira resposta neste atendimento\. Comece com "(Bom dia|Boa tarde|Boa noite), Ana!"/);
+
+    await say("5511980000009", "wamid.AI-GREET-2", "Que horas vocês abrem?");
+    await settle();
+    const second = (llmCalls("atendimento").at(-1)!.body as LlmBody).messages[1]!.content;
+    expect(second).toContain("Cumprimento: você já cumprimentou o cliente neste atendimento");
+  });
+
+  it("o período do cumprimento segue o horário de Brasília", () => {
+    expect(periodGreeting(new Date("2026-11-07T08:00:00-03:00"))).toBe("Bom dia");
+    expect(periodGreeting(new Date("2026-11-07T12:00:00-03:00"))).toBe("Boa tarde");
+    expect(periodGreeting(new Date("2026-11-07T18:25:00-03:00"))).toBe("Boa noite");
+    expect(periodGreeting(new Date("2026-11-08T02:00:00-03:00"))).toBe("Boa noite");
   });
 
   it("mensagens seguidas do cliente recebem uma resposta só", async () => {

@@ -13,7 +13,15 @@ import { InjectQueue } from "@nestjs/bullmq";
 import { Injectable, Logger } from "@nestjs/common";
 import type { Queue } from "bullmq";
 import { z } from "zod";
-import { type AutomationState, automationMessage, dispatch, setAutomationState, startOfYesterday, systemEvent } from "../automations/automation.js";
+import {
+  type AutomationState,
+  automationMessage,
+  dispatch,
+  firstName,
+  setAutomationState,
+  startOfYesterday,
+  systemEvent,
+} from "../automations/automation.js";
 import { linkOrderContact, ORDER_STATUS_TEXT, TriageService } from "../automations/triage.service.js";
 import { DatabaseService } from "../core/database.service.js";
 import { orderUpdateMessage } from "../orders/forecast.js";
@@ -58,7 +66,7 @@ Você tira dúvidas sobre o horário de funcionamento, os links para fazer pedid
 Regras obrigatórias:
 - Só afirme o que está nos DADOS. Nunca invente preço, cardápio, prazo, taxa, promoção, endereço ou política.
 - Você não anota pedidos: para pedir, mande os links (se houver); sem links, passe para a equipe.
-- Cumprimente só na sua primeira resposta do atendimento; depois, vá direto ao ponto.
+- Cumprimente só na sua primeira resposta do atendimento, como diz "Cumprimento" nos DADOS; depois, vá direto ao ponto.
 
 Quando o cliente falar de um pedido, siga estes passos:
 1. Há nos DADOS um pedido ainda não confirmado: mostre o número, os itens e o total e pergunte se é esse o pedido dele. Não diga o andamento antes de ele confirmar.
@@ -147,12 +155,31 @@ export function attendantMessages(
   orderFacts: string,
   conversation: string,
   attendance: Attendance,
+  greeting: { first: boolean; name?: string },
 ): LlmMessage[] {
-  const facts = [restaurantFacts(restaurant, settings, now), attendanceFacts(attendance), orderFacts].join("\n");
+  const facts = [restaurantFacts(restaurant, settings, now), greetingFacts(greeting, now), attendanceFacts(attendance), orderFacts].join("\n");
   return [
     { role: "system", content: systemPrompt(restaurant, CHANNEL_LABEL[channel], settings) },
     { role: "user", content: `DADOS\n${facts}\n\nCONVERSA\n${conversation}` },
   ];
+}
+
+const BRASILIA_HOUR = new Intl.DateTimeFormat("en-US", { timeZone: "America/Sao_Paulo", hour: "numeric", hourCycle: "h23" });
+
+/** "Bom dia", "Boa tarde" ou "Boa noite" no horário de Brasília. */
+export function periodGreeting(now: Date): string {
+  const hour = Number(BRASILIA_HOUR.format(now));
+  return hour >= 5 && hour < 12 ? "Bom dia" : hour >= 12 && hour < 18 ? "Boa tarde" : "Boa noite";
+}
+
+/**
+ * Como começar a resposta. Na primeira do atendimento, o cumprimento do horário com o nome e a pergunta de como ajudar
+ * (sem ela, a IA abria uma conversa nova mostrando o pedido de ontem); a instrução vai no dado, que o modelo segue melhor.
+ */
+function greetingFacts(greeting: { first: boolean; name?: string }, now: Date): string {
+  if (!greeting.first) return "Cumprimento: você já cumprimentou o cliente neste atendimento; não cumprimente de novo.";
+  const hello = `${periodGreeting(now)}${greeting.name ? `, ${greeting.name}` : ""}!`;
+  return `Cumprimento: esta é a sua primeira resposta neste atendimento. Comece com "${hello}" (pode ajustar ao tom do restaurante, mantendo o período do dia${greeting.name ? " e o nome" : ""}). Se o cliente ainda não disse o que precisa (só cumprimentou, mandou um teste ou algo solto), pergunte em que pode ajudar e não fale de pedido nenhum. Se ele já disse, responda logo depois do cumprimento.`;
 }
 
 /**
@@ -176,7 +203,8 @@ function attendanceFacts(attendance: Attendance): string {
  */
 export function attendantOrderFacts(order: OrderFacts | null, noPhone: boolean): string {
   const facts = orderFactsOf(order, noPhone);
-  if (order) return facts;
+  if (order?.confirmed) return facts;
+  if (order) return `${facts}\nSó fale deste pedido se o cliente falar de um pedido (atraso, andamento, problema): se ele não falou, não cite o pedido.`;
   return `${facts} Se o cliente falar de um pedido (atraso, andamento), peça o número do pedido, sem dizer que não achou o pedido nem falar em cadastro: o pedido com o número que ele informar aparece aqui nos DADOS. Se ele já informou o número e o pedido continua fora dos DADOS, passe para a equipe (handoff = true), que vai conferir.`;
 }
 
@@ -269,7 +297,10 @@ export class AiAttendantService {
           tenantId,
           "atendimento",
           AttendantReply,
-          attendantMessages(conversation.tenant.name, conversation.channel.type, settings, now, orderFacts, transcript(context.history), attendance),
+          attendantMessages(conversation.tenant.name, conversation.channel.type, settings, now, orderFacts, transcript(context.history), attendance, {
+            first: !state.aiReplies,
+            name: firstName(conversation.contact.name),
+          }),
         );
       } catch (error) {
         // Sem a principal e sem a reserva, o cliente não fica sem resposta: o atendimento segue no menu.
