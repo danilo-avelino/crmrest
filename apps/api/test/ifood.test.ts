@@ -1005,6 +1005,33 @@ describe("iFood distribuído (cada loja autoriza com o código de vinculação)"
     }
   });
 
+  it("sem o módulo Merchant: o nome da loja vem do último pedido dela, no Dish Desk ou na fila do iFood", async () => {
+    const [nova, semPedido] = [randomUUID(), randomUUID()];
+    ifood.state.authorizationCodes.set("NOME-LOJA", [merchantId, nova, semPedido]);
+    // A loja já conectada tem pedido no Dish Desk; a nova, só um pedido na fila do iFood.
+    const stored = await admin.order.findFirstOrThrow({ where: { tenantId: fx.tenant.id, externalOrderId: "pedido-d1" } });
+    await admin.order.update({ where: { id: stored.id }, data: { raw: { ...(stored.raw as object), merchant: { id: merchantId, name: "Pizzaria Centro" } } } });
+    ifood.state.orders["pedido-nome"] = { ...ifoodOrder("pedido-nome", "8103", "cliente-nome"), merchant: { id: nova, name: "Pizzaria Shopping" } };
+    ifood.state.events.push({ id: "ev-nome", code: "PLC", fullCode: "PLACED", orderId: "pedido-nome", merchantId: nova, createdAt: new Date().toISOString() });
+    ifood.state.noMerchantModule = true;
+    try {
+      const { body: code } = await request(app.getHttpServer())
+        .post(`/api/integrations/${fx.tenant.id}/ifood/link-code`)
+        .set("Authorization", `Bearer ${token}`)
+        .expect(201);
+      const { body: choice } = await add({ authorizationCode: "NOME-LOJA", linkState: code.state }).expect(201);
+      expect(choice.ifoodStores).toEqual([
+        { id: merchantId, name: "Pizzaria Centro", connected: true, elsewhere: false },
+        { id: nova, name: "Pizzaria Shopping", connected: false, elsewhere: false },
+        { id: semPedido, name: null, connected: false, elsewhere: false },
+      ]);
+      // O evento consultado para o nome não foi confirmado.
+      expect(ifood.state.acked).not.toContain("ev-nome");
+    } finally {
+      ifood.state.noMerchantModule = false;
+    }
+  });
+
   it("acesso vencido: renova com o refreshToken e guarda o novo", async () => {
     const before = (await storedGrant()).refreshToken;
     await expireGrant();

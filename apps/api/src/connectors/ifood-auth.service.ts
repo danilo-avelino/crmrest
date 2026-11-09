@@ -99,18 +99,50 @@ export class IfoodAuthService {
     }
     const claims = tokenClaims(grant.accessToken);
     if (!stores.length) {
-      const scoped = new Set(z.array(z.string()).catch([]).parse(claims?.merchant_scope).map((scope) => scope.split(":")[0] ?? ""));
+      const scopes = z.array(z.string()).catch([]).parse(claims?.merchant_scope);
+      const scoped = new Set(scopes.map((scope) => scope.split(":")[0] ?? ""));
       stores = [...scoped].filter(Boolean).map((id) => ({ id }));
+      // Os módulos que o acesso tem por loja ("<id>:<módulo>"): sem "merchant" neles, a lista de lojas é recusada.
+      const modules = [...new Set(scopes.map((scope) => scope.split(":")[1] ?? ""))].filter(Boolean);
+      if (stores.length) this.logger.warn(`iFood: lojas pelo token, sem a lista (lista de lojas: ${listed}; módulos do acesso: ${modules.join(", ") || "nenhum"})`);
     }
     if (!stores.length) {
       this.logger.warn(`iFood: loja do acesso não identificada (lista de lojas: ${listed}; claims do token: ${Object.keys(claims ?? {}).join(", ") || "nenhuma"})`);
       return [];
     }
+    if (stores.some((store) => !store.name)) stores = await this.named(grant, stores);
     const connected = await this.db.client.$queryRaw<{ tenant_id: string; external_id: string }[]>`SELECT tenant_id, external_id FROM app.ifood_merchants()`;
     return stores.map((store) => {
       const owners = connected.filter((other) => other.external_id === store.id).map((other) => other.tenant_id);
       return { ...store, connected: owners.includes(tenantId), elsewhere: owners.some((owner) => owner !== tenantId) };
     });
+  }
+
+  /**
+   * Sem a lista de lojas (o token só traz os IDs), o nome sai de um pedido da loja: o último que já está no Dish Desk
+   * (loja conectada aqui ou em outro restaurante) ou um da fila de eventos do iFood, consultada sem confirmar (os
+   * eventos continuam lá para o polling). Loja sem pedido nenhum segue sem nome.
+   */
+  private async named(grant: IfoodGrant, stores: IfoodMerchant[]): Promise<IfoodMerchant[]> {
+    const names = new Map<string, string>();
+    const ids = stores.filter((store) => !store.name).map((store) => store.id);
+    const known = await this.db.client.$queryRaw<{ external_id: string; name: string }[]>`SELECT external_id, name FROM app.ifood_store_names(${ids})`;
+    for (const row of known) names.set(row.external_id, row.name);
+    const missing = ids.filter((id) => !names.has(id));
+    if (missing.length) {
+      try {
+        const client = this.clientWith(grant);
+        const events = await client.poll(missing);
+        for (const id of missing) {
+          const orderId = events.find((event) => event.merchantId === id)?.orderId;
+          const name = orderId && (await client.order(orderId)).merchant?.name;
+          if (name) names.set(id, name);
+        }
+      } catch (error) {
+        this.logger.warn(`iFood: nome das lojas não consultado: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+    return stores.map((store) => ({ ...store, name: store.name ?? names.get(store.id) }));
   }
 
   /** O canal deixou de valer (desconectado, conectado de novo): esquece o acesso guardado em memória. */

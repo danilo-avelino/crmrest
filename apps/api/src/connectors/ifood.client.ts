@@ -22,6 +22,8 @@ export const IfoodOrder = z.looseObject({
   id: z.string(),
   displayId: z.string().optional(),
   createdAt: z.string(),
+  // A loja, com o nome que o iFood dá: é por aqui que sai o nome quando a lista de lojas é recusada (sem o módulo Merchant).
+  merchant: z.looseObject({ id: z.string(), name: z.string().nullish() }).nullish(),
   customer: z.looseObject({
     id: z.string(),
     name: z.string().optional(),
