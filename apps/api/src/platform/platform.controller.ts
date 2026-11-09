@@ -1,9 +1,10 @@
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import type { TenantTx } from "@dishdesk/database";
 import type { ModuleKey } from "@dishdesk/database/enums";
 import {
   type AiUsageProvider,
   type AiUsageTotals,
+  CreatePlatformMemberRequest,
   CreateTenantRequest,
   type DefenseEventDto,
   MODULES,
@@ -31,7 +32,6 @@ import {
   Controller,
   ForbiddenException,
   Get,
-  Inject,
   NotFoundException,
   Param,
   ParseUUIDPipe,
@@ -39,15 +39,12 @@ import {
   Post,
   Put,
   Query,
-  ServiceUnavailableException,
   UnprocessableEntityException,
 } from "@nestjs/common";
 import { hash } from "@node-rs/argon2";
 import { CurrentAuth, type RequestAuth } from "../auth/auth.decorators.js";
-import { hasSupabaseAuth, sendInviteEmail } from "../auth/supabase-auth.js";
 import { LlmClient } from "../ai/llm.client.js";
 import { ZodPipe } from "../common/zod.pipe.js";
-import { ENV, type Env } from "../config/env.js";
 import { DatabaseService } from "../core/database.service.js";
 import { DefenseService } from "../defense/defense.service.js";
 
@@ -66,7 +63,6 @@ const TICKETS_LIMIT = 500;
 export class PlatformController {
   constructor(
     private readonly db: DatabaseService,
-    @Inject(ENV) private readonly env: Env,
     private readonly llm: LlmClient,
     private readonly defense: DefenseService,
   ) {}
@@ -84,8 +80,8 @@ export class PlatformController {
     const passwordHash = await hash(body.adminPassword);
     const tenantId = randomUUID();
     // Restaurante e primeiro administrador na mesma transação: nunca fica um restaurante sem admin.
-    // E-mail que já tem conta: o acesso fica pendente até a pessoa abrir o convite (a senha informada não vale para ela).
-    const pending = await this.db.withTenants({ tenantIds: [tenantId], userId: auth.userId }, async (tx) => {
+    // E-mail que já tem conta: ganha o acesso direto (a plataforma não manda convite) e a senha informada não vale para ela.
+    await this.db.withTenants({ tenantIds: [tenantId], userId: auth.userId }, async (tx) => {
       await requireSuperAdmin(tx, auth.userId);
       try {
         await tx.tenant.create({ data: { id: tenantId, name: body.name, slug: body.slug }, select: { id: true } });
@@ -95,22 +91,41 @@ export class PlatformController {
       }
       // O Dish Desk é vendido com a IA: o restaurante já nasce com o atendimento com IA (a plataforma pode desligar).
       await tx.$executeRaw`SELECT app.set_tenant_module(${tenantId}::uuid, 'AI'::"ModuleKey", true)`;
-      const [row] = await tx.$queryRaw<{ id: string }[]>`
+      await tx.$queryRaw`
         SELECT app.create_or_restore_member(
           ${randomUUID()}::uuid, ${tenantId}::uuid, ${body.adminName}, ${body.adminEmail}, ${passwordHash}, 'ADMIN'::"TenantRole"
-        ) AS id`;
-      const member = await tx.tenantMember.findFirst({ where: { tenantId, userId: row?.id }, select: { invitePending: true } });
-      if (member?.invitePending && !hasSupabaseAuth(this.env)) {
-        throw new ServiceUnavailableException("Este e-mail já tem conta no Dish Desk e precisa aceitar pelo e-mail, mas o convite por e-mail ainda não está disponível.");
-      }
+        )`;
       await tx.$executeRaw`SELECT app.log_platform_action('tenant.create', ${tenantId}::uuid)`;
-      return member?.invitePending ?? false;
     });
-    if (pending && hasSupabaseAuth(this.env)) {
-      await sendInviteEmail(this.env, body.adminEmail).catch(() => {
-        throw new ServiceUnavailableException('Restaurante criado, mas o e-mail do convite não saiu. Use "Enviar convite" em Configurações → Usuários do restaurante.');
-      });
-    }
+    return this.tenants(auth.userId);
+  }
+
+  /**
+   * Usuário com acesso aos restaurantes escolhidos, sem convite nem confirmação por e-mail: a plataforma responde por
+   * quem adiciona. Quem já tem conta (ou tinha um convite pendente) ganha o acesso na hora e mantém a senha atual.
+   */
+  @Post("members")
+  async addMember(
+    @Body(new ZodPipe(CreatePlatformMemberRequest)) body: CreatePlatformMemberRequest,
+    @CurrentAuth() auth: RequestAuth,
+  ): Promise<PlatformTenantDto[]> {
+    const tenantIds = [...new Set(body.tenantIds)];
+    const passwordHash = await hash(body.password ?? randomBytes(32).toString("base64url"));
+    const newUserId = randomUUID();
+    await this.db.withTenants({ tenantIds, userId: auth.userId }, async (tx) => {
+      await requireSuperAdmin(tx, auth.userId);
+      if ((await tx.tenant.count({ where: { id: { in: tenantIds } } })) !== tenantIds.length) {
+        throw new NotFoundException("Restaurante não encontrado.");
+      }
+      for (const tenantId of tenantIds) {
+        await tx.$queryRaw`
+          SELECT app.create_or_restore_member(
+            ${newUserId}::uuid, ${tenantId}::uuid, ${body.name}, ${body.email}, ${passwordHash}, ${body.role}::"TenantRole"
+          )`;
+        const data = JSON.stringify({ email: body.email, role: body.role });
+        await tx.$executeRaw`SELECT app.log_platform_action('tenant.member_add', ${tenantId}::uuid, ${data}::jsonb)`;
+      }
+    });
     return this.tenants(auth.userId);
   }
 

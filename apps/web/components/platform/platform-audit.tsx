@@ -16,6 +16,8 @@ const ACTION_LABEL: Record<PlatformAuditDto["action"], (data: PlatformAuditDto["
     `Liberou o acesso${data?.paidUntil ? ` até ${fullDate(data.paidUntil)}` : ""}${data?.plan ? ` (plano ${data.plan === "ANNUAL" ? "anual" : "mensal"})` : ""} em`,
   "tenant.module_on": (data) => `Ligou o módulo ${data?.module ? MODULE_LABEL[data.module] : ""} em`,
   "tenant.module_off": (data) => `Desligou o módulo ${data?.module ? MODULE_LABEL[data.module] : ""} em`,
+  "tenant.member_add": (data) =>
+    `Deu acesso${data?.role ? ` de ${data.role === "ADMIN" ? "administrador" : "atendente"}` : ""}${data?.email ? ` a ${data.email}` : ""} em`,
 };
 
 /**

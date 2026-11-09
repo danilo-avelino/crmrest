@@ -261,4 +261,69 @@ describe("painel da plataforma (Super Admin)", () => {
       await admin.platformAiUsage.deleteMany({ where: { createdAt: { lt: new Date("1999-01-01") } } });
     }
   });
+
+  // Um app só para os logins destes testes: o limite por IP (10 por minuto, na memória de cada app) já foi gasto acima.
+  describe("usuário adicionado pela plataforma", () => {
+    let loginApp: INestApplication;
+    beforeAll(async () => {
+      loginApp = await createTestApp();
+    });
+    afterAll(async () => {
+      await loginApp?.close();
+    });
+
+    it("adiciona um usuário nos restaurantes escolhidos, já com acesso e sem convite, com auditoria", async () => {
+      const email = `nova-${fx.a.id}@teste.local`;
+      createdEmails.push(email);
+      const body = { name: "Nova Pessoa", email, password: PASSWORD, role: "AGENT", tenantIds: [fx.a.id, fx.b.id] };
+      await api("post", "members", userToken).send(body).expect(403);
+      expect(await admin.user.count({ where: { email } })).toBe(0);
+
+      await api("post", "members", superToken).send(body).expect(201);
+      const memberships = await admin.tenantMember.findMany({ where: { user: { email } }, orderBy: { tenantId: "asc" } });
+      expect(memberships.map((m) => m.tenantId).sort()).toEqual([fx.a.id, fx.b.id].sort());
+      for (const m of memberships) expect(m).toMatchObject({ role: "AGENT", isActive: true, invitePending: false });
+      await accessTokenFor(loginApp, email, fx.a.id);
+      await accessTokenFor(loginApp, email, fx.b.id);
+
+      const { body: audit } = await api("get", "audit", superToken).expect(200);
+      const entries = audit.filter((e: { action: string; data: { email?: string } }) => e.action === "tenant.member_add" && e.data?.email === email);
+      expect(entries.map((e: { tenantId: string }) => e.tenantId).sort()).toEqual([fx.a.id, fx.b.id].sort());
+    });
+
+    it("conta que já existia, com convite pendente: ganha o acesso na hora e mantém a senha atual", async () => {
+      const existing = await admin.user.create({
+        data: {
+          name: "Conta Antiga",
+          email: `antiga-${fx.a.id}@teste.local`,
+          passwordHash: await hash(PASSWORD),
+          memberships: { create: { tenantId: fx.b.id, role: "ADMIN", isActive: false, invitePending: true } },
+        },
+        select: { id: true, email: true },
+      });
+      createdEmails.push(existing.email);
+      await api("post", "members", superToken)
+        .send({ name: "Ignorado", email: existing.email, password: "outra-senha-123", role: "ADMIN", tenantIds: [fx.a.id, fx.b.id] })
+        .expect(201);
+      const memberships = await admin.tenantMember.findMany({ where: { userId: existing.id } });
+      expect(memberships).toHaveLength(2);
+      for (const m of memberships) expect(m).toMatchObject({ role: "ADMIN", isActive: true, invitePending: false });
+      await accessTokenFor(loginApp, existing.email, fx.b.id); // com a senha de antes
+      await request(loginApp.getHttpServer()).post("/api/auth/login").send({ email: existing.email, password: "outra-senha-123" }).expect(401);
+    });
+
+    it("sem senha, a conta nova não tem senha conhecida; restaurante inexistente não cria nada", async () => {
+      const email = `sem-senha-${fx.a.id}@teste.local`;
+      createdEmails.push(email);
+      await api("post", "members", superToken)
+        .send({ name: "Sem Senha", email, role: "AGENT", tenantIds: [fx.a.id, randomUUID()] })
+        .expect(404);
+      expect(await admin.user.count({ where: { email } })).toBe(0);
+
+      await api("post", "members", superToken).send({ name: "Sem Senha", email, role: "AGENT", tenantIds: [] }).expect(400);
+      await api("post", "members", superToken).send({ name: "Sem Senha", email, role: "AGENT", tenantIds: [fx.a.id] }).expect(201);
+      expect(await admin.tenantMember.findFirst({ where: { tenantId: fx.a.id, user: { email } } })).toMatchObject({ isActive: true });
+      await request(loginApp.getHttpServer()).post("/api/auth/login").send({ email, password: PASSWORD }).expect(401);
+    });
+  });
 });

@@ -47,6 +47,19 @@ export const CreateTenantRequest = z.object({
 });
 export type CreateTenantRequest = z.infer<typeof CreateTenantRequest>;
 
+/**
+ * Usuário adicionado pela plataforma nos restaurantes escolhidos, já com acesso (sem convite nem confirmação por e-mail).
+ * Quem já tem conta mantém a senha atual; conta nova sem senha entra com o Google ou pelo "Esqueci a senha".
+ */
+export const CreatePlatformMemberRequest = z.object({
+  name: z.string().trim().min(1, "Informe o nome.").max(80, "Use até 80 caracteres."),
+  email: z.email({ error: "Informe um e-mail válido." }).transform((email) => email.toLowerCase()),
+  password: z.string().min(8, "Use pelo menos 8 caracteres.").max(128, "Use até 128 caracteres.").optional(),
+  role: z.enum(["ADMIN", "AGENT"]),
+  tenantIds: z.array(z.uuid()).min(1, "Escolha pelo menos um restaurante.").max(200),
+});
+export type CreatePlatformMemberRequest = z.infer<typeof CreatePlatformMemberRequest>;
+
 export const UpdateTenantStatusRequest = z.object({ status: z.enum(["ACTIVE", "SUSPENDED"]) });
 export type UpdateTenantStatusRequest = z.infer<typeof UpdateTenantStatusRequest>;
 
@@ -73,12 +86,13 @@ export type PlatformAuditDto = {
     | "tenant.support_access"
     | "tenant.access_grant"
     | "tenant.module_on"
-    | "tenant.module_off";
+    | "tenant.module_off"
+    | "tenant.member_add";
   userName: string | null;
   tenantId: string | null;
   tenantName: string | null;
-  /** Detalhes: o módulo ligado ou desligado; o plano e a data do acesso liberado. */
-  data: { module?: ModuleKey; plan?: BillingPlan; paidUntil?: string } | null;
+  /** Detalhes: o módulo ligado ou desligado; o plano e a data do acesso liberado; o e-mail e o papel de quem foi adicionado. */
+  data: { module?: ModuleKey; plan?: BillingPlan; paidUntil?: string; email?: string; role?: "ADMIN" | "AGENT" } | null;
   createdAt: string;
 };
 

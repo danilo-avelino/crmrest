@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  CreatePlatformMemberRequest,
   CreateTenantRequest,
   formatPhone,
   formatTaxId,
@@ -48,7 +49,14 @@ export function PlatformTenants() {
         <div className="flex max-w-[1180px] flex-col gap-5">
           <PlatformAiStatus />
           <CreateTenantForm />
-          {tenants.data ? <TenantList tenants={tenants.data} /> : <PlatformLoading failed={tenants.isError} />}
+          {tenants.data ? (
+            <>
+              <AddMemberForm tenants={tenants.data} />
+              <TenantList tenants={tenants.data} />
+            </>
+          ) : (
+            <PlatformLoading failed={tenants.isError} />
+          )}
         </div>
       </div>
     </main>
@@ -141,6 +149,168 @@ function CreateTenantForm() {
           <Button type="submit" size="sm" loading={saving}>
             <PlusIcon aria-hidden />
             Criar restaurante
+          </Button>
+        </div>
+      </form>
+    </section>
+  );
+}
+
+/**
+ * Usuário nos restaurantes escolhidos, já com acesso: sem convite nem confirmação por e-mail. Quem já tem conta (ou
+ * tinha um convite pendente) entra na hora com a senha atual; conta nova sem senha entra com o Google.
+ */
+function AddMemberForm({ tenants }: { tenants: PlatformTenantDto[] }) {
+  const { request } = useAuth();
+  const queryClient = useQueryClient();
+  const toast = useToast();
+  const id = useId();
+  const empty = { name: "", email: "", password: "" };
+  const [form, setForm] = useState(empty);
+  const [role, setRole] = useState<CreatePlatformMemberRequest["role"]>("AGENT");
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [errors, setErrors] = useState<Partial<Record<keyof typeof empty | "tenantIds" | "form", string>>>({});
+
+  const [save, saving] = usePendingAction(async () => {
+    const parsed = CreatePlatformMemberRequest.safeParse({
+      ...form,
+      password: form.password || undefined,
+      role,
+      tenantIds: [...selected],
+    });
+    if (!parsed.success) {
+      const field = (name: string) => parsed.error.issues.find((issue) => issue.path[0] === name)?.message;
+      return setErrors({ name: field("name"), email: field("email"), password: field("password"), tenantIds: field("tenantIds") });
+    }
+    setErrors({});
+    try {
+      queryClient.setQueryData(TENANTS_KEY, await request<PlatformTenantDto[]>("/platform/members", { method: "POST", body: parsed.data }));
+      void queryClient.invalidateQueries({ queryKey: ["platform-audit"] });
+      const total = parsed.data.tenantIds.length;
+      toast(`${parsed.data.name} já tem acesso a ${total === 1 ? "1 restaurante" : `${total} restaurantes`}`);
+      setForm(empty);
+      setRole("AGENT");
+      setSelected(new Set());
+    } catch (failure) {
+      setErrors({ form: failure instanceof ApiError ? failure.message : "Não foi possível adicionar o usuário." });
+    }
+  });
+
+  const field = (name: keyof typeof empty, label: string, props: ComponentProps<typeof Input> = {}) => (
+    <div className="flex flex-col gap-1">
+      <Label htmlFor={`${id}-${name}`}>{label}</Label>
+      <Input
+        id={`${id}-${name}`}
+        value={form[name]}
+        aria-invalid={Boolean(errors[name]) || undefined}
+        onChange={(event) => {
+          const value = event.target.value;
+          setForm((current) => ({ ...current, [name]: value }));
+        }}
+        {...props}
+      />
+    </div>
+  );
+
+  return (
+    <section className="overflow-hidden rounded-xl border border-rule">
+      <div className="border-b border-rule px-5 pt-4 pb-3.5">
+        <h2 className="font-heading text-title font-semibold">Novo usuário</h2>
+        <p className="mt-1 text-ink-2">
+          A pessoa já sai com acesso aos restaurantes marcados, sem convite nem confirmação por e-mail. Se o e-mail já tiver conta,
+          a senha atual continua valendo; sem senha temporária, a conta nova entra com o Google.
+        </p>
+      </div>
+      <form
+        noValidate
+        className="bg-paper px-5 py-4"
+        onSubmit={(event) => {
+          event.preventDefault();
+          save();
+        }}
+      >
+        <div className="grid grid-cols-4 gap-x-2.5 gap-y-2">
+          {field("name", "Nome", { maxLength: 80, autoComplete: "off" })}
+          {field("email", "E-mail", { type: "email", autoComplete: "off" })}
+          {field("password", "Senha temporária", {
+            type: "password",
+            maxLength: 128,
+            autoComplete: "new-password",
+            placeholder: "Opcional",
+          })}
+          <fieldset className="flex flex-col gap-1">
+            <legend className="text-[11px] leading-none font-medium text-ink-2">Perfil</legend>
+            <div className="grid h-9 grid-cols-2 rounded-lg border border-input bg-surface p-0.5">
+              {(
+                [
+                  ["AGENT", "Atendimento"],
+                  ["ADMIN", "Admin"],
+                ] as const
+              ).map(([value, label]) => (
+                <label
+                  key={value}
+                  className={cn(
+                    "flex cursor-pointer items-center justify-center rounded-md text-[12px] font-medium transition-colors",
+                    role === value ? "bg-ink text-paper" : "text-ink-3 hover:text-ink-2",
+                  )}
+                >
+                  <input
+                    type="radio"
+                    name={`${id}-role`}
+                    value={value}
+                    checked={role === value}
+                    onChange={() => setRole(value)}
+                    className="sr-only"
+                  />
+                  {label}
+                </label>
+              ))}
+            </div>
+          </fieldset>
+        </div>
+        <div className="mt-4 mb-2 flex items-baseline justify-between">
+          <span className="text-[10px] font-semibold tracking-[0.08em] text-ink-3 uppercase">Restaurantes</span>
+          <span className="text-[12px] text-ink-3 tabular-nums">
+            {count(selected.size)} {selected.size === 1 ? "marcado" : "marcados"}
+          </span>
+        </div>
+        {tenants.length === 0 ? (
+          <p className="text-ink-3">Nenhum restaurante cadastrado.</p>
+        ) : (
+          <ul className="grid max-h-[180px] grid-cols-3 gap-x-4 gap-y-1.5 overflow-y-auto rounded-lg border border-rule bg-surface px-3.5 py-2.5">
+            {tenants.map((tenant) => (
+              <li key={tenant.id} className="min-w-0">
+                <label className="flex items-center gap-2.5 text-[12.5px]">
+                  <input
+                    type="checkbox"
+                    checked={selected.has(tenant.id)}
+                    disabled={saving}
+                    onChange={(event) =>
+                      setSelected((current) => {
+                        const next = new Set(current);
+                        if (event.target.checked) next.add(tenant.id);
+                        else next.delete(tenant.id);
+                        return next;
+                      })
+                    }
+                    className="size-4 shrink-0 accent-ink"
+                  />
+                  <span className={cn("truncate", tenant.status === "SUSPENDED" && "text-ink-3")}>{tenant.name}</span>
+                </label>
+              </li>
+            ))}
+          </ul>
+        )}
+        {[errors.name, errors.email, errors.password, errors.tenantIds, errors.form].filter(Boolean).map((message) => (
+          <p key={message} role="alert" className="mt-2 flex items-center gap-[5px] text-[11px] text-tomate">
+            <AlertCircleIcon className="size-3 shrink-0" aria-hidden />
+            {message}
+          </p>
+        ))}
+        <div className="mt-3 flex justify-end">
+          <Button type="submit" size="sm" loading={saving}>
+            <PlusIcon aria-hidden />
+            Adicionar usuário
           </Button>
         </div>
       </form>
