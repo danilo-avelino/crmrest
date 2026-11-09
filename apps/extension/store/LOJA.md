@@ -1,6 +1,6 @@
 # Publicação na Chrome Web Store
 
-Tudo o que o painel do desenvolvedor da Chrome Web Store (https://chrome.google.com/webstore/devconsole) pede, na ordem das abas. Versão do pacote: **0.5.0**.
+Tudo o que o painel do desenvolvedor da Chrome Web Store (https://chrome.google.com/webstore/devconsole) pede, na ordem das abas. Versão do pacote: **0.5.2**.
 
 ## Antes de enviar
 
@@ -11,8 +11,8 @@ Tudo o que o painel do desenvolvedor da Chrome Web Store (https://chrome.google.
 
 ## Pacote
 
-- Arquivo: [dish-desk-extensao-0.5.0.zip](dish-desk-extensao-0.5.0.zip) ("Novo item" → enviar o .zip).
-- Para gerar de novo: compactar `manifest.json`, `background.js`, `panel.html`, `panel.js`, `agent-page.js`, `widget.js` e a pasta `icons/` (sem o README e sem esta pasta), com os arquivos na raiz do .zip.
+- Arquivo: [dish-desk-extensao-0.5.2.zip](dish-desk-extensao-0.5.2.zip) ("Novo item" → enviar o .zip; numa versão nova, "Pacote" → "Enviar novo pacote").
+- Para gerar de novo: `python apps/extension/pack.py`. O script compacta `manifest.json`, `background.js`, `panel.html`, `panel.js`, `agent-page.js`, `widget.js` e a pasta `icons/`, tira `http://localhost:3000` (permissão e origens aceitas, que ficam só no código para o desenvolvimento) e atualiza também o download do site ([/extensao](../../web/public/extensao/index.html)).
 
 ## Aba "Detalhes do produto"
 
@@ -64,7 +64,6 @@ Tudo o que o painel do desenvolvedor da Chrome Web Store (https://chrome.google.
 | `tabs` | Saber qual aba a equipe está vendo, abrir nela o endereço de um passo da configuração e esperar a página carregar antes da próxima ação. |
 | `storage` | Guardar o endereço do painel do Dish Desk usado pela extensão. |
 | Acesso a `www.dishdesk.com.br` | O painel lateral carrega a tela do assistente do Dish Desk. |
-| Acesso a `localhost:3000` | Usado só no desenvolvimento do Dish Desk, para testar o painel local. |
 | Acesso a `portal.ifood.com.br`, `*.cardapioweb.com`, `*.facebook.com`, `*.instagram.com` | Os painéis de fora em que o assistente executa a configuração junto com o restaurante: autorizar a loja no iFood, gerar a chave do Cardápio Web e conectar o Instagram e o WhatsApp na Meta. |
 | Script em `embeddables.ifood.com.br` | Lê as mensagens do chat dos pedidos no widget oficial do iFood aberto no Dish Desk e escreve nele as respostas da equipe. |
 | Acesso opcional a `https://*/*` | Pedido site a site, só quando a configuração passa por outro site (ex.: login da conta Google no Cardápio Web) e a pessoa clica em "Permitir" no painel. Nada é pedido na instalação. |

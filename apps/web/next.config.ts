@@ -16,6 +16,7 @@ const nextConfig: NextConfig = {
       { source: "/funcionalidades", destination: "/funcionalidades/index.html" },
       { source: "/privacidade", destination: "/privacidade/index.html" },
       { source: "/exclusao-de-dados", destination: "/exclusao-de-dados/index.html" },
+      { source: "/extensao", destination: "/extensao/index.html" },
     ];
   },
 };

@@ -299,7 +299,7 @@ function ExtensionIntro({ onManual }: { onManual: () => void }) {
             items={[
               storeUrl ? (
                 <>
-                  Clique em <b>Adicionar ao Chrome</b> e confirme a instalação.
+                  Clique em <b>Adicionar ao Chrome</b> e siga os passos da página que abrir.
                 </>
               ) : (
                 "Peça ao suporte do Dish Desk o link da extensão e instale no Chrome."

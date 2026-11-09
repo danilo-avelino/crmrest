@@ -16,6 +16,10 @@ A função inteira depende da variável `IFOOD_CHAT_BRIDGE` da `api` (Railway). 
 
 Depois de mudar um arquivo da extensão, clique em recarregar (seta circular) no card dela em `chrome://extensions` e recarregue a aba do Dish Desk.
 
+## Pacote (loja e site)
+
+`python apps/extension/pack.py` gera `store/dish-desk-extensao-<versão>.zip` para a Chrome Web Store ([store/LOJA.md](store/LOJA.md)) e o download do site, em `/extensao` ([apps/web/public/extensao](../web/public/extensao/index.html)), com o número da versão na página. O pacote sai sem `http://localhost:3000`, que fica só no código para o desenvolvimento. Enquanto a extensão não está na loja, os restaurantes instalam pelo site, no modo do desenvolvedor (sem atualização automática: a cada versão nova, baixar de novo e recarregar).
+
 ## Como funciona
 
 A ponte só atende pedidos vindos do painel (`https://www.dishdesk.com.br` e `http://localhost:3000`) e só quando o widget está dentro dele. O painel fala com o iframe do widget por `postMessage`:
