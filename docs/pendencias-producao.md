@@ -1,6 +1,6 @@
 # Pendências para produção — Dish Desk
 
-Atualizado em 7 de novembro de 2026.
+Atualizado em 8 de novembro de 2026.
 
 Esta é a lista do que falta para o Dish Desk atender restaurantes de verdade. Quando um item for concluído, marque `[x]` e troque a data acima.
 
@@ -21,10 +21,10 @@ Esta é a lista do que falta para o Dish Desk atender restaurantes de verdade. Q
 - [ ] **Análise do app na Meta** — sem ela, só contas cadastradas como testadoras conectam Instagram e WhatsApp
   - [x] Verificar a empresa (CNPJ da Avelino Gastronomia) — verificada pela Meta em 13/10 (portfólio Dish Desk, AVELINO GASTRONOMIA LTDA).
   - [x] Política de privacidade publicada: é a página `https://www.dishdesk.com.br/privacidade`, já cadastrada no app — 11/10.
-  - [ ] Criar o usuário do avaliador no restaurante "Revisão Meta" e guardar a senha — você.
-  - [ ] Gravar os vídeos, seguindo o [roteiro](meta-review/roteiro-video.md) — você.
+  - [x] Criar o usuário do avaliador no restaurante "Revisão Meta" e guardar a senha — 14/10.
+  - [x] Gravar o vídeo do Instagram, seguindo o [roteiro](meta-review/roteiro-video.md) — 08/11. O do WhatsApp fica para depois do recurso do portfólio.
   - [ ] Virar Tech Provider (WhatsApp) — você.
-  - [ ] Enviar a análise, com os [textos prontos](meta-review/textos-analise.md) — você.
+  - [x] Enviar a análise do Instagram (`instagram_business_basic`, `instagram_business_manage_messages`, `public_profile`), com os [textos prontos](meta-review/textos-analise.md) — enviada em 08/11, "Análise em andamento" (a Meta fala em até 20 dias). As permissões do WhatsApp voltam numa análise futura.
 - [ ] **Site em `dishdesk.com.br`** — a verificação da empresa na Meta pede um site no domínio
   - [x] Landing, política de privacidade e exclusão de dados dentro do serviço `web` (`/`, `/privacidade`, `/exclusao-de-dados`); o painel começa em `/login` — Claude, em 11/10.
   - [x] Publicar (commit e push na `main`) — feito em 11/10.

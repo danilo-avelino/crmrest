@@ -14,15 +14,19 @@ Peça **somente** estas quatro permissões. O Dish Desk não usa comentários do
 
 ## instagram_business_basic
 
-> Dish Desk uses instagram_business_basic to identify the Instagram professional account that a restaurant connects through Instagram Business Login (account ID and username), so incoming messages are routed to the right restaurant, and to show the customer's name and username next to each conversation in the inbox. We only read the profile fields needed for this (user_id, username, name). We do not read or publish media.
+> Dish Desk is a customer service inbox for restaurants. We request instagram_business_basic only as a dependency of instagram_business_manage_messages, which is the feature we offer: answering customers' Instagram Direct messages.
 >
-> How to test: log in at https://www.dishdesk.com.br/login with the test credentials provided, go to Configurações → Integrações, click "Conectar" on the Instagram card and then "Conectar o Instagram", and authorize with an Instagram professional account. The connected account appears in the Instagram card with its username.
+> How we use it: when a restaurant connects its Instagram professional account through Instagram Business Login, we read the account's user ID and username to link it to that restaurant, route its incoming Direct messages to the right inbox and show which account is connected. When a customer sends a DM, we read that customer's name and username to show them next to the conversation. Dish Desk does NOT publish anything: no posts, stories, reels or comments. We also do not read the account's media or insights.
+>
+> How to test: log in at https://www.dishdesk.com.br/login with the reviewer credentials in the testing instructions and choose the restaurant "Revisão Meta". Go to Configurações (Settings) > Integrações (Integrations), click "Conectar" (Connect) on the Instagram card and then "Conectar o Instagram" (Connect Instagram), and authorize with your own Instagram professional account. Back in Dish Desk, the Instagram card shows the username of the connected account. After a customer sends a DM, their name and username appear on the conversation in "Inbox".
 
 ## instagram_business_manage_messages
 
-> Dish Desk uses instagram_business_manage_messages so a restaurant can receive and answer Instagram Direct messages from its customers in the Dish Desk inbox. When a customer sends a DM to the restaurant's Instagram account, our webhook receives it and the conversation appears in the inbox; a staff member reads it and replies, and the reply is sent back to the customer through the Instagram API. Automated replies (a greeting menu and order status answers) are only sent within the 24-hour messaging window, in response to a message from the customer. We never send unsolicited messages.
+> Dish Desk is a customer service inbox for restaurants. We use instagram_business_manage_messages so a restaurant's team can receive and answer the Instagram Direct messages that customers send to the restaurant (questions about the menu, opening hours, orders), together with its other channels, in one shared inbox.
 >
-> How to test: after connecting an Instagram account (see instagram_business_basic), send a DM to that account from another Instagram account. The message appears in "Inbox" within a few seconds; open the conversation, type a reply and press send. The reply arrives in the customer's Instagram Direct.
+> How we use it: when a customer sends a DM to the restaurant's connected Instagram professional account, our webhook receives it and the conversation appears in the Dish Desk inbox. A staff member reads it and replies, and the reply is sent back to the customer through the Instagram API. Simple automated replies (a greeting menu and order status answers) are only sent within the 24-hour messaging window, in response to a message from the customer. We never send unsolicited or promotional messages. Dish Desk only handles Direct messages: it does NOT publish posts, stories, reels or comments.
+>
+> How to test: after connecting an Instagram professional account (see instagram_business_basic), send a Direct message to that account from another Instagram account. The message appears in "Inbox" within a few seconds. Open the conversation, type a reply and press "Enviar" (Send). The reply arrives in the customer's Instagram Direct.
 
 ---
 
