@@ -3,9 +3,12 @@
 import type { IfoodWidgetDto } from "@dishdesk/shared";
 import { useQuery } from "@tanstack/react-query";
 import Script from "next/script";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { useIfoodChat } from "@/hooks/use-ifood-chat";
+import { setIfoodWidgetChoice, useIfoodWidgetChoice } from "@/lib/ifood-widget-choice";
 
 /** API JavaScript oficial do widget (https://developer.ifood.com.br → Soluções → Widget). */
 type IfoodWidgetApi = {
@@ -42,6 +45,8 @@ export function useIfoodWidget() {
 export function IfoodWidget() {
   const { session } = useAuth();
   const config = useIfoodWidget();
+  // Só carrega no computador que disse "Sim": no que não atende, o pedido de autorização do iFood não atrapalha.
+  const choice = useIfoodWidgetChoice();
   const [loaded, setLoaded] = useState(false);
   // Lojas com que o widget foi iniciado. Uma inicialização por página: o widget apaga a autorização da loja quando as
   // lojas do init mudam, por isso a API manda as de todos os restaurantes do usuário, as mesmas em qualquer contexto.
@@ -71,8 +76,8 @@ export function IfoodWidget() {
 
   // O script fica na página depois de carregado uma vez (para conseguir esconder o widget ao sair).
   const [needed, setNeeded] = useState(false);
-  if (key && !needed) setNeeded(true);
-  if (!needed) return null;
+  if (key && choice === "on" && !needed) setNeeded(true);
+  if (!needed) return key && choice === "ask" ? <IfoodWidgetPrompt /> : null;
   return (
     <>
       <Script src="https://widgets.ifood.com.br/widget.js" strategy="afterInteractive" onReady={() => setLoaded(true)} />
@@ -81,5 +86,49 @@ export function IfoodWidget() {
       {/* O convite de autorização foi aberto pelo motor, fora das áreas de clique que o widget marca: sem isto, o clique cai no painel. */}
       {chat === "unauthorized" && <style>{'iframe[src^="https://embeddables.ifood.com.br"]{pointer-events:all!important}'}</style>}
     </>
+  );
+}
+
+/**
+ * Pergunta do Dish Desk antes de carregar o widget do iFood neste computador. "Não" volta a perguntar ao abrir o painel
+ * de novo, a não ser com "Não perguntar de novo"; o atendimento religa na Inbox (Integrações). O design ainda não tem
+ * este modal: segue os modais do board Clientes → LGPD. Desktop no MVP.
+ */
+function IfoodWidgetPrompt() {
+  const id = useId();
+  const [never, setNever] = useState(false);
+  return (
+    <Dialog open onOpenChange={(open) => !open && setIfoodWidgetChoice("later")}>
+      <DialogContent className="w-[460px]">
+        <div className="border-b border-rule-soft px-6 py-5">
+          <DialogTitle className="mb-1">Usar o widget do iFood neste computador?</DialogTitle>
+          <DialogDescription>Chat com o cliente, notificações e status da loja do iFood dentro do Dish Desk.</DialogDescription>
+        </div>
+        <div className="flex flex-col gap-4 px-6 py-[18px]">
+          <p className="text-[13px] leading-relaxed text-ink-2">
+            Para funcionar, o iFood pede que a loja autorize o widget neste computador, pelo Portal do Parceiro. Nos computadores
+            que não atendem os pedidos (como o da administração), pode deixar desligado: o resto do Dish Desk funciona igual.
+          </p>
+          <label htmlFor={`${id}-never`} className="flex items-center gap-2.5 text-[13px]">
+            <input
+              id={`${id}-never`}
+              type="checkbox"
+              className="size-4 shrink-0 accent-ink"
+              checked={never}
+              onChange={(event) => setNever(event.target.checked)}
+            />
+            Não perguntar de novo neste computador
+          </label>
+          <div className="flex gap-2">
+            <Button disabled={never} title={never ? "Desmarque para usar o widget" : undefined} onClick={() => setIfoodWidgetChoice("on")}>
+              Sim, usar o widget
+            </Button>
+            <Button variant="outline" onClick={() => setIfoodWidgetChoice(never ? "off" : "later")}>
+              Não
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }

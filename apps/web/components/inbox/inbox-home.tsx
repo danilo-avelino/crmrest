@@ -41,6 +41,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/compone
 import { connectIfoodChat, type IfoodChatStatus, useIfoodChatState } from "@/hooks/use-ifood-chat";
 import { useNow } from "@/hooks/use-now";
 import { ago, clock, count, currency } from "@/lib/format";
+import { setIfoodWidgetChoice, useIfoodWidgetChoice } from "@/lib/ifood-widget-choice";
 import { cn } from "@/lib/utils";
 
 /** Sempre na lista, conectados ou não; os demais sistemas só aparecem depois de conectados. */
@@ -84,6 +85,8 @@ function Integrations() {
   });
   const admin = (session?.context?.tenants ?? []).some((tenant) => tenant.role === "ADMIN");
   const widget = useIfoodWidget();
+  const widgetChoice = useIfoodWidgetChoice();
+  const widgetOff = (widget.data?.merchantIds.length ?? 0) > 0 && (widgetChoice === "off" || widgetChoice === "later");
 
   if (!channels.data) {
     return (
@@ -105,7 +108,11 @@ function Integrations() {
         {types.map((type) => (
           <IntegrationRow key={type} type={type} channels={list.filter((channel) => channel.type === type)} admin={admin} />
         ))}
-        {widget.data?.chat && widget.data.merchantIds.length > 0 && <IfoodChatRow storeUrl={widget.data.extensionUrl} />}
+        {widgetOff ? (
+          <IfoodWidgetOffRow />
+        ) : (
+          widget.data?.chat && widget.data.merchantIds.length > 0 && <IfoodChatRow storeUrl={widget.data.extensionUrl} />
+        )}
       </ul>
       {admin ? (
         <Link
@@ -252,6 +259,25 @@ const CHAT_TEXT: Record<IfoodChatStatus, string> = {
   authorizing: "Termine a autorização no Portal do Parceiro: o chat conecta sozinho.",
   connected: "As conversas do iFood chegam à Inbox por este computador.",
 };
+
+/** Widget do iFood recusado neste computador ("Não" na pergunta do Dish Desk): religa por aqui. */
+function IfoodWidgetOffRow() {
+  return (
+    <li className="flex items-center gap-3 border-rule-soft px-4 py-3 [&+&]:border-t">
+      <SystemIcon type="IFOOD" className="size-9 rounded-[9px] text-[12px]" />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <span className="text-[13px] font-semibold">Widget do iFood</span>
+          <IntegrationBadge badge={{ label: "Desligado", className: "bg-surface-2 text-ink-3", dot: "bg-ink-3" }} />
+        </div>
+        <p className="mt-0.5 text-[11px] text-ink-3">Desligado neste computador: o chat e as notificações do iFood não aparecem aqui.</p>
+      </div>
+      <Button variant="outline" size="sm" className="text-ink-2" onClick={() => setIfoodWidgetChoice("on")}>
+        Usar aqui
+      </Button>
+    </li>
+  );
+}
 
 /**
  * Chat do iFood (trava IFOOD_CHAT_BRIDGE), que depende deste navegador: a extensão do Chrome e a autorização do widget
