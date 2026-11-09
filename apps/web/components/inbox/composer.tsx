@@ -8,6 +8,7 @@ import {
   type ConversationMessages,
   type QuickReplyDto,
   type ReplySuggestionDto,
+  withoutAi,
 } from "@dishdesk/shared";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangleIcon, ClockIcon, SendIcon, SparklesIcon, StickyNoteIcon, XIcon } from "lucide-react";
@@ -89,7 +90,8 @@ export function Composer({ conversation }: { conversation: ConversationListItem 
   // Sugerir com IA (board Inbox · Composer · Sugerir com IA): só no restaurante com o Atendimento com IA (a mesma
   // consulta do início da Inbox) e com mensagem do cliente para responder.
   const ai = useQuery({ queryKey: ["ai-attendance"], queryFn: () => request<AiAttendanceDto[]>("/ai/attendance") });
-  const canSuggest = ai.data?.some((item) => item.tenantId === conversation.tenant.id) === true;
+  // Entregador e funcionário: sem IA.
+  const canSuggest = ai.data?.some((item) => item.tenantId === conversation.tenant.id) === true && !withoutAi(conversation.contact.tags);
   const messages = useQuery({
     queryKey: ["messages", conversation.id],
     queryFn: () => request<ConversationMessages>(`/conversations/${conversation.id}/messages`),

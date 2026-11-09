@@ -1,4 +1,4 @@
-import { CHANNEL_LABEL, type ReplySuggestionDto } from "@dishdesk/shared";
+import { CHANNEL_LABEL, type ReplySuggestionDto, withoutAi } from "@dishdesk/shared";
 import { Injectable, Logger, NotFoundException, ServiceUnavailableException, UnprocessableEntityException } from "@nestjs/common";
 import { z } from "zod";
 import type { RequestAuth } from "../auth/auth.decorators.js";
@@ -61,6 +61,7 @@ export class AiSuggestionService {
       });
       if (!conversation) throw new NotFoundException("Conversa não encontrada.");
       if (!(await this.llm.activeFor(tx, conversation.tenantId))) throw new NotFoundException("O restaurante não tem o atendimento com IA.");
+      if (withoutAi(conversation.contact.tags)) throw new UnprocessableEntityException("A IA não sugere respostas para entregadores e funcionários.");
       const history = (
         await tx.message.findMany({
           where: { conversationId, direction: { in: ["INBOUND", "OUTBOUND"] }, createdAt: { gte: new Date(now.getTime() - HISTORY_MS) } },

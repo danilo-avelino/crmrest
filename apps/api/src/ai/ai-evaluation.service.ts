@@ -1,4 +1,4 @@
-import type { TeamReason } from "@dishdesk/shared";
+import { type TeamReason, withoutAi } from "@dishdesk/shared";
 import { Injectable } from "@nestjs/common";
 import type { Queue } from "bullmq";
 import { DatabaseService } from "../core/database.service.js";
@@ -74,8 +74,9 @@ export class AiEvaluationService {
       if (!this.jev.enabled) return null;
       const module = await tx.tenantModule.findUnique({ where: { tenantId_module: { tenantId, module: "AI" } }, select: { id: true } });
       if (!module) return null;
-      const conversation = await tx.conversation.findUnique({ where: { id: conversationId }, select: { status: true } });
+      const conversation = await tx.conversation.findUnique({ where: { id: conversationId }, select: { status: true, contact: { select: { tags: true } } } });
       if (conversation?.status !== "RESOLVED") return null; // reaberta: será avaliada quando for resolvida de novo
+      if (withoutAi(conversation.contact.tags)) return null; // entregador e funcionário: sem avaliação
       // O atendimento é o que veio depois do último já encerrado na conversa: avaliado ou registrado como só da IA.
       const last = { where: { conversationId }, orderBy: { createdAt: "desc" }, select: { createdAt: true } } as const;
       const evaluated = (await tx.conversationEvaluation.findFirst(last))?.createdAt;

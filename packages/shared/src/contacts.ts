@@ -70,11 +70,21 @@ export type AutoTag = keyof typeof AUTO_TAG_INFO;
 
 /** Quem aplica o golpe do cancelamento: cada novo atendimento abre com um alerta para a equipe. */
 export const CANCELLATION_TAG = "Cancelamento recorrente";
-/** Entregador: no lugar do menu de atendimento, recebe o menu do entregador (avisar que chegou, problema com um pedido, outro assunto). */
+/**
+ * Entregador: no lugar do menu de atendimento, recebe o menu do entregador (avisar que chegou ou que deixou na portaria,
+ * problema com um pedido, outro assunto). A IA não fala com ele: vai direto para o menu.
+ */
 export const COURIER_TAG = "Entregador";
+/** Funcionário: conversa comum com a equipe, sem nenhuma automação e sem IA. */
+export const STAFF_TAG = "Funcionário";
 /** As únicas tags que a equipe põe e tira à mão; o recálculo das automáticas não mexe nelas. */
-export const MANUAL_TAGS = [CANCELLATION_TAG, COURIER_TAG] as const;
+export const MANUAL_TAGS = [CANCELLATION_TAG, COURIER_TAG, STAFF_TAG] as const;
 export type ManualTag = (typeof MANUAL_TAGS)[number];
+
+/** Entregador e funcionário: nenhuma chamada de IA (atendimento, revisão das respostas, sugestão, avaliação). */
+export function withoutAi(tags: readonly string[]): boolean {
+  return tags.includes(COURIER_TAG) || tags.includes(STAFF_TAG);
+}
 
 export type ContactOrderSummary = {
   id: string;

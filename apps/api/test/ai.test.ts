@@ -691,6 +691,33 @@ describe("atendimento com IA: resposta, revisão e avaliação", () => {
     expect(graph.requests.length).toBe(sent);
   });
 
+  it("entregador e funcionário ficam sem IA: ela não atende, não revisa a resposta, não sugere e não avalia", async () => {
+    const evaluations = evaluationCalls().length;
+    for (const [waId, tag] of [
+      ["5511980000081", "Entregador"],
+      ["5511980000082", "Funcionário"],
+    ] as const) {
+      await admin.contact.create({
+        data: { tenantId: fx.tenant.id, name: "Equipe", tags: [tag], identities: { create: { tenantId: fx.tenant.id, channelType: "WHATSAPP", externalId: waId } } },
+      });
+      const before = llm.requests.length;
+      await say(waId, `wamid.NOAI-${waId}-1`, "Oi");
+      await settle();
+      const { id } = await conversationOf(waId);
+      const { body: sent } = await reply(id, "pode subir");
+      expect(sent.content).toEqual({ text: "pode subir" });
+      await settle();
+      await request(app.getHttpServer()).post(`/api/conversations/${id}/suggestion`).set("Authorization", `Bearer ${token}`).expect(422);
+      await request(app.getHttpServer()).patch(`/api/conversations/${id}`).set("Authorization", `Bearer ${token}`).send({ status: "RESOLVED" }).expect(200);
+      await app.get(AiEvaluationService).evaluate(fx.tenant.id, id);
+      expect(llm.requests.length).toBe(before);
+    }
+    expect(evaluationCalls()).toHaveLength(evaluations);
+    // O entregador vai direto para o menu dele; o funcionário não recebe automação nenhuma.
+    expect((await contents("5511980000081")).find((c) => c.automation)?.automation).toBe("courier_menu");
+    expect((await contents("5511980000082")).filter((c) => c.automation || c.aiReply)).toEqual([]);
+  });
+
   it("restaurante sem o módulo continua com o menu de atendimento", async () => {
     const calls = llm.requests.length;
     await say("5511980000004", "wamid.AI-8", "Oi", withoutAi.whatsapp);

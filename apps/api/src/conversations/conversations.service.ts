@@ -12,6 +12,7 @@ import {
   type SendTemplateRequest,
   type UpdateConversationRequest,
   type WhatsAppTemplate,
+  withoutAi,
 } from "@dishdesk/shared";
 import { InjectQueue } from "@nestjs/bullmq";
 import {
@@ -188,8 +189,12 @@ export class ConversationsService {
       if (capabilities.window24h && (!conversation.windowExpiresAt || conversation.windowExpiresAt < new Date())) {
         throw new UnprocessableEntityException("A janela de 24h para resposta livre terminou.");
       }
-      // Atendimento com IA: a resposta é revisada pela IA no worker, antes do envio (menos com o Dish Desk pausado).
-      const review = (await this.llm.activeFor(tx, conversation.tenantId)) && !(await isPaused(tx, conversation.tenantId));
+      // Atendimento com IA: a resposta é revisada pela IA no worker, antes do envio (menos para entregador e funcionário
+      // e com o Dish Desk pausado).
+      const review =
+        (await this.llm.activeFor(tx, conversation.tenantId)) &&
+        !(await isPaused(tx, conversation.tenantId)) &&
+        !withoutAi((await tx.contact.findUniqueOrThrow({ where: { id: conversation.contactId }, select: { tags: true } })).tags);
       const created = await tx.message.create({
         data: {
           tenantId: conversation.tenantId,

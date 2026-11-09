@@ -13,6 +13,7 @@ import {
   orderLinksMessage,
   orderLinksOf,
   reopeningAt,
+  STAFF_TAG,
 } from "@dishdesk/shared";
 import { InjectQueue } from "@nestjs/bullmq";
 import { Injectable } from "@nestjs/common";
@@ -111,11 +112,12 @@ export class TriageService {
 
   /**
    * Roda depois de cada mensagem recebida: nota da pesquisa, menu (ou a IA) e, terminado o menu, a coleta de telefone.
-   * Com o Dish Desk pausado, nada roda.
+   * Funcionário fica de fora de tudo: é uma conversa comum com a equipe. Com o Dish Desk pausado, nada roda.
    */
   async afterInbound(event: InboundEvent): Promise<void> {
     if (!CHANNEL_CAPABILITIES[event.channel.type].send) return;
     if (await tenantPaused(this.db, event.channel.tenantId)) return;
+    if (await this.isStaff(event)) return;
     if (await this.survey.handleAnswer(event)) return;
     if (await this.aiTakes(event)) return;
 
@@ -140,6 +142,13 @@ export class TriageService {
     if (step.alsoSend) await dispatch(this.outbound, this.realtime, step.alsoSend.tenantId, step.alsoSend.conversationId, [step.alsoSend.messageId]);
     for (const conversationId of step.notify ?? []) this.realtime.inboxChanged(tenantId, conversationId);
     if (step.done) await this.phoneCollection.afterInbound(event);
+  }
+
+  private isStaff(event: InboundEvent): Promise<boolean> {
+    return this.db.withTenants({ tenantIds: [event.channel.tenantId] }, async (tx) => {
+      const { contact } = await tx.conversation.findUniqueOrThrow({ where: { id: event.conversationId }, select: { contact: { select: { tags: true } } } });
+      return contact.tags.includes(STAFF_TAG);
+    });
   }
 
   /**

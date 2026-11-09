@@ -1,4 +1,4 @@
-import { automationMessagesOf, CHANNEL_CAPABILITIES } from "@dishdesk/shared";
+import { automationMessagesOf, CHANNEL_CAPABILITIES, STAFF_TAG } from "@dishdesk/shared";
 import { InjectQueue } from "@nestjs/bullmq";
 import { Inject, Injectable } from "@nestjs/common";
 import type { Queue } from "bullmq";
@@ -39,10 +39,13 @@ export class InactivityService {
           awaitingAgentSince: true,
           automationState: true,
           channel: { select: { type: true } },
+          contact: { select: { tags: true } },
         },
       });
       // Pendente é a equipe segurando o atendimento (ex.: "vou ver com a cozinha"): não encerra.
       if (conversation?.status !== "OPEN") return null;
+      // Funcionário: conversa comum, sem automação; quem encerra é a equipe.
+      if (conversation.contact.tags.includes(STAFF_TAG)) return null;
       // Cliente esperando um atendente (o "já vai falar com você" foi a última mensagem): não encerra.
       if (conversation.awaitingAgentSince) return null;
       // Nem esperando um atendente que ainda não havia (fechado, 100% automático ou ninguém online).

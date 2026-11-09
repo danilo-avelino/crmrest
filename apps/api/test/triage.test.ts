@@ -508,6 +508,21 @@ describe("menu de atendimento, busca do pedido e pesquisa de satisfação", () =
   const COURIER_MENU =
     "1 - Avisar que cheguei (iFood)\n2 - Avisar que deixei na portaria (iFood)\n3 - Problema com um pedido\n4 - Outro assunto";
 
+  it("funcionário: conversa comum, sem menu, sem chamar a equipe e sem encerramento por inatividade", async () => {
+    await tagged("5511970000027", "Funcionário");
+    await say("5511970000027", "wamid.FUN1", "Oi, chego às 18h hoje");
+    await say("5511970000027", "wamid.FUN2", "Pode ser?");
+    const opened = await conversationOf("5511970000027");
+    expect(await automations("5511970000027")).toEqual([]);
+    expect(opened).toMatchObject({ status: "OPEN", automationState: {}, awaitingAgentSince: null });
+    expect(opened.unreadCount).toBe(2);
+
+    await reply(opened.id, "Pode sim!");
+    await app.get(InactivityService).close(fx.tenant.id, opened.id, new Date(Date.now() + INACTIVITY_CLOSE_MS + 60_000));
+    expect(await automations("5511970000027")).toEqual([]);
+    expect((await conversationOf("5511970000027")).status).toBe("OPEN");
+  });
+
   it("entregador: recebe o menu dele; outro assunto chama a equipe sem urgência, e só uma vez", async () => {
     await tagged("5511970000021", "Entregador");
     await say("5511970000021", "wamid.ENT1", "Boa noite");
