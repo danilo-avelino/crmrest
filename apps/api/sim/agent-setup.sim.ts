@@ -73,14 +73,15 @@ function newWorld() {
 }
 
 const SETTINGS_TABS: [string, string][] = [
-  ["Links de pedido", "/configuracoes"],
-  ["Mensagens automáticas", "/configuracoes/mensagens"],
+  ["Personalidade", "/configuracoes"],
   ["Horário", "/configuracoes/horario"],
+  ["Links de pedido", "/configuracoes/links"],
   ["Respostas rápidas", "/configuracoes/respostas-rapidas"],
-  ["Notificações", "/configuracoes/notificacoes"],
   ["Integrações", "/configuracoes/integracoes"],
   ["Usuários", "/configuracoes/usuarios"],
+  ["Notificações", "/configuracoes/notificacoes"],
   ["Pagamento", "/configuracoes/pagamento"],
+  ["Pausa", "/configuracoes/pausa"],
 ];
 const SYSTEMS: [keyof ReturnType<typeof newWorld>["connected"], string][] = [
   ["WHATSAPP", "WhatsApp"],
@@ -230,22 +231,22 @@ class Simulation {
           } else tab.message = "Confira os horários.";
         },
       });
-    } else if (path === "/configuracoes/mensagens") {
-      text.push("Mensagens automáticas. Personalidade do atendimento.");
+    } else if (path === "/configuracoes") {
+      text.push("Personalidade. Como a IA e os avisos automáticos falam com o cliente. Personalidade do atendimento.");
       const options = ["Cordial", "Formal", "Jovial", "Descontraído", "Acolhedor", "Direto"];
       field("Personalidade do atendimento", { role: "lista", options });
       add({
         role: "botão",
-        name: "Salvar mensagens",
+        name: "Salvar",
         click: () => {
           if (options.includes(tab.form["Personalidade do atendimento"] ?? "")) {
             w.personality = true;
-            tab.message = "Mensagens salvas.";
+            tab.message = "Personalidade salva.";
           }
         },
       });
-    } else if (path === "/configuracoes") {
-      text.push("Links de pedido. Onde os clientes fazem pedido.");
+    } else if (path === "/configuracoes/links") {
+      text.push("Links de pedido. Onde o cliente faz o pedido e vê o cardápio.");
       field("Link do cardápio digital");
       field("Link do iFood");
       add({

@@ -142,7 +142,7 @@ O restaurante usa IA para atender o cliente de duas formas, **atendimento 100% c
 **Decidido em 31/10/2026:** o Dish Desk é vendido com a IA logo de início. Todo restaurante novo já nasce com o módulo `AI` ligado (a plataforma ainda pode desligar; os que já existiam são ligados pelo painel). O menu de atendimento virou o último recurso: LLM principal → reserva (Claude Haiku) → menu. Quando as duas LLMs falham, aquele atendimento segue no menu até o fim, e o próximo volta para a IA.
 
 Vale para os três épicos:
-- A IA segue a **personalidade do atendimento** escolhida pelo restaurante (Configurações → Mensagens automáticas, CLAUDE.md §10), a mesma das mensagens automáticas.
+- A IA segue a **personalidade do atendimento** escolhida pelo restaurante (Configurações → Personalidade, CLAUDE.md §10), a mesma das mensagens automáticas.
 
 #### E27 — Atendimento 100% com IA · **G** · depende de: E8, E15, E7 (busca do pedido) · **✅ Feito**
 - Como restaurante, quero que a IA responda sozinha às conversas, no tom da personalidade do atendimento.
@@ -281,7 +281,7 @@ Inspiração: Super Avaliações ([superavaliacoes.com.br](https://superavaliaco
 #### E32 — Convite de avaliação no iFood · **M** · depende de: E7, chat do iFood pela extensão ([docs/plano-chat-ifood.md](docs/plano-chat-ifood.md)) · **🟡 Construído em 02/11/2026; falta o teste numa loja real (desligado por padrão)**
 Problema: menos de 5% dos pedidos do iFood recebem avaliação. Quem teve problema avalia, e quem gostou raramente avalia. O pedido de avaliação do próprio app do iFood não basta.
 - Como restaurante, quero que o Dish Desk escreva no chat do pedido do iFood, **10 minutos depois da entrega**, pedindo ao cliente que avalie a loja no app do iFood.
-- Como restaurante, quero ligar ou desligar o convite numa **seção do iFood em Configurações → Mensagens automáticas**. O texto segue a personalidade do atendimento (CLAUDE.md §10).
+- Como restaurante, quero ligar ou desligar o convite em **Configurações → Personalidade → Mensagens sobre o pedido**. O texto segue a personalidade do atendimento (CLAUDE.md §10).
 - **Decidido em 29/10/2026:**
   - **Quando sai:** entrega (`deliveredAt`) + 10 min. Sem horário de entrega, o horário prometido (`promisedAt`) + 10 min. Sem nenhum dos dois, não há convite.
   - **Quem fica de fora:** o pedido cancelado e o que com certeza atrasou, isto é, foi entregue depois do horário prometido pelo iFood. Atraso desconhecido não tira o convite.
@@ -306,7 +306,7 @@ Problema: menos de 5% dos pedidos do iFood recebem avaliação. Quem teve proble
 
 #### E33 — Avisos de andamento para todos os pedidos do iFood · **M** · depende de: E32 (a extensão escrever primeiro) · **⬜ A fazer**
 - Como cliente do iFood, quero receber no chat do pedido os avisos de "pronto", "saiu para entrega" e de atraso (E26), mesmo sem ter escrito para a loja. Hoje esses avisos só chegam a quem já conversou com ela ([order-notice.service.ts](apps/api/src/orders/order-notice.service.ts)).
-- Como restaurante, quero ligar ou desligar esses avisos na seção do iFood em Mensagens automáticas.
+- Como restaurante, quero ligar ou desligar esses avisos em Configurações → Personalidade → Mensagens sobre o pedido.
 - A definir: quais avisos vão para todos e como evitar repetir a mensagem que o sistema da loja já manda ("Seu pedido acaba de ser entregue 🥳…").
 
 #### E34 — Alerta de avaliação negativa · **P** · depende de: homologação do módulo Review do iFood · **⬜ A fazer**

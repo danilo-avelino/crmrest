@@ -2,9 +2,6 @@ import type { Prisma } from "@dishdesk/database";
 import {
   type AdminNotifications,
   adminNotificationsOf,
-  AUTOMATION_TEXT_KEYS,
-  type AutomationMessages,
-  automationTextsOf,
   type BusinessHours,
   businessHoursOf,
   type OrderForecastSettings,
@@ -17,7 +14,6 @@ import {
   type ReviewInviteSettings,
   reviewInviteOf,
   type TenantSettingsDto,
-  type UpdateAutomationTextsRequest,
   type UpdateOrderLinksRequest,
   type UpdatePersonalityRequest,
 } from "@dishdesk/shared";
@@ -28,8 +24,8 @@ import { notificationChannelOf } from "../notifications/admin-notifications.serv
 import { adminScope, isTenantAdmin } from "./tenant-admin.js";
 
 /**
- * Configurações do restaurante editadas pelo painel: links do menu, personalidade e mensagens automáticas, horário de
- * funcionamento, notificações ao administrador pelo WhatsApp.
+ * Configurações do restaurante editadas pelo painel: personalidade, links de pedido, horário de funcionamento,
+ * notificações ao administrador pelo WhatsApp.
  */
 @Injectable()
 export class SettingsService {
@@ -51,10 +47,6 @@ export class SettingsService {
 
   updateOrderLinks(auth: RequestAuth, tenantId: string, body: UpdateOrderLinksRequest): Promise<TenantSettingsDto> {
     return this.merge(auth, tenantId, { orderLinks: body.orderLinks });
-  }
-
-  updateAutomationTexts(auth: RequestAuth, tenantId: string, body: UpdateAutomationTextsRequest): Promise<TenantSettingsDto> {
-    return this.merge(auth, tenantId, { automationTexts: body });
   }
 
   updateBusinessHours(auth: RequestAuth, tenantId: string, body: BusinessHours): Promise<TenantSettingsDto> {
@@ -79,20 +71,16 @@ export class SettingsService {
   }
 
   /**
-   * Troca o tom das mensagens automáticas. Os textos editáveis que o admin não personalizou (iguais aos da personalidade
-   * anterior) passam a ser os da nova; os personalizados ficam como estão.
+   * Troca o tom da IA e das mensagens automáticas. A mensagem de fora do horário que o admin não personalizou (igual à
+   * da personalidade anterior) passa a ser a da nova; a personalizada fica como está.
    */
   updatePersonality(auth: RequestAuth, tenantId: string, { personality }: UpdatePersonalityRequest): Promise<TenantSettingsDto> {
     return this.merge(auth, tenantId, (current) => {
-      const previous = PERSONALITY_MESSAGES[personalityOf(current)];
-      const next = PERSONALITY_MESSAGES[personality];
-      const swap = (key: keyof AutomationMessages, text: string) => (text === previous[key] ? next[key] : text);
-      const texts = automationTextsOf(current);
+      const previous = PERSONALITY_MESSAGES[personalityOf(current)].closedMessage;
       const hours = businessHoursOf(current);
       return {
         personality,
-        automationTexts: Object.fromEntries(AUTOMATION_TEXT_KEYS.map((key) => [key, swap(key, texts[key])])),
-        businessHours: { ...hours, closedMessage: swap("closedMessage", hours.closedMessage) },
+        businessHours: { ...hours, closedMessage: hours.closedMessage === previous ? PERSONALITY_MESSAGES[personality].closedMessage : hours.closedMessage },
       };
     });
   }
@@ -127,7 +115,6 @@ function toDto(
     canEdit: isTenantAdmin(auth, tenant.id),
     personality: personalityOf(tenant.settings),
     orderLinks: orderLinksOf(tenant.settings),
-    automationTexts: automationTextsOf(tenant.settings),
     businessHours: businessHoursOf(tenant.settings),
     orderForecast: orderForecastOf(tenant.settings),
     reviewInvite: reviewInviteOf(tenant.settings),

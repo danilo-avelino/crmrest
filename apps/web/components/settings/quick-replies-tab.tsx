@@ -6,6 +6,7 @@ import { PencilIcon, PlusIcon, Trash2Icon } from "lucide-react";
 import { useId, useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
 import { TabLoading, useSettingsTenant } from "@/components/settings/settings-shell";
+import { Card, CardBody, CardFooter, Eyebrow, TEXTAREA } from "@/components/settings/settings-ui";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -13,7 +14,7 @@ import { useToast } from "@/components/ui/toast";
 import { usePendingAction } from "@/hooks/use-pending-action";
 import { ApiError } from "@/lib/api";
 
-/** Aba "Respostas rápidas": o que o atendente escolhe digitando "/" no composer. Só o admin altera. */
+/** Página "Respostas rápidas": o que o atendente escolhe digitando "/" no composer. Só o admin altera. */
 export function QuickRepliesTab() {
   const { request } = useAuth();
   const tenant = useSettingsTenant();
@@ -24,27 +25,31 @@ export function QuickRepliesTab() {
   const own = replies.data.filter((reply) => reply.tenantId === tenant.id);
 
   return (
-    <section className="overflow-hidden rounded-xl border border-rule">
-      <div className="border-b border-rule px-5 pt-4 pb-3.5">
-        <h2 className="font-heading text-title font-semibold">Respostas rápidas</h2>
-        <p className="mt-1 text-ink-2">
+    <Card
+      title="Respostas rápidas"
+      description={
+        <>
           No composer, o atendente digita <span className="font-medium text-ink">/</span> e o atalho para inserir a resposta.
-        </p>
-      </div>
-
+        </>
+      }
+    >
       {own.length === 0 ? (
-        <p className="px-5 py-4 text-ink-3 italic">Nenhuma resposta rápida cadastrada.</p>
+        <CardBody>
+          <p className="text-ink-3 italic">Nenhuma resposta rápida cadastrada.</p>
+        </CardBody>
       ) : (
-        <ul>
+        <ul className="divide-y divide-rule-soft border-t border-rule-soft">
           {own.map((reply) =>
             editing === reply.id ? (
-              <li key={reply.id} className="border-b border-rule-soft">
+              <li key={reply.id} className="bg-paper/60">
                 <ReplyForm tenantId={tenant.id} reply={reply} onDone={() => setEditing(null)} />
               </li>
             ) : (
-              <li key={reply.id} className="flex items-start gap-3 border-b border-rule-soft px-5 py-3">
-                <span className="w-32 shrink-0 truncate font-medium text-ink">/{reply.shortcut}</span>
-                <p className="min-w-0 flex-1 whitespace-pre-wrap text-ink-2">{reply.content}</p>
+              <li key={reply.id} className="flex items-start gap-3 px-6 py-3.5">
+                <span className="w-36 shrink-0">
+                  <span className="inline-block max-w-full truncate rounded-sm bg-surface-2 px-1.5 py-0.5 align-top text-[12px] font-medium">/{reply.shortcut}</span>
+                </span>
+                <p className="min-w-0 flex-1 leading-normal whitespace-pre-wrap text-ink-2">{reply.content}</p>
                 {canEdit && (
                   <div className="flex shrink-0 gap-1">
                     <Button variant="ghost" size="icon-sm" aria-label={`Editar /${reply.shortcut}`} onClick={() => setEditing(reply.id)}>
@@ -60,14 +65,14 @@ export function QuickRepliesTab() {
       )}
 
       {canEdit ? (
-        <div className="bg-paper">
-          <div className="px-5 pt-4 text-[10px] font-semibold tracking-[0.08em] text-ink-3 uppercase">Nova resposta</div>
+        <div className="border-t border-rule-soft bg-paper/60">
+          <Eyebrow className="px-6 pt-4">Nova resposta</Eyebrow>
           <ReplyForm tenantId={tenant.id} />
         </div>
       ) : (
-        <p className="px-5 py-4 text-[12px] text-ink-3">Só o administrador do restaurante altera as respostas rápidas.</p>
+        <CardFooter note="Só o administrador do restaurante altera as respostas rápidas." />
       )}
-    </section>
+    </Card>
   );
 }
 
@@ -108,7 +113,7 @@ function ReplyForm({ tenantId, reply, onDone }: { tenantId: string; reply?: Quic
   return (
     <form
       noValidate
-      className="flex flex-col gap-2.5 px-5 py-4"
+      className="flex flex-col gap-2.5 px-6 py-4"
       onSubmit={(event) => {
         event.preventDefault();
         save();
@@ -133,7 +138,7 @@ function ReplyForm({ tenantId, reply, onDone }: { tenantId: string; reply?: Quic
           placeholder="Já estamos verificando seu pedido."
           aria-invalid={Boolean(errors.content) || undefined}
           onChange={(event) => setContent(event.target.value)}
-          className="w-full resize-y rounded-lg border border-input bg-surface px-3 py-2 text-[13px] leading-normal outline-none placeholder:text-ink-3 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/8 aria-invalid:border-destructive"
+          className={TEXTAREA}
         />
       </div>
       {[errors.shortcut, errors.content, errors.form].filter(Boolean).map((message) => (

@@ -13,9 +13,9 @@ export function TenantPicker({ tenants, tenant, onChange }: { tenants: Tenant[];
   if (tenants.length < 2) return null;
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger aria-label="Escolher o restaurante" className={cn(buttonVariants({ variant: "outline", size: "sm" }), "gap-1.5")}>
+      <DropdownMenuTrigger aria-label="Escolher o restaurante" className={cn(buttonVariants({ variant: "outline", size: "sm" }), "max-w-full gap-1.5")}>
         <span className="font-normal text-ink-3">Restaurante</span>
-        {tenant.name}
+        <span className="truncate">{tenant.name}</span>
         <ChevronDownIcon aria-hidden />
       </DropdownMenuTrigger>
       <DropdownMenuContent className="w-60">

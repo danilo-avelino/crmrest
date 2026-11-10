@@ -2,8 +2,6 @@ import { describe, expect, it } from "vitest";
 import { type AutomationMessages, fillMessage, PERSONALITIES, PERSONALITY_MESSAGES } from "../src/personalities.js";
 import {
   automationMessagesOf,
-  automationTextDefaults,
-  automationTextsOf,
   type BusinessHours,
   businessHoursOf,
   COURIER_MENU_OPTIONS,
@@ -15,7 +13,7 @@ import {
 // Horários de Brasília (-03:00). 2026-10-05 é segunda-feira.
 const at = (iso: string) => new Date(`${iso}-03:00`);
 const closed = null;
-const CORDIAL = automationTextDefaults("cordial");
+const CORDIAL = PERSONALITY_MESSAGES.cordial;
 
 describe("mensagens automáticas", () => {
   it("saudação com e sem o nome do cliente, sempre com as opções do menu", () => {
@@ -27,12 +25,6 @@ describe("mensagens automáticas", () => {
     expect(menuMessage(PERSONALITY_MESSAGES.cordial.courierGreeting, "João", COURIER_MENU_OPTIONS)).toBe(
       "Olá, João! 👋 Como podemos ajudar na entrega?\n1 - Avisar que cheguei (iFood)\n2 - Avisar que deixei na portaria (iFood)\n3 - Problema com um pedido\n4 - Outro assunto",
     );
-  });
-
-  it("textos salvos valem; o que faltar ou vier vazio usa o padrão", () => {
-    const texts = automationTextsOf({ automationTexts: { phoneRequest: "Seu telefone, por favor?", phoneReminder: "  " } });
-    expect(texts).toEqual({ ...CORDIAL, phoneRequest: "Seu telefone, por favor?" });
-    expect(automationTextsOf(null)).toEqual(CORDIAL);
   });
 });
 
@@ -69,10 +61,12 @@ describe("personalidade do atendimento", () => {
     expect(PERSONALITY_MESSAGES[personality].surveyQuestion).toMatch(/1 a 5/);
   });
 
-  it("sem escolha, o tom é o cordial; os textos editados pelo admin valem sobre os da personalidade", () => {
+  it("sem escolha, o tom é o cordial; só a mensagem de fora do horário do admin vale sobre a personalidade", () => {
     expect(automationMessagesOf({})).toEqual(PERSONALITY_MESSAGES.cordial);
-    const settings = { personality: "jovial", automationTexts: { greeting: "Bem-vindo, {nome}!" } };
-    expect(automationMessagesOf(settings)).toEqual({ ...PERSONALITY_MESSAGES.jovial, greeting: "Bem-vindo, {nome}!" });
+    // Os textos que o admin trocava antes (automationTexts) continuam guardados, mas não valem mais.
+    const hours = { enabled: true, days: Array(7).fill(null), closedMessage: "Fechados. Voltamos {retorno}." };
+    const settings = { personality: "jovial", automationTexts: { greeting: "Bem-vindo, {nome}!" }, businessHours: hours };
+    expect(automationMessagesOf(settings)).toEqual({ ...PERSONALITY_MESSAGES.jovial, closedMessage: hours.closedMessage });
     expect(businessHoursOf({ personality: "formal" }).closedMessage).toBe(PERSONALITY_MESSAGES.formal.closedMessage);
     expect(automationMessagesOf({ personality: "inexistente" })).toEqual(PERSONALITY_MESSAGES.cordial);
   });

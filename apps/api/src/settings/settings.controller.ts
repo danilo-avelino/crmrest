@@ -5,7 +5,6 @@ import {
   PauseSettings,
   ReviewInviteSettings,
   type TenantSettingsDto,
-  UpdateAutomationTextsRequest,
   UpdateOrderLinksRequest,
   UpdatePersonalityRequest,
 } from "@dishdesk/shared";
@@ -35,15 +34,6 @@ export class SettingsController {
     @CurrentAuth() auth: RequestAuth,
   ): Promise<TenantSettingsDto> {
     return this.settings.updateOrderLinks(auth, tenantId, body);
-  }
-
-  @Put(":tenantId/automation-texts")
-  updateAutomationTexts(
-    @Param("tenantId", ParseUUIDPipe) tenantId: string,
-    @Body(new ZodPipe(UpdateAutomationTextsRequest)) body: UpdateAutomationTextsRequest,
-    @CurrentAuth() auth: RequestAuth,
-  ): Promise<TenantSettingsDto> {
-    return this.settings.updateAutomationTexts(auth, tenantId, body);
   }
 
   @Put(":tenantId/personality")

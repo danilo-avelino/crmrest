@@ -4,7 +4,7 @@ import { type AutomationMessages, PERSONALITY_MESSAGES, Personality, personality
 
 export const ORDER_LINKS_MAX = 5;
 
-/** Link enviado quando o cliente escolhe "2 - Fazer um pedido" no menu de atendimento. */
+/** Link que a IA manda quando o cliente quer pedir ou ver o cardápio (e a opção "2 - Fazer um pedido" do menu). */
 export const OrderLink = z.object({
   label: z.string().trim().min(1, "Informe o nome do link.").max(40, "Use até 40 caracteres."),
   url: z
@@ -28,7 +28,6 @@ export type TenantSettingsDto = {
   canEdit: boolean;
   personality: Personality;
   orderLinks: OrderLink[];
-  automationTexts: AutomationTexts;
   businessHours: BusinessHours;
   orderForecast: OrderForecastSettings;
   reviewInvite: ReviewInviteSettings;
@@ -62,43 +61,13 @@ export type QuickReplyRequest = z.infer<typeof QuickReplyRequest>;
 
 // ---------- Mensagens automáticas (E15) ----------
 
-/** Textos que o admin pode trocar; o padrão de cada um vem da personalidade. Na saudação, {nome} vira o primeiro nome do cliente. */
-export const AUTOMATION_TEXT_KEYS = ["greeting", "phoneRequest", "phoneReminder", "phoneConfirmation"] as const;
-export type AutomationTexts = Pick<AutomationMessages, (typeof AUTOMATION_TEXT_KEYS)[number]>;
-
-/** Os textos editáveis como saem da personalidade, sem nada trocado pelo admin. */
-export function automationTextDefaults(personality: Personality): AutomationTexts {
-  const messages = PERSONALITY_MESSAGES[personality];
-  return Object.fromEntries(AUTOMATION_TEXT_KEYS.map((key) => [key, messages[key]])) as AutomationTexts;
-}
-
-const AutomationText = z.string().trim().min(1, "Escreva a mensagem.").max(1000, "Use até 1000 caracteres.");
-export const UpdateAutomationTextsRequest = z.object({
-  greeting: AutomationText,
-  phoneRequest: AutomationText,
-  phoneReminder: AutomationText,
-  phoneConfirmation: AutomationText,
-});
-export type UpdateAutomationTextsRequest = z.infer<typeof UpdateAutomationTextsRequest>;
-
-/** Os textos guardados em `tenant.settings`, com o da personalidade no lugar do que faltar ou estiver fora do formato. */
-export function automationTextsOf(settings: unknown): AutomationTexts {
-  const saved = z.looseObject({ automationTexts: z.record(z.string(), z.unknown()).optional() }).safeParse(settings).data?.automationTexts;
-  const texts = automationTextDefaults(personalityOf(settings));
-  for (const key of AUTOMATION_TEXT_KEYS) {
-    const value = AutomationText.safeParse(saved?.[key]);
-    if (value.success) texts[key] = value.data;
-  }
-  return texts;
-}
-
-/** Todas as mensagens das automações do restaurante: as da personalidade, com os textos que o admin trocou. */
+/**
+ * Todas as mensagens das automações do restaurante: as da personalidade, com a de fora do horário que o admin escreveu.
+ * Os textos que o admin trocava (`automationTexts` em `tenant.settings`) não valem mais: com a IA no atendimento, o menu
+ * só entra quando ela não responde.
+ */
 export function automationMessagesOf(settings: unknown): AutomationMessages {
-  return {
-    ...PERSONALITY_MESSAGES[personalityOf(settings)],
-    ...automationTextsOf(settings),
-    closedMessage: businessHoursOf(settings).closedMessage,
-  };
+  return { ...PERSONALITY_MESSAGES[personalityOf(settings)], closedMessage: businessHoursOf(settings).closedMessage };
 }
 
 export const UpdatePersonalityRequest = z.object({ personality: Personality });

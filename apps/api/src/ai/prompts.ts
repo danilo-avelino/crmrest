@@ -31,7 +31,7 @@ export const REPLY_STYLE = [
   "- Não comece duas respostas seguidas do mesmo jeito.",
 ].join("\n");
 
-/** Tom do restaurante: a personalidade do atendimento (Configurações → Mensagens automáticas), com exemplos dela. */
+/** Tom do restaurante: a personalidade do atendimento (Configurações → Personalidade), com exemplos dela. */
 export function toneOf(settings: unknown): string {
   const info = PERSONALITY_INFO[personalityOf(settings)];
   const messages = automationMessagesOf(settings);

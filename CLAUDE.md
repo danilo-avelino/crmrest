@@ -117,7 +117,7 @@ Toda nova integração também entra na landing page ([apps/web/public/index.htm
 
 ## 10. Mensagens automáticas seguem a personalidade
 
-Todo texto que uma automação manda ao cliente segue a **personalidade do atendimento** escolhida pelo restaurante (Configurações → Mensagens automáticas: Cordial, Formal, Jovial, Descontraído, Acolhedor, Direto).
+Todo texto que uma automação manda ao cliente segue a **personalidade do atendimento** escolhida pelo restaurante (Configurações → Personalidade: Cordial, Formal, Jovial, Descontraído, Acolhedor, Direto).
 
 - Nunca escrever o texto fixo no código da automação. Toda mensagem automática nova entra em `AutomationMessages` ([packages/shared/src/personalities.ts](packages/shared/src/personalities.ts)), **com um texto para cada personalidade**, no tom dela. O TypeScript recusa uma personalidade sem a chave nova.
 - Na automação, ler os textos com `automationMessagesOf(await tenantSettings(tx, tenantId))` e trocar os dados com `fillMessage` (`{nome}`, `{pedido}`, `{hora}`...). Um marcador novo também entra no `REQUIRED` do teste em [packages/shared/test/settings.test.ts](packages/shared/test/settings.test.ts).

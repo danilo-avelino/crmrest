@@ -22,7 +22,8 @@ import { useSearchParams } from "next/navigation";
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
 import { IFOOD_WIDGET_KEY } from "@/components/ifood-widget";
-import { SettingsTenantPicker, TabLoading, useSettingsTenant } from "@/components/settings/settings-shell";
+import { TabLoading, useSettingsTenant } from "@/components/settings/settings-shell";
+import { SettingsHeader } from "@/components/settings/settings-ui";
 import { Button } from "@/components/ui/button";
 import { IfoodHistoryNote, OrderHistorySection } from "@/components/settings/order-history-section";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
@@ -39,7 +40,8 @@ const GROUPS = ["Canais de atendimento", "Marketplaces"] as const;
 
 /**
  * Cada sistema: o que a integração faz, como identificar a conta e, quando a conexão é por formulário, o que pedir.
- * O Instagram conecta pelo login do Instagram; o WhatsApp, pelo QR Code.
+ * O Instagram conecta pelo login do Instagram; o WhatsApp, pelo QR Code; o iFood, pelo código de vinculação (os campos
+ * dele vêm depois do código).
  */
 const SYSTEMS: {
   type: IntegrationType;
@@ -83,11 +85,7 @@ const SYSTEMS: {
     account: "Loja conectada",
     idLabel: "ID da loja",
     another: "Adicionar outra loja",
-    help: "O ID da loja (merchant ID) aparece no Portal do Parceiro do iFood.",
-    fields: [
-      { name: "merchantId", label: "ID da loja (merchant ID)" },
-      { name: "name", label: "Nome (opcional)", placeholder: "Ex.: Loja Centro" },
-    ],
+    fields: [{ name: "name", label: "Nome (opcional)", placeholder: "Ex.: Loja Centro" }],
   },
   {
     type: "CARDAPIO_WEB",
@@ -189,20 +187,10 @@ function pendingOf(type: IntegrationType, platform: IntegrationsDto["platform"])
   return null;
 }
 
-function IntegrationsTitle() {
-  return (
-    <div>
-      <div className="flex items-center gap-3">
-        <h2 className="font-heading text-[21px] font-bold tracking-[-0.3px]">Integrações</h2>
-        <SettingsTenantPicker />
-      </div>
-      <p className="mt-1 text-ink-3">Conecte canais de atendimento e marketplaces ao Dish Desk</p>
-    </div>
-  );
-}
+const TITLE = { title: "Integrações", description: "Conecte canais de atendimento e marketplaces ao Dish Desk" };
 
 /**
- * Aba "Integrações" (board Configurações · Integrações): um cartão por sistema que dá para conectar; o cartão abre
+ * Página "Integrações" (board Configurações · Integrações): um cartão por sistema que dá para conectar; o cartão abre
  * o modal com as contas conectadas e a nova conexão. "Adicionar integração" abre o painel com todos os sistemas.
  */
 export function IntegrationsTab() {
@@ -225,13 +213,10 @@ export function IntegrationsTab() {
     queryKey: ["integrations", tenant.id],
     queryFn: () => request<IntegrationsDto>(`/integrations?tenantId=${tenant.id}`),
   });
-  // Sem os dados ainda, o seletor de restaurante continua na tela: trocar de restaurante não o faz sumir.
   if (!integrations.data) {
     return (
       <>
-        <div className="mb-8">
-          <IntegrationsTitle />
-        </div>
+        <SettingsHeader {...TITLE} />
         <TabLoading failed={integrations.isError} />
       </>
     );
@@ -240,19 +225,18 @@ export function IntegrationsTab() {
 
   return (
     <>
-      <div className="mb-8 flex items-start justify-between gap-4">
-        <IntegrationsTitle />
+      <SettingsHeader {...TITLE}>
         {data.canEdit && (
           <Button variant="accent" onClick={() => setCatalog(true)}>
             <PlusIcon aria-hidden />
             Adicionar integração
           </Button>
         )}
-      </div>
+      </SettingsHeader>
 
       {GROUPS.map((group) => (
         <div key={group} className="mb-6">
-          <h3 className="mb-2.5 text-[10px] font-bold tracking-[0.09em] text-ink-3 uppercase">{group}</h3>
+          <h2 className="mb-2.5 text-[10px] font-bold tracking-[0.09em] text-ink-3 uppercase">{group}</h2>
           {SYSTEMS.filter((system) => system.group === group).map((system) => (
             <IntegrationCard
               key={system.type}
@@ -315,9 +299,9 @@ function IntegrationCard({ system, data, onOpen }: { system: System; data: Integ
       <SystemIcon type={system.type} className="size-[42px] rounded-[10px] text-[13px]" />
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
-          <h4 id={`integracao-${system.type}`} className="text-[14px] font-semibold">
+          <h3 id={`integracao-${system.type}`} className="text-[14px] font-semibold">
             {CHANNEL_LABEL[system.type]}
-          </h4>
+          </h3>
           <StatusBadge badge={badge} />
         </div>
         {active.length > 1 ? (
@@ -1039,7 +1023,7 @@ function RemovalConfirm({ tenantId, item, remove, onClose }: { tenantId: string;
 }
 
 /**
- * iFood distribuído, primeiro passo: o código de vinculação já vem gerado ao abrir o formulário e leva ao Portal do
+ * iFood, primeiro passo: o código de vinculação já vem gerado ao abrir o formulário e leva ao Portal do
  * Parceiro, onde o responsável pela loja confere o código, clica em "Autorizar" e recebe o código de autorização.
  */
 function IfoodLinkCode({ tenantId, code, onCode }: { tenantId: string; code: IfoodLinkCodeDto | null; onCode: (code: IfoodLinkCodeDto) => void }) {
@@ -1104,12 +1088,16 @@ function IfoodLinkCode({ tenantId, code, onCode }: { tenantId: string; code: Ifo
   );
 }
 
-/** iFood distribuído: o código de autorização que o Portal do Parceiro mostra depois de "Autorizar". */
+/** iFood: o código de autorização que o Portal do Parceiro mostra depois de "Autorizar". */
 const IFOOD_AUTHORIZATION_FIELD: Field = { name: "authorizationCode", label: "Código de autorização", placeholder: "Ex.: LHQX-ZZZZ" };
+/** iFood: o ID da loja, pedido só quando a autorização não diz qual loja foi autorizada. */
+const IFOOD_MERCHANT_FIELD: Field = { name: "merchantId", label: "ID da loja" };
+const IFOOD_MERCHANT_HELP = "O iFood não informou qual loja foi autorizada. O ID da loja (merchant ID) aparece no Portal do Parceiro do iFood.";
 
 /**
- * Formulário de uma nova integração: a API confere a credencial no sistema antes de salvar. iFood distribuído
- * (`ifoodLinkCode`): antes dos campos, o código de vinculação que o responsável pela loja autoriza no Portal do Parceiro.
+ * Formulário de uma nova integração: a API confere a credencial no sistema antes de salvar. iFood: antes dos campos, o
+ * código de vinculação que o responsável pela loja autoriza no Portal do Parceiro; sem o aplicativo do iFood configurado
+ * no servidor (`ifoodLinkCode` falso), não há como conectar.
  * `bare`: dentro de outra tela (o assistente de configuração), sem o espaçamento do modal e sem "Cancelar".
  */
 export function IntegrationForm({
@@ -1134,18 +1122,17 @@ export function IntegrationForm({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [failure, setFailure] = useState<string | null>(null);
   const [linkCode, setLinkCode] = useState<IfoodLinkCodeDto | null>(null);
-  // iFood distribuído: o código de autorização no lugar do ID da loja, que vem do próprio acesso; o ID só aparece
-  // quando o iFood não disse qual loja foi autorizada.
+  // iFood: a loja vem do próprio acesso; o ID só é pedido quando o iFood não disse qual loja foi autorizada.
   const [askMerchant, setAskMerchant] = useState(false);
   // iFood: a autorização trouxe mais de uma loja; o restaurante escolhe quais conectar.
   const [choice, setChoice] = useState<{ stores: IfoodStoreDto[]; selection: string } | null>(null);
-  const fields = ifoodLinkCode
-    ? [IFOOD_AUTHORIZATION_FIELD, ...(system.fields ?? []).filter((field) => askMerchant || field.name !== "merchantId")]
-    : system.fields;
+  const ifood = system.type === "IFOOD";
+  const fields = ifood ? [IFOOD_AUTHORIZATION_FIELD, ...(askMerchant ? [IFOOD_MERCHANT_FIELD] : []), ...(system.fields ?? [])] : system.fields;
+  const help = ifood ? (askMerchant ? IFOOD_MERCHANT_HELP : undefined) : system.help;
 
   const [submit, saving] = usePendingAction(async () => {
     setFailure(null);
-    if (ifoodLinkCode && !linkCode) {
+    if (ifood && !linkCode) {
       setFailure("Espere o código de vinculação e autorize o Dish Desk no Portal do Parceiro primeiro.");
       return;
     }
@@ -1177,6 +1164,20 @@ export function IntegrationForm({
   });
 
   if (choice) return <IfoodStoreChoice tenantId={tenantId} stores={choice.stores} selection={choice.selection} onClose={onClose} />;
+  if (ifood && !ifoodLinkCode) {
+    return (
+      <div className={cn("flex flex-col gap-2.5", !bare && "px-[26px] py-[22px]")}>
+        <p className="leading-normal text-ink-3">A conexão do iFood ainda não foi configurada neste servidor.</p>
+        {!bare && (
+          <div className="flex justify-end">
+            <Button type="button" variant="ghost" size="sm" onClick={onClose}>
+              Voltar
+            </Button>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <form
@@ -1187,7 +1188,7 @@ export function IntegrationForm({
         submit();
       }}
     >
-      {ifoodLinkCode && <IfoodLinkCode tenantId={tenantId} code={linkCode} onCode={setLinkCode} />}
+      {ifood && <IfoodLinkCode tenantId={tenantId} code={linkCode} onCode={setLinkCode} />}
       {fields?.map((field) => (
         <div key={field.name} className="flex flex-col gap-1">
           <Label htmlFor={`${id}-${field.name}`}>{field.label}</Label>
@@ -1214,7 +1215,7 @@ export function IntegrationForm({
           )}
         </div>
       ))}
-      {(!ifoodLinkCode || askMerchant) && <p className="text-[11.5px] leading-normal text-ink-3">{system.help}</p>}
+      {help && <p className="text-[11.5px] leading-normal text-ink-3">{help}</p>}
       {failure && (
         <p role="alert" className="text-[11px] text-tomate">
           {failure}

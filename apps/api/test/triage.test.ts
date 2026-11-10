@@ -1,4 +1,5 @@
 import { blindIndex, encrypt, parseEncryptionKey } from "@dishdesk/database";
+import { menuMessage, PERSONALITY_MESSAGES } from "@dishdesk/shared";
 import type { INestApplication } from "@nestjs/common";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -351,17 +352,17 @@ describe("menu de atendimento, busca do pedido e pesquisa de satisfação", () =
     expect(await automations("5511970000005")).toEqual(["menu"]);
   });
 
-  it("saudação editada pelo restaurante e, fora do horário, o aviso no lugar do menu", async () => {
+  it("saudação no tom da personalidade (texto antigo do restaurante não vale mais) e, fora do horário, o aviso no lugar do menu", async () => {
     const days = Array.from({ length: 7 }, () => null); // fechado todos os dias
     await admin.tenant.update({
       where: { id: fx.tenant.id },
-      data: { settings: { automationTexts: { greeting: "Bem-vindo à Cantina, {nome}!" } } },
+      data: { settings: { personality: "formal", automationTexts: { greeting: "Bem-vindo à Cantina, {nome}!" } } },
     });
     try {
       await say("5511970000006", "wamid.G1", "Oi");
       expect((await contents("5511970000006")).at(-1)).toMatchObject({
         automation: "menu",
-        text: "Bem-vindo à Cantina, Carlos!\n1 - Falar sobre um pedido\n2 - Fazer um pedido\n3 - Outro assunto",
+        text: menuMessage(PERSONALITY_MESSAGES.formal.greeting, "Carlos"),
       });
 
       await admin.tenant.update({

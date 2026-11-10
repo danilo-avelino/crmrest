@@ -6,8 +6,10 @@ import { PASSWORD } from "./fixtures";
 const suffix = randomUUID().slice(0, 8);
 const emails = { first: `cadastro-${suffix}@teste.local`, repeated: `repetido-${suffix}@teste.local` };
 const TENANTS_OF_USER = "SELECT m.tenant_id FROM tenant_members m JOIN users u ON u.id = m.user_id WHERE u.email = $1";
-// Restaurante de um teste grátis que acabou há 10 dias, com uma loja do iFood conectada.
-const oldTrial = { id: randomUUID(), merchantId: randomUUID() };
+// Restaurante de um teste grátis que acabou há 10 dias, com uma loja do Cardápio Web conectada (o iFood só conecta
+// pelo código de vinculação, que depende do aplicativo do iFood; sem a API do Cardápio Web no ambiente de teste, a
+// chave não é conferida).
+const oldTrial = { id: randomUUID(), storeId: String(Math.floor(1e8 + Math.random() * 9e8)) };
 let db: pg.Client;
 
 test.beforeAll(async () => {
@@ -19,8 +21,8 @@ test.beforeAll(async () => {
     `teste-antigo-${suffix}`,
   ]);
   await db.query(
-    `INSERT INTO channels (id, tenant_id, type, name, external_id, credentials, status) VALUES ($1, $2, 'IFOOD', 'Loja', $3, ''::bytea, 'CONNECTED')`,
-    [randomUUID(), oldTrial.id, oldTrial.merchantId],
+    `INSERT INTO channels (id, tenant_id, type, name, external_id, credentials, status) VALUES ($1, $2, 'CARDAPIO_WEB', 'Loja', $3, ''::bytea, 'CONNECTED')`,
+    [randomUUID(), oldTrial.id, oldTrial.storeId],
   );
 });
 
@@ -104,8 +106,9 @@ test("conectar um canal que já passou por outro teste grátis encerra o teste e
   await expect(page).toHaveURL(/\/(inbox|assistente)/);
 
   await page.goto("/configuracoes/integracoes");
-  await page.locator("section", { has: page.locator("#integracao-IFOOD") }).getByRole("button", { name: "Conectar" }).click();
-  await page.getByLabel("ID da loja (merchant ID)").fill(oldTrial.merchantId);
+  await page.locator("section", { has: page.locator("#integracao-CARDAPIO_WEB") }).getByRole("button", { name: "Conectar" }).click();
+  await page.getByLabel("Código da loja").fill(oldTrial.storeId);
+  await page.getByLabel("Chave de API").fill("chave-de-teste-e2e");
   await page.getByRole("dialog").getByRole("button", { name: "Conectar", exact: true }).click();
 
   await expect(page).toHaveURL(/\/assinatura\?restaurante=/);

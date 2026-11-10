@@ -1,18 +1,12 @@
 "use client";
 
-import {
-  ORDER_LINKS_MAX,
-  type OrderLink,
-  orderLinksMessage,
-  PERSONALITY_MESSAGES,
-  type TenantSettingsDto,
-  UpdateOrderLinksRequest,
-} from "@dishdesk/shared";
+import { ORDER_LINKS_MAX, type OrderLink, type TenantSettingsDto, UpdateOrderLinksRequest } from "@dishdesk/shared";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { PlusIcon, SparklesIcon, Trash2Icon } from "lucide-react";
+import { PlusIcon, Trash2Icon } from "lucide-react";
 import { Fragment, useId, useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
 import { TabLoading, useSettingsTenant } from "@/components/settings/settings-shell";
+import { Card, CardBody, CardFooter } from "@/components/settings/settings-ui";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -20,7 +14,7 @@ import { useToast } from "@/components/ui/toast";
 import { usePendingAction } from "@/hooks/use-pending-action";
 import { ApiError } from "@/lib/api";
 
-/** Aba "Links de pedido" do restaurante escolhido. */
+/** Página "Links de pedido" do restaurante escolhido. */
 export function OrderLinksTab() {
   const { request } = useAuth();
   const tenant = useSettingsTenant();
@@ -30,7 +24,7 @@ export function OrderLinksTab() {
   return current ? <OrderLinksSection key={current.tenantId} settings={current} /> : <TabLoading failed={settings.isError} />;
 }
 
-/** Links enviados quando o cliente escolhe "2 - Fazer um pedido" no menu de atendimento. */
+/** Links que a IA manda quando o cliente quer pedir ou ver o cardápio (no menu, a opção "2 - Fazer um pedido"). */
 function OrderLinksSection({ settings }: { settings: TenantSettingsDto }) {
   const { request } = useAuth();
   const queryClient = useQueryClient();
@@ -49,7 +43,6 @@ function OrderLinksSection({ settings }: { settings: TenantSettingsDto }) {
     .map((row, index) => ({ index, label: row.label.trim(), url: row.url.trim() }))
     .filter((row) => row.label || row.url);
   const links = filled.map(({ label, url }) => ({ label, url }));
-  const messages = PERSONALITY_MESSAGES[settings.personality];
   const dirty = JSON.stringify(links) !== JSON.stringify(settings.orderLinks);
 
   const change = (index: number, field: keyof OrderLink, value: string) => {
@@ -87,76 +80,70 @@ function OrderLinksSection({ settings }: { settings: TenantSettingsDto }) {
   });
 
   return (
-    <section className="overflow-hidden rounded-xl border border-rule">
-      <div className="border-b border-rule px-5 pt-4 pb-3.5">
-        <h2 className="font-heading text-title font-semibold">Links para fazer pedido</h2>
-        <p className="mt-1 text-ink-2">
-          Enviados automaticamente quando o cliente escolhe <span className="font-medium text-ink">2 - Fazer um pedido</span> no
-          menu do WhatsApp e do Instagram. Sem links, a opção chama um atendente.
-        </p>
-      </div>
-
+    <Card
+      title="Links para fazer pedido"
+      description="A IA manda estes links quando o cliente quer fazer um pedido ou pergunta pelo cardápio e pelos preços. Sem links, ela passa o cliente para a equipe."
+    >
       <form
         noValidate
-        className="flex flex-col gap-3 px-5 py-4"
         onSubmit={(event) => {
           event.preventDefault();
           save();
         }}
       >
-        {rows.length > 0 ? (
-          <div className="grid grid-cols-[180px_minmax(0,1fr)_36px] items-center gap-x-2 gap-y-2">
-            <Label htmlFor={`${id}-label-0`}>Nome</Label>
-            <Label htmlFor={`${id}-url-0`}>Endereço</Label>
-            <span />
-            {rows.map((row, index) => (
-              <Fragment key={index}>
-                <Input
-                  id={`${id}-label-${index}`}
-                  aria-label={`Nome do link ${index + 1}`}
-                  value={row.label}
-                  maxLength={40}
-                  placeholder="Cardápio digital"
-                  disabled={!settings.canEdit}
-                  aria-invalid={Boolean(errors[index]) || undefined}
-                  onChange={(event) => change(index, "label", event.target.value)}
-                />
-                <Input
-                  id={`${id}-url-${index}`}
-                  aria-label={`Endereço do link ${index + 1}`}
-                  type="url"
-                  inputMode="url"
-                  value={row.url}
-                  placeholder="https://"
-                  disabled={!settings.canEdit}
-                  aria-invalid={Boolean(errors[index]) || undefined}
-                  onChange={(event) => change(index, "url", event.target.value)}
-                />
-                {settings.canEdit ? (
-                  <Button type="button" variant="ghost" size="icon" aria-label={`Remover o link ${index + 1}`} onClick={() => remove(index)}>
-                    <Trash2Icon aria-hidden />
-                  </Button>
-                ) : (
-                  <span />
-                )}
-                {errors[index] && (
-                  <p role="alert" className="col-span-3 -mt-1 text-[11px] text-tomate">
-                    {errors[index]}
-                  </p>
-                )}
-              </Fragment>
-            ))}
-          </div>
-        ) : (
-          <p className="text-ink-3 italic">Nenhum link cadastrado.</p>
-        )}
-
-        {settings.canEdit ? (
-          <div className="flex items-center justify-between gap-3">
+        <CardBody className="flex flex-col gap-3">
+          {rows.length > 0 ? (
+            <div className="grid grid-cols-[200px_minmax(0,1fr)_36px] items-center gap-x-2 gap-y-2">
+              <Label htmlFor={`${id}-label-0`}>Nome</Label>
+              <Label htmlFor={`${id}-url-0`}>Endereço</Label>
+              <span />
+              {rows.map((row, index) => (
+                <Fragment key={index}>
+                  <Input
+                    id={`${id}-label-${index}`}
+                    aria-label={`Nome do link ${index + 1}`}
+                    value={row.label}
+                    maxLength={40}
+                    placeholder="Cardápio digital"
+                    disabled={!settings.canEdit}
+                    aria-invalid={Boolean(errors[index]) || undefined}
+                    onChange={(event) => change(index, "label", event.target.value)}
+                  />
+                  <Input
+                    id={`${id}-url-${index}`}
+                    aria-label={`Endereço do link ${index + 1}`}
+                    type="url"
+                    inputMode="url"
+                    value={row.url}
+                    placeholder="https://"
+                    disabled={!settings.canEdit}
+                    aria-invalid={Boolean(errors[index]) || undefined}
+                    onChange={(event) => change(index, "url", event.target.value)}
+                  />
+                  {settings.canEdit ? (
+                    <Button type="button" variant="ghost" size="icon" aria-label={`Remover o link ${index + 1}`} onClick={() => remove(index)}>
+                      <Trash2Icon aria-hidden />
+                    </Button>
+                  ) : (
+                    <span />
+                  )}
+                  {errors[index] && (
+                    <p role="alert" className="col-span-3 -mt-1 text-[11px] text-tomate">
+                      {errors[index]}
+                    </p>
+                  )}
+                </Fragment>
+              ))}
+            </div>
+          ) : (
+            <p className="text-ink-3 italic">Nenhum link cadastrado.</p>
+          )}
+          {settings.canEdit && (
             <Button
               type="button"
-              variant="outline"
+              variant="ghost"
               size="sm"
+              className="-ml-2 self-start px-2 text-tomate hover:bg-tomate-lt hover:text-tomate"
               disabled={rows.length >= ORDER_LINKS_MAX}
               title={rows.length >= ORDER_LINKS_MAX ? `No máximo ${ORDER_LINKS_MAX} links` : undefined}
               onClick={() => setRows((current) => [...current, { label: "", url: "" }])}
@@ -164,33 +151,16 @@ function OrderLinksSection({ settings }: { settings: TenantSettingsDto }) {
               <PlusIcon aria-hidden />
               Adicionar link
             </Button>
+          )}
+        </CardBody>
+        <CardFooter error={failure} note={settings.canEdit ? `Até ${ORDER_LINKS_MAX} links.` : "Só o administrador do restaurante altera os links."}>
+          {settings.canEdit && (
             <Button type="submit" size="sm" loading={saving} disabled={!dirty}>
               Salvar
             </Button>
-          </div>
-        ) : (
-          <p className="text-[12px] text-ink-3">Só o administrador do restaurante altera os links.</p>
-        )}
-        {failure && (
-          <p role="alert" className="text-[11px] text-tomate">
-            {failure}
-          </p>
-        )}
+          )}
+        </CardFooter>
       </form>
-
-      <div className="border-t border-rule bg-paper px-5 py-4">
-        <div className="mb-2 text-[10px] font-semibold tracking-[0.08em] text-ink-3 uppercase">Prévia da mensagem</div>
-        <div className="max-w-[440px] rounded-[10px] border border-warning-line bg-warning-lt px-3.5 py-2.5">
-          <div className="mb-1 flex items-center gap-[5px] text-[10.5px] font-semibold text-warning-ink">
-            <SparklesIcon className="size-3" aria-hidden />
-            {links.length ? "Automação · links para pedir" : "Automação · encaminhado à equipe"}
-          </div>
-          {/* Sem links, a opção 2 chama a equipe (o mesmo texto do menu de atendimento). */}
-          <div className="leading-[1.45] break-words whitespace-pre-wrap">
-            {links.length ? orderLinksMessage(links, messages.orderLinks) : messages.handoff}
-          </div>
-        </div>
-      </div>
-    </section>
+    </Card>
   );
 }

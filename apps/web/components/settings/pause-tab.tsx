@@ -5,6 +5,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
 import { TabLoading, useSettingsTenant } from "@/components/settings/settings-shell";
+import { Card, CardBody, CardFooter, Eyebrow } from "@/components/settings/settings-ui";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import { ApiError } from "@/lib/api";
@@ -21,9 +22,9 @@ const STOPPED = [
 ];
 
 /**
- * Aba "Pausa": desliga as automações e a IA em todos os canais do restaurante; as mensagens continuam chegando na
+ * Página "Pausa": desliga as automações e a IA em todos os canais do restaurante; as mensagens continuam chegando na
  * Inbox, não lidas, e a equipe responde normalmente. No painel master, pausa ou retoma também todos de uma vez.
- * Não existe no design: segue os cartões das outras abas. Desktop no MVP.
+ * Não existe no design: segue os cartões das outras páginas. Desktop no MVP.
  */
 export function PauseTab() {
   const { request } = useAuth();
@@ -56,10 +57,11 @@ function StatusBadge({ paused }: { paused: boolean }) {
   return (
     <span
       className={cn(
-        "inline-flex h-[22px] items-center rounded-sm border px-2 text-[11px] font-medium",
-        paused ? "border-warning-line bg-warning-lt text-warning-ink" : "border-success-line bg-success-lt text-success-ink",
+        "inline-flex shrink-0 items-center gap-[5px] rounded-full px-2 py-0.5 text-[10px] font-bold tracking-[0.02em]",
+        paused ? "bg-warning-lt text-warning-ink" : "bg-success-lt text-success-ink",
       )}
     >
+      <span className={cn("size-[5px] rounded-full", paused ? "bg-warning" : "bg-success")} aria-hidden />
       {paused ? "Pausado" : "Ativo"}
     </span>
   );
@@ -82,46 +84,39 @@ function PauseCard({ settings }: { settings: TenantSettingsDto }) {
   };
 
   return (
-    <section className="overflow-hidden rounded-xl border border-rule">
-      <div className="flex items-start justify-between gap-4 border-b border-rule px-5 pt-4 pb-3.5">
-        <div>
-          <h2 className="font-heading text-title font-semibold">Pausar o Dish Desk</h2>
-          <p className="mt-1 text-ink-2">
-            Nenhuma automação nem a IA age nos canais de <span className="font-medium">{settings.tenantName}</span>. As mensagens
-            continuam chegando na Inbox, não lidas, e a equipe responde normalmente.
-          </p>
-        </div>
-        <StatusBadge paused={paused} />
-      </div>
-
-      <div className="flex flex-col gap-4 px-5 py-4">
+    <Card
+      title="Pausar o Dish Desk"
+      description={
+        <>
+          Nenhuma automação nem a IA age nos canais de <span className="font-medium text-ink">{settings.tenantName}</span>. As mensagens
+          continuam chegando na Inbox, não lidas, e a equipe responde normalmente.
+        </>
+      }
+      aside={<StatusBadge paused={paused} />}
+    >
+      <CardBody className="flex flex-col gap-4">
         {paused && (
-          <p className="rounded-lg border border-warning-line bg-warning-lt px-3 py-2 text-[12px] text-warning-ink">
+          <p className="rounded-xl border border-warning-line bg-warning-lt px-[13px] py-[11px] text-[12px] leading-normal text-warning-ink">
             O Dish Desk está pausado: ninguém recebe resposta automática até você retomar.
           </p>
         )}
-        <div>
-          <p className="mb-1.5 font-medium">{paused ? "Parado agora" : "O que para"}</p>
-          <ul className="list-disc space-y-0.5 pl-5 text-ink-2">
+        <div className="rounded-[10px] bg-paper px-[15px] py-[13px]">
+          <Eyebrow className="mb-2">{paused ? "Parado agora" : "O que para"}</Eyebrow>
+          <ul className="list-disc space-y-1 pl-4 leading-normal text-ink-2">
             {STOPPED.map((item) => (
               <li key={item}>{item}</li>
             ))}
           </ul>
         </div>
-        {failure && (
-          <p role="alert" className="text-[12px] text-tomate">
-            {failure}
-          </p>
-        )}
-        {settings.canEdit ? (
-          <Button variant={paused ? "default" : "accent"} className="self-start" onClick={toggle}>
+      </CardBody>
+      <CardFooter error={failure} note={settings.canEdit ? undefined : "Só o administrador do restaurante pausa ou retoma."}>
+        {settings.canEdit && (
+          <Button variant={paused ? "default" : "accent"} size="sm" onClick={toggle}>
             {paused ? "Retomar o Dish Desk" : "Pausar o Dish Desk"}
           </Button>
-        ) : (
-          <p className="text-ink-3">Só o administrador do restaurante pausa ou retoma.</p>
         )}
-      </div>
-    </section>
+      </CardFooter>
+    </Card>
   );
 }
 
@@ -143,37 +138,31 @@ function PauseAllCard({ tenants }: { tenants: TenantSettingsDto[] }) {
   };
 
   return (
-    <section className="overflow-hidden rounded-xl border border-rule">
-      <div className="border-b border-rule px-5 pt-4 pb-3.5">
-        <h2 className="font-heading text-title font-semibold">Todos os restaurantes</h2>
-        <p className="mt-1 text-ink-2">
+    <Card
+      title="Todos os restaurantes"
+      description={
+        <>
           <span className="tabular-nums">{pausedCount}</span> de <span className="tabular-nums">{tenants.length}</span>{" "}
           {pausedCount === 1 ? "pausado" : "pausados"}.
-        </p>
-      </div>
-      <div className="flex flex-col gap-3 px-5 py-4">
-        <ul className="flex flex-col gap-1.5">
-          {tenants.map((item) => (
-            <li key={item.tenantId} className="flex items-center justify-between gap-3">
-              <span>{item.tenantName}</span>
-              <StatusBadge paused={item.paused} />
-            </li>
-          ))}
-        </ul>
-        {failure && (
-          <p role="alert" className="text-[12px] text-tomate">
-            {failure}
-          </p>
-        )}
-        <div className="flex gap-2">
-          <Button variant="accent" disabled={pausedCount === tenants.length} onClick={() => setAll(true)}>
-            Pausar todos
-          </Button>
-          <Button variant="outline" disabled={pausedCount === 0} onClick={() => setAll(false)}>
-            Retomar todos
-          </Button>
-        </div>
-      </div>
-    </section>
+        </>
+      }
+    >
+      <ul className="divide-y divide-rule-soft border-t border-rule-soft">
+        {tenants.map((item) => (
+          <li key={item.tenantId} className="flex items-center justify-between gap-3 px-6 py-3">
+            <span className="truncate">{item.tenantName}</span>
+            <StatusBadge paused={item.paused} />
+          </li>
+        ))}
+      </ul>
+      <CardFooter error={failure}>
+        <Button variant="outline" size="sm" disabled={pausedCount === 0} onClick={() => setAll(false)}>
+          Retomar todos
+        </Button>
+        <Button variant="accent" size="sm" disabled={pausedCount === tenants.length} onClick={() => setAll(true)}>
+          Pausar todos
+        </Button>
+      </CardFooter>
+    </Card>
   );
 }

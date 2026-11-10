@@ -6,6 +6,7 @@ import { PlusIcon } from "lucide-react";
 import { useId, useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
 import { TabLoading, useSettingsTenant } from "@/components/settings/settings-shell";
+import { Card, CardFooter, Eyebrow } from "@/components/settings/settings-ui";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,7 +15,7 @@ import { usePendingAction } from "@/hooks/use-pending-action";
 import { ApiError } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
-/** Aba "Usuários": quem atende no restaurante. O admin muda o papel e desativa ou reativa o acesso. */
+/** Página "Usuários": quem atende no restaurante. O admin muda o papel e desativa ou reativa o acesso. */
 export function MembersTab() {
   const { request } = useAuth();
   const tenant = useSettingsTenant();
@@ -26,26 +27,24 @@ export function MembersTab() {
   if (!members.data) return <TabLoading failed={members.isError} />;
 
   return (
-    <section className="overflow-hidden rounded-xl border border-rule">
-      <div className="border-b border-rule px-5 pt-4 pb-3.5">
-        <h2 className="font-heading text-title font-semibold">Usuários</h2>
-        <p className="mt-1 text-ink-2">
-          Administradores alteram as configurações e os dados dos clientes; atendentes atendem as conversas. Quem for desativado
-          perde o acesso a este restaurante em até 15 minutos.
-        </p>
-      </div>
+    <Card
+      title="Equipe"
+      description="Administradores alteram as configurações e os dados dos clientes; atendentes atendem as conversas. Quem for desativado perde o acesso a este restaurante em até 15 minutos."
+    >
       {canEdit && <CreateMemberForm tenantId={tenant.id} />}
-      <ul>
+      <ul className="divide-y divide-rule-soft border-t border-rule-soft">
         {members.data.map((member) => (
           <MemberRow key={member.userId} tenantId={tenant.id} member={member} canEdit={canEdit && !member.isYou} />
         ))}
       </ul>
-      <p className="border-t border-rule bg-paper px-5 py-3 text-[12px] text-ink-3">
-        {canEdit
-          ? "Com a senha temporária, o usuário já entra com ela; sem senha, recebe um convite por e-mail para criar a dele. Ninguém altera o próprio acesso."
-          : "Só o administrador do restaurante altera os usuários."}
-      </p>
-    </section>
+      <CardFooter
+        note={
+          canEdit
+            ? "Com a senha temporária, o usuário já entra com ela; sem senha, recebe um convite por e-mail para criar a dele. Ninguém altera o próprio acesso."
+            : "Só o administrador do restaurante altera os usuários."
+        }
+      />
+    </Card>
   );
 }
 
@@ -94,13 +93,13 @@ function CreateMemberForm({ tenantId }: { tenantId: string }) {
   return (
     <form
       noValidate
-      className="border-b border-rule-soft bg-paper px-5 py-4"
+      className="border-t border-rule-soft bg-paper/60 px-6 py-4"
       onSubmit={(event) => {
         event.preventDefault();
         save();
       }}
     >
-      <div className="mb-3 text-[10px] font-semibold tracking-[0.08em] text-ink-3 uppercase">Novo usuário</div>
+      <Eyebrow className="mb-3">Novo usuário</Eyebrow>
       <div className="grid grid-cols-2 gap-x-2.5 gap-y-2">
         <div className="flex flex-col gap-1">
           <Label htmlFor={`${id}-name`}>Nome</Label>
@@ -209,23 +208,24 @@ function MemberRow({ tenantId, member, canEdit }: { tenantId: string; member: Te
   };
 
   return (
-    <li className={cn("flex items-center gap-3 border-b border-rule-soft px-5 py-3 last:border-b-0", !member.isActive && "opacity-60")}>
+    <li className={cn("flex items-center gap-3 px-6 py-3.5", !member.isActive && "opacity-60")}>
       <div className="min-w-0 flex-1">
-        <div className="font-medium">
-          {member.name}
-          {member.isYou && <span className="ml-1.5 text-[11px] font-normal text-ink-3">(você)</span>}
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 font-medium">
+          <span>
+            {member.name}
+            {member.isYou && <span className="ml-1.5 text-[11px] font-normal text-ink-3">(você)</span>}
+          </span>
+          {member.invitePending ? (
+            <span className="rounded-full bg-warning-lt px-2 py-0.5 text-[10px] font-bold tracking-[0.02em] text-warning-ink">Convite pendente</span>
+          ) : (
+            !member.isActive && <span className="rounded-full bg-surface-2 px-2 py-0.5 text-[10px] font-bold tracking-[0.02em] text-ink-3">Desativado</span>
+          )}
         </div>
-        <div className="truncate text-[12px] text-ink-3">{member.email}</div>
+        <div className="truncate text-[12px] text-ink-3">
+          {member.role === "ADMIN" ? "Administrador" : "Atendente"} · {member.email}
+        </div>
         {error && <p className="text-[11px] text-tomate">{error}</p>}
       </div>
-      <span className="w-24 text-[12px] text-ink-2">
-        {member.role === "ADMIN" ? "Administrador" : "Atendente"}
-        {member.invitePending ? (
-          <span className="block text-[11px] text-warning">convite pendente</span>
-        ) : (
-          !member.isActive && <span className="block text-[11px] text-ink-3">desativado</span>
-        )}
-      </span>
       {canEdit && (
         <div className="flex shrink-0 gap-1.5">
           {(member.isActive || member.invitePending) && (

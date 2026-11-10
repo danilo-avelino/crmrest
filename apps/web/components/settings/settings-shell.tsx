@@ -1,7 +1,19 @@
 "use client";
 
 import type { AuthContext } from "@dishdesk/shared";
-import { LoaderCircleIcon } from "lucide-react";
+import {
+  BellIcon,
+  CirclePauseIcon,
+  ClockIcon,
+  CreditCardIcon,
+  LinkIcon,
+  LoaderCircleIcon,
+  type LucideIcon,
+  PlugIcon,
+  SparklesIcon,
+  UsersIcon,
+  ZapIcon,
+} from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { createContext, type ReactNode, useContext, useState } from "react";
@@ -12,48 +24,52 @@ import { cn } from "@/lib/utils";
 
 type SettingsTenant = AuthContext["tenants"][number];
 
-const TABS = [
-  { href: "/configuracoes", label: "Links de pedido" },
-  { href: "/configuracoes/mensagens", label: "Mensagens automáticas" },
-  { href: "/configuracoes/horario", label: "Horário" },
-  { href: "/configuracoes/respostas-rapidas", label: "Respostas rápidas" },
-  { href: "/configuracoes/notificacoes", label: "Notificações" },
-  { href: "/configuracoes/integracoes", label: "Integrações" },
-  { href: "/configuracoes/usuarios", label: "Usuários" },
-  { href: "/configuracoes/pagamento", label: "Pagamento" },
-  { href: "/configuracoes/pausa", label: "Pausa" },
+/** O menu de Configurações, em grupos. A primeira página (/configuracoes) é a Personalidade. */
+const NAV: { group: string; items: { href: string; label: string; icon: LucideIcon }[] }[] = [
+  {
+    group: "Atendimento",
+    items: [
+      { href: "/configuracoes", label: "Personalidade", icon: SparklesIcon },
+      { href: "/configuracoes/horario", label: "Horário", icon: ClockIcon },
+      { href: "/configuracoes/links", label: "Links de pedido", icon: LinkIcon },
+      { href: "/configuracoes/respostas-rapidas", label: "Respostas rápidas", icon: ZapIcon },
+    ],
+  },
+  { group: "Conexões", items: [{ href: "/configuracoes/integracoes", label: "Integrações", icon: PlugIcon }] },
+  {
+    group: "Equipe",
+    items: [
+      { href: "/configuracoes/usuarios", label: "Usuários", icon: UsersIcon },
+      { href: "/configuracoes/notificacoes", label: "Notificações", icon: BellIcon },
+    ],
+  },
+  {
+    group: "Conta",
+    items: [
+      { href: "/configuracoes/pagamento", label: "Pagamento", icon: CreditCardIcon },
+      { href: "/configuracoes/pausa", label: "Pausa", icon: CirclePauseIcon },
+    ],
+  },
 ];
 
-type SettingsTenants = { tenant: SettingsTenant; tenants: SettingsTenant[]; choose: (tenantId: string) => void };
+const SettingsTenantContext = createContext<SettingsTenant | null>(null);
 
-const SettingsTenantContext = createContext<SettingsTenants | null>(null);
-
-function useSettingsTenants(): SettingsTenants {
+/** O restaurante cujas configurações estão na tela (no painel master, o escolhido no seletor). */
+export function useSettingsTenant(): SettingsTenant {
   const value = useContext(SettingsTenantContext);
   if (!value) throw new Error("useSettingsTenant precisa estar dentro de <SettingsShell>");
   return value;
 }
 
-/** O restaurante cujas configurações estão na tela (no painel master, o escolhido no seletor). */
-export function useSettingsTenant(): SettingsTenant {
-  return useSettingsTenants().tenant;
-}
-
 /** As abas de Configurações fora do <SettingsShell> (o assistente de configuração), para um restaurante só. */
 export function SettingsTenantProvider({ tenant, children }: { tenant: SettingsTenant; children: ReactNode }) {
-  return <SettingsTenantContext value={{ tenant, tenants: [tenant], choose: () => undefined }}>{children}</SettingsTenantContext>;
-}
-
-/** O seletor de restaurante do painel master, para a aba que o põe ao lado do próprio título. */
-export function SettingsTenantPicker() {
-  const { tenant, tenants, choose } = useSettingsTenants();
-  return <TenantPicker tenants={tenants} tenant={tenant} onChange={choose} />;
+  return <SettingsTenantContext value={tenant}>{children}</SettingsTenantContext>;
 }
 
 /**
- * Configurações: cabeçalho com as abas do board Campanhas e o título do board Clientes (o design ainda não tem
- * um board de Configurações). No painel master, um seletor no topo do conteúdo escolhe o restaurante para todas as abas.
- * Desktop no MVP.
+ * Configurações: menu lateral em grupos e, ao lado, a página escolhida, em cartões brancos sobre o papel (o design só
+ * tem board para Integrações; o menu segue a lista de passos do board do assistente de configuração). No painel
+ * master, o seletor no topo do menu escolhe o restaurante para todas as páginas. Desktop no MVP.
  */
 export function SettingsShell({ children }: { children: ReactNode }) {
   const { session } = useAuth();
@@ -62,55 +78,61 @@ export function SettingsShell({ children }: { children: ReactNode }) {
   const adminTenants = tenants.filter((t) => t.role === "ADMIN");
   const [tenantId, setTenantId] = useState(() => adminTenants[0]?.id);
   const tenant = adminTenants.find((t) => t.id === tenantId) ?? adminTenants[0];
-  const integrations = pathname.startsWith("/configuracoes/integracoes");
   if (!tenant) return null;
 
   return (
     <div className="flex h-full overflow-hidden bg-paper">
       <NavRail />
-      <main className="flex flex-1 flex-col overflow-hidden bg-surface">
-        <header className="shrink-0 border-b border-rule-soft px-7 pt-5">
-          <div className="mb-3">
-            <h1 className="mb-[3px] font-heading text-[21px] font-bold tracking-[-0.3px]">Configurações</h1>
-            <p className="text-[12px] text-ink-3">{adminTenants.length > 1 ? "Painel master" : tenant.name}</p>
-          </div>
-          <nav aria-label="Seções das configurações" className="-mb-px flex">
-            {TABS.map((tab) => {
-              const active = tab.href === "/configuracoes" ? pathname === tab.href : pathname.startsWith(tab.href);
-              return (
-                <Link
-                  key={tab.href}
-                  href={tab.href}
-                  aria-current={active ? "page" : undefined}
-                  className={cn(
-                    "border-b-2 px-[11px] py-[7px] text-[12px]",
-                    active ? "border-ink font-medium text-ink" : "border-transparent text-ink-3 hover:text-ink-2",
-                  )}
-                >
-                  {tab.label}
-                </Link>
-              );
-            })}
-          </nav>
-        </header>
-        {/* Integrações (board Configurações · Integrações): cartões brancos sobre o papel, na largura do board; as outras abas ficam numa coluna estreita. */}
-        <div className={cn("flex-1 overflow-y-auto px-7 py-6", integrations && "bg-paper px-8")}>
-          <div className={integrations ? "max-w-[1072px]" : "max-w-[680px]"}>
-            {/* Integrações põe o seletor ao lado do título; as outras abas não têm título fora dos cartões. */}
-            {!integrations && adminTenants.length > 1 && (
-              <div className="mb-4">
-                <TenantPicker tenants={adminTenants} tenant={tenant} onChange={setTenantId} />
-              </div>
-            )}
-            <SettingsTenantContext value={{ tenant, tenants: adminTenants, choose: setTenantId }}>{children}</SettingsTenantContext>
-          </div>
+      <aside className="flex w-[236px] shrink-0 flex-col overflow-y-auto border-r border-rule bg-surface">
+        <div className="px-5 pt-5 pb-4">
+          <p className="font-heading text-[21px] font-bold tracking-[-0.3px]">Configurações</p>
+          {adminTenants.length > 1 ? (
+            <div className="mt-2.5">
+              <TenantPicker tenants={adminTenants} tenant={tenant} onChange={setTenantId} />
+            </div>
+          ) : (
+            <p className="mt-[3px] truncate text-[12px] text-ink-3">{tenant.name}</p>
+          )}
+        </div>
+        <nav aria-label="Seções das configurações" className="pb-5">
+          {NAV.map(({ group, items }) => (
+            <div key={group} className="mb-3">
+              <p className="mb-1 px-5 pt-1 text-[10px] font-semibold tracking-[0.1em] text-ink-3 uppercase">{group}</p>
+              <ul>
+                {items.map(({ href, label, icon: Icon }) => {
+                  const active = href === "/configuracoes" ? pathname === href : pathname.startsWith(href);
+                  return (
+                    <li key={href}>
+                      <Link
+                        href={href}
+                        aria-current={active ? "page" : undefined}
+                        className={cn(
+                          "flex items-center gap-2.5 border-l-[3px] py-2 pr-4 pl-[17px] text-[13px]",
+                          active ? "border-tomate bg-tomate-lt font-medium text-ink" : "border-transparent text-ink-2 hover:bg-paper",
+                        )}
+                      >
+                        <Icon className={cn("size-4 shrink-0", active ? "text-tomate" : "text-ink-3")} aria-hidden />
+                        {label}
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          ))}
+        </nav>
+      </aside>
+      <main className="min-w-0 flex-1 overflow-y-auto px-8 py-7">
+        {/* Integrações usa a largura do board; as outras páginas ficam numa coluna de leitura. */}
+        <div className={pathname.startsWith("/configuracoes/integracoes") ? "max-w-[1072px]" : "max-w-[760px]"}>
+          <SettingsTenantContext value={tenant}>{children}</SettingsTenantContext>
         </div>
       </main>
     </div>
   );
 }
 
-/** Carregamento (ou falha) de uma aba. */
+/** Carregamento (ou falha) de uma página. */
 export function TabLoading({ failed }: { failed: boolean }) {
   return (
     <div className="flex items-center gap-2 text-ink-3" aria-busy={!failed}>

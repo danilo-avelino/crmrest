@@ -1,5 +1,5 @@
 import type { TenantTx } from "@dishdesk/database";
-import { automationTextsOf, CHANNEL_CAPABILITIES, toE164 } from "@dishdesk/shared";
+import { automationMessagesOf, CHANNEL_CAPABILITIES, toE164 } from "@dishdesk/shared";
 import { InjectQueue } from "@nestjs/bullmq";
 import { Inject, Injectable } from "@nestjs/common";
 import type { Queue } from "bullmq";
@@ -45,8 +45,8 @@ export class PhoneCollectionService {
       const conversation = await this.load(tx, event.conversationId);
       const state = conversation.automationState as AutomationState;
 
-      // Textos de Configurações → Mensagens automáticas (ou os padrões).
-      const texts = automationTextsOf(await tenantSettings(tx, tenantId));
+      // Textos da personalidade do restaurante.
+      const texts = automationMessagesOf(await tenantSettings(tx, tenantId));
       if (!state.phoneCollection && !conversation.contact.phone) {
         const messageId = await automationMessage(tx, conversation, "phone_collection", texts.phoneRequest);
         await setAutomationState(tx, conversation.id, { ...state, phoneCollection: "awaiting_phone" });
@@ -102,7 +102,7 @@ export class PhoneCollectionService {
       const conversation = await this.load(tx, conversationId);
       const state = conversation.automationState as AutomationState;
       if (state.phoneCollection !== "awaiting_phone" || state.phoneReminderSentAt) return null;
-      const texts = automationTextsOf(await tenantSettings(tx, tenantId));
+      const texts = automationMessagesOf(await tenantSettings(tx, tenantId));
       const id = await automationMessage(tx, conversation, "phone_reminder", texts.phoneReminder);
       await setAutomationState(tx, conversationId, { ...state, phoneReminderSentAt: new Date().toISOString() });
       return id;

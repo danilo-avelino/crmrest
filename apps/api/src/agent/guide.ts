@@ -6,12 +6,12 @@ import type { OnboardingStep } from "@dishdesk/shared";
  * divide o contexto da LLM com a árvore da página.
  */
 export const GUIDE = `GUIA DO DISH DESK
-O Dish Desk junta numa Inbox só as conversas dos clientes do restaurante (WhatsApp, Instagram, iFood) e recebe os pedidos do iFood e do Cardápio Web. As configurações ficam no menu Configurações, só para o administrador. Cada tela abre direto pelo endereço (navigate: endereço do painel + o caminho abaixo), sem clicar em menus.
+O Dish Desk junta numa Inbox só as conversas dos clientes do restaurante (WhatsApp, Instagram, iFood) e recebe os pedidos do iFood e do Cardápio Web. As configurações ficam no menu Configurações, só para o administrador, com um menu lateral (Personalidade, Horário, Links de pedido, Respostas rápidas, Integrações, Usuários, Notificações, Pagamento, Pausa). Cada tela abre direto pelo endereço (navigate: endereço do painel + o caminho abaixo), sem clicar em menus.
 
 Implantação, nesta ordem (nenhuma integração é obrigatória: pergunte se o restaurante usa cada sistema):
 1. Horário de funcionamento: /configuracoes/horario.
-2. Personalidade do atendimento (Cordial, Formal, Jovial, Descontraído, Acolhedor ou Direto) e textos das mensagens automáticas: /configuracoes/mensagens.
-3. Links para fazer pedido: /configuracoes (primeira aba, Links de pedido).
+2. Personalidade do atendimento (Cordial, Formal, Jovial, Descontraído, Acolhedor ou Direto), o tom da IA e dos avisos automáticos: /configuracoes.
+3. Links para fazer pedido: /configuracoes/links.
 4. Convidar os atendentes: /configuracoes/usuarios → "Novo usuário": preencha nome e e-mail e deixe a senha temporária em branco (o convite vai por e-mail).
 5. WhatsApp: abra /configuracoes/integracoes?conectar=WHATSAPP (abre o QR Code). Parceiro, no celular: WhatsApp → Aparelhos conectados → Conectar um aparelho → apontar a câmera para o QR Code. Vale número do WhatsApp ou do WhatsApp Business. O passo termina quando o PROGRESSO mostrar o WhatsApp como feito.
 6. Instagram: a conta precisa ser profissional. Abra /configuracoes/integracoes?conectar=INSTAGRAM → clicar em entrar com o Instagram: abre um popup (janela separada) onde o parceiro digita a senha; peça a vez dele (your_turn) e, quando ele terminar, o popup fecha sozinho e a página mostra o resultado.

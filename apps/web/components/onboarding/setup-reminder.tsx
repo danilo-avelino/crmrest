@@ -87,7 +87,7 @@ export function SetupEntry({ tenantId }: { tenantId: string }) {
   const onboarding = useQuery({ queryKey: ["onboarding", tenantId], queryFn: () => request<OnboardingDto>(`/onboarding/${tenantId}`) });
 
   return (
-    <section className="mb-5 flex items-center gap-3.5 rounded-xl border border-rule px-4 py-3.5">
+    <section className="mb-5 flex items-center gap-3.5 rounded-2xl border border-rule-soft bg-surface px-6 py-4">
       <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-surface-2">
         <SparklesIcon className="size-4 text-tomate" aria-hidden />
       </span>
