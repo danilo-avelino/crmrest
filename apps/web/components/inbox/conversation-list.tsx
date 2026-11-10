@@ -19,12 +19,14 @@ import { useNow } from "@/hooks/use-now";
 import { ago } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
-// A primeira aba mostra só o que a equipe ainda precisa tratar; as resolvidas ficam na aba delas.
-type StatusFilter = "ACTIVE" | "OPEN" | "PENDING" | "RESOLVED";
+// A primeira aba mostra só o que a equipe ainda precisa tratar; as que só tiveram automação (sem chamar a equipe) ficam
+// em Automáticos e as resolvidas, na aba delas.
+type StatusFilter = "ACTIVE" | "OPEN" | "PENDING" | "AUTO" | "RESOLVED";
 const FILTERS: { value: StatusFilter; label: string }[] = [
   { value: "ACTIVE", label: "Ativos" },
   { value: "OPEN", label: "Abertos" },
   { value: "PENDING", label: "Pendentes" },
+  { value: "AUTO", label: "Automáticos" },
   { value: "RESOLVED", label: "Resolvidos" },
 ];
 

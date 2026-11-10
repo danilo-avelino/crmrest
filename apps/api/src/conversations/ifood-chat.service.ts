@@ -126,7 +126,9 @@ export class IfoodChatService {
         where: { id: conversation.id },
         data: {
           ...((!conversation.lastMessageAt || conversation.lastMessageAt < last) && { lastMessageAt: last }),
-          ...(unread && { status: "OPEN", unreadCount: { increment: unread } }),
+          // Cliente que escreve no chat do iFood é sempre atendido pela equipe (aba Ativos); só as mensagens da loja ou do
+          // iFood deixam a conversa na aba Automáticos.
+          ...(unread && { status: "OPEN", unreadCount: { increment: unread }, teamInvolved: true }),
         },
       });
       const result = { tenantId: order.tenantId, conversationId: conversation.id };

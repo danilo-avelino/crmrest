@@ -95,7 +95,8 @@ describe("Chat do iFood na Inbox (trava IFOOD_CHAT_BRIDGE ligada)", () => {
     expect((await post("/ifood-chat/sync", { orderCode: "6530", messages: [automatic, question] }).expect(200)).body).toEqual({ found: true });
 
     const chat = await conversation();
-    expect(chat).toMatchObject({ contactId: order.contactId, status: "OPEN", unreadCount: 1 });
+    // O cliente escreveu: é da equipe (aba Ativos).
+    expect(chat).toMatchObject({ contactId: order.contactId, status: "OPEN", unreadCount: 1, teamInvolved: true });
     expect((await timeline(chat.id)).slice(0, 4).map((m) => [m.direction, m.status, m.content])).toEqual([
       ["INTERNAL", null, { event: "conversation_opened", text: "Conversa aberta via iFood" }],
       ["INTERNAL", null, { event: "order", orderId: order.id }],
@@ -199,6 +200,21 @@ describe("Chat do iFood na Inbox (trava IFOOD_CHAT_BRIDGE ligada)", () => {
     await post("/ifood-chat/sync", { orderCode: "6530", messages: [shown("INBOUND", "Invasor", new Date())] }, outsider).expect(200);
     expect(await admin.message.count({ where: { tenantId: fx.tenant.id, content: { path: ["text"], equals: "Invasor" } } })).toBe(0);
     expect(await admin.conversation.count({ where: { tenantId: fx.tenant.id, channelId: fx.ifood.id, contactId: order.contactId } })).toBe(1);
+  });
+
+  it("só as mensagens automáticas da loja: a conversa fica em Automáticos, sem chamado, e se resolve sozinha depois de parada", async () => {
+    const delivered = await ifoodOrder("6591", "Gislene Oliveira", minutesAgo(50));
+    const notice = shown("OUTBOUND", "Seu pedido acaba de ser entregue 🥳", minutesAgo(40));
+    await post("/ifood-chat/sync", { orderCode: "6591", messages: [notice] }).expect(200);
+    const where = { tenantId: fx.tenant.id, channelId: fx.ifood.id, contactId: delivered.contactId };
+    const chat = await admin.conversation.findFirstOrThrow({ where });
+    expect(chat).toMatchObject({ status: "OPEN", teamInvolved: false, awaitingAgentSince: null, unreadCount: 0 });
+    const { body } = await request(app.getHttpServer()).get("/api/conversations?status=AUTO").set("Authorization", `Bearer ${token}`).expect(200);
+    expect(body.items.map((c: { id: string }) => c.id)).toContain(chat.id);
+
+    await app.get(InactivityService).resolveIdleOf(fx.tenant.id);
+    expect((await admin.conversation.findUniqueOrThrow({ where: { id: chat.id } })).status).toBe("RESOLVED");
+    expect((await timeline(chat.id)).filter((m) => m.direction === "OUTBOUND")).toHaveLength(1); // nada foi enviado
   });
 
   it("usuário de vários restaurantes: o widget recebe as mesmas lojas em qualquer contexto, e a ponte grava no restaurante do pedido", async () => {

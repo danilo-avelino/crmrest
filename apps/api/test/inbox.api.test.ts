@@ -3,6 +3,7 @@ import type { INestApplication } from "@nestjs/common";
 import { hash } from "@node-rs/argon2";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { InactivityService } from "../src/automations/inactivity.service.js";
 import { accessTokenFor, admin, createAuthFixture, createTestApp, PASSWORD } from "./helpers.js";
 
 const key = parseEncryptionKey(process.env.ENCRYPTION_KEY ?? "");
@@ -125,10 +126,22 @@ describe("API da Inbox", () => {
     await get(`/conversations?tenantId=${fx.c.id}`, masterToken).expect(403);
   });
 
+  const idsOf = async (path: string) => (await get(path).expect(200)).body.items.map((c: { id: string }) => c.id);
+
   it("filtra por status e conta por status", async () => {
-    const pending = await get("/conversations?status=PENDING").expect(200);
-    expect(pending.body.items.map((c: { id: string }) => c.id)).toEqual([joaoChat.id]);
-    expect((await get("/conversations/counts").expect(200)).body).toEqual({ OPEN: 1, PENDING: 1, RESOLVED: 0, awaitingAgent: 0, awaitingQuiet: 0, urgentSince: null, unread: 2 });
+    expect(await idsOf("/conversations?status=PENDING")).toEqual([joaoChat.id]);
+    // A aberta da Maria ainda não teve a equipe: fica em Automáticos, fora de Ativos, de Abertos e da contagem.
+    expect(await idsOf("/conversations?status=AUTO")).toEqual([mariaChat.id]);
+    expect(await idsOf("/conversations?status=ACTIVE")).toEqual([joaoChat.id]);
+    expect(await idsOf("/conversations?status=OPEN")).toEqual([]);
+    expect((await get("/conversations/counts").expect(200)).body).toEqual({ OPEN: 0, PENDING: 1, RESOLVED: 0, awaitingAgent: 0, awaitingQuiet: 0, urgentSince: null, unread: 2 });
+  });
+
+  it("conversa chamando um atendente fica em Ativos, mesmo sem a equipe ter atuado", async () => {
+    await admin.conversation.update({ where: { id: mariaChat.id }, data: { awaitingAgentSince: minutesAgo(2) } });
+    expect(await idsOf("/conversations?status=ACTIVE")).toEqual([mariaChat.id, joaoChat.id]);
+    expect(await idsOf("/conversations?status=AUTO")).toEqual([]);
+    await admin.conversation.update({ where: { id: mariaChat.id }, data: { awaitingAgentSince: null } });
   });
 
   it("busca por nome, telefone e CPF", async () => {
@@ -154,6 +167,10 @@ describe("API da Inbox", () => {
   it("nota interna fica na conversa e nunca vira envio", async () => {
     const { body } = await send("post", `/conversations/${mariaChat.id}/notes`, { text: "Ligar para o motoboy" }).expect(201);
     expect(body).toMatchObject({ type: "NOTE", direction: "INTERNAL", status: null, sentBy: { id: fx.user.id } });
+    // A equipe está cuidando: a conversa sai de Automáticos e entra em Ativos e Abertos.
+    expect(await idsOf("/conversations?status=AUTO")).toEqual([]);
+    expect(await idsOf("/conversations?status=OPEN")).toEqual([mariaChat.id]);
+    expect((await get("/conversations/counts").expect(200)).body.OPEN).toBe(1);
   });
 
   it("reenvia uma mensagem que falhou; no WhatsApp (QR Code) não há janela de 24h", async () => {
@@ -196,6 +213,38 @@ describe("API da Inbox", () => {
     expect(active.body.items.map((c: { id: string }) => c.id)).toEqual([joaoChat.id]);
     const done = await get("/conversations?status=RESOLVED").expect(200);
     expect(done.body.items.map((c: { id: string }) => c.id)).toEqual([mariaChat.id]);
+    // Resolvida: o próximo atendimento começa sem a equipe.
+    expect((await admin.conversation.findUniqueOrThrow({ where: { id: mariaChat.id } })).teamInvolved).toBe(false);
+  });
+
+  it("resolve sozinha a conversa só com automação parada há 30 minutos, sem mensagem ao cliente", async () => {
+    const waA = await admin.channel.findFirstOrThrow({ where: { tenantId: fx.a.id, type: "WHATSAPP" } });
+    const chat = async (name: string, minutes: number, data: { teamInvolved?: boolean } = {}) => {
+      const contact = await admin.contact.create({ data: { tenantId: fx.a.id, name } });
+      const conversation = await admin.conversation.create({
+        data: { tenantId: fx.a.id, contactId: contact.id, channelId: waA.id, status: "OPEN", createdAt: minutesAgo(minutes + 1), ...data },
+      });
+      await admin.message.create({
+        data: { tenantId: fx.a.id, conversationId: conversation.id, channelId: waA.id, direction: "OUTBOUND", type: "TEXT", status: "SENT", content: { text: "Seu pedido saiu", automation: "order_dispatched" }, createdAt: minutesAgo(minutes) },
+      });
+      return conversation;
+    };
+    const idle = await chat("Parada", 40);
+    const recent = await chat("Recente", 10);
+    const withTeam = await chat("Com a equipe", 40, { teamInvolved: true });
+
+    await app.get(InactivityService).resolveIdleOf(fx.a.id);
+    const status = async (id: string) => (await admin.conversation.findUniqueOrThrow({ where: { id } })).status;
+    expect(await status(idle.id)).toBe("RESOLVED");
+    expect(await status(recent.id)).toBe("OPEN");
+    expect(await status(withTeam.id)).toBe("OPEN");
+    expect(await admin.message.count({ where: { conversationId: idle.id } })).toBe(1); // nada foi enviado ao cliente
+
+    const ids = [idle.id, recent.id, withTeam.id];
+    const contactIds = (await admin.conversation.findMany({ where: { id: { in: ids } }, select: { contactId: true } })).map((c) => c.contactId);
+    await admin.message.deleteMany({ where: { conversationId: { in: ids } } });
+    await admin.conversation.deleteMany({ where: { id: { in: ids } } });
+    await admin.contact.deleteMany({ where: { id: { in: contactIds } } });
   });
 
   it("lista membros do restaurante e respostas rápidas", async () => {

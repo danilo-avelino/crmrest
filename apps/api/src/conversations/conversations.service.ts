@@ -27,7 +27,7 @@ import type { Queue } from "bullmq";
 import { scheduleEvaluation } from "../ai/ai-evaluation.service.js";
 import { LlmClient } from "../ai/llm.client.js";
 import type { RequestAuth } from "../auth/auth.decorators.js";
-import { type AutomationState, channelSends, isPaused, teamRepliedUpdate } from "../automations/automation.js";
+import { AUTOMATIC_ONLY, type AutomationState, channelSends, isPaused, teamRepliedUpdate, WITH_TEAM } from "../automations/automation.js";
 import { contactsAwaitingDecision } from "../orders/fraud-alert.js";
 import { ENV, type Env } from "../config/env.js";
 import { ConnectorsService } from "../connectors/connectors.service.js";
@@ -64,8 +64,16 @@ export class ConversationsService {
   }
 
   async list(auth: RequestAuth, query: ConversationListQuery): Promise<ConversationPage> {
+    // Ativos e Abertos ficam só com as conversas da equipe; as que só tiveram automação vão para a aba Automáticos.
+    const byStatus: Record<NonNullable<ConversationListQuery["status"]>, Prisma.ConversationWhereInput> = {
+      ACTIVE: { status: { not: "RESOLVED" }, ...WITH_TEAM },
+      OPEN: { status: "OPEN", ...WITH_TEAM },
+      AUTO: AUTOMATIC_ONLY,
+      PENDING: { status: "PENDING" },
+      RESOLVED: { status: "RESOLVED" },
+    };
     const where: Prisma.ConversationWhereInput = {
-      ...(query.status && { status: query.status === "ACTIVE" ? { not: "RESOLVED" } : query.status }),
+      ...(query.status && byStatus[query.status]),
       ...(query.search && { contact: contactSearch(query.search, this.key) }),
     };
     const [rows, awaitingDecision] = await this.db.withTenants(scopeFor(auth, query.tenantId), (tx) =>
@@ -87,9 +95,10 @@ export class ConversationsService {
 
   async counts(auth: RequestAuth, tenantId?: string): Promise<ConversationCounts> {
     const calling = { awaitingAgentSince: { not: null }, status: { not: "RESOLVED" } } satisfies Prisma.ConversationWhereInput;
-    const [groups, awaitingAgent, awaitingQuiet, oldestUrgent, unread] = await this.db.withTenants(scopeFor(auth, tenantId), (tx) =>
+    const [groups, open, awaitingAgent, awaitingQuiet, oldestUrgent, unread] = await this.db.withTenants(scopeFor(auth, tenantId), (tx) =>
       Promise.all([
         tx.conversation.groupBy({ by: ["status"], _count: { _all: true } }),
+        tx.conversation.count({ where: { status: "OPEN", ...WITH_TEAM } }),
         tx.conversation.count({ where: calling }),
         tx.conversation.count({ where: { ...calling, awaitingAgentQuiet: true } }),
         tx.conversation.findFirst({
@@ -103,6 +112,7 @@ export class ConversationsService {
     const urgentSince = oldestUrgent?.awaitingAgentSince?.toISOString() ?? null;
     const counts: ConversationCounts = { OPEN: 0, PENDING: 0, RESOLVED: 0, awaitingAgent, awaitingQuiet, urgentSince, unread: unread._sum.unreadCount ?? 0 };
     for (const group of groups) counts[group.status] = group._count._all;
+    counts.OPEN = open;
     return counts;
   }
 
@@ -297,7 +307,7 @@ export class ConversationsService {
       });
       await tx.conversation.update({
         where: { id: conversationId },
-        data: { lastMessageAt: created.createdAt, unreadCount: 0, awaitingAgentSince: null },
+        data: { lastMessageAt: created.createdAt, unreadCount: 0, awaitingAgentSince: null, teamInvolved: true },
       });
       return created;
     });
@@ -310,6 +320,8 @@ export class ConversationsService {
   async addNote(auth: RequestAuth, conversationId: string, text: string): Promise<MessageDto> {
     const note = await this.db.withTenants(auth.scope, async (tx) => {
       const conversation = await this.requireConversation(tx, conversationId);
+      // A equipe está cuidando da conversa: ela vai para a aba Ativos.
+      if (conversation.status !== "RESOLVED") await tx.conversation.update({ where: { id: conversationId }, data: { teamInvolved: true } });
       return tx.message.create({
         data: {
           tenantId: conversation.tenantId,
@@ -354,6 +366,10 @@ export class ConversationsService {
           ...(body.status && { status: body.status }),
           ...(body.status === "RESOLVED" && { awaitingAgentSince: null }), // resolvida sem resposta: o alarme para
           ...(body.assignedUserId !== undefined && { assignedUserId: body.assignedUserId }),
+          // Resolvida: o próximo atendimento começa sem a equipe. Reaberta, deixada pendente ou atribuída: é da equipe.
+          ...(body.status === "RESOLVED"
+            ? { teamInvolved: false }
+            : (body.status || body.assignedUserId) && { teamInvolved: true }),
         },
         include: conversationListInclude,
       });

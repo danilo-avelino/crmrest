@@ -1,29 +1,91 @@
 import { automationMessagesOf, CHANNEL_CAPABILITIES, STAFF_TAG } from "@dishdesk/shared";
 import { InjectQueue } from "@nestjs/bullmq";
-import { Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable, Logger, type OnModuleInit } from "@nestjs/common";
 import type { Queue } from "bullmq";
 import { scheduleEvaluation } from "../ai/ai-evaluation.service.js";
 import { ENV, type Env } from "../config/env.js";
 import { DatabaseService } from "../core/database.service.js";
 import { type AiJob, type OutboundJob, QUEUES } from "../queues/queues.module.js";
 import { RealtimeEmitter } from "../realtime/realtime.emitter.js";
-import { type AutomationState, automationMessage, channelSends, dispatch, tenantSettings } from "./automation.js";
+import {
+  AUTOMATIC_ONLY,
+  type AutomationState,
+  automationMessage,
+  channelSends,
+  dispatch,
+  isPaused,
+  tenantSettings,
+} from "./automation.js";
 import { SurveyService } from "./survey.service.js";
 
 /** Tempo sem resposta do cliente, depois da última mensagem do restaurante, até encerrar o atendimento. */
 export const INACTIVITY_CLOSE_MS = 20 * 60_000;
+/**
+ * Conversa só com automação, sem mensagem há este tempo, é resolvida sem aviso ao cliente. Fica acima do encerramento por
+ * inatividade, que chega antes (com a mensagem de encerramento e a pesquisa) quando o restaurante falou por último.
+ */
+export const AUTO_RESOLVE_MS = 30 * 60_000;
+const AUTO_RESOLVE_SWEEP_MS = 5 * 60_000;
 
 /** Encerra o atendimento aberto em que o cliente parou de responder e, se houver pedido do dia, pede a avaliação. */
 @Injectable()
-export class InactivityService {
+export class InactivityService implements OnModuleInit {
+  private readonly logger = new Logger(InactivityService.name);
+
   constructor(
     private readonly db: DatabaseService,
     private readonly realtime: RealtimeEmitter,
     @InjectQueue(QUEUES.outbound) private readonly outbound: Queue<OutboundJob>,
     @InjectQueue(QUEUES.ai) private readonly ai: Queue<AiJob>,
+    @InjectQueue(QUEUES.automations) private readonly automations: Queue,
     private readonly survey: SurveyService,
     @Inject(ENV) private readonly env: Env,
   ) {}
+
+  async onModuleInit(): Promise<void> {
+    await this.automations.upsertJobScheduler("auto-resolve-sweep", { every: AUTO_RESOLVE_SWEEP_MS }, { name: "auto-resolve-sweep" });
+  }
+
+  /**
+   * Conversas da aba Automáticos (a equipe não foi chamada nem atuou) sem mensagem há AUTO_RESOLVE_MS: o atendimento
+   * acabou, e elas são resolvidas sem mensagem ao cliente. Ex.: no chat do iFood, a conversa aberta só pelas mensagens
+   * automáticas da loja; o cliente que recebeu os links e parou de escrever. Com o Dish Desk pausado, nada é resolvido.
+   */
+  async resolveIdle(now = new Date()): Promise<void> {
+    const tenants = await this.db.client.$queryRaw<{ id: string }[]>`SELECT id FROM app.active_tenants()`;
+    for (const { id: tenantId } of tenants) {
+      try {
+        await this.resolveIdleOf(tenantId, now);
+      } catch (error) {
+        // Segue para os outros restaurantes; a próxima varredura tenta de novo.
+        this.logger.warn(`Conversas automáticas do restaurante ${tenantId}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+  }
+
+  async resolveIdleOf(tenantId: string, now = new Date()): Promise<void> {
+    const cutoff = new Date(now.getTime() - AUTO_RESOLVE_MS);
+    const resolved = await this.db.withTenants({ tenantIds: [tenantId] }, async (tx) => {
+      if (await isPaused(tx, tenantId)) return [];
+      const idle = await tx.conversation.findMany({
+        where: {
+          tenantId,
+          ...AUTOMATIC_ONLY,
+          createdAt: { lt: cutoff },
+          messages: { none: { direction: { in: ["INBOUND", "OUTBOUND"] }, createdAt: { gte: cutoff } } },
+        },
+        select: { id: true },
+      });
+      const ids = idle.map((conversation) => conversation.id);
+      // A condição volta no update: a equipe pode ter entrado na conversa durante a leitura.
+      if (ids.length) await tx.conversation.updateMany({ where: { id: { in: ids }, ...AUTOMATIC_ONLY }, data: { status: "RESOLVED" } });
+      return ids;
+    });
+    for (const conversationId of resolved) {
+      await scheduleEvaluation(this.ai, tenantId, conversationId);
+      this.realtime.inboxChanged(tenantId, conversationId);
+    }
+  }
 
   /** Roda INACTIVITY_CLOSE_MS depois de cada envio; se houve mensagem depois dele, não faz nada. */
   async close(tenantId: string, conversationId: string, now = new Date()): Promise<void> {
@@ -65,7 +127,7 @@ export class InactivityService {
 
       const { inactivityClose } = automationMessagesOf(await tenantSettings(tx, tenantId));
       const id = await automationMessage(tx, conversation, "inactivity_close", inactivityClose);
-      await tx.conversation.update({ where: { id: conversationId }, data: { status: "RESOLVED" } });
+      await tx.conversation.update({ where: { id: conversationId }, data: { status: "RESOLVED", teamInvolved: false } });
       return id;
     });
     if (!messageId) return;

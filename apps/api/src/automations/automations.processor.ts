@@ -15,7 +15,8 @@ import { SurveyService } from "./survey.service.js";
 
 /**
  * Etapas das automações: lembrete e desistência da coleta de telefone; pesquisa ao resolver; encerramento por inatividade;
- * mensagem do cliente no chat do iFood; conversas que esperavam um atendente. E, de hora em hora, as tags automáticas dos clientes;
+ * mensagem do cliente no chat do iFood; conversas que esperavam um atendente; conversas só com automação já paradas
+ * (resolvidas sozinhas). E, de hora em hora, as tags automáticas dos clientes;
  * as notificações ao administrador pelo WhatsApp e, toda segunda, o relatório semanal.
  */
 @Processor(QUEUES.automations)
@@ -40,6 +41,7 @@ export class AutomationsProcessor extends JobProcessor {
     if (job.name === "admin-message") return this.adminNotifications.send(job.data as AdminMessageJob);
     if (job.name === "ai-forward-sweep") return this.aiForward.sweep();
     if (job.name === "review-invite-sweep") return this.reviewInvites.sweep();
+    if (job.name === "auto-resolve-sweep") return this.inactivity.resolveIdle();
     if (job.name === "ai-forward") return this.aiForward.forward(job.data.tenantId);
     const data = job.data as AutomationJob;
     const { tenantId, conversationId } = data;

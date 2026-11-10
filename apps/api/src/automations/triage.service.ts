@@ -33,6 +33,7 @@ import {
   dispatch,
   firstName,
   type InboundEvent,
+  leaveToTeam,
   setAutomationState,
   startOfYesterday,
   systemEvent,
@@ -115,9 +116,14 @@ export class TriageService {
    * Funcionário fica de fora de tudo: é uma conversa comum com a equipe. Com o Dish Desk pausado, nada roda.
    */
   async afterInbound(event: InboundEvent): Promise<void> {
-    if (!CHANNEL_CAPABILITIES[event.channel.type].send) return;
-    if (await tenantPaused(this.db, event.channel.tenantId)) return;
-    if (await this.isStaff(event)) return;
+    // Sem automação (canal sem envio, Dish Desk pausado, funcionário), quem atende é a equipe: a conversa vai para Ativos.
+    if (
+      !CHANNEL_CAPABILITIES[event.channel.type].send ||
+      (await tenantPaused(this.db, event.channel.tenantId)) ||
+      (await this.isStaff(event))
+    ) {
+      return leaveToTeam(this.db, event.channel.tenantId, event.conversationId);
+    }
     if (await this.survey.handleAnswer(event)) return;
     if (await this.aiTakes(event)) return;
 

@@ -1,4 +1,4 @@
-import type { TenantTx } from "@dishdesk/database";
+import type { Prisma, TenantTx } from "@dishdesk/database";
 import type { ChannelType, ConversationStatus } from "@dishdesk/database/enums";
 import { CHANNEL_CAPABILITIES, type MessageContent, pausedOf } from "@dishdesk/shared";
 import type { Queue } from "bullmq";
@@ -54,6 +54,25 @@ export type AutomationState = {
 };
 
 /**
+ * Conversa em aberto que é da equipe (aba Ativos da Inbox): chamou um atendente, a equipe atuou, está pendente ou é só da
+ * equipe. As demais abertas (AUTOMATIC_ONLY) só tiveram automação e ficam na aba Automáticos.
+ */
+export const WITH_TEAM = {
+  OR: [{ teamInvolved: true }, { status: "PENDING" }, { awaitingAgentSince: { not: null } }, { teamOnly: true }],
+} satisfies Prisma.ConversationWhereInput;
+export const AUTOMATIC_ONLY = {
+  status: "OPEN",
+  teamInvolved: false,
+  awaitingAgentSince: null,
+  teamOnly: false,
+} satisfies Prisma.ConversationWhereInput;
+
+/** Mensagem que só a equipe atende (sem automação): a conversa vai para a aba Ativos. */
+export async function leaveToTeam(db: DatabaseService, tenantId: string, conversationId: string): Promise<void> {
+  await db.withTenants({ tenantIds: [tenantId] }, (tx) => tx.conversation.update({ where: { id: conversationId }, data: { teamInvolved: true } }));
+}
+
+/**
  * A equipe respondeu (pelo Dish Desk ou pelo WhatsApp do celular): responder implica ter lido a conversa, e o
  * atendente assume, encerrando o menu automático (ou a IA) se ainda estiver aberto.
  */
@@ -63,6 +82,7 @@ export function teamRepliedUpdate(status: ConversationStatus, state: AutomationS
   const afterHoursPending = status === "PENDING" && (state.afterHours || state.aiWaiting);
   return {
     unreadCount: 0,
+    teamInvolved: true,
     awaitingAgentSince: null, // a equipe respondeu: o alarme para
     // Com o atendente na conversa, a próxima mensagem do cliente depois do pedido confirmado não chama a equipe.
     ...((menuOpen || afterHoursPending || state.orderFollowUp || state.ai === "on" || state.aiWaiting) && {

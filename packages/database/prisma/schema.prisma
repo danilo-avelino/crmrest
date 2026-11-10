@@ -366,6 +366,7 @@ model Conversation {
   windowExpiresAt    DateTime?          @map("window_expires_at") @db.Timestamptz(3) // janela de 24h
   awaitingAgentSince DateTime?          @map("awaiting_agent_since") @db.Timestamptz(3) // automação chamou a equipe e ninguém respondeu ainda
   awaitingAgentQuiet Boolean            @default(false) @map("awaiting_agent_quiet") // chamado sem urgência: aviso sonoro discreto no lugar do alarme
+  teamInvolved       Boolean            @default(false) @map("team_involved") // a equipe atuou neste atendimento (respondeu, nota, status); zera ao resolver
   unreadCount        Int                @default(0) @map("unread_count")
   teamOnly           Boolean            @default(false) @map("team_only") // aberta pelo alerta de fraude: o cliente não está nela
   createdAt          DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)

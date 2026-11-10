@@ -187,6 +187,7 @@ export type ConversationPage = { items: ConversationListItem[]; nextCursor: stri
  * Conversas por status e quantas estão chamando um atendente (alarme da Inbox); `awaitingQuiet` = quantas delas chamam sem urgência.
  * `urgentSince` = desde quando espera o chamado urgente mais antigo (o alarme só fica forte depois de alguns minutos).
  * `unread` = mensagens não lidas nas conversas abertas e pendentes (aviso de nova mensagem fora da Inbox).
+ * `OPEN` conta só as abertas com a equipe (as da aba Automáticos ficam de fora).
  */
 export type ConversationCounts = Record<ConversationStatus, number> & {
   awaitingAgent: number;
@@ -198,8 +199,11 @@ export type ConversationCounts = Record<ConversationStatus, number> & {
 export type ConversationMessages = { messages: MessageDto[]; orders: Record<string, OrderDto>; evaluations: ConversationEvaluationDto[] };
 
 export const ConversationListQuery = z.object({
-  /** ACTIVE: abertas e pendentes (o que a equipe ainda precisa tratar). */
-  status: z.enum([...Object.values(ConversationStatusEnum), "ACTIVE"]).optional(),
+  /**
+   * ACTIVE: abertas e pendentes em que a equipe foi chamada ou atuou (o que ela ainda precisa tratar); OPEN também fica só
+   * com essas. AUTO: abertas que só tiveram automação (menu, IA, avisos do pedido), sem chamar a equipe.
+   */
+  status: z.enum([...Object.values(ConversationStatusEnum), "ACTIVE", "AUTO"]).optional(),
   search: z.string().trim().max(100).optional(),
   tenantId: z.uuid().optional(),
   cursor: z.uuid().optional(),
