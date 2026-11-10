@@ -72,10 +72,10 @@ describe("Configurações do restaurante (links de pedido)", () => {
     expect(before).toMatchObject({ personality: "cordial", businessHours: DEFAULT_BUSINESS_HOURS });
     await api("put", `/${fx.a.id}/business-hours`, agentToken).send(DEFAULT_BUSINESS_HOURS).expect(403);
 
-    const hours = { ...DEFAULT_BUSINESS_HOURS, enabled: true, days: [null, ...DEFAULT_BUSINESS_HOURS.days.slice(1)] };
+    const hours = { ...DEFAULT_BUSINESS_HOURS, enabled: true, days: [[], [{ open: "11:00", close: "15:00" }, { open: "16:00", close: "23:00" }], ...DEFAULT_BUSINESS_HOURS.days.slice(2)] };
     await api("put", `/${fx.b.id}/business-hours`, adminToken).send({ ...hours, days: hours.days.slice(1) }).expect(400);
     await api("put", `/${fx.b.id}/business-hours`, adminToken)
-      .send({ ...hours, days: [{ open: "25:00", close: "23:00" }, ...hours.days.slice(1)] })
+      .send({ ...hours, days: [[{ open: "25:00", close: "23:00" }], ...hours.days.slice(1)] })
       .expect(400);
     const { body } = await api("put", `/${fx.b.id}/business-hours`, adminToken).send(hours).expect(200);
     expect(body).toMatchObject({ businessHours: hours });

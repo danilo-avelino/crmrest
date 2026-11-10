@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { type AutomationMessages, fillMessage, PERSONALITIES, PERSONALITY_MESSAGES } from "../src/personalities.js";
 import {
   automationMessagesOf,
-  type BusinessHours,
+  BusinessHours,
   businessHoursOf,
   COURIER_MENU_OPTIONS,
   isOpenAt,
@@ -12,7 +12,7 @@ import {
 
 // Horários de Brasília (-03:00). 2026-10-05 é segunda-feira.
 const at = (iso: string) => new Date(`${iso}-03:00`);
-const closed = null;
+const closed: BusinessHours["days"][number] = [];
 const CORDIAL = PERSONALITY_MESSAGES.cordial;
 
 describe("mensagens automáticas", () => {
@@ -80,7 +80,7 @@ describe("horário de funcionamento", () => {
   const hours: BusinessHours = {
     enabled: true,
     // domingo fechado; seg a qui 18h–23h; sex e sáb 18h–02h (passa da meia-noite)
-    days: [closed, ...Array(4).fill({ open: "18:00", close: "23:00" }), { open: "18:00", close: "02:00" }, { open: "18:00", close: "02:00" }],
+    days: [closed, ...Array(4).fill([{ open: "18:00", close: "23:00" }]), [{ open: "18:00", close: "02:00" }], [{ open: "18:00", close: "02:00" }]],
     closedMessage: "Fechados",
   };
 
@@ -104,9 +104,44 @@ describe("horário de funcionamento", () => {
     expect(reopeningAt(hours, at("2026-10-05T23:30:00"))).toBe("amanhã às 18:00"); // segunda, depois de fechar
     expect(reopeningAt(hours, at("2026-10-10T03:00:00"))).toBe("hoje às 18:00"); // sábado, o turno de sexta acabou às 02:00
     expect(reopeningAt(hours, at("2026-10-11T10:00:00"))).toBe("amanhã às 18:00"); // domingo fechado
-    const onlyMonday: BusinessHours = { ...hours, days: [closed, { open: "11:00", close: "15:00" }, closed, closed, closed, closed, closed] };
+    const onlyMonday: BusinessHours = { ...hours, days: [closed, [{ open: "11:00", close: "15:00" }], closed, closed, closed, closed, closed] };
     expect(reopeningAt(onlyMonday, at("2026-10-09T20:00:00"))).toBe("na segunda-feira às 11:00"); // sexta
     expect(reopeningAt(onlyMonday, at("2026-10-05T16:00:00"))).toBe("na segunda-feira às 11:00"); // segunda, já fechou
     expect(reopeningAt({ ...hours, days: Array(7).fill(closed) }, at("2026-10-05T12:00:00"))).toBe("em breve");
+  });
+
+  it("mais de um horário no dia: fecha no intervalo e volta no horário seguinte", () => {
+    // Todos os dias das 11h às 15h e das 16h às 23h.
+    const split = BusinessHours.parse({ ...hours, days: Array(7).fill([{ open: "11:00", close: "15:00" }, { open: "16:00", close: "23:00" }]) });
+    expect(isOpenAt(split, at("2026-10-05T14:59:00"))).toBe(true);
+    expect(isOpenAt(split, at("2026-10-05T15:30:00"))).toBe(false); // intervalo
+    expect(isOpenAt(split, at("2026-10-05T16:00:00"))).toBe(true);
+    expect(isOpenAt(split, at("2026-10-05T23:00:00"))).toBe(false);
+    expect(reopeningAt(split, at("2026-10-05T15:30:00"))).toBe("hoje às 16:00");
+    expect(reopeningAt(split, at("2026-10-05T09:00:00"))).toBe("hoje às 11:00");
+    expect(reopeningAt(split, at("2026-10-05T23:30:00"))).toBe("amanhã às 11:00");
+    // O último horário do dia pode passar da meia-noite.
+    const late = BusinessHours.parse({ ...hours, days: Array(7).fill([{ open: "11:00", close: "15:00" }, { open: "18:00", close: "01:00" }]) });
+    expect(isOpenAt(late, at("2026-10-06T00:30:00"))).toBe(true);
+    expect(isOpenAt(late, at("2026-10-06T01:00:00"))).toBe(false);
+  });
+
+  it("horários de um dia não se sobrepõem, só o último passa da meia-noite, e no máximo 3", () => {
+    const withMonday = (monday: unknown) => BusinessHours.safeParse({ ...hours, days: [closed, monday, closed, closed, closed, closed, closed] }).success;
+    expect(withMonday([{ open: "11:00", close: "15:00" }, { open: "15:00", close: "23:00" }])).toBe(true);
+    expect(withMonday([{ open: "11:00", close: "15:00" }, { open: "14:00", close: "23:00" }])).toBe(false); // sobrepõe
+    expect(withMonday([{ open: "16:00", close: "23:00" }, { open: "11:00", close: "15:00" }])).toBe(false); // fora de ordem
+    expect(withMonday([{ open: "18:00", close: "01:00" }, { open: "02:00", close: "04:00" }])).toBe(false); // passa da meia-noite antes do último
+    const four = ["08:00", "10:00", "12:00", "14:00"].map((open) => ({ open, close: `${Number(open.slice(0, 2)) + 1}:00`.padStart(5, "0") }));
+    expect(withMonday(four.slice(0, 3))).toBe(true);
+    expect(withMonday(four)).toBe(false);
+  });
+
+  it("horário salvo no formato antigo (um turno ou null) continua valendo", () => {
+    const old = { enabled: true, days: [null, ...Array(6).fill({ open: "18:00", close: "23:00" })], closedMessage: "Fechados" };
+    const read = businessHoursOf({ businessHours: old });
+    expect(read.enabled).toBe(true);
+    expect(read.days).toEqual([[], ...Array(6).fill([{ open: "18:00", close: "23:00" }])]);
+    expect(isOpenAt(read, at("2026-10-05T19:00:00"))).toBe(true);
   });
 });

@@ -155,21 +155,40 @@ export function menuMessage(greeting: string, name?: string, options = MENU_OPTI
 export const WEEKDAY_LABELS = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"] as const;
 
 const Clock = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Use horas no formato 18:00.");
-/** Um turno por dia; fechar antes de abrir (18:00 às 02:00) passa da meia-noite. */
-const DayHours = z.object({ open: Clock, close: Clock }).refine((day) => day.open !== day.close, "Abertura e fechamento iguais.");
+const minutesOf = (clock: string) => Number(clock.slice(0, 2)) * 60 + Number(clock.slice(3));
+const crossesMidnight = (shift: { open: string; close: string }) => minutesOf(shift.close) <= minutesOf(shift.open);
+
+/** Fechar antes de abrir (18:00 às 02:00) passa da meia-noite. */
+const Shift = z.object({ open: Clock, close: Clock }).refine((shift) => shift.open !== shift.close, "Abertura e fechamento iguais.");
+export const MAX_SHIFTS_PER_DAY = 3;
+
+/**
+ * Turnos do dia em ordem (11:00 às 15:00 e 16:00 às 23:00); [] = fechado o dia todo. Só o último passa da meia-noite.
+ * Aceita o formato antigo, salvo antes dos turnos: um turno só, ou null para fechado.
+ */
+const DayHours = z.preprocess(
+  (day) => (day === null ? [] : Array.isArray(day) ? day : [day]),
+  z
+    .array(Shift)
+    .max(MAX_SHIFTS_PER_DAY, `Use até ${MAX_SHIFTS_PER_DAY} horários por dia.`)
+    .refine(
+      (shifts) => shifts.every((shift, i) => i === 0 || (!crossesMidnight(shifts[i - 1]!) && minutesOf(shift.open) >= minutesOf(shifts[i - 1]!.close))),
+      "Os horários de um dia não podem se sobrepor: comece o seguinte depois que o anterior fecha.",
+    ),
+);
 
 export const BusinessHours = z.object({
   /** Desligado: a mensagem de fora do horário nunca sai. */
   enabled: z.boolean(),
-  /** Índice 0 = domingo; null = fechado o dia todo. */
-  days: z.array(DayHours.nullable()).length(7),
+  /** Índice 0 = domingo. */
+  days: z.array(DayHours).length(7),
   closedMessage: z.string().trim().min(1, "Escreva a mensagem.").max(1000, "Use até 1000 caracteres."),
 });
 export type BusinessHours = z.infer<typeof BusinessHours>;
 
 export const DEFAULT_BUSINESS_HOURS: BusinessHours = {
   enabled: false,
-  days: Array.from({ length: 7 }, () => ({ open: "11:00", close: "23:00" })),
+  days: Array.from({ length: 7 }, () => [{ open: "11:00", close: "23:00" }]),
   closedMessage: PERSONALITY_MESSAGES.cordial.closedMessage,
 };
 
@@ -187,7 +206,6 @@ const BRASILIA_CLOCK = new Intl.DateTimeFormat("en-US", {
   hourCycle: "h23",
 });
 const WEEKDAYS_EN = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-const minutesOf = (clock: string) => Number(clock.slice(0, 2)) * 60 + Number(clock.slice(3));
 
 /** Dia da semana (0 = domingo) e minutos desde a meia-noite, no horário de Brasília. */
 function brasiliaClock(at: Date): { day: number; now: number } {
@@ -198,18 +216,18 @@ function brasiliaClock(at: Date): { day: number; now: number } {
 /** O restaurante está aberto neste instante (horário de Brasília)? */
 export function isOpenAt(hours: BusinessHours, at: Date): boolean {
   const { day, now } = brasiliaClock(at);
-  const today = hours.days[day];
-  const yesterday = hours.days[(day + 6) % 7];
-  if (today) {
-    const [open, close] = [minutesOf(today.open), minutesOf(today.close)];
-    if (close > open ? now >= open && now < close : now >= open) return true;
-  }
+  const today = hours.days[day] ?? [];
+  const yesterday = hours.days[(day + 6) % 7] ?? [];
+  const openToday = today.some((shift) =>
+    crossesMidnight(shift) ? now >= minutesOf(shift.open) : now >= minutesOf(shift.open) && now < minutesOf(shift.close),
+  );
   // Turno de ontem que passou da meia-noite.
-  if (yesterday) {
-    const [open, close] = [minutesOf(yesterday.open), minutesOf(yesterday.close)];
-    if (close <= open && now < close) return true;
-  }
-  return false;
+  return openToday || yesterday.some((shift) => crossesMidnight(shift) && now < minutesOf(shift.close));
+}
+
+/** "11:00 às 15:00 e 16:00 às 23:00", ou "fechado". */
+export function dayHoursLabel(shifts: BusinessHours["days"][number]): string {
+  return shifts.length ? shifts.map((shift) => `${shift.open} às ${shift.close}`).join(" e ") : "fechado";
 }
 
 const WEEKDAY_RETURN = ["no domingo", "na segunda-feira", "na terça-feira", "na quarta-feira", "na quinta-feira", "na sexta-feira", "no sábado"];
@@ -221,9 +239,9 @@ const WEEKDAY_RETURN = ["no domingo", "na segunda-feira", "na terça-feira", "na
 export function reopeningAt(hours: BusinessHours, at: Date): string {
   const { day, now } = brasiliaClock(at);
   for (let ahead = 0; ahead <= 7; ahead++) {
-    const shift = hours.days[(day + ahead) % 7];
     // Hoje só vale o turno que ainda não começou.
-    if (!shift || (ahead === 0 && minutesOf(shift.open) <= now)) continue;
+    const shift = (hours.days[(day + ahead) % 7] ?? []).find((item) => ahead > 0 || minutesOf(item.open) > now);
+    if (!shift) continue;
     const when = ahead === 0 ? "hoje" : ahead === 1 ? "amanhã" : WEEKDAY_RETURN[(day + ahead) % 7];
     return `${when} às ${shift.open}`;
   }

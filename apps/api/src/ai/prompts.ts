@@ -2,6 +2,7 @@ import type { MessageType } from "@dishdesk/database/enums";
 import {
   automationMessagesOf,
   businessHoursOf,
+  dayHoursLabel,
   isOpenAt,
   type MessageContent,
   orderLinksOf,
@@ -90,7 +91,7 @@ export function restaurantFacts(name: string, settings: unknown, now: Date): str
   const links = orderLinksOf(settings);
   const lines = [`Restaurante: ${name}`, `Agora: ${BRASILIA_NOW.format(now)} (horário de Brasília)`];
   if (hours.enabled) {
-    const week = hours.days.map((day, index) => `${WEEKDAY_LABELS[index]}: ${day ? `${day.open} às ${day.close}` : "fechado"}`);
+    const week = hours.days.map((day, index) => `${WEEKDAY_LABELS[index]}: ${dayHoursLabel(day)}`);
     lines.push(`Horário de funcionamento: ${week.join("; ")}`);
     lines.push(isOpenAt(hours, now) ? "Está aberto agora." : `Está fechado agora. Volta a atender ${reopeningAt(hours, now)}.`);
   } else {
