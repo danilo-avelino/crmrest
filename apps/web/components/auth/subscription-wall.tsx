@@ -11,10 +11,10 @@ import { LogoMark } from "@/components/brand/logo-mark";
 import { Button } from "@/components/ui/button";
 import { usePendingAction } from "@/hooks/use-pending-action";
 import { ApiError, apiRequest } from "@/lib/api";
-import { currency, currencyWhole } from "@/lib/format";
+import { currencyWhole } from "@/lib/format";
 
 const SUPPORT_WHATSAPP = "https://wa.me/5586999731647";
-// Depois de voltar da Stripe, a confirmação chega pelo webhook: confere de 3 em 3 segundos, por até 2 minutos.
+// Depois de voltar da Stripe ou da InfinitePay, a confirmação chega pelo webhook: confere de 3 em 3 segundos, por até 2 minutos.
 const CONFIRM_INTERVAL_MS = 3_000;
 const CONFIRM_ATTEMPTS = 40;
 
@@ -24,7 +24,7 @@ const PLANS: { key: BillingPlanKey; title: string; period: string; description: 
     key: "annual",
     title: "Anual",
     period: "por ano",
-    description: `Pagamento único, no meio que você preferir. Sai por ${currency(BILLING_PLANS.annual.amountCents / 100 / 12)} ao mês.`,
+    description: `No cartão em até 10x de ${currencyWhole(BILLING_PLANS.annual.amountCents / 100 / 10)} sem juros, ou no Pix.`,
     action: "Pagar o plano anual",
   },
 ];
@@ -39,7 +39,7 @@ const TITLE = {
 /**
  * Restaurante bloqueado (teste encerrado, assinatura vencida, canal que já passou por outro teste grátis ou restaurante
  * novo, adicionado por quem já tem conta, esperando o primeiro pagamento): escolha
- * do plano e ida para o pagamento na Stripe. Com a assinatura vencida, qualquer usuário do restaurante pode liberar o
+ * do plano e ida para o pagamento (mensal na Stripe, anual na InfinitePay). Com a assinatura vencida, qualquer usuário do restaurante pode liberar o
  * acesso por confiança, uma vez por atraso.
  * O design ainda não tem este board: segue o board "Login · Escolha de restaurante". Desktop no MVP.
  */
@@ -232,7 +232,7 @@ export function SubscriptionWall() {
           items={[
             "WhatsApp, Instagram e iFood no mesmo lugar",
             "Painel master com todos os seus restaurantes",
-            "Pagamento processado pela Stripe",
+            "Pagamento processado pela Stripe e pela InfinitePay",
           ]}
         />
       ) : (
@@ -242,7 +242,7 @@ export function SubscriptionWall() {
           items={[
             "Conversas e histórico dos clientes guardados",
             "Canais conectados continuam recebendo mensagens",
-            "Pagamento processado pela Stripe",
+            "Pagamento processado pela Stripe e pela InfinitePay",
           ]}
         />
       )}

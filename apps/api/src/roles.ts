@@ -53,6 +53,7 @@ import { SiteController } from "./site/site.controller.js";
 import { SuggestionsController } from "./suggestions/suggestions.controller.js";
 import { SuggestionsService } from "./suggestions/suggestions.service.js";
 import { EvolutionWebhookController } from "./webhooks/evolution-webhook.controller.js";
+import { InfinitepayWebhookController } from "./webhooks/infinitepay-webhook.controller.js";
 import { AdminNotificationsService } from "./notifications/admin-notifications.service.js";
 import { MetaWebhookController } from "./webhooks/meta-webhook.controller.js";
 import { StripeWebhookController } from "./webhooks/stripe-webhook.controller.js";
@@ -100,8 +101,8 @@ import { StripeWebhookController } from "./webhooks/stripe-webhook.controller.js
 })
 export class ApiRoleModule {}
 
-/** gateway: endpoints públicos dos canais (só valida e enfileira) e o webhook de pagamento da Stripe. */
-@Module({ controllers: [MetaWebhookController, EvolutionWebhookController, StripeWebhookController] })
+/** gateway: endpoints públicos dos canais (só valida e enfileira) e os webhooks de pagamento da Stripe e da InfinitePay. */
+@Module({ controllers: [MetaWebhookController, EvolutionWebhookController, StripeWebhookController, InfinitepayWebhookController] })
 export class GatewayRoleModule {}
 
 /** realtime: Socket.IO para os painéis. */

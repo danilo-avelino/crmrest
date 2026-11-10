@@ -103,12 +103,13 @@ describe("adicionar restaurante na escolha de restaurante", () => {
       type: "checkout.session.completed",
       data: {
         object: {
-          id: `cs_${suffix}_anual`,
-          mode: "payment",
+          id: `cs_${suffix}_mensal`,
+          mode: "subscription",
           payment_status: "paid",
           client_reference_id: filial,
           customer: null,
-          amount_total: 149_000,
+          invoice: `in_${suffix}_mensal`,
+          amount_total: 14_900,
           created: Math.floor(Date.now() / 1000),
         },
       },
@@ -122,10 +123,11 @@ describe("adicionar restaurante na escolha de restaurante", () => {
       .send(raw)
       .expect(200);
 
-    const year = new Date();
-    year.setFullYear(year.getFullYear() + 1);
+    // Um mês mais a folga de 1 dia para a cobrança da renovação.
     const { paidUntil } = await admin.tenant.findUniqueOrThrow({ where: { id: filial } });
-    expect(Math.abs(paidUntil!.getTime() - year.getTime())).toBeLessThan(60_000);
+    const days = (paidUntil!.getTime() - Date.now()) / (24 * 60 * 60 * 1000);
+    expect(days).toBeGreaterThan(28);
+    expect(days).toBeLessThan(33);
     await owner.post("/api/auth/context").send({ mode: "tenant", tenantId: filial }).expect(200);
   });
 

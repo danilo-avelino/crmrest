@@ -19,6 +19,7 @@ import { AuthService } from "../auth/auth.service.js";
 import { ZodPipe } from "../common/zod.pipe.js";
 import { ENV, type Env } from "../config/env.js";
 import { DatabaseService } from "../core/database.service.js";
+import { createAnnualLink } from "./infinitepay.js";
 import { createCardUpdateSession, createCheckoutSession, hasSubscription } from "./stripe.js";
 
 /**
@@ -41,7 +42,9 @@ export class BillingController {
   @Post("checkout")
   @HttpCode(200)
   async checkout(@Body(new ZodPipe(CheckoutRequest)) body: CheckoutRequest, @Req() request: Request): Promise<CheckoutResponse> {
-    if (!this.env.STRIPE_SECRET_KEY) throw new ServiceUnavailableException("O pagamento ainda não está disponível. Fale com a gente.");
+    // Mensal na Stripe (cartão, renova sozinho); anual na InfinitePay (cartão em até 10x sem juros ou Pix).
+    const configured = body.plan === "monthly" ? this.env.STRIPE_SECRET_KEY : this.env.INFINITEPAY_HANDLE && this.env.INFINITEPAY_API_KEY;
+    if (!configured) throw new ServiceUnavailableException("O pagamento ainda não está disponível. Fale com a gente.");
     const { user, tenants } = await this.auth.sessionProfile(sessionCookie(request));
     const tenant = tenants.find((t) => t.id === body.tenantId);
     if (!tenant) throw new ForbiddenException("Sem acesso a este restaurante.");
@@ -65,12 +68,15 @@ export class BillingController {
       return url.toString();
     };
     try {
+      if (body.plan === "annual") {
+        const webhookUrl = new URL("/api/webhooks/infinitepay", this.env.WEB_ORIGIN).toString();
+        return { url: await createAnnualLink(this.env, { tenantId: tenant.id, name: user.name, email: user.email, successUrl: flagged("pago"), webhookUrl }) };
+      }
       // Quem já assina o mensal e está em dia só troca o cartão: outra assinatura cobraria em dobro.
-      if (body.plan === "monthly" && upToDate && stripeCustomerId && (await hasSubscription(this.env, stripeCustomerId))) {
+      if (upToDate && stripeCustomerId && (await hasSubscription(this.env, stripeCustomerId))) {
         return { url: await createCardUpdateSession(this.env, { customerId: stripeCustomerId, returnUrl: page.toString(), doneUrl: flagged("cartao") }) };
       }
       const url = await createCheckoutSession(this.env, {
-        plan: body.plan,
         tenantId: tenant.id,
         tenantName: tenant.name,
         taxId,

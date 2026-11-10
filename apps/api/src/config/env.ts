@@ -58,6 +58,11 @@ const EnvSchema = z.object({
   STRIPE_SECRET_KEY: z.string().min(1).optional(),
   STRIPE_WEBHOOK_SECRET: z.string().min(1).optional(),
   STRIPE_API_URL: z.url().default("https://api.stripe.com"),
+  // InfinitePay (Checkout Integrado): plano anual no cartão em até 12x ou no Pix. A handle é a InfiniteTag sem o "$" e a
+  // chave (inchk_...) sai de Configurações do Checkout. Sem as duas, o checkout do anual e o webhook respondem 503.
+  INFINITEPAY_HANDLE: z.string().min(1).optional(),
+  INFINITEPAY_API_KEY: z.string().min(1).optional(),
+  INFINITEPAY_API_URL: z.url().default("https://api.checkout.infinitepay.io"),
   // Supabase Auth: só manda o e-mail de "Esqueceu a senha?" e confere o link de volta; o login continua sendo o nosso.
   // A chave é a secreta (service_role). Sem as duas, a recuperação de senha responde 503.
   SUPABASE_URL: z.url().optional(),

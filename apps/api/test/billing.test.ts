@@ -9,10 +9,15 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const WEBHOOK_SECRET = "whsec_teste";
 const CHECKOUT_URL = "https://checkout.stripe.test/c/pay/cs_test_1";
 const PORTAL_URL = "https://billing.stripe.test/p/session/bps_test_1";
+const LINK_URL = "https://checkout.infinitepay.test/dishdesk/1RxANX7tdF";
+type PaymentCheck = { success: boolean; paid: boolean; amount: number };
 
 describe("cadastro pelo site, teste grátis e assinatura", () => {
   let app: INestApplication;
   let stripe: Awaited<ReturnType<typeof startMockGraph>>;
+  let infinitepay: Awaited<ReturnType<typeof startMockGraph>>;
+  // Resposta do payment_check da InfinitePay simulada, por transaction_nsu; sem entrada, o pagamento não existe.
+  const checks: Record<string, PaymentCheck> = {};
   const suffix = randomUUID().slice(0, 8);
   const emails: string[] = [];
   // Dona da Cantina (cadastro 1) e dono da segunda Cantina (cadastro 2), cada um com a sessão do próprio cadastro.
@@ -47,6 +52,20 @@ describe("cadastro pelo site, teste grátis e assinatura", () => {
       .send(raw);
   };
 
+  // O webhook da InfinitePay não tem assinatura: quem confirma é o payment_check.
+  const postInfinitepay = (body: unknown) => request(app.getHttpServer()).post("/api/webhooks/infinitepay").send(body as object);
+  const paidNotice = (tenantId: string, transactionNsu: string) => ({
+    invoice_slug: `slug-${transactionNsu}`,
+    amount: 149_000,
+    paid_amount: 149_000,
+    installments: 10,
+    capture_method: "credit_card",
+    transaction_nsu: transactionNsu,
+    order_nsu: `${tenantId}.1762700000000`,
+    receipt_url: "https://comprovante.test/1",
+    items: [],
+  });
+
   const sessionEvent = (object: Record<string, unknown>) => ({
     type: "checkout.session.completed",
     data: { object: { payment_status: "paid", customer: null, created: Math.floor(Date.now() / 1000), ...object } },
@@ -59,7 +78,20 @@ describe("cadastro pelo site, teste grátis e assinatura", () => {
       if (call.method === "DELETE") return { status: 200, body: {} };
       return { status: 200, body: { url: call.path === "/v1/billing_portal/sessions" ? PORTAL_URL : CHECKOUT_URL } };
     });
-    app = await createTestApp({ STRIPE_SECRET_KEY: "sk_test_chave", STRIPE_WEBHOOK_SECRET: WEBHOOK_SECRET, STRIPE_API_URL: stripe.url });
+    infinitepay = await startMockGraph();
+    infinitepay.reply((call) => {
+      if (call.path === "/links") return { status: 200, body: { checkout_url: LINK_URL } };
+      const { transaction_nsu } = call.body as { transaction_nsu: string };
+      return { status: 200, body: checks[transaction_nsu] ?? { success: false, paid: false } };
+    });
+    app = await createTestApp({
+      STRIPE_SECRET_KEY: "sk_test_chave",
+      STRIPE_WEBHOOK_SECRET: WEBHOOK_SECRET,
+      STRIPE_API_URL: stripe.url,
+      INFINITEPAY_HANDLE: "dishdesk",
+      INFINITEPAY_API_KEY: "inchk_teste",
+      INFINITEPAY_API_URL: infinitepay.url,
+    });
     owner = request.agent(app.getHttpServer());
     other = request.agent(app.getHttpServer());
   });
@@ -69,6 +101,7 @@ describe("cadastro pelo site, teste grátis e assinatura", () => {
     await admin.user.deleteMany({ where: { email: { in: emails } } });
     await app?.close();
     await stripe?.close();
+    await infinitepay?.close();
   });
 
   it("cria o restaurante em teste e quem se cadastrou já entra como administrador", async () => {
@@ -123,7 +156,7 @@ describe("cadastro pelo site, teste grátis e assinatura", () => {
     await owner.post("/api/auth/billing/trust").send({ tenantId: cantina }).expect(409);
   });
 
-  it("checkout: mensal no cartão e anual em qualquer meio, só para o administrador do restaurante", async () => {
+  it("checkout: mensal no cartão na Stripe e anual na InfinitePay, só para o administrador do restaurante", async () => {
     const checkout = (agent: ReturnType<typeof request.agent>, tenantId: string, plan: string) =>
       agent.post("/api/auth/billing/checkout").send({ tenantId, plan });
 
@@ -161,41 +194,73 @@ describe("cadastro pelo site, teste grátis e assinatura", () => {
       customer_email: emails[0],
     });
 
-    await checkout(owner, cantina, "annual").expect(200);
-    expect(form(1)).toMatchObject({ mode: "payment", "line_items[0][price_data][unit_amount]": "149000" });
-    expect(String(stripe.requests[1]!.body)).not.toContain("recurring");
-    // Sem meio de pagamento fixo: a Stripe mostra os que estão ativos no painel.
-    expect(String(stripe.requests[1]!.body)).not.toContain("payment_method_types");
+    const annual = await checkout(owner, cantina, "annual").expect(200);
+    expect(annual.body).toEqual({ url: LINK_URL });
+    expect(stripe.requests).toHaveLength(1); // o anual não passa pela Stripe
+    expect(infinitepay.requests).toEqual([
+      {
+        method: "POST",
+        path: "/links",
+        apikey: "inchk_teste",
+        body: {
+          handle: "dishdesk",
+          items: [{ description: "Dish Desk · plano anual", price: 149_000, quantity: 1 }],
+          order_nsu: expect.stringMatching(new RegExp(`^${cantina}\\.\\d+$`)),
+          redirect_url: `http://localhost:3000/assinatura?restaurante=${cantina}&pago=1`,
+          webhook: { url: "http://localhost:3000/api/webhooks/infinitepay", events: ["paid"] },
+          customer: { name: "Bruna Lima", email: emails[0] },
+          // Até 10x as taxas ficam com a gente: o cliente parcela sem juros.
+          options: { assured_installments: 10, single_payment: true },
+        },
+      },
+    ]);
 
     // Ainda no teste grátis, pela aba Pagamento: assina na hora e volta para as configurações.
     await checkout(other, segunda, "monthly").expect(200);
-    expect(form(2)).toMatchObject({
+    expect(form(1)).toMatchObject({
       mode: "subscription",
       success_url: "http://localhost:3000/configuracoes/pagamento?pago=1",
       cancel_url: "http://localhost:3000/configuracoes/pagamento",
     });
   });
 
-  it("webhook recusa assinatura errada e ignora pagamento ainda não confirmado", async () => {
-    const event = sessionEvent({ id: `cs_${suffix}_pix`, mode: "payment", client_reference_id: cantina, amount_total: 149_000 });
+  it("webhook da Stripe recusa assinatura errada e ignora pagamento ainda não confirmado", async () => {
+    const event = sessionEvent({ id: `cs_${suffix}_x`, mode: "subscription", client_reference_id: cantina, amount_total: 14_900 });
     await postStripe(event, "whsec_outro").expect(401);
     await postStripe(sessionEvent({ ...event.data.object, payment_status: "unpaid" })).expect(200);
     expect((await tenant(cantina)).paidUntil).toBeNull();
   });
 
-  it("Pix do plano anual libera o restaurante por um ano; o evento reenviado não conta de novo", async () => {
-    const event = sessionEvent({ id: `cs_${suffix}_pix`, mode: "payment", client_reference_id: cantina, amount_total: 149_000 });
-    await postStripe(event).expect(200);
+  it("webhook da InfinitePay só libera pagamento confirmado no payment_check e com o valor do plano anual", async () => {
+    // Aviso inventado: o payment_check não encontra o pagamento.
+    await postInfinitepay(paidNotice(cantina, `t-${suffix}-falso`)).expect(200);
+    // Link de R$ 1 criado por outra pessoa com a nossa handle e o número de pedido do restaurante.
+    checks[`t-${suffix}-barato`] = { success: true, paid: true, amount: 100 };
+    await postInfinitepay(paidNotice(cantina, `t-${suffix}-barato`)).expect(200);
+    // Corpo que não é de um link nosso.
+    await postInfinitepay({ order_nsu: "outra-loja-123" }).expect(200);
+    expect((await tenant(cantina)).paidUntil).toBeNull();
+    expect(infinitepay.requests.at(-1)).toMatchObject({
+      path: "/payment_check",
+      apikey: "inchk_teste",
+      body: { handle: "dishdesk", order_nsu: `${cantina}.1762700000000`, transaction_nsu: `t-${suffix}-barato`, slug: `slug-t-${suffix}-barato` },
+    });
+  });
+
+  it("plano anual pago na InfinitePay libera o restaurante por um ano; o aviso reenviado não conta de novo", async () => {
+    checks[`t-${suffix}-anual`] = { success: true, paid: true, amount: 149_000 };
+    const notice = paidNotice(cantina, `t-${suffix}-anual`);
+    await postInfinitepay(notice).expect(200);
 
     const paidUntil = (await tenant(cantina)).paidUntil!;
     const year = new Date();
     year.setFullYear(year.getFullYear() + 1);
     expect(Math.abs(paidUntil.getTime() - year.getTime())).toBeLessThan(60_000);
     expect(await admin.billingPayment.findMany({ where: { tenantId: cantina } })).toMatchObject([
-      { id: `cs_${suffix}_pix`, plan: "ANNUAL", amountCents: 149_000 },
+      { id: `infinitepay:t-${suffix}-anual`, plan: "ANNUAL", amountCents: 149_000 },
     ]);
 
-    await postStripe(event).expect(200);
+    await postInfinitepay(notice).expect(200);
     expect((await tenant(cantina)).paidUntil).toEqual(paidUntil);
 
     const refreshed = await owner.post("/api/auth/refresh").expect(200);
@@ -204,10 +269,13 @@ describe("cadastro pelo site, teste grátis e assinatura", () => {
 
     // Com o plano anual em vigor o mensal não é oferecido; outro ano pode ser pago pela aba Pagamento.
     stripe.requests.length = 0;
+    infinitepay.requests.length = 0;
     await owner.post("/api/auth/billing/checkout").send({ tenantId: cantina, plan: "monthly" }).expect(409);
     await owner.post("/api/auth/billing/checkout").send({ tenantId: cantina, plan: "annual" }).expect(200);
-    expect(calls()).toEqual(["POST /v1/checkout/sessions"]);
-    expect(form(0).success_url).toBe("http://localhost:3000/configuracoes/pagamento?pago=1");
+    expect(calls()).toEqual([]);
+    expect(infinitepay.requests).toMatchObject([
+      { path: "/links", body: { redirect_url: "http://localhost:3000/configuracoes/pagamento?pago=1" } },
+    ]);
   });
 
   it("mensalidade: o primeiro pagamento libera um mês e cada renovação estende até o fim do período pago", async () => {
@@ -319,12 +387,11 @@ describe("cadastro pelo site, teste grátis e assinatura", () => {
     expect(again.body.tenants[0].billing.trustAvailable).toBe(true);
   });
 
-  it("plano anual pago por quem assinava o mensal cancela a assinatura", async () => {
+  it("plano anual pago na InfinitePay por quem assinava o mensal cancela a assinatura da Stripe", async () => {
     subscriptions = ["sub_nova"];
     stripe.requests.length = 0;
-    await postStripe(
-      sessionEvent({ id: `cs_${suffix}_anual`, mode: "payment", client_reference_id: segunda, customer: `cus_${suffix}`, amount_total: 149_000 }),
-    ).expect(200);
+    checks[`t-${suffix}-troca`] = { success: true, paid: true, amount: 149_000 };
+    await postInfinitepay(paidNotice(segunda, `t-${suffix}-troca`)).expect(200);
     expect(calls()).toEqual([`GET /v1/subscriptions?customer=cus_${suffix}`, "DELETE /v1/subscriptions/sub_nova"]);
     expect(await tenant(segunda)).toMatchObject({ billingPlan: "ANNUAL", trustUntil: null });
   });

@@ -187,7 +187,8 @@ export async function startMockGraph() {
     for await (const chunk of req) raw += String(chunk);
     // Corpo em JSON ou, na troca de código do login do Instagram, um formulário (fica como texto).
     const parsed = !raw ? null : req.headers["content-type"]?.includes("json") ? JSON.parse(raw) : raw;
-    const apikey = req.headers.apikey as string | undefined; // a Evolution API se autentica por este cabeçalho
+    // A Evolution API se autentica pelo cabeçalho apikey; a InfinitePay, pelo X-Api-Key.
+    const apikey = (req.headers.apikey ?? req.headers["x-api-key"]) as string | undefined;
     const request = { method: req.method ?? "GET", path: req.url ?? "", authorization: req.headers.authorization, apikey, body: parsed };
     requests.push(request);
     const { status, body } = reply(request);

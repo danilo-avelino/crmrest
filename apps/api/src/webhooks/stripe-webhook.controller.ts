@@ -62,17 +62,13 @@ export class StripeWebhookController {
     // Evento que não é de um checkout nosso (outro formato, sem o restaurante) é ignorado: responder erro só faria
     // a Stripe reenviar por dias.
     const event = Event.parse(request.body);
-    // Pix e boleto podem confirmar depois de o cliente sair da página: aí chega async_payment_succeeded.
-    if (event.type === "checkout.session.completed" || event.type === "checkout.session.async_payment_succeeded") {
+    // Só a assinatura mensal passa pela Stripe: o anual é pago na InfinitePay.
+    if (event.type === "checkout.session.completed") {
       const { data: session } = CheckoutSession.safeParse(event.data.object);
-      if (session?.payment_status !== "paid") return "ok";
-      if (session.mode === "subscription") {
-        const paidUntil = new Date(session.created * 1000);
-        paidUntil.setMonth(paidUntil.getMonth() + 1);
-        await this.record(session.invoice ?? session.id, session.client_reference_id, session.customer, "MONTHLY", session.amount_total, paidUntil);
-      } else {
-        await this.record(session.id, session.client_reference_id, session.customer, "ANNUAL", session.amount_total, null);
-      }
+      if (session?.payment_status !== "paid" || session.mode !== "subscription") return "ok";
+      const paidUntil = new Date(session.created * 1000);
+      paidUntil.setMonth(paidUntil.getMonth() + 1);
+      await this.record(session.invoice ?? session.id, session.client_reference_id, session.customer, "MONTHLY", session.amount_total, paidUntil);
       if (session.customer) await cancelOtherSubscriptions(this.env, session.customer, session.subscription ?? null);
     } else if (event.type === "invoice.paid") {
       // Renovação da mensalidade: o restaurante é o do cliente da Stripe, gravado no primeiro pagamento.

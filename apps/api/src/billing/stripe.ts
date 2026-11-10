@@ -1,9 +1,8 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { BILLING_PLANS, type BillingPlanKey } from "@dishdesk/shared";
+import { BILLING_PLANS } from "@dishdesk/shared";
 import { z } from "zod";
 import type { Env } from "../config/env.js";
 
-const PLAN_NAME = { monthly: "Dish Desk · plano mensal", annual: "Dish Desk · plano anual" } as const;
 const SIGNATURE_TOLERANCE_S = 5 * 60;
 
 /** Valida o Stripe-Signature ("t=<segundos>,v1=<hmac>"): HMAC-SHA256 de "<t>.<corpo bruto>" com o segredo do endpoint. */
@@ -55,14 +54,12 @@ export async function cancelOtherSubscriptions(env: Env, customerId: string, kee
 }
 
 /**
- * Página de pagamento da Stripe (Checkout): assinatura mensal no cartão ou um ano em pagamento único, em qualquer meio
- * de pagamento ativo no painel da Stripe. O restaurante vai em client_reference_id e volta no webhook. Devolve o
- * endereço da página.
+ * Página de pagamento da Stripe (Checkout): a assinatura mensal no cartão. O anual é na InfinitePay (infinitepay.ts).
+ * O restaurante vai em client_reference_id e volta no webhook. Devolve o endereço da página.
  */
 export async function createCheckoutSession(
   env: Env,
   input: {
-    plan: BillingPlanKey;
     tenantId: string;
     tenantName: string;
     taxId: string | null;
@@ -72,14 +69,16 @@ export async function createCheckoutSession(
     cancelUrl: string;
   },
 ): Promise<string> {
-  const { amountCents } = BILLING_PLANS[input.plan];
   const price = "line_items[0][price_data]";
   const params = new URLSearchParams({
-    mode: input.plan === "monthly" ? "subscription" : "payment",
+    mode: "subscription",
+    // Só cartão: a renovação é debitada sozinha, sem o cliente ter de pagar cada mensalidade.
+    "payment_method_types[0]": "card",
     "line_items[0][quantity]": "1",
     [`${price}[currency]`]: "brl",
-    [`${price}[unit_amount]`]: String(amountCents),
-    [`${price}[product_data][name]`]: PLAN_NAME[input.plan],
+    [`${price}[unit_amount]`]: String(BILLING_PLANS.monthly.amountCents),
+    [`${price}[product_data][name]`]: "Dish Desk · plano mensal",
+    [`${price}[recurring][interval]`]: "month",
     client_reference_id: input.tenantId,
     // Aparecem no pagamento, no painel da Stripe, para a emissão da nota fiscal.
     "metadata[restaurante]": input.tenantName,
@@ -88,11 +87,6 @@ export async function createCheckoutSession(
     success_url: input.successUrl,
     cancel_url: input.cancelUrl,
   });
-  if (input.plan === "monthly") {
-    params.set(`${price}[recurring][interval]`, "month");
-    // Só cartão: a renovação é debitada sozinha, sem o cliente ter de pagar cada mensalidade.
-    params.set("payment_method_types[0]", "card");
-  }
   if (input.customerId) params.set("customer", input.customerId);
   else params.set("customer_email", input.email);
 
