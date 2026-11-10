@@ -27,7 +27,7 @@ import type { Queue } from "bullmq";
 import { scheduleEvaluation } from "../ai/ai-evaluation.service.js";
 import { LlmClient } from "../ai/llm.client.js";
 import type { RequestAuth } from "../auth/auth.decorators.js";
-import { type AutomationState, channelSends, isPaused } from "../automations/automation.js";
+import { type AutomationState, channelSends, isPaused, teamRepliedUpdate } from "../automations/automation.js";
 import { contactsAwaitingDecision } from "../orders/fraud-alert.js";
 import { ENV, type Env } from "../config/env.js";
 import { ConnectorsService } from "../connectors/connectors.service.js";
@@ -208,30 +208,11 @@ export class ConversationsService {
         },
         include: { sentByUser: { select: { id: true, name: true } } },
       });
-      // Responder implica ter lido a conversa; e o atendente assume, encerrando o menu automático (ou a IA) se ainda estiver aberto.
-      const state = conversation.automationState as AutomationState;
-      const menuOpen = !!state.triage && state.triage !== "done";
-      // Pendente só por ter chegado fora do horário (ou esperando um atendente): com a resposta da equipe, volta a ser um atendimento aberto.
-      const afterHoursPending = conversation.status === "PENDING" && (state.afterHours || state.aiWaiting);
       await tx.conversation.update({
         where: { id: conversationId },
         data: {
           lastMessageAt: created.createdAt,
-          unreadCount: 0,
-          awaitingAgentSince: null, // a equipe respondeu: o alarme para
-          // Com o atendente na conversa, a próxima mensagem do cliente depois do pedido confirmado não chama a equipe.
-          ...((menuOpen || afterHoursPending || state.orderFollowUp || state.ai === "on" || state.aiWaiting) && {
-            automationState: {
-              ...state,
-              triage: "done",
-              afterHours: undefined,
-              orderFollowUp: undefined,
-              aiWaiting: undefined,
-              aiWaitingReason: undefined,
-              ...(state.ai === "on" && { ai: "off" }),
-            },
-          }),
-          ...(afterHoursPending && { status: "OPEN" }),
+          ...teamRepliedUpdate(conversation.status, conversation.automationState as AutomationState),
         },
       });
       return created;

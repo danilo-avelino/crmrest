@@ -223,7 +223,7 @@ function Inbound({ message, contact }: { message: MessageDto; contact: { id: str
 }
 
 function Outbound({ message }: { message: MessageDto }) {
-  const { aiReply, aiReview, original } = message.content;
+  const { aiReply, aiReview, original, fromPhone } = message.content;
   const [showOriginal, setShowOriginal] = useState(false);
   return (
     <div className="flex justify-end">
@@ -237,6 +237,7 @@ function Outbound({ message }: { message: MessageDto }) {
         <div className="mt-[3px] text-right text-[10px] text-ink-3 tabular-nums">
           {clock(message.createdAt)}
           {message.sentBy && ` · ${message.sentBy.name.split(" ")[0]}`}
+          {fromPhone && " · pelo celular"}
           {aiReply && (
             <span className="ml-1 inline-flex items-center gap-0.5">
               · <SparklesIcon className="size-2.5" aria-hidden /> IA

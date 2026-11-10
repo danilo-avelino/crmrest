@@ -23,6 +23,8 @@ const EvoMessage = z.looseObject({
   message: z
     .looseObject({
       conversation: z.string().optional(),
+      // Texto com citação (resposta a uma mensagem) ou com link: o WhatsApp do celular manda assim.
+      extendedTextMessage: z.looseObject({ text: z.string() }).optional(),
       imageMessage: EvoMedia.optional(),
       videoMessage: EvoMedia.optional(),
       audioMessage: EvoMedia.optional(),
@@ -79,8 +81,7 @@ export function parseEvolution(channelId: string, event: string, data: unknown):
     const parsed = EvoMessage.safeParse(data);
     if (!parsed.success) return { ...result, rejected: 1 };
     const { key, message } = parsed.data;
-    // Mensagens que o próprio restaurante mandou (pelo celular ou pelo Dish Desk) não entram como recebidas.
-    if (key.fromMe || IGNORED_TYPES.has(parsed.data.messageType) || !message) return result;
+    if (IGNORED_TYPES.has(parsed.data.messageType) || !message) return result;
     const jid = key.remoteJid.endsWith("@lid") && key.remoteJidAlt ? key.remoteJidAlt : key.remoteJid;
     const contactId = contactIdFromJid(jid);
     if (!contactId) return result; // grupo, status ou canal
@@ -90,10 +91,12 @@ export function parseEvolution(channelId: string, event: string, data: unknown):
       channelType: "WHATSAPP",
       externalMessageId: key.id,
       externalContactId: contactId,
-      direction: "INBOUND",
+      // Mandada pelo próprio número (no celular ou pelo Dish Desk): sai como resposta do restaurante (InboundService.handleEcho).
+      direction: key.fromMe ? "OUTBOUND" : "INBOUND",
       timestamp: new Date(parsed.data.messageTimestamp * 1000),
       contactProfile: {
-        name: parsed.data.pushName || undefined,
+        // Na mensagem do próprio número, o pushName é o nome do restaurante, não o do cliente.
+        name: (!key.fromMe && parsed.data.pushName) || undefined,
         phone: phone && z.e164().safeParse(phone).success ? phone : undefined,
       },
       ...messageBody(parsed.data.messageType, message, key.id),
@@ -133,6 +136,7 @@ function messageBody(
   keyId: string,
 ): { type: MessageType; text?: string; media?: object; metadata?: object } {
   if (messageType === "conversation" && message.conversation !== undefined) return { type: "TEXT", text: message.conversation };
+  if (messageType === "extendedTextMessage" && message.extendedTextMessage) return { type: "TEXT", text: message.extendedTextMessage.text };
   const mediaType = MEDIA_TYPES[messageType as keyof typeof MEDIA_TYPES];
   const media = mediaType ? message[messageType as keyof typeof MEDIA_TYPES] : undefined;
   if (mediaType && media) {

@@ -84,6 +84,8 @@ export type MessageContent = {
   from?: string;
   /** Resposta escrita pela IA no atendimento com IA (módulo AI), sem atendente. */
   aiReply?: boolean;
+  /** Resposta que a equipe mandou pelo WhatsApp do celular (WhatsApp por QR Code), fora do Dish Desk. */
+  fromPhone?: boolean;
   /**
    * Revisão da resposta do atendente pela IA, antes do envio: "pending" = ainda no worker; "rewritten" = o texto é o da
    * IA e `original` é o que o atendente escreveu (só a equipe vê); "kept" = saiu o texto do atendente; "blocked" = má

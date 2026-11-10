@@ -8,7 +8,10 @@ import {
   type NormalizedMessage,
   type StatusUpdate,
 } from "@dishdesk/shared";
+import { InjectQueue } from "@nestjs/bullmq";
 import { Inject, Injectable, Logger } from "@nestjs/common";
+import type { Queue } from "bullmq";
+import { type AutomationState, teamRepliedUpdate } from "../automations/automation.js";
 import { INACTIVITY_CLOSE_MS } from "../automations/inactivity.service.js";
 import { TriageService } from "../automations/triage.service.js";
 import { ENV, type Env } from "../config/env.js";
@@ -18,6 +21,7 @@ import { parseInstagram } from "../connectors/instagram.connector.js";
 import { splitMetaPayload } from "../connectors/meta.js";
 import { type ParsedWebhook, parseWhatsApp } from "../connectors/whatsapp.connector.js";
 import { DatabaseService } from "../core/database.service.js";
+import { type AutomationJob, QUEUES } from "../queues/queues.module.js";
 import { RealtimeEmitter } from "../realtime/realtime.emitter.js";
 
 export type ResolvedChannel = { id: string; tenantId: string; type: ChannelType };
@@ -57,6 +61,7 @@ export class InboundService {
     private readonly realtime: RealtimeEmitter,
     private readonly connectors: ConnectorsService,
     private readonly triage: TriageService,
+    @InjectQueue(QUEUES.automations) private readonly automations: Queue<AutomationJob>,
     @Inject(ENV) env: Env,
   ) {
     this.key = parseEncryptionKey(env.ENCRYPTION_KEY);
@@ -103,6 +108,10 @@ export class InboundService {
   private async deliver(channel: ResolvedChannel, parsed: ParsedWebhook): Promise<void> {
     if (parsed.rejected) this.logger.warn(`${parsed.rejected} evento(s) fora do formato esperado ignorado(s)`);
     for (const message of parsed.messages) {
+      if (message.direction === "OUTBOUND") {
+        await this.handleEcho(channel, message);
+        continue;
+      }
       const conversation = await this.handleMessage(channel, await this.withProfile(channel, message));
       // "SAIR" pede para parar de receber mensagens: não é hora de responder com o menu.
       if (conversation && !(channel.type === "WHATSAPP" && isOptOut(message.text))) {
@@ -231,6 +240,74 @@ export class InboundService {
     });
     if (opened) this.realtime.inboxChanged(channel.tenantId, opened.id);
     return opened;
+  }
+
+  /**
+   * Mensagem que o próprio número mandou (WhatsApp por QR Code). O que a equipe digitou no WhatsApp do celular entra na
+   * conversa como resposta dela, com o mesmo efeito de responder pelo Dish Desk (a IA e o menu param). O eco do que o
+   * Dish Desk enviou não entra de novo: ou já tem o id da mensagem, ou ainda está pendente no worker, com o mesmo texto.
+   * Sem conversa com o contato (ex.: o restaurante escreveu primeiro, pelo celular), fica de fora.
+   */
+  async handleEcho(channel: ResolvedChannel, message: NormalizedMessage): Promise<void> {
+    const at = arrivalTime(message.timestamp);
+    const conversationId = await this.db.withTenants({ tenantIds: [channel.tenantId] }, async (tx) => {
+      const known = await tx.message.findUnique({
+        where: { channelId_externalMessageId: { channelId: channel.id, externalMessageId: message.externalMessageId } },
+        select: { id: true },
+      });
+      if (known) return null;
+      const identity = await tx.contactIdentity.findUnique({
+        where: {
+          tenantId_channelType_externalId: { tenantId: channel.tenantId, channelType: channel.type, externalId: message.externalContactId },
+        },
+        select: { contactId: true },
+      });
+      const conversation =
+        identity &&
+        (await tx.conversation.findFirst({
+          where: { contactId: identity.contactId, channelId: channel.id },
+          orderBy: { createdAt: "desc" },
+          select: { id: true, status: true, automationState: true },
+        }));
+      if (!conversation) return null;
+      const sending =
+        message.text !== undefined &&
+        (await tx.message.findFirst({
+          where: {
+            conversationId: conversation.id,
+            direction: "OUTBOUND",
+            status: "PENDING",
+            externalMessageId: null,
+            content: { path: ["text"], equals: message.text },
+          },
+          select: { id: true },
+        }));
+      if (sending) return null;
+
+      const { from: _from, ...content } = contentOf(message);
+      await tx.message.create({
+        data: {
+          tenantId: channel.tenantId,
+          conversationId: conversation.id,
+          channelId: channel.id,
+          externalMessageId: message.externalMessageId,
+          direction: "OUTBOUND",
+          type: message.type,
+          content: { ...content, fromPhone: true },
+          status: "SENT",
+          createdAt: at,
+        },
+      });
+      await tx.conversation.update({
+        where: { id: conversation.id },
+        data: { lastMessageAt: at, ...teamRepliedUpdate(conversation.status, conversation.automationState as AutomationState) },
+      });
+      return conversation.id;
+    });
+    if (!conversationId) return;
+    this.realtime.inboxChanged(channel.tenantId, conversationId);
+    // Como na resposta pelo Dish Desk: se o cliente não responder, o atendimento é encerrado.
+    await this.automations.add("inactivity", { tenantId: channel.tenantId, conversationId }, { delay: INACTIVITY_CLOSE_MS });
   }
 
   async handleStatus(channel: ResolvedChannel, update: StatusUpdate): Promise<void> {

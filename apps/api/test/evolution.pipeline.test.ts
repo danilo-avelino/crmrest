@@ -128,6 +128,69 @@ describe("WhatsApp por QR Code (Evolution API)", () => {
     expect((await admin.message.findUniqueOrThrow({ where: { id: sent.id } })).status).toBe("READ");
   });
 
+  it("resposta digitada no WhatsApp do celular entra na conversa; o eco do que o Dish Desk enviou não duplica", async () => {
+    const customer = "5511922220001";
+    const conversation = await admin.conversation.findFirstOrThrow({ where: { channelId, contact: { phone: `+${customer}` } } });
+    await admin.conversation.update({ where: { id: conversation.id }, data: { unreadCount: 2, automationState: { ai: "on" } } });
+    const fromPhone = (id: string, text: string, to = customer) =>
+      envelope("messages.upsert", {
+        key: { id, remoteJid: `${to}@s.whatsapp.net`, fromMe: true },
+        pushName: "Restaurante",
+        messageType: "extendedTextMessage",
+        messageTimestamp: nowSeconds(),
+        message: { extendedTextMessage: { text } },
+      });
+
+    await webhook(fromPhone("3EB0CEL1", "Pode vir, te espero aqui")).expect(200);
+    await webhook(fromPhone("3EB0CEL1", "Pode vir, te espero aqui")).expect(200); // webhook repetido
+    await webhook(fromPhone("3EB0CEL2", "Oi, tudo bem?", "5511922229999")).expect(200); // sem conversa com o contato
+    await drainQueues(app);
+
+    const echoes = await admin.message.findMany({ where: { channelId, externalMessageId: { in: ["3EB0CEL1", "3EB0CEL2"] } } });
+    expect(echoes).toEqual([
+      expect.objectContaining({
+        conversationId: conversation.id,
+        direction: "OUTBOUND",
+        status: "SENT",
+        sentByUserId: null,
+        content: { text: "Pode vir, te espero aqui", fromPhone: true },
+      }),
+    ]);
+    // A equipe assumiu pelo celular: a IA para e a conversa conta como lida.
+    expect(await admin.conversation.findUniqueOrThrow({ where: { id: conversation.id } })).toMatchObject({
+      unreadCount: 0,
+      automationState: { ai: "off", triage: "done" },
+    });
+    expect((await admin.contact.findUniqueOrThrow({ where: { id: conversation.contactId } })).name).toBe("Cliente QR");
+
+    // Eco do que o Dish Desk mandou, com o id já gravado ou chegando antes de o worker gravar o id.
+    const { body: sent } = await api()
+      .post(`/api/conversations/${conversation.id}/messages`)
+      .set("Authorization", `Bearer ${token}`)
+      .send({ text: "Mesa reservada." })
+      .expect(201);
+    await drainQueues(app);
+    const sentId = (await admin.message.findUniqueOrThrow({ where: { id: sent.id } })).externalMessageId!;
+    const pending = await admin.message.create({
+      data: {
+        tenantId: fx.b.id,
+        conversationId: conversation.id,
+        channelId,
+        direction: "OUTBOUND",
+        type: "TEXT",
+        content: { text: "Saindo agora!" },
+        status: "PENDING",
+      },
+    });
+    await webhook(fromPhone(sentId, "Mesa reservada.")).expect(200);
+    await webhook(fromPhone("3EB0ANTES", "Saindo agora!")).expect(200);
+    await drainQueues(app);
+    expect(await admin.message.count({ where: { conversationId: conversation.id, content: { path: ["text"], equals: "Mesa reservada." } } })).toBe(1);
+    expect(await admin.message.count({ where: { conversationId: conversation.id, content: { path: ["text"], equals: "Saindo agora!" } } })).toBe(1);
+    // Pendente esquecida faria os próximos envios da conversa esperarem por ela.
+    await admin.message.delete({ where: { id: pending.id } });
+  });
+
   it("número que não tem WhatsApp: a mensagem falha na hora, com o motivo", async () => {
     const conversation = await admin.conversation.findFirstOrThrow({ where: { channelId, contact: { phone: "+5511922220001" } } });
     evolution.reply((req) =>

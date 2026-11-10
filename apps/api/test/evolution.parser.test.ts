@@ -60,9 +60,26 @@ describe("webhook da Evolution", () => {
     });
   });
 
-  it("ignora mensagens do próprio restaurante, de grupos e reações", () => {
+  it("texto com citação ou link (extendedTextMessage) é lido como texto", () => {
+    const quoted = upsert({ extendedTextMessage: { text: "Pode sim!", contextInfo: { stanzaId: "X" } } }, { messageType: "extendedTextMessage" });
+    expect(parseEvolution(CHANNEL_ID, "messages.upsert", quoted).messages[0]).toMatchObject({ type: "TEXT", text: "Pode sim!" });
+  });
+
+  it("mensagem do próprio número sai como resposta do restaurante, sem o nome dele no cliente", () => {
+    const mine = upsert({ conversation: "Já sai!" }, { key: { id: "M1", remoteJid: "5511987654321@s.whatsapp.net", fromMe: true }, pushName: "Moby Dick" });
+    expect(parseEvolution(CHANNEL_ID, "messages.upsert", mine).messages).toEqual([
+      expect.objectContaining({
+        direction: "OUTBOUND",
+        externalMessageId: "M1",
+        externalContactId: "5511987654321",
+        text: "Já sai!",
+        contactProfile: { phone: "+5511987654321" },
+      }),
+    ]);
+  });
+
+  it("ignora mensagens de grupos e reações", () => {
     const parse = (data: unknown) => parseEvolution(CHANNEL_ID, "messages.upsert", data);
-    expect(parse(upsert({ conversation: "Oi" }, { key: { id: "M1", remoteJid: "5511987654321@s.whatsapp.net", fromMe: true } })).messages).toEqual([]);
     expect(parse(upsert({ conversation: "Oi" }, { key: { id: "M2", remoteJid: "1203630@g.us", fromMe: false } })).messages).toEqual([]);
     expect(parse(upsert({ reactionMessage: { text: "👍" } }, { messageType: "reactionMessage" })).messages).toEqual([]);
   });

@@ -53,6 +53,33 @@ export type AutomationState = {
   aiDeniedOrderIds?: string[];
 };
 
+/**
+ * A equipe respondeu (pelo Dish Desk ou pelo WhatsApp do celular): responder implica ter lido a conversa, e o
+ * atendente assume, encerrando o menu automático (ou a IA) se ainda estiver aberto.
+ */
+export function teamRepliedUpdate(status: ConversationStatus, state: AutomationState) {
+  const menuOpen = !!state.triage && state.triage !== "done";
+  // Pendente só por ter chegado fora do horário (ou esperando um atendente): com a resposta da equipe, volta a ser um atendimento aberto.
+  const afterHoursPending = status === "PENDING" && (state.afterHours || state.aiWaiting);
+  return {
+    unreadCount: 0,
+    awaitingAgentSince: null, // a equipe respondeu: o alarme para
+    // Com o atendente na conversa, a próxima mensagem do cliente depois do pedido confirmado não chama a equipe.
+    ...((menuOpen || afterHoursPending || state.orderFollowUp || state.ai === "on" || state.aiWaiting) && {
+      automationState: {
+        ...state,
+        triage: "done" as const,
+        afterHours: undefined,
+        orderFollowUp: undefined,
+        aiWaiting: undefined,
+        aiWaitingReason: undefined,
+        ...(state.ai === "on" && { ai: "off" as const }),
+      },
+    }),
+    ...(afterHoursPending && { status: "OPEN" as const }),
+  };
+}
+
 /** Resposta à pesquisa de satisfação: só a nota, de 1 a 5. */
 export const RATING_ANSWER = /^\s*([1-5])\s*$/;
 
