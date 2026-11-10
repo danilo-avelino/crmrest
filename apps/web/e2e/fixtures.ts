@@ -71,8 +71,9 @@ export async function createInboxFixture() {
     [randomUUID(), tenantId, contact.id, contact.waId],
   );
   await fx.db.query(
-    `INSERT INTO conversations (id, tenant_id, contact_id, channel_id, status, unread_count, last_message_at, window_expires_at)
-     VALUES ($1, $2, $3, $4, 'OPEN', 1, now(), now() + interval '23 hours')`,
+    // team_involved: conversa da equipe (aba Ativos); sem ele, ela ficaria na aba Automáticos.
+    `INSERT INTO conversations (id, tenant_id, contact_id, channel_id, status, unread_count, last_message_at, window_expires_at, team_involved)
+     VALUES ($1, $2, $3, $4, 'OPEN', 1, now(), now() + interval '23 hours', true)`,
     [conversationId, tenantId, contact.id, channel.id],
   );
   await fx.db.query(
@@ -99,8 +100,8 @@ export async function createInboxFixture() {
     [randomUUID(), tenantId, closedContact.id, closedContact.waId],
   );
   await fx.db.query(
-    `INSERT INTO conversations (id, tenant_id, contact_id, channel_id, status, last_message_at, window_expires_at)
-     VALUES ($1, $2, $3, $4, 'OPEN', now() - interval '2 days', now() - interval '1 day')`,
+    `INSERT INTO conversations (id, tenant_id, contact_id, channel_id, status, last_message_at, window_expires_at, team_involved)
+     VALUES ($1, $2, $3, $4, 'OPEN', now() - interval '2 days', now() - interval '1 day', true)`,
     [randomUUID(), tenantId, closedContact.id, channel.id],
   );
 
