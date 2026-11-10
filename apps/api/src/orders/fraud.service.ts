@@ -1,12 +1,15 @@
-import type { TenantTx } from "@dishdesk/database";
+import type { Prisma, TenantTx } from "@dishdesk/database";
+import { CHANNEL_LABEL, type OrderAlertDto } from "@dishdesk/shared";
 import { Injectable, Logger, NotFoundException, UnprocessableEntityException } from "@nestjs/common";
 import * as Sentry from "@sentry/nestjs";
 import type { RequestAuth } from "../auth/auth.decorators.js";
 import { systemEvent } from "../automations/automation.js";
 import { DatabaseService } from "../core/database.service.js";
+import { JevClient, type JevQuestion } from "../defense/jev.client.js";
 import { RealtimeEmitter } from "../realtime/realtime.emitter.js";
-import { addressKey } from "./address-key.js";
-import { ACTIVE_ORDER, conversationOfOrder, linkedContactsWhere, orderAlert } from "./fraud-alert.js";
+import { addressKey, addressText } from "./address-key.js";
+import { ACTIVE_ORDER, assessOrder, conversationOfOrder, linkedContactsWhere, orderAlert, similarAddressCandidates, type StoredAnalysis } from "./fraud-alert.js";
+import { platformInfo } from "./ifood-order.js";
 import { OrderNoticeService } from "./order-notice.service.js";
 
 const orderSelect = {
@@ -28,9 +31,68 @@ const orderSelect = {
   channel: { select: { connectedAt: true } },
 } as const;
 
+/** Pedido que acabou de chegar: com o que as regras e o Jev precisam (valor, pagamento, análise guardada). */
+const arrivedSelect = { ...orderSelect, total: true, raw: true, alertAnalysis: true, channel: { select: { connectedAt: true, type: true } } } satisfies Prisma.OrderSelect;
+type ArrivedOrder = Prisma.OrderGetPayload<{ select: typeof arrivedSelect }>;
+
+/** Chance a partir da qual o Jev dá dois endereços como o mesmo local. */
+const SAME_ADDRESS_FROM = 0.8;
+
+const VERDICT_LABEL = { high: "alto", uncertain: "incerto", low: "baixo" } as const;
+const CANCELED_BY_LABEL = { customer: "o cliente", store: "a loja", platform: "a plataforma", team: "a equipe da loja, por suspeita" } as const;
+
+const CASE_GUIDE =
+  "Pedido que acabou de chegar a um restaurante por um aplicativo de entrega, com o histórico de cancelamentos do cliente. " +
+  "A fraude comum: o cliente recebe a comida e pede o cancelamento ou o reembolso à plataforma, que costuma aceitar, e o restaurante fica sem receber. " +
+  "Por isso o pagamento online não reduz o risco. Cancelamento feito pela loja antes de o pedido sair (falta de item, loja fechada) não é sinal contra o cliente. " +
+  "Poucos cancelamentos em muitos pedidos são normais; muitos em poucos pedidos, não.";
+
+const RISK_QUESTION: JevQuestion = {
+  type: "noul",
+  instructions: "Há risco relevante de este pedido ser fraude, a ponto de a equipe do restaurante precisar conferir o caso antes de preparar?",
+};
+
+/** O caso como o Jev lê: o pedido, o histórico do cliente e, se houver, os endereços parecidos a comparar. */
+function caseState(order: ArrivedOrder, alert: OrderAlertDto | null, similar: { address: string }[], now: Date): Record<string, unknown> {
+  const payments = order.channel.type === "IFOOD" ? (platformInfo(order.raw)?.payments ?? []) : [];
+  const prepaid = payments.filter((payment) => payment.prepaid).length;
+  const history = alert?.cancellations;
+  return {
+    como_ler: CASE_GUIDE,
+    pedido: {
+      origem: CHANNEL_LABEL[order.channel.type],
+      valor: order.total.toFixed(2),
+      pagamento: !payments.length ? "não informado" : prepaid === payments.length ? "online, já pago" : prepaid ? "parte online, parte na entrega" : "na entrega",
+      tipo: order.deliveryAddress ? "entrega" : "retirada",
+    },
+    ...(history && {
+      historico_do_cliente: {
+        pedidos_feitos_com_este: history.ordersCount,
+        cancelados: history.canceledCount,
+        cancelados_sem_ser_pela_loja: history.riskCount,
+        marcados_como_fraude_pela_equipe: history.fraudCount,
+        cancelamentos_recentes: history.rows.slice(0, 10).map((row) => ({
+          ha_dias: Math.max(0, Math.round((now.getTime() - new Date(row.placedAt).getTime()) / 86_400_000)),
+          valor: row.total,
+          origem: CHANNEL_LABEL[row.channelType],
+          motivo: row.reason ?? "não informado",
+          cancelado_por: row.canceledBy ? CANCELED_BY_LABEL[row.canceledBy] : "não informado",
+          quando: row.afterDispatch ? "depois de sair para a entrega" : "antes de sair para a entrega",
+          marcado_como_fraude: row.fraud !== null,
+        })),
+      },
+    }),
+    ...(similar.length > 0 && {
+      endereco_do_pedido: addressText(order.deliveryAddress),
+      enderecos_marcados_como_fraude: Object.fromEntries(similar.map((match, index) => [`endereco_${index + 1}`, match.address])),
+    }),
+  };
+}
+
 /**
  * Prevenção de fraude (E40). O alerta avisa e quem decide é o atendente: nada é bloqueado nem cancelado sozinho, e nada
- * disto aparece para o cliente.
+ * disto aparece para o cliente. As regras apontam o pedido (fraud-alert.ts); o Jev, pago por chamada, só analisa o que
+ * elas apontaram e nunca é chamado para um pedido sem sinal.
  */
 @Injectable()
 export class FraudService {
@@ -40,6 +102,7 @@ export class FraudService {
     private readonly db: DatabaseService,
     private readonly realtime: RealtimeEmitter,
     private readonly notices: OrderNoticeService,
+    private readonly jev: JevClient,
   ) {}
 
   /**
@@ -49,18 +112,35 @@ export class FraudService {
    */
   async orderArrived(tenantId: string, orderId: string, now = new Date()): Promise<void> {
     try {
-      const conversationId = await this.db.withTenants({ tenantIds: [tenantId] }, async (tx) => {
-        const order = await tx.order.findUniqueOrThrow({ where: { id: orderId }, select: orderSelect });
+      const scope = { tenantIds: [tenantId] };
+      // 1. As regras, sem IA: a maioria dos pedidos para aqui.
+      const found = await this.db.withTenants(scope, async (tx) => {
+        const order = await tx.order.findUniqueOrThrow({ where: { id: orderId }, select: arrivedSelect });
         // O que aconteceu antes de conectar a loja não aciona nada (a integração ainda entrega as últimas horas).
         if (order.channel.connectedAt && order.placedAt < order.channel.connectedAt) return null;
-        const alert = await orderAlert(tx, { ...order, alertDecidedBy: null }, order.contact, true);
-        if (!alert) return null;
+        const assessed = await assessOrder(tx, { ...order, alertDecidedBy: null }, order.contact, true);
+        return { order, assessed, similar: await similarAddressCandidates(tx, order) };
+      });
+      if (!found) return;
+      const { order, assessed, similar } = found;
+      // 2. O Jev, só no que as regras apontaram: alerta sem pedido marcado como fraude, ou endereço parecido com um marcado.
+      const doubt = assessed?.alert.level === "HIGH" && !assessed.hard;
+      const analysis = doubt || similar.length ? await this.analyze(tenantId, order, assessed?.alert ?? null, doubt, similar, now) : null;
+      if (!analysis && assessed?.alert.level !== "HIGH") return;
+      // 3. O que sobrou como alerta chega à equipe.
+      const conversationId = await this.db.withTenants(scope, async (tx) => {
+        if (analysis) await tx.order.update({ where: { id: orderId }, data: { alertAnalysis: analysis } });
+        const alert = analysis ? await orderAlert(tx, { ...order, alertAnalysis: analysis, alertDecidedBy: null }, order.contact, true) : assessed?.alert;
+        if (alert?.level !== "HIGH") return null;
         await tx.order.update({ where: { id: orderId }, data: { alertAt: now } });
         const open = await conversationOfOrder(tx, order);
         const conversation = open ?? (await this.openForTeam(tx, order, now));
+        const { riskCount, ordersCount } = alert.cancellations;
         const reasons = [
-          alert.cancellations.canceledCount > 0 && plural(alert.cancellations.canceledCount, "cancelamento no histórico", "cancelamentos no histórico"),
-          alert.addressMatches.length > 0 && "endereço marcado como fraude",
+          riskCount > 0 && `${riskCount} de ${ordersCount} pedidos cancelados`,
+          alert.addressMatches.some((match) => !match.similar) && "endereço marcado como fraude",
+          alert.addressMatches.some((match) => match.similar) && "endereço parecido com um marcado como fraude",
+          alert.analysis && `IA: risco ${VERDICT_LABEL[alert.analysis.verdict]}`,
         ].filter(Boolean);
         await systemEvent(tx, conversation, { event: "fraud_alert", text: `Alerta de fraude exibido · ${reasons.join(" · ")}` });
         return conversation.id;
@@ -69,6 +149,43 @@ export class FraudService {
     } catch (error) {
       this.logger.warn({ tenantId, orderId, err: error }, "Alerta de fraude não registrado");
       Sentry.captureException(error, { tags: { tenantId } });
+    }
+  }
+
+  /**
+   * Pergunta ao Jev sobre o caso que as regras apontaram: a chance de fraude (`askRisk`) e se cada endereço parecido é o
+   * mesmo local de entrega. Uma chamada por pedido, no máximo. Sem a chave ou com o Jev fora do ar, devolve null e vale
+   * o que as regras disseram. Não vai nome, telefone nem documento; o endereço só vai quando há um parecido a comparar.
+   */
+  private async analyze(
+    tenantId: string,
+    order: ArrivedOrder,
+    alert: OrderAlertDto | null,
+    askRisk: boolean,
+    similar: { id: string; address: string }[],
+    now: Date,
+  ): Promise<StoredAnalysis | null> {
+    if (!this.jev.enabled) return null;
+    const questions: Record<string, JevQuestion> = {};
+    if (askRisk) questions.risk = RISK_QUESTION;
+    similar.forEach((_, index) => {
+      questions[`endereco_${index + 1}`] = {
+        type: "noul",
+        instructions: `O "endereco_do_pedido" e o "endereco_${index + 1}" são o mesmo local de entrega (a mesma casa ou o mesmo apartamento)? Apartamentos, blocos ou casas diferentes do mesmo prédio ou condomínio são locais diferentes.`,
+      };
+    });
+    try {
+      const { answers, model } = await this.jev.decide(tenantId, caseState(order, alert, similar, now), questions, { privateData: true });
+      const chance = (key: string) => (answers[key]?.type === "noul" ? answers[key].noul : null);
+      return {
+        risk: askRisk ? chance("risk") : null,
+        similar: similar.filter((_, index) => (chance(`endereco_${index + 1}`) ?? 0) >= SAME_ADDRESS_FROM).map((match) => match.id),
+        model,
+        at: now.toISOString(),
+      };
+    } catch (error) {
+      this.logger.warn({ tenantId, orderId: order.id, err: error }, "Jev não analisou o alerta de fraude");
+      return null;
     }
   }
 
@@ -234,8 +351,4 @@ function codeOf(order: { displayCode: string | null; externalOrderId: string }):
 async function nameOf(tx: TenantTx, userId: string): Promise<string> {
   const user = await tx.user.findUnique({ where: { id: userId }, select: { name: true } });
   return user?.name.split(" ")[0] ?? "a equipe";
-}
-
-function plural(count: number, one: string, many: string): string {
-  return `${count} ${count === 1 ? one : many}`;
 }

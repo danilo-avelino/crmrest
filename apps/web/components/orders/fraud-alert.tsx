@@ -78,7 +78,12 @@ export function ConversationFraudAlert({ conversationId, teamOnly }: { conversat
   );
 }
 
-/** Alerta de fraude de um pedido: em aberto, recolhido ou, depois da decisão, uma linha discreta. Nada aqui vai para o cliente. */
+const VERDICT_LABEL = { high: "alto", uncertain: "incerto", low: "baixo" } as const;
+
+/**
+ * Alerta de fraude de um pedido: em aberto, recolhido ou, depois da decisão, uma linha discreta. No nível "LOW" é só um
+ * aviso: abre recolhido e em âmbar. Nada aqui vai para o cliente.
+ */
 export function FraudAlert({
   order,
   alert,
@@ -92,7 +97,9 @@ export function FraudAlert({
 }) {
   const { request } = useAuth();
   const refresh = useFraudRefresh();
-  const [collapsed, setCollapsed] = useState(false);
+  const low = alert.level === "LOW";
+  const title = low ? "Atenção ao histórico" : "Alerta de fraude";
+  const [collapsed, setCollapsed] = useState(low);
   const [canceling, setCanceling] = useState(false);
   const [reviewing, setReviewing] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -158,10 +165,10 @@ export function FraudAlert({
 
   if (collapsed) {
     return (
-      <div className="flex items-center gap-2 rounded-lg border border-tomate bg-surface px-3 py-2 text-[12px] text-ink-2">
-        <ShieldAlertIcon className="size-3.5 shrink-0 text-tomate" aria-hidden />
+      <div className={cn("flex items-center gap-2 rounded-lg border bg-surface px-3 py-2 text-[12px] text-ink-2", low ? "border-warning-line" : "border-tomate")}>
+        <ShieldAlertIcon className={cn("size-3.5 shrink-0", low ? "text-warning" : "text-tomate")} aria-hidden />
         <span className="min-w-0 truncate">
-          <strong className="font-semibold text-ink">Alerta de fraude</strong>
+          <strong className="font-semibold text-ink">{title}</strong>
           {cancellations.canceledCount > 0 && ` · ${plural(cancellations.canceledCount, "cancelamento", "cancelamentos")}`} · {label} {orderCode(order)}
         </span>
         <span className="ml-auto flex shrink-0 items-center gap-2">
@@ -177,10 +184,18 @@ export function FraudAlert({
 
   const elsewhere = !cancelable && !decision ? cancelElsewhere(order.channelType) : null;
   return (
-    <section aria-label="Alerta de fraude" className="overflow-hidden rounded-xl border border-tomate bg-surface shadow-[0_14px_30px_-18px_rgba(196,52,26,.45)]">
-      <div className="flex items-center gap-2 bg-tomate px-3.5 py-2 text-[12.5px] font-semibold text-white">
+    <section
+      aria-label={title}
+      className={cn("overflow-hidden rounded-xl border bg-surface", low ? "border-warning-line" : "border-tomate shadow-[0_14px_30px_-18px_rgba(196,52,26,.45)]")}
+    >
+      <div
+        className={cn(
+          "flex items-center gap-2 px-3.5 py-2 text-[12.5px] font-semibold",
+          low ? "border-b border-warning-line bg-warning-lt text-warning-ink" : "bg-tomate text-white",
+        )}
+      >
         <ShieldAlertIcon className="size-3.5" aria-hidden />
-        Alerta de fraude
+        {title}
         <span className="ml-auto flex items-center gap-3 text-[11.5px] font-normal">
           <span className="inline-flex items-center gap-1">
             <LockIcon className="size-3" aria-hidden />
@@ -199,6 +214,12 @@ export function FraudAlert({
       </div>
       <div className="flex flex-col gap-2.5 px-3.5 py-3">
         <AlertSummary alert={alert} />
+        {alert.analysis && (
+          <p className="m-0 text-[12px] text-ink-2">
+            Análise da IA: <strong className="font-semibold text-ink">risco {VERDICT_LABEL[alert.analysis.verdict]}</strong>{" "}
+            <span className="tabular-nums">({Math.round(alert.analysis.risk * 100)}%)</span>. A decisão continua sendo sua.
+          </p>
+        )}
         <div className="flex items-center gap-2.5 rounded-md border border-rule bg-paper px-3 py-2 text-[12.5px]">
           <span className={cn("size-2 shrink-0 rounded-full", CHANNEL_DOT[order.channelType])} />
           <span className="font-semibold whitespace-nowrap">
@@ -277,6 +298,11 @@ function AddressBlock({ alert }: { alert: OrderAlertDto }) {
         <div key={index} className="text-[12px] text-ink-2">
           Pedido de {fullDate(match.placedAt)} · {match.reason ? `Motivo: ${match.reason}` : "Motivo não informado"}
           {match.markedBy && ` · Marcado por ${match.markedBy.split(" ")[0]}`}
+          {match.similar && (
+            <span className="block">
+              Endereço escrito de outro jeito, que a IA deu como o mesmo local{match.address && `: ${match.address}`}
+            </span>
+          )}
         </div>
       ))}
     </div>
@@ -366,6 +392,8 @@ function CancellationRow({ row }: { row: CanceledOrderRow }) {
         <span className={cn("flex flex-wrap items-center gap-x-1.5 gap-y-1", row.reason ? "text-ink" : "text-ink-3 italic")}>
           {row.reason ?? "Motivo não informado"}
           {row.imported && <SmallBadge tone="neutral">Importado</SmallBadge>}
+          {row.afterDispatch && <SmallBadge tone="neutral">Após a saída</SmallBadge>}
+          {!row.counted && <SmallBadge tone="neutral">Pela loja</SmallBadge>}
           {row.fraud && <SmallBadge tone="fraud">Fraude</SmallBadge>}
         </span>
         <FraudMarkControl row={row} />

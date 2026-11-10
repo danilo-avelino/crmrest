@@ -463,6 +463,7 @@ model Order {
   fraudMarkedAt    DateTime? @map("fraud_marked_at") @db.Timestamptz(3)
   fraudMarkedById  String?   @map("fraud_marked_by_id") @db.Uuid
   fraudAddressKey  String?   @map("fraud_address_key") // endereço normalizado (orders/address-key.ts); null sem endereço
+  alertAnalysis    Json?     @map("alert_analysis") // o que o Jev respondeu sobre o caso (orders/fraud-alert.ts); null: não foi consultado
 
   alertDecidedBy User? @relation("OrderAlertDecidedBy", fields: [alertDecidedById], references: [id], onDelete: SetNull)
   fraudMarkedBy  User? @relation("OrderFraudMarkedBy", fields: [fraudMarkedById], references: [id], onDelete: SetNull)

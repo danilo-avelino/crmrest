@@ -79,6 +79,9 @@ describe("prevenção de fraude", () => {
   let fx: Awaited<ReturnType<typeof createChannelFixture>>;
   let cardapioWeb: Awaited<ReturnType<typeof startMockCardapioWeb>>;
   let graph: Awaited<ReturnType<typeof startMockGraph>>;
+  let jev: Awaited<ReturnType<typeof startMockGraph>>;
+  // O que o Jev falso responde; sem resposta, HTTP 500 (valem as regras, sem a análise).
+  let jevAnswers: Record<string, unknown> | undefined;
   let service: CardapioWebService;
   let channelId: string;
   let token: string;
@@ -104,7 +107,15 @@ describe("prevenção de fraude", () => {
   beforeAll(async () => {
     cardapioWeb = await startMockCardapioWeb();
     graph = await startMockGraph();
-    app = await createTestApp({ CARDAPIO_WEB_API_URL: cardapioWeb.url, CHANNELS_DRY_RUN: "true", META_GRAPH_URL: graph.url });
+    jev = await startMockGraph();
+    jev.reply(() => (jevAnswers ? { status: 200, body: { model: "typesafe/jev-1.14-20261101", answers: jevAnswers, usage: { input_tokens: 600, output_tokens: 4, cost: 0.00002 } } } : { status: 500, body: {} }));
+    app = await createTestApp({
+      CARDAPIO_WEB_API_URL: cardapioWeb.url,
+      CHANNELS_DRY_RUN: "true",
+      META_GRAPH_URL: graph.url,
+      JEV_API_KEY: "chave-de-teste",
+      JEV_URL: `${jev.url}/api/alpha/decisions`,
+    });
     await app.get<Queue>(getQueueToken(QUEUES.cardapioWeb)).removeJobScheduler("cardapio-web-polling");
     service = app.get(CardapioWebService);
     fx = await createChannelFixture();
@@ -131,6 +142,7 @@ describe("prevenção de fraude", () => {
     await app?.close();
     await cardapioWeb?.close();
     await graph?.close();
+    await jev?.close();
   });
 
   it("primeiro pedido, sem histórico nem endereço marcado: sem alerta e sem conversa", async () => {
@@ -138,6 +150,7 @@ describe("prevenção de fraude", () => {
     expect(order.alertAt).toBeNull();
     expect(order.conversationId).toBeNull();
     expect(await listed(order.id)).toMatchObject({ alert: null, cancelable: true, customerCanceled: 0 });
+    expect(jev.requests).toHaveLength(0); // pedido sem sinal nenhum: a IA não é chamada
   });
 
   it("cancelado fora do Dish Desk: guarda o motivo que a API informa", async () => {
@@ -147,12 +160,23 @@ describe("prevenção de fraude", () => {
     expect(await listed(order.id)).toMatchObject({ alert: null, cancelable: false, cancellation: { reason: "Ninguém recebeu na entrega", fraud: null, outsideAt: order.canceledAt!.toISOString() } });
   });
 
-  it("um cancelamento já basta: pedido sem conversa abre uma só da equipe, com o alerta", async () => {
+  it("um cancelamento em dois pedidos: só um aviso no pedido, sem conversa, sem selo e sem IA", async () => {
+    const order = await arrives(cwOrder(1004, "11911110001", "Marcos Vieira"));
+    expect(order).toMatchObject({ alertAt: null, conversationId: null, alertAnalysis: null });
+    expect((await listed(order.id)).alert).toMatchObject({ level: "LOW", analysis: null, cancellations: { ordersCount: 2, canceledCount: 1, riskCount: 1 } });
+    expect(jev.requests).toHaveLength(0);
+    await arrives(cwOrder(1004, "11911110001", "Marcos Vieira", { cancellation_reason: "Cliente desistiu" }), "canceled");
+  });
+
+  it("dois cancelamentos em três pedidos: alerta de fraude; pedido sem conversa abre uma só da equipe", async () => {
     const order = await arrives(cwOrder(1002, "11911110001", "Marcos Vieira"));
     expect(order.alertAt).toBeInstanceOf(Date);
+    // O Jev foi consultado e estava fora do ar: vale o que as regras disseram.
+    expect(jev.requests).toHaveLength(1);
+    expect(order.alertAnalysis).toBeNull();
     const conversation = await admin.conversation.findUniqueOrThrow({ where: { id: order.conversationId! } });
     expect(conversation).toMatchObject({ teamOnly: true, status: "OPEN", unreadCount: 1, channelId });
-    expect(await events(conversation.id)).toEqual(["Alerta de fraude exibido · 1 cancelamento no histórico"]);
+    expect(await events(conversation.id)).toEqual(["Alerta de fraude exibido · 2 de 3 pedidos cancelados"]);
 
     const { body } = await api().get(`/api/orders/current?conversationId=${conversation.id}`).set(auth()).expect(200);
     expect(body.current.cancelable).toBe(true);
@@ -161,7 +185,18 @@ describe("prevenção de fraude", () => {
       addressMatches: [],
       decision: null,
       actionable: true,
-      cancellations: { ordersCount: 2, canceledCount: 1, fraudCount: 0, rows: [{ displayCode: "1001", channelType: "CARDAPIO_WEB", reason: "Ninguém recebeu na entrega", imported: false, fraud: null }] },
+      level: "HIGH",
+      analysis: null,
+      cancellations: {
+        ordersCount: 3,
+        canceledCount: 2,
+        riskCount: 2,
+        fraudCount: 0,
+        rows: [
+          { displayCode: "1004", reason: "Cliente desistiu" },
+          { displayCode: "1001", channelType: "CARDAPIO_WEB", reason: "Ninguém recebeu na entrega", imported: false, fraud: null, canceledBy: null, afterDispatch: false, counted: true },
+        ],
+      },
     });
 
     // A lista da Inbox mostra o selo enquanto ninguém decidir; o cliente não está na conversa.
@@ -228,11 +263,12 @@ describe("prevenção de fraude", () => {
     });
     await admin.tenant.update({ where: { id: fx.tenant.id }, data: { settings: { personality: "direto" } } });
 
+    await arrives(cwOrder(1100, "11911110002", "Carla Mendes", { delivery_address: { ...ADDRESS, complement: "Casa 9" } }), "canceled");
     await arrives(cwOrder(1101, "11911110002", "Carla Mendes", { delivery_address: { ...ADDRESS, complement: "Casa 9" } }), "canceled");
     const order = await arrives(cwOrder(1102, "11911110002", "Carla Mendes", { delivery_address: { ...ADDRESS, complement: "Casa 9" } }));
     expect(order.conversationId).toBeNull();
     expect((await admin.conversation.findUniqueOrThrow({ where: { id: conversation.id } })).teamOnly).toBe(false);
-    expect(await events(conversation.id)).toEqual(["Alerta de fraude exibido · 1 cancelamento no histórico"]);
+    expect(await events(conversation.id)).toEqual(["Alerta de fraude exibido · 2 de 3 pedidos cancelados"]);
 
     const options = await api().get(`/api/orders/${order.id}/cancellation-reasons`).set(auth()).expect(200);
     expect(options.body.message).toEqual({ text: "Olá, Carla. Pedido #1102 cancelado. Dúvidas, responda aqui.", via: "WhatsApp", tone: "Direto" });
@@ -261,12 +297,91 @@ describe("prevenção de fraude", () => {
 
     const { alert } = await listed(order.id);
     expect(alert.cancellations.canceledCount).toBe(0);
-    expect(alert.addressMatches).toEqual([{ placedAt: expect.any(String), reason: "Suspeita de golpe", markedBy: "Atendente Pipeline" }]);
+    expect(alert.level).toBe("HIGH");
+    expect(alert.addressMatches).toEqual([{ placedAt: expect.any(String), reason: "Suspeita de golpe", markedBy: "Atendente Pipeline", similar: false, address: null }]);
     expect(JSON.stringify(alert.addressMatches)).not.toContain("Marcos");
+  });
 
-    // Endereço parecido não conta.
+  it("endereço parecido com um marcado: só conta se o Jev confirmar que é o mesmo local", async () => {
+    const calls = jev.requests.length;
+    type Body = { state: Record<string, unknown>; questions: Record<string, unknown>; provider?: unknown };
+    // Vizinho de apartamento: o Jev diz que é outro local, e nada aparece.
+    jevAnswers = { endereco_1: { type: "noul", noul: 0.05 } };
     const neighbor = await arrives(cwOrder(1202, "11911110004", "Vizinho", { delivery_address: { ...ADDRESS, complement: "Cond. Jardim Sul, Bloco B, apto 35" } }));
     expect(neighbor.alertAt).toBeNull();
+    expect(neighbor.alertAnalysis).toMatchObject({ risk: null, similar: [] });
+    expect((await listed(neighbor.id)).alert).toBeNull();
+    const sent = jev.requests.at(-1)!.body as Body;
+    expect(Object.keys(sent.questions)).toEqual(["endereco_1"]); // sem histórico suspeito: só o endereço é perguntado
+    expect(sent.state).toMatchObject({
+      endereco_do_pedido: "Rua das Acácias, 120 · Cond. Jardim Sul, Bloco B, apto 35 · Vila Mariana",
+      enderecos_marcados_como_fraude: { endereco_1: "Rua das Acácias, 120 · Cond. Jardim Sul, Bloco B, apto 34 · Vila Mariana" },
+    });
+    expect(sent.provider).toEqual({ data_collection: "deny" });
+    expect(JSON.stringify(sent)).not.toMatch(/Vizinho|Marcos|11911110004/);
+
+    // O mesmo apartamento escrito com um resto a mais: o Jev confirma, e o alerta chega à equipe.
+    jevAnswers = { endereco_1: { type: "noul", noul: 0.95 } };
+    const same = await arrives(cwOrder(1203, "11911110006", "Outro Nome", { delivery_address: { ...ADDRESS, complement: "Cond. Jardim Sul, Bloco B, apto 34, portaria 2" } }));
+    expect(same.alertAt).toBeInstanceOf(Date);
+    expect(await events(same.conversationId!)).toEqual(["Alerta de fraude exibido · endereço parecido com um marcado como fraude"]);
+    expect((await listed(same.id)).alert).toMatchObject({
+      level: "HIGH",
+      analysis: null,
+      addressMatches: [{ reason: "Suspeita de golpe", similar: true, address: "Rua das Acácias, 120 · Cond. Jardim Sul, Bloco B, apto 34 · Vila Mariana" }],
+    });
+    expect(jev.requests).toHaveLength(calls + 2);
+    expect(await admin.aiUsage.count({ where: { tenantId: fx.tenant.id, provider: "JEV" } })).toBe(2);
+    jevAnswers = undefined;
+  });
+
+  it("alerta pelas regras: o Jev dá risco baixo e vira aviso; dá risco alto e a equipe é chamada", async () => {
+    const elsewhere = { ...ADDRESS, street: "Rua dos Jasmins", complement: null };
+    const history = async (first: number, phone: string, name: string) => {
+      await arrives(cwOrder(first, phone, name, { delivery_address: elsewhere, cancellation_reason: "Endereço não encontrado" }), "canceled");
+      await arrives(cwOrder(first + 1, phone, name, { delivery_address: elsewhere, cancellation_reason: "Cliente não atendeu" }), "canceled");
+    };
+    await history(1401, "11911110007", "Bruna Costa");
+    jevAnswers = { risk: { type: "noul", noul: 0.12 } };
+    const calm = await arrives(cwOrder(1403, "11911110007", "Bruna Costa", { delivery_address: elsewhere }));
+    expect(calm).toMatchObject({ alertAt: null, conversationId: null, alertAnalysis: { risk: 0.12, similar: [], model: "typesafe/jev-1.14-20261101" } });
+    expect((await listed(calm.id)).alert).toMatchObject({ level: "LOW", analysis: { risk: 0.12, verdict: "low" }, cancellations: { riskCount: 2, ordersCount: 3 } });
+    const sent = jev.requests.at(-1)!.body as { state: { pedido: unknown; historico_do_cliente: { cancelamentos_recentes: unknown[] } }; questions: Record<string, unknown> };
+    expect(Object.keys(sent.questions)).toEqual(["risk"]);
+    expect(sent.state.pedido).toEqual({ origem: "Cardápio Web", valor: "51.80", pagamento: "não informado", tipo: "entrega" });
+    expect(sent.state.historico_do_cliente).toMatchObject({ pedidos_feitos_com_este: 3, cancelados: 2, cancelados_sem_ser_pela_loja: 2, marcados_como_fraude_pela_equipe: 0 });
+    expect(sent.state.historico_do_cliente.cancelamentos_recentes).toHaveLength(2);
+    expect(JSON.stringify(sent)).not.toMatch(/Bruna|11911110007|Jasmins/);
+
+    await history(1411, "11911110008", "Diego Prado");
+    jevAnswers = { risk: { type: "noul", noul: 0.91 } };
+    const risky = await arrives(cwOrder(1413, "11911110008", "Diego Prado", { delivery_address: elsewhere }));
+    expect(risky.alertAt).toBeInstanceOf(Date);
+    expect(await events(risky.conversationId!)).toEqual(["Alerta de fraude exibido · 2 de 3 pedidos cancelados · IA: risco alto"]);
+    expect((await listed(risky.id)).alert).toMatchObject({ level: "HIGH", analysis: { risk: 0.91, verdict: "high" } });
+    jevAnswers = undefined;
+  });
+
+  it("muitos pedidos e poucos cancelamentos: sem alerta nem aviso", async () => {
+    const contact = await admin.contact.create({ data: { tenantId: fx.tenant.id, name: "Cliente Fiel", phone: "+5511911110009", phoneSource: "channel", phoneStatus: "ok" } });
+    const past = (index: number, status: "DELIVERED" | "CANCELED") => ({
+      tenantId: fx.tenant.id,
+      contactId: contact.id,
+      channelId,
+      externalOrderId: `fiel-${index}`,
+      status,
+      subtotal: 40,
+      deliveryFee: 0,
+      total: 40,
+      placedAt: new Date(Date.now() - (index + 1) * 86_400_000),
+      raw: {},
+    });
+    await admin.order.createMany({ data: [...Array.from({ length: 28 }, (_, index) => past(index, "DELIVERED")), past(28, "CANCELED"), past(29, "CANCELED")] });
+    const calls = jev.requests.length;
+    const order = await arrives(cwOrder(1501, "11911110009", "Cliente Fiel", { delivery_address: null }));
+    expect(order.alertAt).toBeNull();
+    expect(await listed(order.id)).toMatchObject({ alert: null, customerCanceled: 2 }); // 2 de 31: abaixo de 10%
+    expect(jev.requests).toHaveLength(calls);
   });
 
   it("marcar um pedido já cancelado e remover a marca; pedido ativo não pode ser marcado", async () => {
@@ -286,7 +401,7 @@ describe("prevenção de fraude", () => {
   it("cadastro do cliente: bloco de cancelamentos com os totais por origem", async () => {
     const order = await admin.order.findFirstOrThrow({ where: { channelId, externalOrderId: "1001" } });
     const { body } = await api().get(`/api/contacts/${order.contactId}`).set(auth()).expect(200);
-    expect(body.cancellations).toMatchObject({ canceledCount: 2, fraudCount: 1, bySource: [{ channelType: "CARDAPIO_WEB", orders: 2 }] });
+    expect(body.cancellations).toMatchObject({ canceledCount: 3, riskCount: 3, fraudCount: 1, bySource: [{ channelType: "CARDAPIO_WEB", orders: 3 }] });
   });
 
   it("anonimizar o cliente apaga o endereço marcado e o motivo", async () => {

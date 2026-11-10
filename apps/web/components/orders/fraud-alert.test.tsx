@@ -18,6 +18,9 @@ const row = (id: number, patch: Partial<CanceledOrderRow> = {}): CanceledOrderRo
   imported: false,
   fraud: null,
   address: "Rua das Acácias, 120 · Bloco B, apto 34",
+  canceledBy: null,
+  afterDispatch: false,
+  counted: true,
   ...patch,
 });
 
@@ -30,8 +33,10 @@ const order = {
 } as Pick<OrderDto, "id" | "displayCode" | "channelType" | "total" | "items">;
 
 const alert = (patch: Partial<OrderAlertDto> = {}, rows: CanceledOrderRow[] = [row(4710)]): OrderAlertDto => ({
+  level: "HIGH",
+  analysis: null,
   customerName: "Marcos Vieira",
-  cancellations: { ordersCount: 9, canceledCount: rows.length, fraudCount: rows.filter((r) => r.fraud).length, bySource: [{ channelType: "CARDAPIO_WEB", orders: rows.length }], rows },
+  cancellations: { ordersCount: 9, canceledCount: rows.length, riskCount: rows.filter((r) => r.counted).length, fraudCount: rows.filter((r) => r.fraud).length, bySource: [{ channelType: "CARDAPIO_WEB", orders: rows.length }], rows },
   address: "Rua das Acácias, 120 · Bloco B, apto 34",
   addressMatches: [],
   decision: null,
@@ -64,16 +69,36 @@ describe("alerta de fraude", () => {
   });
 
   it("nunca sugere pagamento online", () => {
-    show(alert({ addressMatches: [{ placedAt: "2026-10-11T22:00:00.000Z", reason: null, markedBy: "Ana Silva" }] }));
+    show(alert({ addressMatches: [{ placedAt: "2026-10-11T22:00:00.000Z", reason: null, markedBy: "Ana Silva", similar: false, address: null }] }));
     expect(screen.getByRole("region", { name: "Alerta de fraude" }).textContent?.toLowerCase()).not.toContain("pagamento");
   });
 
   it("endereço marcado, sem cancelamentos: bloco próprio, sem dados do outro cliente", () => {
-    show(alert({ addressMatches: [{ placedAt: "2026-10-11T22:00:00.000Z", reason: "Ninguém recebeu", markedBy: "Ana Silva" }] }, []));
+    show(alert({ addressMatches: [{ placedAt: "2026-10-11T22:00:00.000Z", reason: "Ninguém recebeu", markedBy: "Ana Silva", similar: false, address: null }] }, []));
     const section = screen.getByRole("region", { name: "Alerta de fraude" }).textContent;
     expect(section).toContain("Marcos Vieira não tem cancelamentos");
     expect(section).toContain("Este endereço tem um pedido marcado como fraude");
     expect(section).toContain("Motivo: Ninguém recebeu · Marcado por Ana");
+    expect(section).not.toContain("a IA deu como o mesmo local");
+  });
+
+  it("endereço parecido confirmado pela IA e a análise do risco aparecem no alerta", () => {
+    const similar = { placedAt: "2026-10-11T22:00:00.000Z", reason: "Ninguém recebeu", markedBy: "Ana Silva", similar: true, address: "Rua das Acácias, 120 · Bl B ap 34" };
+    show(alert({ addressMatches: [similar], analysis: { risk: 0.91, verdict: "high" } }));
+    const section = screen.getByRole("region", { name: "Alerta de fraude" }).textContent;
+    expect(section).toContain("Análise da IA: risco alto (91%)");
+    expect(section).toContain("a IA deu como o mesmo local: Rua das Acácias, 120 · Bl B ap 34");
+  });
+
+  it("nível de aviso: abre recolhido, em outro tom, e ainda deixa decidir", () => {
+    show(alert({ level: "LOW" }, [row(1, { afterDispatch: true }), row(2, { canceledBy: "store", counted: false })]));
+    expect(screen.queryByRole("region")).toBeNull();
+    expect(screen.getByText("Atenção ao histórico")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Manter pedido" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Abrir" }));
+    const section = screen.getByRole("region", { name: "Atenção ao histórico" }).textContent;
+    expect(section).toContain("Após a saída");
+    expect(section).toContain("Pela loja");
   });
 
   it("motivo que falta, pedido importado e marca de fraude aparecem na linha", () => {
@@ -209,7 +234,7 @@ describe("marca de fraude num pedido cancelado", () => {
     request.mockReset();
   });
 
-  const cancellations = (rows: CanceledOrderRow[]) => ({ ordersCount: 2, canceledCount: rows.length, fraudCount: rows.filter((r) => r.fraud).length, bySource: [], rows });
+  const cancellations = (rows: CanceledOrderRow[]) => ({ ordersCount: 2, canceledCount: rows.length, riskCount: rows.length, fraudCount: rows.filter((r) => r.fraud).length, bySource: [], rows });
   const showCard = (rows: CanceledOrderRow[]) =>
     render(
       <QueryClientProvider client={new QueryClient()}>

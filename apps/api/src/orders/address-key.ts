@@ -129,6 +129,14 @@ export function addressKey(raw: unknown): string | null {
   return [street, number, city, normalize(address.state ?? ""), ...parts, ...(words ? [`resto=${words}`] : [])].join("|");
 }
 
+/**
+ * Começo da chave (rua, número, cidade e estado): os endereços marcados que começam assim e não têm a mesma chave são
+ * os "parecidos", que só contam se o Jev confirmar que é o mesmo local.
+ */
+export function addressBase(raw: unknown): string | null {
+  return addressKey(raw)?.split("|").slice(0, 4).join("|") ?? null;
+}
+
 /** Endereço para a equipe ler: "Rua das Acácias, 120 · Cond. Jardim Sul, Bloco B, apto 34 · Vila Mariana". */
 export function addressText(raw: unknown): string | null {
   const parsed = RawAddress.safeParse(raw);

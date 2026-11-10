@@ -605,6 +605,8 @@ describe("iFood (pedidos por polling)", () => {
       ifood.state.reasons = [{ cancelCodeId: "503", description: "SUSPEITA DE GOLPE" }];
       // Mesmo cliente de um pedido já cancelado: chega com o alerta e, sem conversa aberta, numa só da equipe.
       await admin.conversation.updateMany({ where: { tenantId: fx.tenant.id }, data: { status: "RESOLVED" } });
+      // Um cancelamento em dois pedidos seria só um aviso: o pedido anterior marcado como fraude é que chama a equipe.
+      await post((await orderOf("pedido-6")).id, "fraud").expect(204);
       const contact = (await orderOf("pedido-6")).contactId;
       const customer = (await admin.contactIdentity.findFirstOrThrow({ where: { contactId: contact, channelType: "IFOOD" } })).externalId;
       ifood.state.orders["pedido-alerta"] = ifoodOrder("pedido-alerta", "7700", customer);

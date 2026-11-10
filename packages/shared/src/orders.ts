@@ -72,6 +72,12 @@ export type CanceledOrderRow = {
   fraud: { by: string | null; at: string } | null;
   /** Endereço que fica marcado; null: retirada, sem endereço. */
   address: string | null;
+  /** Quem cancelou: o cliente, a loja, a plataforma ou a equipe pelo alerta do Dish Desk; null: não informado. */
+  canceledBy: "customer" | "store" | "platform" | "team" | null;
+  /** Cancelado depois de sair para a entrega (ou de entregue). */
+  afterDispatch: boolean;
+  /** Entra na conta do risco: tudo, menos o que a loja cancelou antes de o pedido sair. */
+  counted: boolean;
 };
 
 /** Cancelamentos do cliente em todas as fontes ligadas a ele. */
@@ -79,6 +85,8 @@ export type CustomerCancellations = {
   /** Pedidos feitos, com os cancelados. */
   ordersCount: number;
   canceledCount: number;
+  /** Cancelamentos que entram na conta do risco (`counted`). */
+  riskCount: number;
   fraudCount: number;
   bySource: { channelType: ChannelType; orders: number }[];
   /** Do mais recente para o mais antigo. */
@@ -88,14 +96,30 @@ export type CustomerCancellations = {
 /** Decisão do atendente sobre o pedido com alerta. "CANCELING": a plataforma ainda não respondeu. */
 export type OrderAlertDecision = { kind: "KEPT" | "CANCELING" | "CANCELED"; by: string | null; at: string; fraud: boolean };
 
+/**
+ * Proporção de cancelamentos que põe o pedido em alerta: `highRatio` com pelo menos `highCount` cancelamentos é alerta
+ * de fraude; a partir de `lowRatio`, só um aviso. Abaixo disso (5 de 300), nada.
+ */
+export const FRAUD_RULES = { highRatio: 0.3, highCount: 2, lowRatio: 0.1 } as const;
+
+/** O que o Jev respondeu sobre o caso: a chance de fraude (0 a 1) e a leitura dela. */
+export type OrderAlertAnalysis = { risk: number; verdict: "high" | "uncertain" | "low" };
+
 /** Pedido de um cliente com cancelamentos no histórico ou para um endereço marcado como fraude. Só a equipe vê. */
 export type OrderAlertDto = {
+  /** "HIGH": alerta de fraude, que chama a equipe. "LOW": aviso discreto, só para quem abrir o pedido. */
+  level: "HIGH" | "LOW";
+  /** null: o Jev não analisou o risco (caso sem dúvida, IA desligada ou fora do ar). */
+  analysis: OrderAlertAnalysis | null;
   customerName: string | null;
   cancellations: CustomerCancellations;
   /** Endereço de entrega do pedido, para o bloco do endereço marcado. */
   address: string | null;
-  /** Pedidos marcados como fraude no mesmo endereço, sem nome, telefone nem itens do outro cliente. */
-  addressMatches: { placedAt: string; reason: string | null; markedBy: string | null }[];
+  /**
+   * Pedidos marcados como fraude no mesmo endereço, sem nome, telefone nem itens do outro cliente. `similar`: o endereço
+   * foi escrito de outro jeito e o Jev confirmou que é o mesmo local; `address` é como estava no pedido marcado.
+   */
+  addressMatches: { placedAt: string; reason: string | null; markedBy: string | null; similar: boolean; address: string | null }[];
   decision: OrderAlertDecision | null;
   /** Quem vê pode decidir (false: pedido de outra unidade, em que não atende). */
   actionable: boolean;
