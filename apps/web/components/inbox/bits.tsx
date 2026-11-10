@@ -22,13 +22,24 @@ export const CHANNEL_DOT: Record<ChannelType, string> = {
   CARDAPIO_WEB: "bg-cardapio-web",
 };
 
+// Logo do canal no lugar das iniciais (lista de conversas); recorte quadrado e centralizado.
+const CHANNEL_LOGO: Partial<Record<ChannelType, string>> = {
+  WHATSAPP: "/canais/whatsapp.webp",
+  INSTAGRAM: "/canais/instagram.webp",
+  IFOOD: "/canais/ifood.webp",
+  CARDAPIO_WEB: "/canais/cardapio-web.webp",
+};
+
 function colorFor(seed: string): string {
   let hash = 0;
   for (const char of seed) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
   return AVATAR_COLORS[hash % AVATAR_COLORS.length]!;
 }
 
-/** Avatar com iniciais; `channel` desenha a bolinha do canal no canto (lista de conversas). */
+/**
+ * Avatar com iniciais. Com `channel` (lista de conversas), mostra o logo do canal redondo;
+ * canal sem logo fica com as iniciais e a bolinha do canal no canto.
+ */
 export function Avatar({
   seed,
   name,
@@ -42,6 +53,13 @@ export function Avatar({
   channel?: ChannelType;
   ringClassName?: string;
 }) {
+  const logo = channel && CHANNEL_LOGO[channel];
+  if (logo) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element -- ícone estático de 96px, sem ganho com next/image
+      <img src={logo} alt={channel} className={cn("shrink-0 rounded-full object-cover", className)} />
+    );
+  }
   return (
     <div
       className={cn(
