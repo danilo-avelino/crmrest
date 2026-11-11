@@ -104,7 +104,7 @@ Resumo do Sistema de Design (marca **"Dish Desk"**, Next.js + Tailwind + shadcn/
 - **Inputs:** 36px, borda rule; foco borda ink + `box-shadow 0 0 0 3px rgba(26,24,20,.08)`; erro borda e mensagem em tomate.
 
 **No código** (tokens em [apps/web/app/globals.css](apps/web/app/globals.css)):
-- Cores: `paper`, `surface`, `surface-2`, `ink`, `ink-2`, `ink-3`, `rule`, `tomate`, `tomate-lt`, `success`, `warning` (ex.: `bg-paper`, `text-ink-3`, `border-rule`). O accent do design chama-se **`tomate`**: no shadcn, `accent` é o fundo de hover.
+- Cores: `paper`, `surface`, `surface-2`, `ink`, `ink-2`, `ink-3`, `rule`, `tomate`, `tomate-lt`, `success`, `warning` (ex.: `bg-paper`, `text-ink-3`, `border-rule`). O accent do design chama-se **`tomate`**: no shadcn, `accent` é o fundo de hover. Nos gráficos de IA (Plataforma → Gastos com IA): `claude` (tomate) e `jev` (azul), com `jev-ink` para texto.
 - Fontes: `font-sans` = Inter (padrão), `font-heading` = Fraunces. Tamanhos: `text-display` (28px), `text-title` (16px), `text-body` (13px, padrão do body).
 - Raios: `rounded-sm` 4px, `rounded-md` 5px, `rounded-lg` 6px (padrão dos componentes), `rounded-xl` 8px, `rounded-2xl` 12px.
 - Botões: sempre [components/ui/button.tsx](apps/web/components/ui/button.tsx) — variantes `default` (ink), `accent` (tomate), `outline` (secundário), `ghost`, `destructive`; tamanhos `xs` 26px, `sm` 30px, `default` 36px, `lg` 42px. Um `onClick` que retorna Promise já aplica o guard de duplo clique e o "Carregando…" (regra 6); em formulários, passar `loading`.

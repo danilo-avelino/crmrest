@@ -159,13 +159,24 @@ export type AiUsageProvider = keyof typeof AI_USAGE_PROVIDER_LABEL;
 
 export type AiUsageTotals = { calls: number; inputTokens: number; outputTokens: number; costUsd: number };
 
+/** Por onde cada provedor é cobrado: o Claude pela Anthropic, o Jev pelo OpenRouter. */
+export const AI_USAGE_PROVIDER_VIA = { CLAUDE: "Anthropic", JEV: "OpenRouter", LOCAL: "Ollama" } as const;
+
+/** Dias de uso que a previsão dos próximos 30 dias usa como base (a média diária deles × 30). */
+export const AI_FORECAST_BASIS_DAYS = 14;
+
 /**
- * Uso de IA num mês (AAAA-MM, horário de Brasília): o total, cada provedor e os restaurantes, de quem gastou mais.
- * `tenantId` null: a plataforma (o Jev na defesa da API). `providers` do restaurante: só os que ele usou.
+ * Uso de IA num mês (AAAA-MM, horário de Brasília): o total, cada provedor, cada modelo, dia a dia (do dia 1 até hoje,
+ * no mês atual) e os restaurantes, de quem gastou mais. `tenantId` null: a plataforma (o Jev na defesa da API).
+ * `providers` do restaurante: só os que ele usou. `forecast`: os próximos 30 dias pela média dos últimos
+ * AI_FORECAST_BASIS_DAYS dias, qualquer que seja o mês escolhido.
  */
 export type PlatformAiUsageDto = AiUsageTotals & {
   month: string;
   providers: Record<AiUsageProvider, AiUsageTotals>;
+  models: (AiUsageTotals & { provider: AiUsageProvider; model: string })[];
+  days: { date: string; providers: Record<AiUsageProvider, AiUsageTotals> }[];
+  forecast: { basisDays: number; costUsd: number; providers: Record<AiUsageProvider, number> };
   tenants: (AiUsageTotals & { tenantId: string | null; tenantName: string; providers: Partial<Record<AiUsageProvider, AiUsageTotals>> })[];
 };
 

@@ -199,6 +199,8 @@ describe("painel da plataforma (Super Admin)", () => {
         { tenantId: fx.c.id, provider: "CLAUDE", model: "claude-haiku-5-5", inputTokens: 3000, outputTokens: 600, costMicroUsd: 600, createdAt: new Date("2026-10-05T12:00:00-03:00") },
         { tenantId: fx.c.id, provider: "CLAUDE", model: "claude-haiku-5-5", inputTokens: 3000, outputTokens: 600, costMicroUsd: 600, createdAt: new Date("2026-10-06T12:00:00-03:00") },
         { tenantId: fx.b.id, provider: "CLAUDE", model: "claude-haiku-5-5", inputTokens: 1000, outputTokens: 200, costMicroUsd: 200, createdAt: new Date("2026-11-01T00:30:00-03:00") },
+        // Ontem: entra na previsão dos próximos 30 dias (a média dos últimos 14 × 30).
+        { tenantId: fx.b.id, provider: "CLAUDE", model: "claude-haiku-5-5", inputTokens: 1000, outputTokens: 200, costMicroUsd: 1400, createdAt: new Date(Date.now() - 24 * 60 * 60 * 1000) },
       ],
     });
     // A defesa da API: sem restaurante, na linha da plataforma.
@@ -234,13 +236,33 @@ describe("painel da plataforma (Super Admin)", () => {
         },
       ]);
       expect(body.month).toBe("2026-10");
+      // Dia a dia, do dia 1 ao 31; 31/10 às 23h em Brasília fica no dia 31.
+      expect(body.days).toHaveLength(31);
+      expect(body.days[0].date).toBe("2026-10-01");
+      const last = body.days[30];
+      expect(last.date).toBe("2026-10-31");
+      expect(last.providers.CLAUDE.costUsd).toBeGreaterThanOrEqual(0.0002);
+      expect(last.providers.JEV.costUsd).toBeGreaterThanOrEqual(0.000084);
+      expect(body.days[4].providers.CLAUDE.calls).toBeGreaterThanOrEqual(1);
+      // Por modelo.
+      const haiku = body.models.find((m: { model: string }) => m.model === "claude-haiku-5-5");
+      expect(haiku).toMatchObject({ provider: "CLAUDE" });
+      expect(haiku.calls).toBeGreaterThanOrEqual(3);
+      expect(body.models.find((m: { model: string }) => m.model === "typesafe/jev-1.14")).toMatchObject({ provider: "JEV" });
+      // A previsão: 1400 milionésimos ontem → 1400 × 30 / 14 = 3000.
+      expect(body.forecast.basisDays).toBe(14);
+      expect(body.forecast.providers.CLAUDE).toBeGreaterThanOrEqual(0.003);
+      expect(body.forecast.costUsd).toBeGreaterThanOrEqual(body.forecast.providers.CLAUDE);
       expect(body.costUsd).toBeGreaterThanOrEqual(0.001484);
       expect(body.providers.JEV.calls).toBeGreaterThanOrEqual(1);
       expect(body.providers.LOCAL.inputTokens).toBeGreaterThanOrEqual(5000);
       // O mês vazio vem zerado.
       const { body: empty } = await api("get", "ai-usage?month=1999-01", superToken).expect(200);
       const none = { calls: 0, inputTokens: 0, outputTokens: 0, costUsd: 0 };
-      expect(empty).toEqual({ month: "1999-01", ...none, providers: { CLAUDE: none, JEV: none, LOCAL: none }, tenants: [] });
+      const providers = { CLAUDE: none, JEV: none, LOCAL: none };
+      expect(empty).toMatchObject({ month: "1999-01", ...none, providers, models: [], tenants: [] });
+      expect(empty.days).toHaveLength(31);
+      expect(empty.days.every((day: { providers: unknown }) => JSON.stringify(day.providers) === JSON.stringify(providers))).toBe(true);
       // O Jev da defesa vem na linha da plataforma, que nenhum restaurante lê.
       const { body: platform } = await api("get", "ai-usage?month=1998-12", superToken).expect(200);
       expect(platform.tenants).toEqual([

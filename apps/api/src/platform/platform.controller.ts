@@ -2,6 +2,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import type { TenantTx } from "@dishdesk/database";
 import type { ModuleKey } from "@dishdesk/database/enums";
 import {
+  AI_FORECAST_BASIS_DAYS,
   type AiUsageProvider,
   type AiUsageTotals,
   CreatePlatformMemberRequest,
@@ -239,31 +240,46 @@ export class PlatformController {
   }
 
   /**
-   * Uso de IA num mês (AAAA-MM; sem ele, o mês atual), horário de Brasília: o Claude, o Jev e a LLM local, no total e
-   * por restaurante. O Jev da defesa da API fica numa linha da plataforma.
+   * Uso de IA num mês (AAAA-MM; sem ele, o mês atual), horário de Brasília: o Claude, o Jev e a LLM local, no total,
+   * por modelo, dia a dia e por restaurante, mais a previsão dos próximos 30 dias. O Jev da defesa da API fica numa
+   * linha da plataforma.
    */
   @Get("ai-usage")
   async aiUsage(@CurrentAuth() auth: RequestAuth, @Query("month") month?: string): Promise<PlatformAiUsageDto> {
-    const current = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().slice(0, 7);
+    const now = Date.now();
+    const today = new Date(now - 3 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const current = today.slice(0, 7);
     const chosen = month ?? current;
     if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(chosen)) throw new UnprocessableEntityException("Mês inválido: use AAAA-MM.");
     const [year, monthNumber] = chosen.split("-").map(Number) as [number, number];
     const from = new Date(`${chosen}-01T00:00:00-03:00`);
     const to = new Date(`${monthNumber === 12 ? year + 1 : year}-${String((monthNumber % 12) + 1).padStart(2, "0")}-01T00:00:00-03:00`);
+    const basisFrom = new Date(now - AI_FORECAST_BASIS_DAYS * DAY_MS);
 
     const tenants = await this.db.withTenants({ tenantIds: [], userId: auth.userId }, async (tx) => {
       await requireSuperAdmin(tx, auth.userId);
       return tx.tenant.findMany({ select: { id: true, name: true } });
     });
-    const where = { createdAt: { gte: from, lt: to } };
-    const aggregate = { _count: { _all: true }, _sum: { inputTokens: true, outputTokens: true, costMicroUsd: true } } as const;
-    const rows = await this.db.withTenants({ tenantIds: tenants.map((t) => t.id), userId: auth.userId }, async (tx) => [
-      ...(tenants.length ? await tx.aiUsage.groupBy({ by: ["tenantId", "provider"], where, ...aggregate }) : []),
-      // O gasto da plataforma (o Jev na defesa da API) fica numa linha sem restaurante.
-      ...(await tx.platformAiUsage.groupBy({ by: ["provider"], where, ...aggregate })).map((row) => ({ ...row, tenantId: null })),
-    ]);
+    type Row = { day: string; tenant_id: string | null; provider: AiUsageProvider; model: string; calls: number; input: bigint; output: bigint; cost: bigint };
+    const { rows, recent } = await this.db.withTenants({ tenantIds: tenants.map((t) => t.id), userId: auth.userId }, async (tx) => ({
+      // Por dia (Brasília), restaurante, provedor e modelo. O gasto da plataforma (o Jev na defesa da API) vem sem restaurante.
+      rows: await tx.$queryRaw<Row[]>`
+        SELECT to_char((created_at AT TIME ZONE 'UTC') - interval '3 hours', 'YYYY-MM-DD') AS day, tenant_id::text AS tenant_id,
+          provider::text AS provider, model, count(*)::int AS calls, sum(input_tokens)::bigint AS input,
+          sum(output_tokens)::bigint AS output, sum(cost_micro_usd)::bigint AS cost
+        FROM ai_usages WHERE created_at >= ${from} AND created_at < ${to} GROUP BY 1, 2, 3, 4
+        UNION ALL
+        SELECT to_char((created_at AT TIME ZONE 'UTC') - interval '3 hours', 'YYYY-MM-DD'), NULL,
+          provider::text, model, count(*)::int, sum(input_tokens)::bigint, sum(output_tokens)::bigint, sum(cost_micro_usd)::bigint
+        FROM platform_ai_usages WHERE created_at >= ${from} AND created_at < ${to} GROUP BY 1, 3, 4`,
+      recent: [
+        ...(await tx.aiUsage.groupBy({ by: ["provider"], where: { createdAt: { gte: basisFrom } }, _sum: { costMicroUsd: true } })),
+        ...(await tx.platformAiUsage.groupBy({ by: ["provider"], where: { createdAt: { gte: basisFrom } }, _sum: { costMicroUsd: true } })),
+      ],
+    }));
     const names = new Map(tenants.map((t) => [t.id, t.name]));
     const zero = (): AiUsageTotals => ({ calls: 0, inputTokens: 0, outputTokens: 0, costUsd: 0 });
+    const perProvider = (): Record<AiUsageProvider, AiUsageTotals> => ({ CLAUDE: zero(), JEV: zero(), LOCAL: zero() });
     const add = (into: AiUsageTotals, from: AiUsageTotals) => {
       into.calls += from.calls;
       into.inputTokens += from.inputTokens;
@@ -271,29 +287,52 @@ export class PlatformController {
       into.costUsd = Math.round((into.costUsd + from.costUsd) * 1_000_000) / 1_000_000; // em milionésimos, sem resto de ponto flutuante
     };
     const total = zero();
-    const providers: Record<AiUsageProvider, AiUsageTotals> = { CLAUDE: zero(), JEV: zero(), LOCAL: zero() };
+    const providers = perProvider();
     const byTenant = new Map<string | null, PlatformAiUsageDto["tenants"][number]>();
+    const byModel = new Map<string, PlatformAiUsageDto["models"][number]>();
+    const byDay = new Map<string, Record<AiUsageProvider, AiUsageTotals>>();
     for (const row of rows) {
-      const totals = {
-        calls: row._count._all,
-        inputTokens: row._sum.inputTokens ?? 0,
-        outputTokens: row._sum.outputTokens ?? 0,
-        costUsd: (row._sum.costMicroUsd ?? 0) / 1_000_000,
-      };
-      const name = row.tenantId ? (names.get(row.tenantId) ?? "") : "Plataforma (defesa da API)";
-      const tenant = byTenant.get(row.tenantId) ?? { tenantId: row.tenantId, tenantName: name, ...zero(), providers: {} };
-      byTenant.set(row.tenantId, tenant);
-      tenant.providers[row.provider] = totals;
+      const totals = { calls: row.calls, inputTokens: Number(row.input), outputTokens: Number(row.output), costUsd: Number(row.cost) / 1_000_000 };
+      const name = row.tenant_id ? (names.get(row.tenant_id) ?? "") : "Plataforma (defesa da API)";
+      const tenant = byTenant.get(row.tenant_id) ?? { tenantId: row.tenant_id, tenantName: name, ...zero(), providers: {} };
+      byTenant.set(row.tenant_id, tenant);
+      add((tenant.providers[row.provider] ??= zero()), totals);
       add(tenant, totals);
+      const modelKey = `${row.provider}:${row.model}`;
+      const model = byModel.get(modelKey) ?? { provider: row.provider, model: row.model, ...zero() };
+      byModel.set(modelKey, model);
+      add(model, totals);
+      const day = byDay.get(row.day) ?? perProvider();
+      byDay.set(row.day, day);
+      add(day[row.provider], totals);
       add(providers[row.provider], totals);
       add(total, totals);
     }
+    // Do dia 1 ao último do mês; no mês atual, até hoje.
+    const lastDay = chosen === current ? Number(today.slice(8, 10)) : new Date(Date.UTC(year, monthNumber, 0)).getUTCDate();
+    const days = Array.from({ length: lastDay }, (_, index) => {
+      const date = `${chosen}-${String(index + 1).padStart(2, "0")}`;
+      return { date, providers: byDay.get(date) ?? perProvider() };
+    });
+    // Próximos 30 dias: a média diária dos últimos AI_FORECAST_BASIS_DAYS dias × 30.
+    const recentMicro: Record<AiUsageProvider, number> = { CLAUDE: 0, JEV: 0, LOCAL: 0 };
+    for (const row of recent) recentMicro[row.provider] += row._sum.costMicroUsd ?? 0;
+    const project = (micro: number) => Math.round((micro * 30) / AI_FORECAST_BASIS_DAYS) / 1_000_000;
+    const forecastProviders = { CLAUDE: project(recentMicro.CLAUDE), JEV: project(recentMicro.JEV), LOCAL: project(recentMicro.LOCAL) };
     const tokens = (row: AiUsageTotals) => row.inputTokens + row.outputTokens;
+    const byCost = (a: AiUsageTotals, b: AiUsageTotals) => b.costUsd - a.costUsd || tokens(b) - tokens(a);
     return {
       month: chosen,
       ...total,
       providers,
-      tenants: [...byTenant.values()].sort((a, b) => b.costUsd - a.costUsd || tokens(b) - tokens(a)),
+      models: [...byModel.values()].sort(byCost),
+      days,
+      forecast: {
+        basisDays: AI_FORECAST_BASIS_DAYS,
+        costUsd: project(recentMicro.CLAUDE + recentMicro.JEV + recentMicro.LOCAL),
+        providers: forecastProviders,
+      },
+      tenants: [...byTenant.values()].sort(byCost),
     };
   }
 

@@ -41,6 +41,11 @@
   --color-ifood: #ea1d2c;
   --color-cardapio-web: #7c3aed;
 
+  /* Provedores de IA nos gráficos de Gastos com IA (board "Gastos com IA"); jev-ink é o texto na cor do Jev. */
+  --color-claude: #c4341a;
+  --color-jev: #2e5e8c;
+  --color-jev-ink: #2e5e8c;
+
   /* rounded-lg é o raio padrão dos componentes shadcn: 6px no design. */
   --radius-sm: 4px; /* badges e tags */
   --radius-md: 5px; /* botões compactos (30px) */
@@ -130,6 +135,9 @@
   --color-success-line: #2f5a3e;
   --color-success-ink: #8fd3a6;
   --color-tag-line: #5a5248;
+  --color-claude: #d4492e;
+  --color-jev: #7ba4cf;
+  --color-jev-ink: #9dbde0;
 }
 
 /* O padrão de bolinhas no fundo da página e nas áreas em paper, alinhado entre elas. */
