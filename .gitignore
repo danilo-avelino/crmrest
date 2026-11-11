@@ -11,3 +11,7 @@ packages/database/src/generated/
 
 .env
 .env*.local
+
+# Saídas do graphify e documentação do Jev (material de consulta local)
+graphify-out/
+docs/jev-typesafe.md
