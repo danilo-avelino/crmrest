@@ -2,6 +2,7 @@
 
 import {
   CHANNEL_LABEL,
+  type ConversationCounts,
   type ConversationListItem,
   type ConversationMessages,
   type MemberDto,
@@ -9,11 +10,12 @@ import {
 } from "@dishdesk/shared";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckIcon, EllipsisIcon, LoaderCircleIcon } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
 import { ClientDetail } from "@/components/clients/client-detail";
 import { Avatar, ChannelDot, TeamOnlyBadge } from "@/components/inbox/bits";
 import { ClientPanel } from "@/components/inbox/client-panel";
+import { beep } from "@/components/inbox/conversation-list";
 import { Composer } from "@/components/inbox/composer";
 import { MessageTimeline } from "@/components/inbox/message-timeline";
 import { ConversationFraudAlert } from "@/components/orders/fraud-alert";
@@ -29,6 +31,27 @@ import {
 import { usePendingAction } from "@/hooks/use-pending-action";
 import { useNow } from "@/hooks/use-now";
 import { ago } from "@/lib/format";
+
+/**
+ * Mensagem nova do cliente na conversa aberta: ela já conta como lida, então a lista não vê a não lida subir e não bipa.
+ * O bipe sai daqui, com a mesma regra da lista: com o alarme de chamado tocando, ele já avisa.
+ */
+function useInboundBeep(conversationId: string, data: ConversationMessages | undefined) {
+  const { request } = useAuth();
+  const counts = useQuery({
+    queryKey: ["counts", null],
+    queryFn: () => request<ConversationCounts>("/conversations/counts"),
+  });
+  const calling = counts.data?.awaitingAgent ?? 0;
+  const lastInbound = data?.messages.findLast((message) => message.direction === "INBOUND")?.id;
+  const seen = useRef<{ conversationId: string; id: string | undefined } | null>(null);
+  useEffect(() => {
+    if (!data) return;
+    const before = seen.current;
+    seen.current = { conversationId, id: lastInbound };
+    if (before?.conversationId === conversationId && lastInbound && lastInbound !== before.id && calling === 0) beep();
+  }, [data, conversationId, lastInbound, calling]);
+}
 
 /** Conversa aberta + painel do cliente (colunas centrais e direita do board Inbox). */
 export function ConversationPane({
@@ -63,6 +86,7 @@ export function ConversationPane({
       void queryClient.invalidateQueries({ queryKey: ["conversation", conversationId] });
     });
   }, [unread, conversationId, request, queryClient]);
+  useInboundBeep(conversationId, messages.data);
 
   if (conversation.isPending || messages.isPending) {
     return (

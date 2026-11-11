@@ -337,7 +337,12 @@ function useUnreadSignals(items: ConversationListItem[], calling: number) {
   }, [total, calling]);
 }
 
+let lastBeep = 0;
+
+/** A mesma mensagem pode ser vista pela lista e pela conversa aberta: um bipe só. */
 export function beep() {
+  if (Date.now() - lastBeep < 1_500) return;
+  lastBeep = Date.now();
   try {
     const audio = new AudioContext();
     const oscillator = audio.createOscillator();
