@@ -2,12 +2,13 @@
 
 import { BusinessHours, fillMessage, MAX_SHIFTS_PER_DAY, reopeningAt, type TenantSettingsDto, WEEKDAY_LABELS } from "@dishdesk/shared";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { PlusIcon, XIcon } from "lucide-react";
+import { CopyIcon, PlusIcon, XIcon } from "lucide-react";
 import { useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
 import { TabLoading, useSettingsTenant } from "@/components/settings/settings-shell";
 import { AutomationBubble, Card, CardBody, CardFooter, CardPreview, TEXTAREA } from "@/components/settings/settings-ui";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/components/ui/toast";
@@ -52,6 +53,14 @@ function BusinessHoursForm({ settings }: { settings: TenantSettingsDto }) {
 
   const setDay = (index: number, day: BusinessHours["days"][number]) =>
     setHours((current) => ({ ...current, days: current.days.map((item, i) => (i === index ? day : item)) }));
+
+  const [replicateFrom, setReplicateFrom] = useState<number | null>(null);
+  const replicate = () => {
+    if (replicateFrom === null) return;
+    const source = hours.days[replicateFrom] ?? [];
+    setHours((current) => ({ ...current, days: current.days.map(() => source.map((shift) => ({ ...shift }))) }));
+    setReplicateFrom(null);
+  };
 
   const [save, saving] = usePendingAction(async () => {
     setFailure(null);
@@ -169,6 +178,12 @@ function BusinessHoursForm({ settings }: { settings: TenantSettingsDto }) {
                           Adicionar horário
                         </Button>
                       )}
+                      {!disabled && (
+                        <Button type="button" variant="ghost" size="xs" className="self-start text-ink-2" onClick={() => setReplicateFrom(index)}>
+                          <CopyIcon />
+                          Replicar para os outros dias
+                        </Button>
+                      )}
                     </div>
                   ) : (
                     <span className="flex h-8 items-center text-ink-3 italic">Fechado</span>
@@ -205,6 +220,29 @@ function BusinessHoursForm({ settings }: { settings: TenantSettingsDto }) {
           )}
         </CardFooter>
       </form>
+      <Dialog open={replicateFrom !== null} onOpenChange={(next) => !next && setReplicateFrom(null)}>
+        <DialogContent>
+          <div className="border-b border-rule-soft px-6 py-5">
+            <DialogTitle className="mb-1">Replicar horário</DialogTitle>
+            <DialogDescription>
+              {replicateFrom !== null ? `Todos os outros dias ficam com o horário de ${WEEKDAY_LABELS[replicateFrom]}.` : ""}
+            </DialogDescription>
+          </div>
+          <div className="px-6 py-[18px]">
+            <p className="mb-[18px] text-[13px] leading-relaxed text-ink-2">
+              Os horários atuais dos outros dias serão substituídos. Você ainda precisa salvar para valer.
+            </p>
+            <div className="flex gap-2">
+              <Button type="button" onClick={replicate}>
+                Replicar
+              </Button>
+              <Button type="button" variant="outline" onClick={() => setReplicateFrom(null)}>
+                Cancelar
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }
