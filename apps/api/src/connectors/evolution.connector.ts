@@ -3,7 +3,7 @@ import type { MessageType } from "@dishdesk/database/enums";
 import { NormalizedMessage, phoneFromWhatsAppId, StatusUpdate } from "@dishdesk/shared";
 import { z } from "zod";
 import type { Env } from "../config/env.js";
-import { type ChannelConnector, type OutboundText, type SendTarget, sendFailure } from "./connector.js";
+import { type ChannelConnector, type OutboundMedia, type OutboundText, type SendTarget, sendFailure } from "./connector.js";
 import type { ParsedWebhook } from "./whatsapp.connector.js";
 
 /** Eventos que a Evolution entrega à API: mensagens recebidas, status das enviadas e a conexão do número. */
@@ -206,12 +206,34 @@ export class EvolutionConnector implements ChannelConnector {
   }
 
   async send(target: SendTarget, message: OutboundText): Promise<{ externalMessageId: string }> {
+    return this.post(target, "sendText", { number: target.recipientId, text: message.text }, 15_000);
+  }
+
+  /** Arquivo encaminhado: o áudio sai como mensagem de voz; os outros, com a legenda. */
+  async sendMedia(target: SendTarget, media: OutboundMedia): Promise<{ externalMessageId: string }> {
+    if (media.kind === "AUDIO") return this.post(target, "sendWhatsAppAudio", { number: target.recipientId, audio: media.base64 }, 60_000);
+    return this.post(
+      target,
+      "sendMedia",
+      {
+        number: target.recipientId,
+        mediatype: media.kind.toLowerCase(),
+        mimetype: media.mimeType,
+        media: media.base64,
+        ...(media.caption && { caption: media.caption }),
+        ...(media.fileName && { fileName: media.fileName }),
+      },
+      60_000,
+    );
+  }
+
+  private async post(target: SendTarget, route: string, payload: object, timeoutMs: number): Promise<{ externalMessageId: string }> {
     if (this.env.CHANNELS_DRY_RUN) return { externalMessageId: `dry-run.${randomUUID()}` };
-    const response = await fetch(`${this.env.EVOLUTION_API_URL}/message/sendText/${encodeURIComponent(target.externalChannelId)}`, {
+    const response = await fetch(`${this.env.EVOLUTION_API_URL}/message/${route}/${encodeURIComponent(target.externalChannelId)}`, {
       method: "POST",
       headers: { apikey: target.accessToken, "Content-Type": "application/json" },
-      body: JSON.stringify({ number: target.recipientId, text: message.text }),
-      signal: AbortSignal.timeout(15_000),
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(timeoutMs),
     });
     const body = (await response.json().catch(() => null)) as { key?: { id?: string } } | null;
     if (!response.ok) throw sendFailure(response.status, `Evolution: ${errorOf(body) ?? `HTTP ${response.status}`}`);

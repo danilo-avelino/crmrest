@@ -1,11 +1,12 @@
 import { parseEncryptionKey, type Prisma, type TenantTx } from "@dishdesk/database";
-import type { ChannelType } from "@dishdesk/database/enums";
+import type { ChannelType, MessageType } from "@dishdesk/database/enums";
 import {
   CHANNEL_CAPABILITIES,
   type ConversationCounts,
   type ConversationListQuery,
   type ConversationMessages,
   type ConversationPage,
+  FORWARDABLE_TYPES,
   type MessageContent,
   type MessageDto,
   renderTemplate,
@@ -38,6 +39,7 @@ import { withOrderTenants } from "../orders/order-scope.js";
 import { RealtimeEmitter } from "../realtime/realtime.emitter.js";
 import { isTenantAdmin, memberScope } from "../settings/tenant-admin.js";
 import { conversationListInclude, listEvaluations, toListItem, toMessageDto, toOrderDto, withoutRatingScores } from "./conversation.mapper.js";
+import { downloadMedia } from "./message-media.js";
 
 const PAGE_SIZE = 50;
 const MESSAGES_LIMIT = 200;
@@ -156,10 +158,7 @@ export class ConversationsService {
     });
   }
 
-  /**
-   * Arquivo (imagem, áudio...) de uma mensagem recebida. O Dish Desk não guarda mídia: busca na plataforma a cada pedido,
-   * pelo id (WhatsApp) ou pelo endereço (Instagram) que veio no webhook. Só funciona enquanto a plataforma guardar o arquivo.
-   */
+  /** Arquivo (imagem, áudio...) de uma mensagem recebida, buscado na plataforma (o Dish Desk não guarda mídia). */
   async media(auth: RequestAuth, conversationId: string, messageId: string): Promise<{ body: ReadableStream; mimeType: string }> {
     const message = await this.db.withTenants(auth.scope, (tx) =>
       tx.message.findFirst({
@@ -169,24 +168,89 @@ export class ConversationsService {
     );
     const media = (message?.content as MessageContent | undefined)?.media;
     if (!message || !media) throw new NotFoundException("Esta mensagem não tem arquivo.");
+    // Mídia encaminhada: o arquivo é o da mensagem original.
+    if (media.forwardOf) return this.media(auth, await this.conversationOf(auth, media.forwardOf), media.forwardOf);
     try {
-      let file: Response;
-      if (media.url) file = await fetch(media.url, { signal: AbortSignal.timeout(60_000) });
-      else if (media.externalMediaId && message.channel.type === "WHATSAPP") {
-        const { accessToken, instance } = this.connectors.secrets(message.channel.credentials);
-        // WhatsApp por QR Code: a Evolution baixa o arquivo pelo id da mensagem.
-        file = instance
-          ? await this.connectors.evolution.fetchMedia(instance, accessToken, media.externalMediaId)
-          : await this.connectors.whatsapp.fetchMedia(media.externalMediaId, accessToken);
-      } else throw new Error("mídia sem origem");
-      if (!file.ok || !file.body) throw new Error(`HTTP ${file.status}`);
-      // O Instagram não informa o tipo no webhook ("image/*"): vale o que o arquivo diz.
-      const mimeType = media.mimeType.includes("*") ? (file.headers.get("content-type") ?? "application/octet-stream") : media.mimeType;
-      return { body: file.body, mimeType };
+      return await downloadMedia(this.connectors, message.channel, media);
     } catch (error) {
       this.logger.warn(`Mídia da mensagem ${messageId} indisponível: ${error instanceof Error ? error.message : String(error)}`);
       throw new NotFoundException("O arquivo não está mais disponível.");
     }
+  }
+
+  private async conversationOf(auth: RequestAuth, messageId: string): Promise<string> {
+    const message = await this.db.withTenants(auth.scope, (tx) => tx.message.findUnique({ where: { id: messageId }, select: { conversationId: true } }));
+    if (!message) throw new NotFoundException("O arquivo não está mais disponível.");
+    return message.conversationId;
+  }
+
+  /**
+   * Encaminha uma mensagem (texto, localização ou arquivo) para outra conversa do mesmo restaurante, como uma resposta da
+   * equipe. A localização vai como texto com o link do mapa, que todo canal recebe; o arquivo só vai para o WhatsApp por
+   * QR Code, e é buscado na mensagem original na hora do envio (o Dish Desk não guarda mídia).
+   */
+  async forward(auth: RequestAuth, conversationId: string, messageId: string, targetId: string): Promise<MessageDto> {
+    if (conversationId === targetId) throw new BadRequestException("Escolha outra conversa para encaminhar.");
+    const message = await this.db.withTenants(auth.scope, async (tx) => {
+      const source = await tx.message.findFirst({ where: { id: messageId, conversationId } });
+      if (!source) throw new NotFoundException("Mensagem não encontrada.");
+      const original = source.content as MessageContent;
+      const forwardable = (FORWARDABLE_TYPES as readonly MessageType[]).includes(source.type) && !original.automation;
+      if (!forwardable || source.direction === "INTERNAL" || original.aiReview === "blocked") {
+        throw new UnprocessableEntityException("Esta mensagem não pode ser encaminhada.");
+      }
+      const target = await this.requireConversation(tx, targetId);
+      if (target.tenantId !== source.tenantId) throw new UnprocessableEntityException("Só dá para encaminhar para uma conversa do mesmo restaurante.");
+      if (target.teamOnly) throw new UnprocessableEntityException(TEAM_ONLY_REPLY);
+      if (!this.canSend(target.channel.type)) throw new UnprocessableEntityException("Este canal não permite responder pelo Dish Desk.");
+      if (CHANNEL_CAPABILITIES[target.channel.type].window24h && (!target.windowExpiresAt || target.windowExpiresAt < new Date())) {
+        throw new UnprocessableEntityException("A janela de 24h para resposta livre desta conversa terminou.");
+      }
+
+      let type: MessageType = "TEXT";
+      let content: MessageContent;
+      if (original.location) {
+        const { latitude, longitude, name, address } = original.location;
+        const place = [name, address].filter(Boolean).join(" · ") || "Localização";
+        content = { text: `📍 ${place}\nhttps://www.google.com/maps?q=${latitude},${longitude}`, forwarded: true };
+      } else if (original.media) {
+        const channel = await tx.channel.findUniqueOrThrow({ where: { id: target.channelId }, select: { credentials: true } });
+        if (target.channel.type !== "WHATSAPP" || !this.connectors.secrets(channel.credentials).instance) {
+          throw new UnprocessableEntityException("Fotos e arquivos só podem ser encaminhados para conversas do WhatsApp.");
+        }
+        // Mídia já encaminhada: aponta para a original, que é onde o arquivo está.
+        const forwardOf = original.media.forwardOf ?? source.id;
+        type = source.type;
+        content = {
+          ...(original.text && { text: original.text }),
+          media: { mimeType: original.media.mimeType, ...(original.media.filename && { filename: original.media.filename }), forwardOf },
+          forwarded: true,
+        };
+      } else if (original.text) content = { text: original.text, forwarded: true };
+      else throw new UnprocessableEntityException("Esta mensagem não pode ser encaminhada.");
+
+      const created = await tx.message.create({
+        data: {
+          tenantId: target.tenantId,
+          conversationId: targetId,
+          channelId: target.channelId,
+          direction: "OUTBOUND",
+          type,
+          content,
+          status: "PENDING",
+          sentByUserId: auth.userId,
+        },
+        include: { sentByUser: { select: { id: true, name: true } } },
+      });
+      await tx.conversation.update({
+        where: { id: targetId },
+        data: { lastMessageAt: created.createdAt, ...teamRepliedUpdate(target.status, target.automationState as AutomationState) },
+      });
+      return created;
+    });
+    await this.outbound.add("send", { tenantId: message.tenantId, messageId: message.id });
+    this.realtime.inboxChanged(message.tenantId, targetId);
+    return toMessageDto(message);
   }
 
   /** Grava a resposta como pendente e enfileira o envio; o status chega depois pelo canal. */

@@ -9,14 +9,15 @@ import {
   type UpdateConversationRequest,
 } from "@dishdesk/shared";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckIcon, EllipsisIcon, LoaderCircleIcon } from "lucide-react";
+import { CheckIcon, ChevronDownIcon, EllipsisIcon, LoaderCircleIcon, UserRoundIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
 import { ClientDetail } from "@/components/clients/client-detail";
-import { Avatar, ChannelDot, TeamOnlyBadge } from "@/components/inbox/bits";
+import { Avatar, ChannelDot, StatusBadge, TeamOnlyBadge } from "@/components/inbox/bits";
 import { ClientPanel } from "@/components/inbox/client-panel";
 import { beep } from "@/components/inbox/conversation-list";
 import { Composer } from "@/components/inbox/composer";
+import { TodayOrders, useProductionOrders } from "@/components/inbox/inbox-home";
 import { MessageTimeline } from "@/components/inbox/message-timeline";
 import { ConversationFraudAlert } from "@/components/orders/fraud-alert";
 import { Button } from "@/components/ui/button";
@@ -30,7 +31,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { usePendingAction } from "@/hooks/use-pending-action";
 import { useNow } from "@/hooks/use-now";
-import { ago } from "@/lib/format";
+import { ago, count } from "@/lib/format";
+import { cn } from "@/lib/utils";
 
 /**
  * Mensagem nova do cliente na conversa aberta: ela já conta como lida, então a lista não vê a não lida subir e não bipa.
@@ -54,16 +56,23 @@ function useInboundBeep(conversationId: string, data: ConversationMessages | und
 }
 
 /** Conversa aberta + painel do cliente (colunas centrais e direita do board Inbox). */
+export type SideTab = "client" | "orders";
+
 export function ConversationPane({
   conversationId,
   onOpenConversation,
   nextConversationId,
+  sideTab,
+  onSideTab,
 }: {
   conversationId: string;
   /** Troca a conversa aberta na Inbox; null volta para a Inbox sem conversa aberta. */
   onOpenConversation: (id: string | null) => void;
   /** A conversa que abre depois de esta ser resolvida (a seguinte na lista). */
   nextConversationId: () => string | null;
+  /** Aba do painel da direita; fica a mesma ao trocar de conversa. */
+  sideTab: SideTab;
+  onSideTab: (tab: SideTab) => void;
 }) {
   const { request } = useAuth();
   const queryClient = useQueryClient();
@@ -115,10 +124,28 @@ export function ConversationPane({
           nextConversationId={nextConversationId}
         />
         <ConversationFraudAlert conversationId={conversationId} teamOnly={conversation.data.teamOnly} />
-        <MessageTimeline data={messages.data} contact={conversation.data.contact} onOpenConversation={onOpenConversation} />
+        <MessageTimeline
+          data={messages.data}
+          contact={conversation.data.contact}
+          tenantId={conversation.data.tenant.id}
+          onOpenConversation={onOpenConversation}
+        />
         <Composer conversation={conversation.data} />
       </section>
-      <ClientPanel contactId={conversation.data.contact.id} conversationId={conversationId} onOpenProfile={() => setProfileOpen(true)} />
+      <aside className="flex min-h-0 w-[344px] shrink-0 flex-col bg-surface">
+        <SideTabs tab={sideTab} onTab={onSideTab} />
+        {sideTab === "client" ? (
+          <ClientPanel
+            contactId={conversation.data.contact.id}
+            conversationId={conversationId}
+            channelType={conversation.data.channel.type}
+            onOpenProfile={() => setProfileOpen(true)}
+            onOpenConversation={onOpenConversation}
+          />
+        ) : (
+          <TodayOrders embedded />
+        )}
+      </aside>
       {/* Cadastro completo do cliente, como na aba Clientes. */}
       <Dialog open={profileOpen} onOpenChange={setProfileOpen}>
         <DialogContent aria-label="Cadastro do cliente" className="flex h-[min(820px,calc(100vh-4rem))] w-[1080px]">
@@ -128,6 +155,50 @@ export function ConversationPane({
     </>
   );
 }
+
+/** Abas do painel da direita: o cliente da conversa e os pedidos em produção (com os atrasados à vista). */
+function SideTabs({ tab, onTab }: { tab: SideTab; onTab: (tab: SideTab) => void }) {
+  const orders = useProductionOrders();
+  const late = orders.data?.items.filter((order) => order.late).length ?? 0;
+  const item = (value: SideTab, label: string, extra?: React.ReactNode) => (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={tab === value}
+      onClick={() => onTab(value)}
+      className={cn(
+        "relative -mb-px flex items-center gap-1.5 border-b-2 text-[13px]",
+        tab === value ? "border-ink font-medium text-ink" : "border-transparent text-ink-3 hover:text-ink-2",
+      )}
+    >
+      {label}
+      {extra}
+    </button>
+  );
+  return (
+    <div role="tablist" aria-label="Painel da conversa" className="flex h-[52px] shrink-0 gap-[22px] border-b border-rule px-4">
+      {item("client", "Cliente")}
+      {item(
+        "orders",
+        "Pedidos",
+        orders.data && (
+          <>
+            <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-surface-2 px-1 text-[10px] font-semibold text-ink-2 tabular-nums">
+              {count(orders.data.total)}
+            </span>
+            {late > 0 && <span className="text-[11px] font-semibold text-tomate tabular-nums">{late === 1 ? "1 atrasado" : `${count(late)} atrasados`}</span>}
+          </>
+        ),
+      )}
+    </div>
+  );
+}
+
+const STATUS_BADGE = {
+  OPEN: { tone: "open", label: "Aberta" },
+  PENDING: { tone: "pending", label: "Pendente" },
+  RESOLVED: { tone: "resolved", label: "Resolvida" },
+} as const;
 
 function ConversationHeader({
   conversation,
@@ -164,36 +235,49 @@ function ConversationHeader({
   const assigned = conversation.assignedUser;
   const subtitle = [
     session?.context?.mode === "master" && conversation.tenant.name,
-    conversation.teamOnly ? "Aberta pelo Dish Desk para o alerta" : null,
-    assigned ? `Atribuído a: ${shortName(assigned.name)}` : conversation.teamOnly ? "sem atendente" : "Sem responsável",
-    `Aberto há ${ago(conversation.createdAt, now)}`,
+    conversation.teamOnly ? "aberta pelo Dish Desk para o alerta" : null,
+    `aberta há ${ago(conversation.createdAt, now)}`,
   ].filter(Boolean);
+  const status = STATUS_BADGE[conversation.status];
 
   return (
     <header className="flex h-[52px] shrink-0 items-center gap-2.5 border-b border-rule bg-surface px-4">
       <Avatar seed={conversation.contact.id} name={conversation.contact.name} className="size-8 text-[11px]" />
       <div className="min-w-0 flex-1">
-        <div className="flex items-baseline gap-2">
+        <div className="flex items-center gap-2">
           <span className="truncate font-heading text-[15px] font-bold tracking-[-0.2px]">
             {conversation.contact.name ?? "Cliente sem nome"}
           </span>
-          <span className="flex shrink-0 items-center gap-1 text-[11px] text-ink-2">
-            <ChannelDot type={conversation.channel.type} />
+          <StatusBadge tone={status.tone}>{status.label}</StatusBadge>
+          {conversation.teamOnly && <TeamOnlyBadge />}
+        </div>
+        <div className="flex items-center gap-[5px] truncate text-[11px] text-ink-3 tabular-nums">
+          <ChannelDot type={conversation.channel.type} />
+          <span className="font-medium text-ink-2">
             {CHANNEL_LABEL[conversation.channel.type]}
             {conversation.orderCode && ` · #${conversation.orderCode}`}
           </span>
-          {conversation.teamOnly && <TeamOnlyBadge />}
+          <span className="truncate">· {subtitle.join(" · ")}</span>
         </div>
-        <div className="truncate text-[10.5px] text-ink-3">{subtitle.join(" · ")}</div>
       </div>
 
       <div className="flex shrink-0 items-center gap-1.5">
         <DropdownMenu>
-          <DropdownMenuTrigger render={<Button variant="outline" size="sm" />}>Atribuir</DropdownMenuTrigger>
+          <DropdownMenuTrigger
+            render={<Button variant="outline" size="sm" className={cn("max-w-[170px]", assigned ? "text-ink" : "text-ink-2")} />}
+            title="Responsável pela conversa"
+          >
+            <UserRoundIcon aria-hidden />
+            <span className="truncate">{assigned ? shortName(assigned.name) : "Sem responsável"}</span>
+            <ChevronDownIcon className="size-3" aria-hidden />
+          </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-56">
             {(members.data ?? []).map((member) => (
               <DropdownMenuItem key={member.id} onClick={() => assign(member.id)}>
-                <span className="flex-1">{member.name}</span>
+                <span className="flex-1">
+                  {member.name}
+                  {member.id === session?.user.id && " (você)"}
+                </span>
                 {assigned?.id === member.id && <CheckIcon className="size-3.5" aria-hidden />}
               </DropdownMenuItem>
             ))}

@@ -1,11 +1,13 @@
+import type { MessageType } from "@dishdesk/database/enums";
 import type { MessageContent } from "@dishdesk/shared";
 import { InjectQueue, Processor } from "@nestjs/bullmq";
 import { Logger } from "@nestjs/common";
 import { DelayedError, type Job, type Queue } from "bullmq";
 import { AiReviewService } from "../ai/ai-review.service.js";
 import { INACTIVITY_CLOSE_MS } from "../automations/inactivity.service.js";
-import { ChannelAuthError, PermanentSendError } from "../connectors/connector.js";
+import { type ChannelConnector, ChannelAuthError, type OutboundMedia, PermanentSendError, type SendTarget } from "../connectors/connector.js";
 import { ConnectorsService } from "../connectors/connectors.service.js";
+import { downloadMedia } from "../conversations/message-media.js";
 import { DatabaseService } from "../core/database.service.js";
 import { JobProcessor } from "../queues/job-processor.js";
 import { type AutomationJob, type OutboundJob, QUEUES } from "../queues/queues.module.js";
@@ -100,6 +102,7 @@ export class OutboundProcessor extends JobProcessor {
       const target = { externalChannelId, recipientId: recipient.externalId, accessToken: secrets.accessToken };
       let sent: { externalMessageId: string };
       if (content.template && connector.sendTemplate) sent = await connector.sendTemplate(target, content.template);
+      else if (content.media?.forwardOf) sent = await this.sendForwarded(scope, connector, target, message.type, content);
       else if (content.text) sent = await connector.send(target, { type: "TEXT", text: content.text });
       else throw new PermanentSendError("Este canal não permite enviar esta mensagem.");
       outcome = { status: "SENT", externalMessageId: sent.externalMessageId };
@@ -127,4 +130,31 @@ export class OutboundProcessor extends JobProcessor {
       await this.automations.add("inactivity", { tenantId, conversationId: message.conversationId }, { delay: INACTIVITY_CLOSE_MS });
     }
   }
+
+  /** Arquivo encaminhado: buscado na mensagem original (o Dish Desk não guarda mídia) e enviado com a legenda. */
+  private async sendForwarded(
+    scope: { tenantIds: string[] },
+    connector: ChannelConnector,
+    target: SendTarget,
+    type: MessageType,
+    content: MessageContent,
+  ): Promise<{ externalMessageId: string }> {
+    const kind = MEDIA_KINDS.find((item) => item === type);
+    if (!connector.sendMedia || !kind) throw new PermanentSendError("Este canal não recebe arquivos encaminhados.");
+    const original = await this.db.withTenants(scope, (tx) =>
+      tx.message.findUnique({ where: { id: content.media!.forwardOf! }, select: { content: true, channel: { select: { type: true, credentials: true } } } }),
+    );
+    const media = (original?.content as MessageContent | undefined)?.media;
+    if (!original || !media) throw new PermanentSendError("A mensagem original não existe mais.");
+    let file: { body: ReadableStream; mimeType: string };
+    try {
+      file = await downloadMedia(this.connectors, original.channel, media);
+    } catch {
+      throw new PermanentSendError("O arquivo original não está mais disponível na plataforma.");
+    }
+    const base64 = Buffer.from(await new Response(file.body).arrayBuffer()).toString("base64");
+    return connector.sendMedia(target, { kind, mimeType: file.mimeType, base64, caption: content.text, fileName: media.filename });
+  }
 }
+
+const MEDIA_KINDS: OutboundMedia["kind"][] = ["IMAGE", "VIDEO", "DOCUMENT", "AUDIO"];

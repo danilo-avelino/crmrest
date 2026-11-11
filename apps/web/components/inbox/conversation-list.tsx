@@ -2,7 +2,7 @@
 
 import { type ConversationCounts, type ConversationListItem, type ConversationPage, COURIER_TAG } from "@dishdesk/shared";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
-import { BellIcon, BellRingIcon, BikeIcon, CheckIcon, ListFilterIcon, SearchIcon } from "lucide-react";
+import { BellIcon, BellRingIcon, BikeIcon, CheckIcon, ChevronDownIcon, ClockIcon, CornerUpLeftIcon, SearchIcon, StoreIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
 import { Avatar, StatusBadge, TeamOnlyBadge } from "@/components/inbox/bits";
@@ -16,19 +16,26 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useAgentAlarm } from "@/hooks/use-agent-alarm";
 import { useNow } from "@/hooks/use-now";
+import { usePendingAction } from "@/hooks/use-pending-action";
 import { ago } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
-// A primeira aba mostra só o que a equipe ainda precisa tratar; as que só tiveram automação (sem chamar a equipe) ficam
-// em Automáticos e as resolvidas, na aba delas.
-type StatusFilter = "ACTIVE" | "OPEN" | "PENDING" | "AUTO" | "RESOLVED";
-const FILTERS: { value: StatusFilter; label: string }[] = [
+// A primeira aba mostra só o que a equipe ainda precisa tratar (com os filtros Todos, Abertos e Pendentes); as que só
+// tiveram automação (sem chamar a equipe) ficam em Automáticos e as resolvidas, na aba delas.
+type Tab = "ACTIVE" | "AUTO" | "RESOLVED";
+type Sub = "ALL" | "OPEN" | "PENDING";
+const TABS: { value: Tab; label: string }[] = [
   { value: "ACTIVE", label: "Ativos" },
-  { value: "OPEN", label: "Abertos" },
-  { value: "PENDING", label: "Pendentes" },
   { value: "AUTO", label: "Automáticos" },
   { value: "RESOLVED", label: "Resolvidos" },
 ];
+const SUBS: { value: Sub; label: string }[] = [
+  { value: "ALL", label: "Todos" },
+  { value: "OPEN", label: "Abertos" },
+  { value: "PENDING", label: "Pendentes" },
+];
+/** Cliente que já foi lido e espera resposta há este tempo: o tempo da linha fica em âmbar. */
+const WAITING_MS = 10 * 60_000;
 
 /** Lista de conversas (coluna de 320px do board Inbox). */
 export function ConversationList({
@@ -43,9 +50,12 @@ export function ConversationList({
 }) {
   const { request, session } = useAuth();
   const master = session?.context?.mode === "master";
-  const [status, setStatus] = useState<StatusFilter>("ACTIVE");
+  const [tab, setTab] = useState<Tab>("ACTIVE");
+  const [sub, setSub] = useState<Sub>("ALL");
+  const status = tab === "ACTIVE" ? (sub === "ALL" ? "ACTIVE" : sub) : tab;
   const [search, setSearch] = useState("");
   const [tenantId, setTenantId] = useState<string | null>(null);
+  const openCalling = useOpenCalling(onSelect);
   const term = useDebounced(search.trim(), 300);
   const now = useNow();
 
@@ -85,6 +95,7 @@ export function ConversationList({
   useEffect(() => {
     listedRef.current = items.map((conversation) => conversation.id);
   });
+  const tenantName = (session?.context?.tenants ?? []).find((tenant) => tenant.id === tenantId)?.name;
 
   return (
     <section className="flex w-80 shrink-0 flex-col border-r border-rule bg-surface">
@@ -95,11 +106,13 @@ export function ConversationList({
             <DropdownMenuTrigger
               aria-label="Filtrar por restaurante"
               className={cn(
-                "flex size-7 items-center justify-center rounded-md border bg-paper",
-                tenantId ? "border-ink" : "border-rule",
+                "flex h-7 max-w-[196px] items-center gap-1.5 rounded-md border bg-paper pr-1.5 pl-2 text-[11.5px]",
+                tenantId ? "border-ink font-medium text-ink" : "border-rule text-ink-2",
               )}
             >
-              <ListFilterIcon className="size-3.5 text-ink-2" aria-hidden />
+              <StoreIcon className="size-3.5 shrink-0" aria-hidden />
+              <span className="truncate">{tenantName ?? "Todos os restaurantes"}</span>
+              <ChevronDownIcon className="size-3 shrink-0" aria-hidden />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56">
               {[{ id: null, name: "Todos os restaurantes" }, ...(session?.context?.tenants ?? [])].map((tenant) => (
@@ -114,13 +127,20 @@ export function ConversationList({
       </header>
 
       {calling > 0 && (
-        <div role="alert" className="flex shrink-0 items-center gap-2 bg-tomate px-4 py-2 text-[12px] font-semibold text-white">
+        <button
+          type="button"
+          role="alert"
+          onClick={() => openCalling()}
+          title="Abrir a conversa que espera há mais tempo"
+          className="flex w-full shrink-0 items-center gap-2 bg-tomate px-4 py-2 text-left text-[12px] font-semibold text-white hover:bg-tomate/90"
+        >
           <BellRingIcon className="size-4 shrink-0 animate-bounce" aria-hidden />
           <span className="flex-1">
             {calling === 1 ? "1 conversa chamando um atendente" : `${calling} conversas chamando um atendente`}
             {alarm.blocked && <span className="block text-[10.5px] font-normal opacity-90">Clique na página para ativar o som.</span>}
           </span>
-        </div>
+          <span className="font-medium underline underline-offset-2">Abrir</span>
+        </button>
       )}
       {quiet > 0 && (
         <div role="status" className="flex shrink-0 items-center gap-2 bg-ink px-4 py-2 text-[12px] font-semibold text-paper">
@@ -132,40 +152,66 @@ export function ConversationList({
         </div>
       )}
 
-      <div className="shrink-0 border-b border-rule px-3 py-2.5">
+      <div className="shrink-0 px-3 pt-2.5 pb-1.5">
         <label className="flex h-8 items-center gap-2 rounded-md border border-rule bg-paper px-2.5 focus-within:border-ink">
           <SearchIcon className="size-3.5 shrink-0 text-ink-3" aria-hidden />
           <input
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            placeholder="Buscar conversa..."
+            placeholder="Buscar por nome, telefone ou CPF"
             aria-label="Buscar conversa por nome, telefone ou CPF"
             className="w-full bg-transparent text-[12px] outline-none placeholder:text-ink-3"
           />
         </label>
       </div>
 
-      <div className="flex shrink-0 gap-1 overflow-x-auto border-b border-rule px-3 py-2">
-        {FILTERS.map((filter) => (
-          <button
-            key={filter.value}
-            type="button"
-            aria-pressed={status === filter.value}
-            onClick={() => setStatus(filter.value)}
-            className={cn(
-              "rounded-sm px-2.5 py-1 text-[11px] whitespace-nowrap",
-              status === filter.value ? "bg-ink font-medium text-paper" : "border border-rule text-ink-2 hover:bg-surface-2",
-            )}
-          >
-            {filter.label}
-            {filter.value === "OPEN" && (counts.data?.OPEN ?? 0) > 0 && (
-              <span className="ml-1 rounded-full bg-tomate px-[5px] text-[9.5px] text-white tabular-nums">
-                {counts.data?.OPEN}
-              </span>
-            )}
-          </button>
-        ))}
+      <div role="tablist" aria-label="Conversas" className="flex shrink-0 gap-5 border-b border-rule px-3.5">
+        {TABS.map((item) => {
+          const total = item.value === "ACTIVE" ? (counts.data?.OPEN ?? 0) + (counts.data?.PENDING ?? 0) : 0;
+          return (
+            <button
+              key={item.value}
+              type="button"
+              role="tab"
+              aria-selected={tab === item.value}
+              onClick={() => setTab(item.value)}
+              className={cn(
+                "relative -mb-px flex items-center gap-1.5 border-b-2 pt-2 pb-[9px] text-[12.5px]",
+                tab === item.value ? "border-ink font-medium text-ink" : "border-transparent text-ink-3 hover:text-ink-2",
+              )}
+            >
+              {item.label}
+              {total > 0 && (
+                <span className="inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-tomate px-1 text-[10px] font-bold text-white tabular-nums">
+                  {total}
+                </span>
+              )}
+            </button>
+          );
+        })}
       </div>
+      {tab === "ACTIVE" && (
+        <div className="flex shrink-0 gap-1 border-b border-rule-soft px-3 py-2">
+          {SUBS.map((item) => {
+            const total = item.value === "OPEN" ? counts.data?.OPEN : item.value === "PENDING" ? counts.data?.PENDING : undefined;
+            return (
+              <button
+                key={item.value}
+                type="button"
+                aria-pressed={sub === item.value}
+                onClick={() => setSub(item.value)}
+                className={cn(
+                  "flex items-center gap-[5px] rounded-sm border px-[9px] py-[3px] text-[11px] whitespace-nowrap",
+                  sub === item.value ? "border-ink bg-ink font-medium text-paper" : "border-rule text-ink-2 hover:bg-surface-2",
+                )}
+              >
+                {item.label}
+                {total !== undefined && <span className="opacity-70 tabular-nums">{total}</span>}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       <div className="flex flex-1 flex-col overflow-y-auto">
         {conversations.isPending ? (
@@ -189,6 +235,8 @@ export function ConversationList({
                 conversation={conversation}
                 active={conversation.id === selectedId}
                 showTenant={master}
+                inResolvedTab={tab === "RESOLVED"}
+                watchWaiting={tab === "ACTIVE"}
                 now={now}
                 onSelect={() => onSelect(conversation.id)}
               />
@@ -211,12 +259,18 @@ function ConversationRow({
   conversation,
   active,
   showTenant,
+  inResolvedTab,
+  watchWaiting,
   now,
   onSelect,
 }: {
   conversation: ConversationListItem;
   active: boolean;
   showTenant: boolean;
+  /** Na aba Resolvidos a linha não fica apagada nem repete o selo "Resolvida". */
+  inResolvedTab: boolean;
+  /** Aba Ativos: cliente já lido e sem resposta há 10 min ou mais tem o tempo em âmbar. */
+  watchWaiting: boolean;
   now: number;
   onSelect: () => void;
 }) {
@@ -226,6 +280,13 @@ function ConversationRow({
   const quiet = calling && conversation.awaitingAgentQuiet;
   const courier = conversation.contact.tags.includes(COURIER_TAG);
   const time = conversation.lastMessageAt ?? conversation.createdAt;
+  const waiting =
+    watchWaiting &&
+    !calling &&
+    !unread &&
+    conversation.lastMessage?.direction === "INBOUND" &&
+    now - new Date(time).getTime() >= WAITING_MS;
+  const meta = [showTenant && conversation.tenant.name, conversation.orderCode && `#${conversation.orderCode}`].filter(Boolean).join(" · ");
 
   return (
     <button
@@ -239,7 +300,7 @@ function ConversationRow({
           : "border-b-rule-soft border-l-transparent bg-surface hover:bg-paper",
         // Chamando o atendente: borda grossa e fundo tomate, para saltar aos olhos; sem urgência, só a borda, em ink.
         calling && (quiet ? "border-l-4 border-l-ink" : "border-l-4 border-l-tomate bg-tomate-lt hover:bg-tomate-lt"),
-        resolved && !active && "opacity-60",
+        resolved && !active && !inResolvedTab && "opacity-60",
       )}
     >
       <Avatar
@@ -267,7 +328,7 @@ function ConversationRow({
               {conversation.contact.name ?? "Cliente sem nome"}
             </span>
             {conversation.status === "PENDING" && <StatusBadge tone="pending">Pendente</StatusBadge>}
-            {resolved && <StatusBadge tone="resolved">Resolvida</StatusBadge>}
+            {resolved && !inResolvedTab && <StatusBadge tone="resolved">Resolvida</StatusBadge>}
             {conversation.contact.phoneStatus === "pending" && (
               <StatusBadge tone="pending" title="Telefone pendente">
                 ⚠
@@ -275,7 +336,14 @@ function ConversationRow({
             )}
           </div>
           <div className="flex shrink-0 items-center gap-[5px]">
-            <span className={cn("text-[10px] tabular-nums", unread ? "font-semibold text-tomate" : "text-ink-3")}>
+            <span
+              title={waiting ? `Cliente sem resposta há ${ago(time, now)}` : undefined}
+              className={cn(
+                "flex items-center gap-1 text-[10.5px] tabular-nums",
+                unread ? "font-semibold text-tomate" : waiting ? "font-semibold text-warning" : "text-ink-3",
+              )}
+            >
+              {waiting && <ClockIcon className="size-[11px]" aria-hidden />}
               {ago(time, now)}
             </span>
             {unread && (
@@ -285,9 +353,12 @@ function ConversationRow({
             )}
           </div>
         </div>
-        {showTenant && <div className="text-[10px] text-ink-3">{conversation.tenant.name}</div>}
-        <div className={cn("truncate text-[11.5px]", unread ? "font-medium text-ink" : active ? "text-ink-2" : "text-ink-3")}>
-          {conversation.lastMessage?.preview ?? ""}
+        {meta && <div className="truncate text-[10.5px] text-ink-3 tabular-nums">{meta}</div>}
+        <div className={cn("flex items-center gap-1 text-[11.5px]", unread ? "font-medium text-ink" : active ? "text-ink-2" : "text-ink-3")}>
+          {conversation.lastMessage?.direction === "OUTBOUND" && (
+            <CornerUpLeftIcon className="size-3 shrink-0" aria-label="Última mensagem da equipe" />
+          )}
+          <span className="truncate">{conversation.lastMessage?.preview ?? ""}</span>
         </div>
         {(conversation.fraudAlert || conversation.teamOnly) && (
           <div className="mt-1 flex flex-wrap items-center gap-1">
@@ -314,6 +385,20 @@ function ListSkeleton() {
       ))}
     </div>
   );
+}
+
+/**
+ * Abre a conversa que chama um atendente há mais tempo (a API põe quem está chamando no topo dos Ativos), em qualquer
+ * restaurante e com qualquer filtro na lista. Alarme da lista e cartão "Chamando atendente" do início.
+ */
+export function useOpenCalling(onSelect: (id: string) => void) {
+  const { request } = useAuth();
+  const [open] = usePendingAction(async () => {
+    const page = await request<ConversationPage>("/conversations?status=ACTIVE");
+    const longest = page.items.find((conversation) => conversation.awaitingAgentSince && !conversation.awaitingAgentQuiet);
+    if (longest) onSelect(longest.id);
+  });
+  return open;
 }
 
 function useDebounced<T>(value: T, delayMs: number): T {

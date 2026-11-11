@@ -4,6 +4,7 @@ import {
   type AiAttendanceDto,
   CHANNEL_LABEL,
   type ChannelHealthDto,
+  type ConversationCounts,
   INTEGRATION_TYPES,
   type IntegrationType,
   type OrderListItem,
@@ -16,8 +17,6 @@ import {
   BotIcon,
   LoaderCircleIcon,
   MessageSquareIcon,
-  PanelRightCloseIcon,
-  PanelRightOpenIcon,
   PlusIcon,
 } from "lucide-react";
 import Link from "next/link";
@@ -59,17 +58,63 @@ const ARRIVES: Record<IntegrationType, string> = {
  * de hoje (TodayOrders) fica na InboxView. O design ainda não tem este estado; segue o cartão de Integrações e o painel
  * do cliente. Desktop no MVP.
  */
-export function InboxHome() {
+export function InboxHome({ onOpenCalling }: { onOpenCalling: () => void }) {
   return (
-    <div className="flex min-w-0 flex-1 overflow-y-auto">
-      <div className="m-auto w-full max-w-[460px] px-6 py-10">
+    <div className="flex min-w-0 flex-1 overflow-y-auto border-r border-rule bg-paper">
+      <div className="mx-auto w-full max-w-[720px] px-6 pt-7 pb-10">
         <SetupReminder />
-        <AiAttendance />
-        <Integrations />
-        <p className="mt-8 flex items-center justify-center gap-2 text-ink-3">
+        <h1 className="font-heading text-display font-bold">Agora na Inbox</h1>
+        <p className="mt-1.5 flex items-center gap-2 text-ink-3">
           <MessageSquareIcon className="size-4" aria-hidden />
           Escolha uma conversa na lista para responder.
         </p>
+        <Attention onOpenCalling={onOpenCalling} />
+        {/* As integrações vêm antes da IA: a equipe vê logo se alguma está falhando. */}
+        <Integrations />
+        <AiAttendance />
+      </div>
+    </div>
+  );
+}
+
+/** O que precisa da equipe agora: conversas com ela, quem está chamando um atendente e as mensagens não lidas. */
+function Attention({ onOpenCalling }: { onOpenCalling: () => void }) {
+  const { request } = useAuth();
+  const now = useNow(60_000);
+  const counts = useQuery({ queryKey: ["counts", null], queryFn: () => request<ConversationCounts>("/conversations/counts") });
+  const data = counts.data;
+  const team = data ? data.OPEN + data.PENDING : undefined;
+  const urgent = data ? data.awaitingAgent - data.awaitingQuiet : 0;
+  const card = "rounded-2xl border border-rule-soft bg-surface px-4 py-3.5 text-left";
+  const value = (amount: number | undefined) => (
+    <b className="my-1.5 block font-heading text-[28px] leading-none font-bold tabular-nums">{amount === undefined ? "–" : count(amount)}</b>
+  );
+  return (
+    <div className="mt-[18px] mb-[30px] grid grid-cols-3 gap-2.5">
+      <div className={card}>
+        <span className="block text-[12px] font-medium text-ink-2">Com a equipe</span>
+        {value(team)}
+        <small className="text-[11.5px] text-ink-3 tabular-nums">
+          {data ? `${count(data.OPEN)} ${data.OPEN === 1 ? "aberta" : "abertas"} · ${count(data.PENDING)} ${data.PENDING === 1 ? "pendente" : "pendentes"}` : " "}
+        </small>
+      </div>
+      <button
+        type="button"
+        onClick={onOpenCalling}
+        disabled={urgent === 0}
+        className={cn(card, "disabled:cursor-default", urgent > 0 ? "border-tomate-line bg-tomate-lt hover:border-tomate" : "")}
+      >
+        <span className="block text-[12px] font-medium text-ink-2">Chamando atendente</span>
+        <span className={urgent > 0 ? "text-tomate" : undefined}>{value(data && urgent)}</span>
+        <small className="text-[11.5px] text-ink-3 tabular-nums">
+          {urgent > 0 && data?.urgentSince ? `a mais antiga espera há ${ago(data.urgentSince, now)}` : "ninguém esperando"}
+          {data && data.awaitingQuiet > 0 && ` · ${count(data.awaitingQuiet)} sem urgência`}
+        </small>
+      </button>
+      <div className={card}>
+        <span className="block text-[12px] font-medium text-ink-2">Mensagens não lidas</span>
+        {value(data?.unread)}
+        <small className="text-[11.5px] text-ink-3">nas conversas abertas e pendentes</small>
       </div>
     </div>
   );
@@ -99,12 +144,12 @@ function Integrations() {
   const types = INTEGRATION_TYPES.filter((type) => ALWAYS.includes(type) || list.some((channel) => channel.type === type));
 
   return (
-    <section aria-labelledby="inbox-integracoes">
+    <section aria-labelledby="inbox-integracoes" className="mb-[30px]">
       <h2 id="inbox-integracoes" className="font-heading text-[16px] font-bold tracking-[-0.3px]">
         Integrações
       </h2>
       <p className="mt-0.5 mb-4 text-ink-3">Por onde chegam as conversas e os pedidos.</p>
-      <ul className="overflow-hidden rounded-2xl border border-rule-soft bg-surface">
+      <ul className="grid grid-cols-2 gap-2.5">
         {types.map((type) => (
           <IntegrationRow key={type} type={type} channels={list.filter((channel) => channel.type === type)} admin={admin} />
         ))}
@@ -149,7 +194,7 @@ function AiAttendance() {
   };
 
   return (
-    <section aria-labelledby="inbox-ia" className="mb-8">
+    <section aria-labelledby="inbox-ia">
       <h2 id="inbox-ia" className="font-heading text-[16px] font-bold tracking-[-0.3px]">
         Atendimento com IA
       </h2>
@@ -222,7 +267,7 @@ function IntegrationRow({ type, channels, admin }: { type: IntegrationType; chan
   const action = channels.length === 0 ? { label: "Conectar", href: `?conectar=${type}` } : broken ? { label: "Reconectar", href: `?gerenciar=${type}` } : null;
 
   return (
-    <li className="flex items-center gap-3 border-rule-soft px-4 py-3 [&+&]:border-t">
+    <li className="flex items-center gap-3 rounded-2xl border border-rule-soft bg-surface px-4 py-3">
       <SystemIcon type={type} className="size-9 rounded-[9px] text-[12px]" />
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
@@ -263,7 +308,7 @@ const CHAT_TEXT: Record<IfoodChatStatus, string> = {
 /** Widget do iFood recusado neste computador ("Não" na pergunta do Dish Desk): religa por aqui. */
 function IfoodWidgetOffRow() {
   return (
-    <li className="flex items-center gap-3 border-rule-soft px-4 py-3 [&+&]:border-t">
+    <li className="flex items-center gap-3 rounded-2xl border border-rule-soft bg-surface px-4 py-3">
       <SystemIcon type="IFOOD" className="size-9 rounded-[9px] text-[12px]" />
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
@@ -300,7 +345,7 @@ function IfoodChatRow({ storeUrl }: { storeUrl?: string | null }) {
         : null;
 
   return (
-    <li className="flex items-center gap-3 border-rule-soft px-4 py-3 [&+&]:border-t">
+    <li className="flex items-center gap-3 rounded-2xl border border-rule-soft bg-surface px-4 py-3">
       <SystemIcon type="IFOOD" className="size-9 rounded-[9px] text-[12px]" />
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
@@ -320,92 +365,63 @@ function IfoodChatRow({ storeUrl }: { storeUrl?: string | null }) {
   );
 }
 
+const PRODUCTION = new URLSearchParams({ period: "today", production: "true", page: "1" }).toString();
+
+/** Pedidos de hoje ainda em produção (a mesma consulta na barra do início e na aba Pedidos da conversa). */
+export function useProductionOrders() {
+  const { request } = useAuth();
+  return useQuery({
+    queryKey: ["orders", PRODUCTION],
+    queryFn: () => request<OrderPage>(`/orders?${PRODUCTION}`),
+    refetchInterval: 30_000, // os pedidos chegam pelo polling das integrações
+  });
+}
+
 /**
- * Barra lateral com os pedidos de hoje ainda em produção, do mais antigo para o mais novo, com o alerta de atraso. O
- * clique abre o pedido num modal com os detalhes e as ações da aba Pedidos. Com uma conversa aberta, a barra fica
- * recolhida numa faixa no canto (com a contagem e os atrasados) até o atendente expandir.
+ * Pedidos de hoje ainda em produção, do mais antigo para o mais novo, com o alerta de atraso e o número de cada etapa no
+ * topo. O clique abre o pedido num modal com os detalhes e as ações da aba Pedidos. Sem conversa aberta, é a barra da
+ * direita do início; com uma conversa, é a aba Pedidos do painel dela (`embedded`).
  */
-export function TodayOrders({ collapsed, onToggle }: { collapsed?: boolean; onToggle?: () => void }) {
+export function TodayOrders({ embedded }: { embedded?: boolean }) {
   const { request, session } = useAuth();
   const master = session?.context?.mode === "master";
   const now = useNow(60_000);
   const [selected, setSelected] = useState<OrderListItem | null>(null);
-  const params = new URLSearchParams({ period: "today", production: "true", page: "1" });
-  const orders = useQuery({
-    queryKey: ["orders", params.toString()],
-    queryFn: () => request<OrderPage>(`/orders?${params}`),
-    refetchInterval: 30_000, // os pedidos chegam pelo polling das integrações
-  });
+  const orders = useProductionOrders();
   const stages = useQuery({
     queryKey: ["orders", "stages"],
     queryFn: () => request<OrderStageCounts>("/orders/stages"),
     refetchInterval: 30_000,
-    enabled: Boolean(collapsed),
   });
   const data = orders.data;
   // Atrasados em produção e prontos (a lista de produção inclui os prontos que ainda não saíram).
   const late = data?.items.filter((order) => order.late).length ?? 0;
   // O modal acompanha a lista; o pedido que sai da produção (ex.: despachado) continua aberto como estava.
   const open = selected && (data?.items.find((order) => order.id === selected.id) ?? selected);
+  const strip = [
+    { label: "Em produção", value: stages.data?.production },
+    { label: "Atrasados", value: data && late, alert: late > 0 },
+    { label: "Prontos", value: stages.data?.ready },
+    { label: "Em rota", value: stages.data?.dispatched },
+    { label: "Entregues", value: stages.data?.delivered },
+  ];
+  const openOrders = (
+    <Link href="/pedidos" className={cn(buttonVariants({ variant: "outline", size: embedded ? "sm" : "xs" }), "text-ink-2")}>
+      {data && data.total > data.items.length ? `Ver os ${count(data.total)}` : "Abrir Pedidos"}
+    </Link>
+  );
 
-  if (collapsed) {
-    const strip = [
-      { label: "Em produção", value: stages.data?.production },
-      { label: "Atrasados", value: data && late, alert: late > 0 },
-      { label: "Prontos", value: stages.data?.ready },
-      { label: "Em rota", value: stages.data?.dispatched },
-      { label: "Entregues", value: stages.data?.delivered },
-    ];
-    return (
-      <aside aria-label="Pedidos em produção" className="flex w-11 shrink-0 flex-col items-center border-l border-rule bg-surface pt-2">
-        <Button variant="ghost" size="icon-sm" onClick={onToggle} aria-label="Mostrar pedidos em produção" title="Mostrar pedidos em produção">
-          <PanelRightOpenIcon aria-hidden />
-        </Button>
-        <button
-          type="button"
-          onClick={onToggle}
-          className="mt-1 flex flex-col items-center rounded-lg px-1 text-ink-3 hover:bg-paper hover:text-ink"
-        >
-          {strip.map((stage) => (
-            <span key={stage.label} className="flex w-full flex-col items-center gap-1.5 border-rule-soft py-2.5 [&+&]:border-t">
-              <span
-                className={cn(
-                  "font-semibold tabular-nums",
-                  stage.alert ? "rounded-full bg-tomate px-1.5 text-[11px] leading-5 text-white" : "text-[13px] text-ink",
-                )}
-              >
-                {stage.value === undefined ? "–" : count(stage.value)}
-              </span>
-              <span className={cn("text-[11px] font-medium [writing-mode:vertical-rl]", stage.alert && "text-tomate")}>{stage.label}</span>
-            </span>
-          ))}
-        </button>
-      </aside>
-    );
-  }
-
-  return (
-    <aside aria-labelledby="inbox-pedidos-hoje" className="flex w-[344px] shrink-0 flex-col border-l border-rule bg-surface">
-      <div className="flex shrink-0 items-start justify-between gap-3 border-b border-rule px-4 pt-4 pb-3.5">
-        <div>
-          <h2 id="inbox-pedidos-hoje" className="font-heading text-[16px] font-bold tracking-[-0.3px]">
-            Em produção
-          </h2>
-          <p className="mt-0.5 text-xs text-ink-3 tabular-nums">
-            {data ? `${count(data.total)} ${data.total === 1 ? "pedido" : "pedidos"}` : " "}
-            {late > 0 && <span className="font-medium text-tomate"> · {late === 1 ? "1 atrasado" : `${count(late)} atrasados`}</span>}
-          </p>
-        </div>
-        <div className="flex shrink-0 items-center gap-1">
-          <Link href="/pedidos" className={cn(buttonVariants({ variant: "outline", size: "xs" }), "text-ink-2")}>
-            {data && data.total > data.items.length ? `Ver os ${count(data.total)}` : "Abrir Pedidos"}
-          </Link>
-          {onToggle && (
-            <Button variant="ghost" size="icon-xs" onClick={onToggle} aria-label="Recolher pedidos em produção" title="Recolher">
-              <PanelRightCloseIcon aria-hidden />
-            </Button>
-          )}
-        </div>
+  const body = (
+    <>
+      <div className="grid shrink-0 grid-cols-5 border-b border-rule" aria-label="Pedidos de hoje por etapa">
+        {strip.map((stage) => (
+          <div key={stage.label} className="border-rule-soft px-0.5 pt-2.5 pb-2 text-center [&+&]:border-l">
+            <b className={cn("block text-[15px] leading-tight font-semibold tabular-nums", stage.alert && "text-tomate")}>
+              {stage.value === undefined ? "–" : count(stage.value)}
+            </b>
+            <span className={cn("text-[10px] whitespace-nowrap text-ink-3", stage.alert && "text-tomate")}>{stage.label}</span>
+          </div>
+        ))}
       </div>
 
       {/* pb-20: o widget do iFood fica fixo no canto de baixo e cobriria o último pedido. */}
@@ -468,6 +484,7 @@ export function TodayOrders({ collapsed, onToggle }: { collapsed?: boolean; onTo
             ))}
           </ul>
         )}
+        {embedded && <div className="px-4 py-3">{openOrders}</div>}
       </div>
 
       <Dialog open={open !== null} onOpenChange={(next) => !next && setSelected(null)}>
@@ -498,6 +515,25 @@ export function TodayOrders({ collapsed, onToggle }: { collapsed?: boolean; onTo
           )}
         </DialogContent>
       </Dialog>
+    </>
+  );
+
+  if (embedded) return <div className="flex min-h-0 flex-1 flex-col">{body}</div>;
+  return (
+    <aside aria-labelledby="inbox-pedidos-hoje" className="flex w-[344px] shrink-0 flex-col bg-surface">
+      <div className="flex shrink-0 items-start justify-between gap-3 border-b border-rule px-4 pt-4 pb-3.5">
+        <div>
+          <h2 id="inbox-pedidos-hoje" className="font-heading text-[16px] font-bold tracking-[-0.3px]">
+            Em produção
+          </h2>
+          <p className="mt-0.5 text-xs text-ink-3 tabular-nums">
+            {data ? `${count(data.total)} ${data.total === 1 ? "pedido" : "pedidos"}` : " "}
+            {late > 0 && <span className="font-medium text-tomate"> · {late === 1 ? "1 atrasado" : `${count(late)} atrasados`}</span>}
+          </p>
+        </div>
+        {openOrders}
+      </div>
+      {body}
     </aside>
   );
 }

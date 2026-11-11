@@ -78,6 +78,13 @@ export class ContactsController {
     return this.contacts.orders(auth, id);
   }
 
+  /** Abre (ou acha) a conversa com o cliente no WhatsApp do restaurante. */
+  @Post(":id/whatsapp-chat")
+  @HttpCode(200)
+  openWhatsApp(@Param("id", ParseUUIDPipe) id: string, @CurrentAuth() auth: RequestAuth): Promise<{ conversationId: string }> {
+    return this.contacts.openWhatsApp(auth, id);
+  }
+
   @Post(":id/cpf")
   @HttpCode(200)
   revealCpf(@Param("id", ParseUUIDPipe) id: string, @CurrentAuth() auth: RequestAuth) {

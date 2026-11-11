@@ -5,7 +5,9 @@ import {
   type AutoTag,
   CANCELLATION_TAG,
   CHANNEL_LABEL,
+  type ChannelHealthDto,
   type ContactDetail,
+  type ConversationListItem,
   formatPhone,
   MANUAL_TAGS,
   type ManualTag,
@@ -14,7 +16,7 @@ import {
   type UpdateContactRequest,
 } from "@dishdesk/shared";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2Icon, IdCardIcon, LoaderCircleIcon, MailIcon, MapPinIcon, PencilIcon, PhoneIcon, XIcon } from "lucide-react";
+import { CheckCircle2Icon, CopyIcon, IdCardIcon, LoaderCircleIcon, MailIcon, MapPinIcon, MessageCircleIcon, PencilIcon, PhoneIcon, XIcon } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
 import { Avatar, CHANNEL_DOT } from "@/components/inbox/bits";
@@ -25,10 +27,11 @@ import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useToast } from "@/components/ui/toast";
 import { usePendingAction } from "@/hooks/use-pending-action";
 import { useNow } from "@/hooks/use-now";
 import { ApiError } from "@/lib/api";
-import { currency, dayLabel, tenure } from "@/lib/format";
+import { count, currency, currencyWhole, dayLabel, tenure } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 const PHONE_SOURCE: Record<string, string> = {
@@ -37,15 +40,22 @@ const PHONE_SOURCE: Record<string, string> = {
   agent: "cadastrado pela equipe",
 };
 
-/** Painel do cliente (coluna de 344px do board Inbox). O nome abre o cadastro completo (`onOpenProfile`). */
+/**
+ * Painel do cliente (aba Cliente da coluna de 344px da Inbox). O nome abre o cadastro completo (`onOpenProfile`); o
+ * botão WhatsApp abre a conversa com o cliente no WhatsApp do restaurante quando a conversa aberta é de outro canal.
+ */
 export function ClientPanel({
   contactId,
   conversationId,
+  channelType,
   onOpenProfile,
+  onOpenConversation,
 }: {
   contactId: string;
   conversationId: string;
+  channelType: ConversationListItem["channel"]["type"];
   onOpenProfile: () => void;
+  onOpenConversation: (id: string) => void;
 }) {
   const { request } = useAuth();
   const queryClient = useQueryClient();
@@ -63,15 +73,15 @@ export function ClientPanel({
 
   if (!contact.data) {
     return (
-      <aside className="flex w-[344px] shrink-0 items-center justify-center bg-surface text-ink-3">
+      <div className="flex flex-1 items-center justify-center text-ink-3">
         {contact.isError ? "Não foi possível carregar o cliente." : <LoaderCircleIcon className="size-4 animate-spin" aria-label="Carregando…" />}
-      </aside>
+      </div>
     );
   }
   const data = contact.data;
 
   return (
-    <aside className="flex w-[344px] shrink-0 flex-col overflow-y-auto bg-surface">
+    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
       <div className="shrink-0 border-b border-rule px-4 pt-4 pb-3.5">
         <div className="flex items-start gap-2.5">
           <Avatar seed={data.id} name={data.name} className="size-11 text-[15px]" />
@@ -113,15 +123,18 @@ export function ClientPanel({
           <Section title="Contato">
             <Row icon={PhoneIcon}>
               {data.phone ? (
-                <div>
-                  <div className="tabular-nums">{formatPhone(data.phone)}</div>
-                  {data.phoneSource && (
-                    <div className="mt-px flex items-center gap-1 text-[10.5px] text-success">
-                      <CheckCircle2Icon className="size-3" aria-hidden />
-                      {PHONE_SOURCE[data.phoneSource] ?? data.phoneSource}
-                    </div>
-                  )}
-                </div>
+                <>
+                  <div className="min-w-0 flex-1">
+                    <div className="tabular-nums">{formatPhone(data.phone)}</div>
+                    {data.phoneSource && (
+                      <div className="mt-px flex items-center gap-1 text-[10.5px] text-success">
+                        <CheckCircle2Icon className="size-3" aria-hidden />
+                        {PHONE_SOURCE[data.phoneSource] ?? data.phoneSource}
+                      </div>
+                    )}
+                  </div>
+                  {channelType !== "WHATSAPP" && <WhatsAppButton contactId={data.id} tenantId={data.tenantId} onOpen={onOpenConversation} />}
+                </>
               ) : (
                 // O telefone é o que qualifica o contato; o resto vem dos canais e pedidos.
                 <div>
@@ -163,7 +176,7 @@ export function ClientPanel({
           {data.addresses[0] && (
             <Section title="Endereço de entrega">
               <Row icon={MapPinIcon}>
-                <div className="leading-normal">
+                <div className="min-w-0 flex-1 leading-normal">
                   {[data.addresses[0].street, data.addresses[0].number, data.addresses[0].complement].filter(Boolean).join(", ")}
                   <br />
                   <span className="text-ink-2">
@@ -176,6 +189,17 @@ export function ClientPanel({
                     </>
                   )}
                 </div>
+                <CopyButton
+                  label="Copiar endereço"
+                  text={[
+                    [data.addresses[0].street, data.addresses[0].number, data.addresses[0].complement].filter(Boolean).join(", "),
+                    data.addresses[0].district,
+                    `${data.addresses[0].city} - ${data.addresses[0].state}`,
+                    data.addresses[0].zipCode && `CEP ${data.addresses[0].zipCode}`,
+                  ]
+                    .filter(Boolean)
+                    .join(", ")}
+                />
               </Row>
             </Section>
           )}
@@ -183,7 +207,7 @@ export function ClientPanel({
           <History contact={data} />
         </>
       )}
-    </aside>
+    </div>
   );
 }
 
@@ -193,6 +217,55 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
       <div className="text-[10px] font-semibold tracking-[0.08em] text-ink-3 uppercase">{title}</div>
       {children}
     </div>
+  );
+}
+
+/**
+ * Abre (ou acha) a conversa com o cliente no WhatsApp do restaurante, pelo telefone do cadastro. Só aparece quando o
+ * restaurante tem um WhatsApp conectado.
+ */
+function WhatsAppButton({ contactId, tenantId, onOpen }: { contactId: string; tenantId: string; onOpen: (id: string) => void }) {
+  const { request } = useAuth();
+  const queryClient = useQueryClient();
+  const toast = useToast();
+  // Mesma consulta da faixa de canal desconectado (ChannelAlert).
+  const channels = useQuery({ queryKey: ["channels"], queryFn: () => request<ChannelHealthDto[]>("/channels"), refetchInterval: 60_000 });
+  const connected = channels.data?.some((channel) => channel.tenantId === tenantId && channel.type === "WHATSAPP" && channel.status === "CONNECTED");
+  if (!connected) return null;
+  const open = async () => {
+    try {
+      const { conversationId } = await request<{ conversationId: string }>(`/contacts/${contactId}/whatsapp-chat`, { method: "POST" });
+      void queryClient.invalidateQueries({ queryKey: ["conversations"] });
+      onOpen(conversationId);
+    } catch (failure) {
+      toast(failure instanceof ApiError ? failure.message : "Não foi possível abrir a conversa no WhatsApp.");
+    }
+  };
+  return (
+    <Button variant="outline" size="xs" className="shrink-0" onClick={open} title="Abre a conversa com o cliente no WhatsApp do restaurante">
+      <MessageCircleIcon aria-hidden />
+      WhatsApp
+    </Button>
+  );
+}
+
+function CopyButton({ label, text }: { label: string; text: string }) {
+  const toast = useToast();
+  return (
+    <button
+      type="button"
+      title={label}
+      aria-label={label}
+      onClick={() => {
+        void navigator.clipboard
+          .writeText(text)
+          .then(() => toast("Copiado."))
+          .catch(() => toast("Não foi possível copiar."));
+      }}
+      className="flex size-6 shrink-0 items-center justify-center rounded-sm text-ink-3 hover:bg-surface-2 hover:text-ink"
+    >
+      <CopyIcon className="size-3.5" aria-hidden />
+    </button>
   );
 }
 
@@ -352,8 +425,8 @@ function History({ contact }: { contact: ContactDetail }) {
         <div className="mb-2.5 text-[10px] font-semibold tracking-[0.08em] text-ink-3 uppercase">Histórico</div>
         <div className="grid grid-cols-3 gap-2">
           {[
-            [String(contact.metrics.ordersCount), "pedidos"],
-            [String(Math.round(Number(contact.metrics.ordersTotal))), "reais gastos"],
+            [count(contact.metrics.ordersCount), contact.metrics.ordersCount === 1 ? "pedido" : "pedidos"],
+            [currencyWhole(contact.metrics.ordersTotal), "gastos"],
             [tenure(contact.firstSeenAt, now), "como cliente"],
           ].map(([value, label]) => (
             <div key={label} className="flex flex-col gap-0.5">

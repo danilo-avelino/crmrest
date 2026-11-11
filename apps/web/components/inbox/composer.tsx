@@ -11,8 +11,8 @@ import {
   withoutAi,
 } from "@dishdesk/shared";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangleIcon, ClockIcon, SendIcon, SparklesIcon, StickyNoteIcon, XIcon } from "lucide-react";
-import { type KeyboardEvent, useState } from "react";
+import { AlertTriangleIcon, ClockIcon, SendIcon, SparklesIcon, StickyNoteIcon, XIcon, ZapIcon } from "lucide-react";
+import { type KeyboardEvent, useLayoutEffect, useRef, useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
 import { useIfoodWidget } from "@/components/ifood-widget";
 import { TemplatePicker } from "@/components/inbox/template-picker";
@@ -31,6 +31,8 @@ const LONG_COOLDOWN_MS = 30_000;
 const LONG_COOLDOWN_FROM = 3;
 // Por conversa: quantas respostas o atendente mandou e quando mandou a última. Fica fora do componente para valer ao trocar de conversa e voltar.
 const sentReplies = new Map<string, { count: number; at: number }>();
+/** O campo cresce com o texto até esta altura (cerca de 8 linhas) e depois rola. */
+const MAX_HEIGHT = 180;
 /** A sugestão da IA lê as mensagens das últimas 12 horas (como a API). */
 const SUGGESTION_HISTORY_MS = 12 * 60 * 60 * 1000;
 
@@ -46,6 +48,15 @@ export function Composer({ conversation }: { conversation: ConversationListItem 
   const [text, setText] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [highlight, setHighlight] = useState(0);
+  // Botão "Respostas rápidas": a lista inteira, o mesmo que digitar "/".
+  const [browsing, setBrowsing] = useState(false);
+  const field = useRef<HTMLTextAreaElement>(null);
+  useLayoutEffect(() => {
+    const element = field.current;
+    if (!element) return;
+    element.style.height = "auto";
+    element.style.height = `${Math.min(element.scrollHeight + 2, MAX_HEIGHT)}px`;
+  }, [text]);
   // O texto que veio da IA: enquanto o campo for igual a ele, a linha "Sugestão da IA" aparece.
   const [suggested, setSuggested] = useState<string | null>(null);
 
@@ -81,10 +92,10 @@ export function Composer({ conversation }: { conversation: ConversationListItem 
   });
   const slash = mode === "reply" && /^\/\S*$/.test(text) ? text.slice(1).toLowerCase() : null;
   const suggestions =
-    slash === null
+    slash === null && !browsing
       ? []
       : (quickReplies.data ?? []).filter(
-          (reply) => reply.tenantId === conversation.tenant.id && reply.shortcut.toLowerCase().startsWith(slash),
+          (reply) => reply.tenantId === conversation.tenant.id && reply.shortcut.toLowerCase().startsWith(slash ?? ""),
         );
 
   // Sugerir com IA (board Inbox · Composer · Sugerir com IA): só no restaurante com o Atendimento com IA (a mesma
@@ -145,6 +156,8 @@ export function Composer({ conversation }: { conversation: ConversationListItem 
   const pick = (reply: QuickReplyDto) => {
     setText(reply.content);
     setHighlight(0);
+    setBrowsing(false);
+    field.current?.focus();
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -161,7 +174,8 @@ export function Composer({ conversation }: { conversation: ConversationListItem 
         return;
       }
       if (event.key === "Escape") {
-        setText("");
+        if (browsing) setBrowsing(false);
+        else setText("");
         return;
       }
     }
@@ -172,7 +186,7 @@ export function Composer({ conversation }: { conversation: ConversationListItem 
   };
 
   return (
-    <div className="shrink-0 border-t border-rule bg-surface">
+    <div className="@container shrink-0 border-t border-rule bg-surface">
       <div className="flex border-b border-rule px-4" role="tablist">
         {(
           [
@@ -209,6 +223,9 @@ export function Composer({ conversation }: { conversation: ConversationListItem 
             aria-label="Respostas rápidas"
             className="absolute right-3.5 bottom-full left-3.5 mb-1 max-h-56 overflow-y-auto rounded-lg bg-popover p-1 shadow-md ring-1 ring-ink/10"
           >
+            <li className="px-2 pt-1 pb-1.5 text-[10px] font-semibold tracking-[0.08em] text-ink-3 uppercase" aria-hidden>
+              Respostas rápidas
+            </li>
             {suggestions.map((reply, index) => (
               <li key={reply.id} role="option" aria-selected={index === highlight}>
                 <button
@@ -244,11 +261,13 @@ export function Composer({ conversation }: { conversation: ConversationListItem 
           <p className="min-h-16 rounded-lg border border-rule bg-surface-2 px-3 py-2.5 text-[12.5px] text-ink-3">{blocked}</p>
         ) : (
           <textarea
+            ref={field}
             value={suggesting ? "" : text}
             disabled={suggesting}
             onChange={(event) => {
               setText(event.target.value);
               setHighlight(0);
+              if (event.target.value !== "") setBrowsing(false);
             }}
             onKeyDown={onKeyDown}
             rows={3}
@@ -261,7 +280,7 @@ export function Composer({ conversation }: { conversation: ConversationListItem 
                   : "Escreva uma nota para a equipe (o cliente não vê)"
             }
             className={cn(
-              "min-h-16 resize-none rounded-lg border px-3 py-2.5 text-[13px] outline-none placeholder:text-ink-3 focus:border-ink focus:ring-3 focus:ring-ink/8 disabled:bg-surface-2",
+              "min-h-16 resize-none overflow-y-auto rounded-lg border px-3 py-2.5 text-[13px] outline-none placeholder:text-ink-3 focus:border-ink focus:ring-3 focus:ring-ink/8 disabled:bg-surface-2",
               mode === "note" ? "border-warning-line bg-warning-lt" : "border-rule bg-paper",
               mode === "reply" && showSuggestion && "border-tomate-line ring-3 ring-tomate/8",
             )}
@@ -282,8 +301,26 @@ export function Composer({ conversation }: { conversation: ConversationListItem 
           </p>
         )}
 
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-1">
+        <div className="flex items-center gap-2">
+          <div className="flex min-w-0 flex-1 items-center gap-1">
+            {mode === "reply" && !blocked && (quickReplies.data ?? []).some((reply) => reply.tenantId === conversation.tenant.id) && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-[11.5px]"
+                aria-expanded={browsing}
+                title="O mesmo que digitar /"
+                disabled={suggesting}
+                onClick={() => {
+                  setBrowsing((open) => !open);
+                  setHighlight(0);
+                  field.current?.focus();
+                }}
+              >
+                <ZapIcon aria-hidden />
+                Respostas rápidas
+              </Button>
+            )}
             {/* Templates são da API oficial do WhatsApp, a única com janela de 24h; pelo QR Code, a resposta é sempre livre. */}
             {conversation.channel.type === "WHATSAPP" && capabilities.window24h && (
               <TemplatePicker conversationId={conversation.id} emphasized={!windowOpen} disabled={suggesting} />
@@ -325,6 +362,13 @@ export function Composer({ conversation }: { conversation: ConversationListItem 
               </span>
             )}
           </div>
+          {!blocked && !capabilities.window24h && (
+            <span className="hidden text-[11px] whitespace-nowrap text-ink-3 @2xl:inline">
+              <kbd className="rounded-[3px] border border-rule bg-surface-2 px-1 font-sans text-[10px] text-ink-2">Enter</kbd> envia ·{" "}
+              <kbd className="rounded-[3px] border border-rule bg-surface-2 px-1 font-sans text-[10px] text-ink-2">Shift</kbd>+
+              <kbd className="rounded-[3px] border border-rule bg-surface-2 px-1 font-sans text-[10px] text-ink-2">Enter</kbd> quebra a linha
+            </span>
+          )}
           <Button
             variant={mode === "reply" ? "accent" : "default"}
             className="h-8 rounded-md px-3.5 text-[12.5px]"

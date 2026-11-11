@@ -3,8 +3,10 @@
 import { type ConversationEvaluationDto, type ConversationMessages, type MessageContent, type MessageDto, TEAM_REASONS } from "@dishdesk/shared";
 import {
   AlertCircleIcon,
+  ArrowDownIcon,
   CheckCircle2Icon,
   ClockIcon,
+  ForwardIcon,
   LockIcon,
   MapPinIcon,
   SparklesIcon,
@@ -15,6 +17,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Fragment, useEffect, useRef, useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
 import { Avatar } from "@/components/inbox/bits";
+import { canForward, ForwardDialog } from "@/components/inbox/forward-dialog";
 import { MessageMedia } from "@/components/inbox/message-media";
 import { OrderCard } from "@/components/inbox/order-card";
 import { evaluationNotes, Pill, ScoreBadge } from "@/components/reports/report-ui";
@@ -57,22 +60,84 @@ const FRAUD_TEAM_EVENTS = new Set<MessageContent["event"]>(["fraud_alert", "orde
 const FRAUD_HOT_EVENTS = new Set<MessageContent["event"]>(["fraud_alert", "order_canceled_by_team", "order_cancel_refused", "fraud_marked"]);
 const WARNING_EVENTS = new Set<MessageContent["event"]>(["phone_pending", "opt_out", "merge_conflict", "possible_duplicate", "order_ambiguous", "awaiting_agent", "ai_fallback"]);
 
-/** Linha do tempo da conversa: mensagens, eventos, notas e pedidos (board Inbox → "Mensagens"). */
+const DAY_MS = 24 * 60 * 60_000;
+const weekday = new Intl.DateTimeFormat("pt-BR", { weekday: "long" });
+const fullDate = new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
+const dayKey = (iso: string) => new Date(iso).toDateString();
+
+/** Separador de dia da conversa: "Hoje", "Ontem", o dia da semana nesta semana ou a data. */
+function dayHeading(iso: string): string {
+  const day = new Date(iso);
+  const today = new Date();
+  const days = Math.round((new Date(today.toDateString()).getTime() - new Date(day.toDateString()).getTime()) / DAY_MS);
+  if (days === 0) return "Hoje";
+  if (days === 1) return "Ontem";
+  if (days < 7) {
+    const name = weekday.format(day);
+    return name.charAt(0).toUpperCase() + name.slice(1);
+  }
+  return fullDate.format(day);
+}
+
+/** Mensagens seguidas do cliente (ou da mesma pessoa da equipe), em até 5 min, ficam juntas. */
+function sameSender(a: MessageDto | undefined, b: MessageDto | undefined): boolean {
+  if (!a || !b || a.type === "SYSTEM" || b.type === "SYSTEM" || a.type === "NOTE" || b.type === "NOTE") return false;
+  if (a.content.automation || b.content.automation || a.direction !== b.direction || dayKey(a.createdAt) !== dayKey(b.createdAt)) return false;
+  if (a.direction === "OUTBOUND" && (a.sentBy?.id !== b.sentBy?.id || Boolean(a.content.aiReply) !== Boolean(b.content.aiReply))) return false;
+  return Math.abs(new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()) < 5 * 60_000;
+}
+
+/**
+ * Linha do tempo da conversa: mensagens, eventos, notas e pedidos (board Inbox → "Mensagens"), numa coluna de leitura,
+ * com o dia entre as mensagens. Quem está lendo o começo não é levado ao fim quando chega mensagem: aparece o aviso.
+ */
 export function MessageTimeline({
   data,
   contact,
+  tenantId,
   onOpenConversation,
 }: {
   data: ConversationMessages;
   contact: { id: string; name: string | null };
+  /** Restaurante da conversa: o encaminhar só lista conversas dele. */
+  tenantId: string;
   /** Abre outra conversa na Inbox (botão de conversar com o cliente, no card do pedido). */
   onOpenConversation: (id: string) => void;
 }) {
-  const end = useRef<HTMLDivElement>(null);
-  const last = data.messages.at(-1)?.id;
+  const scroller = useRef<HTMLDivElement>(null);
+  const atBottom = useRef(true);
+  const seen = useRef<string | undefined>(undefined);
+  const [unseen, setUnseen] = useState(0);
+  const [forwarding, setForwarding] = useState<MessageDto | null>(null);
+  const lastMessage = data.messages.at(-1);
+  const last = lastMessage?.id;
+
+  const toBottom = () => {
+    const element = scroller.current;
+    if (element) element.scrollTop = element.scrollHeight;
+    atBottom.current = true;
+    setUnseen(0);
+  };
   useEffect(() => {
-    end.current?.scrollIntoView({ block: "end" });
-  }, [last]);
+    if (last === seen.current) return;
+    const first = seen.current === undefined;
+    seen.current = last;
+    // A resposta que a própria equipe mandou sempre leva ao fim; a do cliente, só se o atendente já estava lá.
+    if (first || atBottom.current || lastMessage?.direction !== "INBOUND") toBottom();
+    else setUnseen((count) => count + 1);
+  }, [last, lastMessage?.direction]);
+
+  // Cards de pedido e imagens terminam de carregar depois: quem está no fim continua no fim.
+  const content = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const element = content.current;
+    if (!element) return;
+    const observer = new ResizeObserver(() => {
+      if (atBottom.current && scroller.current) scroller.current.scrollTop = scroller.current.scrollHeight;
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
 
   // Cada avaliação da IA entra depois da última mensagem anterior a ela.
   const evaluationsAfter = new Map<string, ConversationEvaluationDto[]>();
@@ -84,18 +149,75 @@ export function MessageTimeline({
   }
 
   return (
-    <div role="log" aria-label="Mensagens da conversa" className="flex flex-1 flex-col gap-2.5 overflow-y-auto px-5 pt-5 pb-3">
-      {leading.map((evaluation) => (
-        <Evaluation key={evaluation.id} evaluation={evaluation} />
-      ))}
-      {data.messages.map((message) => (
-        <Fragment key={message.id}>
-          <TimelineMessage message={message} data={data} contact={contact} onOpenConversation={onOpenConversation} />
-          {evaluationsAfter.get(message.id)?.map((evaluation) => <Evaluation key={evaluation.id} evaluation={evaluation} />)}
-        </Fragment>
-      ))}
-      <div ref={end} />
+    <div className="relative flex min-h-0 flex-1">
+      <div
+        ref={scroller}
+        role="log"
+        aria-label="Mensagens da conversa"
+        onScroll={(event) => {
+          const element = event.currentTarget;
+          atBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight < 80;
+          if (atBottom.current && unseen > 0) setUnseen(0);
+        }}
+        className="flex-1 overflow-y-auto px-5 pt-5 pb-3"
+      >
+        <div ref={content} className="mx-auto flex w-full max-w-[760px] flex-col gap-2.5">
+          {leading.map((evaluation) => (
+            <Evaluation key={evaluation.id} evaluation={evaluation} />
+          ))}
+          {data.messages.map((message, index) => {
+            const previous = data.messages[index - 1];
+            const next = data.messages[index + 1];
+            return (
+              <Fragment key={message.id}>
+                {(!previous || dayKey(previous.createdAt) !== dayKey(message.createdAt)) && (
+                  <div className="my-1 flex items-center gap-3 text-[11px] font-medium text-ink-3 before:h-px before:flex-1 before:bg-rule after:h-px after:flex-1 after:bg-rule">
+                    {dayHeading(message.createdAt)}
+                  </div>
+                )}
+                <TimelineMessage
+                  message={message}
+                  data={data}
+                  contact={contact}
+                  grouped={{ withPrevious: sameSender(previous, message), withNext: sameSender(message, next) }}
+                  onForward={canForward(message) ? () => setForwarding(message) : undefined}
+                  onOpenConversation={onOpenConversation}
+                />
+                {evaluationsAfter.get(message.id)?.map((evaluation) => <Evaluation key={evaluation.id} evaluation={evaluation} />)}
+              </Fragment>
+            );
+          })}
+        </div>
+      </div>
+      {unseen > 0 && (
+        <button
+          type="button"
+          onClick={toBottom}
+          className="absolute bottom-3 left-1/2 flex h-[30px] -translate-x-1/2 items-center gap-1.5 rounded-full bg-ink px-3 text-[12px] font-medium text-paper shadow-md"
+        >
+          {unseen === 1 ? "1 nova mensagem" : `${unseen} novas mensagens`}
+          <ArrowDownIcon className="size-3.5" aria-hidden />
+        </button>
+      )}
+      <ForwardDialog message={forwarding} tenantId={tenantId} onClose={() => setForwarding(null)} />
     </div>
+  );
+}
+
+type Grouped = { withPrevious: boolean; withNext: boolean };
+
+/** Botão de encaminhar ao lado do balão; aparece ao passar o mouse na mensagem. */
+function ForwardButton({ onForward }: { onForward: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onForward}
+      title="Encaminhar"
+      aria-label="Encaminhar mensagem"
+      className="flex size-7 shrink-0 items-center justify-center self-center rounded-full border border-rule bg-surface text-ink-2 opacity-0 shadow-sm group-hover/message:opacity-100 hover:bg-surface-2 hover:text-ink focus-visible:opacity-100"
+    >
+      <ForwardIcon className="size-3.5" aria-hidden />
+    </button>
   );
 }
 
@@ -103,11 +225,15 @@ function TimelineMessage({
   message,
   data,
   contact,
+  grouped,
+  onForward,
   onOpenConversation,
 }: {
   message: MessageDto;
   data: ConversationMessages;
   contact: { id: string; name: string | null };
+  grouped: Grouped;
+  onForward?: () => void;
   onOpenConversation: (id: string) => void;
 }) {
   const order = message.content.orderId ? data.orders[message.content.orderId] : undefined;
@@ -125,7 +251,11 @@ function TimelineMessage({
   if (message.type === "NOTE") return <Note message={message} />;
   if (message.content.aiReview === "blocked") return <Misconduct message={message} />;
   if (message.content.automation) return <Automation message={message} />;
-  return message.direction === "INBOUND" ? <Inbound message={message} contact={contact} /> : <Outbound message={message} />;
+  return message.direction === "INBOUND" ? (
+    <Inbound message={message} contact={contact} grouped={grouped} onForward={onForward} />
+  ) : (
+    <Outbound message={message} grouped={grouped} onForward={onForward} />
+  );
 }
 
 function SystemEvent({ message }: { message: MessageDto }) {
@@ -210,24 +340,43 @@ function Misconduct({ message }: { message: MessageDto }) {
   );
 }
 
-function Inbound({ message, contact }: { message: MessageDto; contact: { id: string; name: string | null } }) {
+function Inbound({
+  message,
+  contact,
+  grouped,
+  onForward,
+}: {
+  message: MessageDto;
+  contact: { id: string; name: string | null };
+  grouped: Grouped;
+  onForward?: () => void;
+}) {
   return (
-    <div className="flex max-w-[72%] items-end gap-[7px]">
-      <Avatar seed={contact.id} name={contact.name} className="size-[22px] text-[8px]" />
-      <div className="rounded-[12px_12px_12px_2px] border border-rule bg-surface px-3 py-2">
+    <div className={cn("group/message flex max-w-[78%] items-end gap-[7px]", grouped.withPrevious && "-mt-1.5")}>
+      {/* A foto do cliente fica só na última mensagem do grupo. */}
+      {grouped.withNext ? <span className="w-[22px] shrink-0" /> : <Avatar seed={contact.id} name={contact.name} className="size-[22px] text-[8px]" />}
+      <div className={cn("min-w-0 border border-rule bg-surface px-3 py-2", grouped.withNext ? "rounded-[12px]" : "rounded-[12px_12px_12px_2px]")}>
         <MessageBody message={message} />
         <div className="mt-[3px] text-right text-[10px] text-ink-3 tabular-nums">{clock(message.createdAt)}</div>
       </div>
+      {onForward && <ForwardButton onForward={onForward} />}
     </div>
   );
 }
 
-function Outbound({ message }: { message: MessageDto }) {
-  const { aiReply, aiReview, original, fromPhone } = message.content;
+function Outbound({ message, grouped, onForward }: { message: MessageDto; grouped: Grouped; onForward?: () => void }) {
+  const { aiReply, aiReview, original, fromPhone, forwarded } = message.content;
   const [showOriginal, setShowOriginal] = useState(false);
   return (
-    <div className="flex justify-end">
-      <div className="max-w-[68%] rounded-[12px_12px_2px_12px] bg-ink px-3 py-2 text-paper">
+    <div className={cn("group/message flex items-end justify-end gap-[7px]", grouped.withPrevious && "-mt-1.5")}>
+      {onForward && <ForwardButton onForward={onForward} />}
+      <div className={cn("min-w-0 max-w-[74%] bg-ink px-3 py-2 text-paper", grouped.withNext ? "rounded-[12px]" : "rounded-[12px_12px_2px_12px]")}>
+        {forwarded && (
+          <div className="mb-[3px] flex items-center gap-1 text-[10.5px] text-ink-3 italic">
+            <ForwardIcon className="size-[11px]" aria-hidden />
+            Encaminhada
+          </div>
+        )}
         <MessageBody message={message} />
         {showOriginal && original && (
           <div className="mt-1.5 border-t border-ink-2 pt-1.5 text-[11.5px] leading-[1.4] whitespace-pre-wrap text-ink-3">

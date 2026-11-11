@@ -3,7 +3,6 @@ import type { ChannelType, OrderStatus } from "@dishdesk/database/enums";
 import {
   type AnswerDisputeRequest,
   type CancelOrderRequest,
-  CHANNEL_LABEL,
   type CurrentOrderDto,
   type CustomerCancellations,
   type CustomerHistory,
@@ -24,6 +23,7 @@ import { IfoodAuthService } from "../connectors/ifood-auth.service.js";
 import { toOrderDto } from "../conversations/conversation.mapper.js";
 import { scopeFor } from "../conversations/conversations.service.js";
 import { openIfoodConversation } from "../conversations/ifood-conversation.js";
+import { connectedWhatsApp, openWhatsAppConversation } from "../conversations/open-whatsapp.js";
 import { DatabaseService } from "../core/database.service.js";
 import { RealtimeEmitter } from "../realtime/realtime.emitter.js";
 import { periodStart } from "../reports/reports.service.js";
@@ -345,7 +345,7 @@ export class OrdersService {
   async openCustomerChat(auth: RequestAuth, orderId: string): Promise<{ conversationId: string }> {
     const opened = await this.db.withTenants(auth.scope, async (tx) => {
       const { order, whatsapp, ifood } = await this.customerRoute(tx, orderId);
-      if (whatsapp) return { tenantId: order.tenantId, conversationId: await this.openWhatsApp(tx, whatsapp.id, order.contact) };
+      if (whatsapp) return { tenantId: order.tenantId, conversationId: await openWhatsAppConversation(tx, whatsapp.id, order.contact) };
       if (!ifood) throw new UnprocessableEntityException("Não há como conversar com este cliente pelo Dish Desk.");
       return { tenantId: order.tenantId, conversationId: (await openIfoodConversation(tx, order, new Date())).id };
     });
@@ -360,54 +360,8 @@ export class OrdersService {
   private async customerRoute(tx: TenantTx, orderId: string) {
     const order = await tx.order.findUnique({ where: { id: orderId }, include: { contact: true, channel: { select: { type: true } } } });
     if (!order) throw new NotFoundException("Pedido não encontrado.");
-    const whatsapp = order.contact.phone
-      ? await tx.channel.findFirst({
-          where: { tenantId: order.tenantId, type: "WHATSAPP", status: "CONNECTED", deletedAt: null },
-          orderBy: { id: "asc" },
-          select: { id: true },
-        })
-      : null;
+    const whatsapp = order.contact.phone ? await connectedWhatsApp(tx, order.tenantId) : null;
     return { order, whatsapp, ifood: order.channel.type === "IFOOD" && this.env.IFOOD_CHAT_BRIDGE };
-  }
-
-  /**
-   * Conversa do WhatsApp com o cliente: a última dele (ou de outro cadastro com o mesmo telefone) num número conectado,
-   * ou uma nova, que a equipe começa por um template (não há janela de 24h aberta).
-   */
-  private async openWhatsApp(tx: TenantTx, channelId: string, contact: { id: string; tenantId: string; phone: string | null }): Promise<string> {
-    const phone = contact.phone!;
-    const existing = await tx.conversation.findFirst({
-      where: {
-        tenantId: contact.tenantId,
-        channel: { type: "WHATSAPP", status: "CONNECTED", deletedAt: null },
-        contact: { OR: [{ id: contact.id }, { phone }] },
-      },
-      orderBy: { lastMessageAt: { sort: "desc", nulls: "last" } },
-      select: { id: true },
-    });
-    if (existing) return existing.id;
-    // O envio vai para a identidade do WhatsApp do cadastro: o telefone, sem o "+".
-    const identity = await tx.contactIdentity.upsert({
-      where: { tenantId_channelType_externalId: { tenantId: contact.tenantId, channelType: "WHATSAPP", externalId: phone.slice(1) } },
-      create: { tenantId: contact.tenantId, contactId: contact.id, channelType: "WHATSAPP", externalId: phone.slice(1) },
-      update: {},
-      select: { contactId: true },
-    });
-    const conversation = await tx.conversation.create({
-      data: { tenantId: contact.tenantId, contactId: identity.contactId, channelId, status: "OPEN" },
-      select: { id: true },
-    });
-    await tx.message.create({
-      data: {
-        tenantId: contact.tenantId,
-        conversationId: conversation.id,
-        channelId,
-        direction: "INTERNAL",
-        type: "SYSTEM",
-        content: { event: "conversation_opened", text: `Conversa aberta via ${CHANNEL_LABEL.WHATSAPP}` },
-      },
-    });
-    return conversation.id;
   }
 
   /**

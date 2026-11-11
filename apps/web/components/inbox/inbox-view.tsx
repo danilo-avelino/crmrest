@@ -4,8 +4,8 @@ import { LoaderCircleIcon, WifiOffIcon } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { useRef, useState } from "react";
 import { ChannelAlert } from "@/components/inbox/channel-alert";
-import { ConversationList } from "@/components/inbox/conversation-list";
-import { ConversationPane } from "@/components/inbox/conversation-pane";
+import { ConversationList, useOpenCalling } from "@/components/inbox/conversation-list";
+import { ConversationPane, type SideTab } from "@/components/inbox/conversation-pane";
 import { IfoodExtensionAlert } from "@/components/inbox/ifood-extension-alert";
 import { InboxHome, TodayOrders } from "@/components/inbox/inbox-home";
 import { NavRail } from "@/components/inbox/nav-rail";
@@ -24,8 +24,9 @@ export function InboxView() {
     if (linked) setSelectedId(linked);
   }
   const offline = useInboxRealtime();
-  // Pedidos em produção com conversa aberta: recolhidos no canto até o atendente expandir (vale para as próximas conversas).
-  const [ordersOpen, setOrdersOpen] = useState(false);
+  // Aba do painel da direita (Cliente ou Pedidos): vale para as próximas conversas.
+  const [sideTab, setSideTab] = useState<SideTab>("client");
+  const openCalling = useOpenCalling(setSelectedId);
   // Conversas na ordem em que a lista as mostra: "Resolver" passa para a seguinte (ou a anterior, se era a última).
   const listedRef = useRef<string[]>([]);
   const nextAfter = (id: string) => {
@@ -61,14 +62,14 @@ export function InboxView() {
               conversationId={selectedId}
               onOpenConversation={setSelectedId}
               nextConversationId={() => nextAfter(selectedId)}
+              sideTab={sideTab}
+              onSideTab={setSideTab}
             />
           ) : (
-            <InboxHome />
-          )}
-          {selectedId ? (
-            <TodayOrders collapsed={!ordersOpen} onToggle={() => setOrdersOpen(!ordersOpen)} />
-          ) : (
-            <TodayOrders />
+            <>
+              <InboxHome onOpenCalling={() => openCalling()} />
+              <TodayOrders />
+            </>
           )}
         </div>
       </div>

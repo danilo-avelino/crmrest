@@ -4,6 +4,7 @@ import {
   ConversationListQuery,
   type ConversationMessages,
   type ConversationPage,
+  ForwardMessageRequest,
   type MessageDto,
   type ReplySuggestionDto,
   SendMessageRequest,
@@ -86,6 +87,17 @@ export class ConversationsController {
     @CurrentAuth() auth: RequestAuth,
   ): Promise<MessageDto> {
     return this.conversations.retryMessage(auth, id, messageId);
+  }
+
+  /** Encaminha a mensagem para outra conversa do mesmo restaurante. */
+  @Post(":id/messages/:messageId/forward")
+  forward(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Param("messageId", ParseUUIDPipe) messageId: string,
+    @Body(new ZodPipe(ForwardMessageRequest)) body: ForwardMessageRequest,
+    @CurrentAuth() auth: RequestAuth,
+  ): Promise<MessageDto> {
+    return this.conversations.forward(auth, id, messageId, body.conversationId);
   }
 
   @Get(":id/templates")

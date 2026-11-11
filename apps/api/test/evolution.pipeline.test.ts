@@ -253,6 +253,83 @@ describe("WhatsApp por QR Code (Evolution API)", () => {
     }
   });
 
+  it("encaminhar: a foto vai como arquivo pela Evolution, a localização vira texto com o mapa", async () => {
+    const from = "5511922220001";
+    const to = "5511922220003";
+    await webhook(textFrom(to, "3EB0ENT1", "Sou o entregador")).expect(200);
+    const upsert = (id: string, messageType: string, message: object) =>
+      envelope("messages.upsert", { key: { id, remoteJid: `${from}@s.whatsapp.net`, fromMe: false }, pushName: "Cliente QR", messageType, messageTimestamp: nowSeconds(), message });
+    await webhook(upsert("3EB0FOTO2", "imageMessage", { imageMessage: { mimetype: "image/jpeg", caption: "Portão azul" } })).expect(200);
+    await webhook(upsert("3EB0LOC", "locationMessage", { locationMessage: { degreesLatitude: -5.08, degreesLongitude: -42.8, name: "Casa" } })).expect(200);
+    await drainQueues(app);
+    const photo = await admin.message.findFirstOrThrow({ where: { channelId, externalMessageId: "3EB0FOTO2" } });
+    const location = await admin.message.findFirstOrThrow({ where: { channelId, externalMessageId: "3EB0LOC" } });
+    const target = await admin.conversation.findFirstOrThrow({ where: { channelId, contact: { phone: `+${to}` } } });
+    const forward = (message: { id: string; conversationId: string }, conversationId = target.id) =>
+      api()
+        .post(`/api/conversations/${message.conversationId}/messages/${message.id}/forward`)
+        .set("Authorization", `Bearer ${token}`)
+        .send({ conversationId });
+
+    evolution.reply((req) => {
+      if (req.path === `/chat/getBase64FromMediaMessage/${instance}`) return { status: 201, body: { base64: Buffer.from("bytes-da-foto").toString("base64"), mimetype: "image/jpeg" } };
+      if (req.path === `/message/sendMedia/${instance}`) return { status: 201, body: { key: { id: "3EB0MIDIA", fromMe: true } } };
+      return defaultReply(req);
+    });
+    try {
+      const { body: sentPhoto } = await forward(photo).expect(201);
+      await drainQueues(app);
+      expect(await admin.message.findUniqueOrThrow({ where: { id: sentPhoto.id } })).toMatchObject({
+        conversationId: target.id,
+        type: "IMAGE",
+        status: "SENT",
+        externalMessageId: "3EB0MIDIA",
+        content: { text: "Portão azul", media: { mimeType: "image/jpeg", forwardOf: photo.id }, forwarded: true },
+      });
+      expect(evolution.requests.find((r) => r.path === `/message/sendMedia/${instance}`)!.body).toEqual({
+        number: to,
+        mediatype: "image",
+        mimetype: "image/jpeg",
+        media: Buffer.from("bytes-da-foto").toString("base64"),
+        caption: "Portão azul",
+      });
+      // Na conversa de destino, a foto encaminhada abre o arquivo da original.
+      const file = await api().get(`/api/conversations/${target.id}/messages/${sentPhoto.id}/media`).set("Authorization", `Bearer ${token}`).expect(200);
+      expect((file.body as Buffer).toString()).toBe("bytes-da-foto");
+
+      const { body: sentLocation } = await forward(location).expect(201);
+      await drainQueues(app);
+      expect(await admin.message.findUniqueOrThrow({ where: { id: sentLocation.id } })).toMatchObject({
+        type: "TEXT",
+        status: "SENT",
+        content: { text: "📍 Casa\nhttps://www.google.com/maps?q=-5.08,-42.8", forwarded: true },
+      });
+      expect(evolution.requests.at(-1)).toMatchObject({ path: `/message/sendText/${instance}`, body: { number: to, text: "📍 Casa\nhttps://www.google.com/maps?q=-5.08,-42.8" } });
+
+      await forward(photo, photo.conversationId).expect(400); // para a própria conversa, não
+      const note = await admin.message.create({
+        data: { tenantId: fx.b.id, conversationId: photo.conversationId, channelId, direction: "INTERNAL", type: "NOTE", content: { text: "nota" } },
+      });
+      await forward(note).expect(422); // nota interna não sai
+    } finally {
+      evolution.reply(defaultReply);
+    }
+  });
+
+  it("painel do cliente: abre a conversa no WhatsApp do restaurante pelo telefone do cadastro", async () => {
+    const phone = `+${randomNumber()}`;
+    const contact = await admin.contact.create({ data: { tenantId: fx.b.id, name: "Cliente do iFood", phone } });
+    const open = (id: string) => api().post(`/api/contacts/${id}/whatsapp-chat`).set("Authorization", `Bearer ${token}`);
+    const { body } = await open(contact.id).expect(200);
+    const conversation = await admin.conversation.findUniqueOrThrow({ where: { id: body.conversationId }, include: { contact: { include: { identities: true } } } });
+    expect(conversation).toMatchObject({ channelId, status: "OPEN", contactId: contact.id, teamInvolved: true });
+    expect(conversation.contact.identities.map((i) => [i.channelType, i.externalId])).toEqual([["WHATSAPP", phone.slice(1)]]);
+    expect((await open(contact.id).expect(200)).body).toEqual(body); // a mesma conversa, não outra
+
+    const withoutPhone = await admin.contact.create({ data: { tenantId: fx.b.id, name: "Sem telefone" } });
+    await open(withoutPhone.id).expect(422);
+  });
+
   it("QR Code: cria a instância com o webhook, troca o QR e, com o número conectado, vira a integração", async () => {
     const owner = randomNumber();
     let state = "connecting";

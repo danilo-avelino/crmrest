@@ -75,7 +75,10 @@ export type MessageContent = {
   customerChat?: boolean;
   /** Template aprovado do WhatsApp (o único envio permitido fora da janela de 24h). */
   template?: { name: string; language: string; variables: string[] };
-  media?: { mimeType: string; externalMediaId?: string; url?: string; filename?: string };
+  /** `forwardOf`: mídia encaminhada de outra mensagem do restaurante; o arquivo é buscado nela na hora do envio. */
+  media?: { mimeType: string; externalMediaId?: string; url?: string; filename?: string; forwardOf?: string };
+  /** Mensagem encaminhada de outra conversa pela equipe. */
+  forwarded?: boolean;
   location?: { latitude: number; longitude: number; name?: string; address?: string };
   /**
    * Mensagem recebida: id de quem escreveu no canal (wa_id, IGSID). Um cadastro pode ter mais de um perfil no mesmo
@@ -219,6 +222,13 @@ export type ConversationListQuery = z.infer<typeof ConversationListQuery>;
 
 export const SendMessageRequest = z.object({ text: z.string().trim().min(1).max(4096) });
 export type SendMessageRequest = z.infer<typeof SendMessageRequest>;
+
+/** Encaminhar uma mensagem para outra conversa do mesmo restaurante. */
+export const ForwardMessageRequest = z.object({ conversationId: z.uuid() });
+export type ForwardMessageRequest = z.infer<typeof ForwardMessageRequest>;
+
+/** Tipos de mensagem que podem ser encaminhados: texto, localização e mídia. */
+export const FORWARDABLE_TYPES = ["TEXT", "IMAGE", "AUDIO", "VIDEO", "DOCUMENT", "LOCATION"] as const;
 
 /** Resposta sugerida pela IA para o atendente editar e enviar (E28). */
 export type ReplySuggestionDto = { text: string };

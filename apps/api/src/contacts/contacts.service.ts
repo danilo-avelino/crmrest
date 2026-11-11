@@ -24,10 +24,12 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  UnprocessableEntityException,
 } from "@nestjs/common";
 import type { RequestAuth } from "../auth/auth.decorators.js";
 import { ENV, type Env } from "../config/env.js";
 import { conversationListInclude, listEvaluations, toListItem, toOrderDto } from "../conversations/conversation.mapper.js";
+import { connectedWhatsApp, openWhatsAppConversation } from "../conversations/open-whatsapp.js";
 import { DatabaseService } from "../core/database.service.js";
 import { customerHistory, linkedOrdersWhere } from "../orders/customer-history.js";
 import { customerCancellations } from "../orders/fraud-alert.js";
@@ -267,6 +269,23 @@ export class ContactsService {
     });
     for (const conversation of conversationIds) this.realtime.inboxChanged(conversation.tenantId, conversation.id);
     return detail;
+  }
+
+  /**
+   * Painel do cliente na Inbox: abre a conversa com ele no WhatsApp do restaurante (a que já existe, ou uma nova) pelo
+   * telefone do cadastro, para a equipe falar com quem chegou por outro canal (iFood, Instagram...).
+   */
+  async openWhatsApp(auth: RequestAuth, id: string): Promise<{ conversationId: string }> {
+    const opened = await this.db.withTenants(auth.scope, async (tx) => {
+      const contact = await tx.contact.findUnique({ where: { id }, select: { id: true, tenantId: true, phone: true } });
+      if (!contact) throw new NotFoundException("Cliente não encontrado.");
+      if (!contact.phone) throw new UnprocessableEntityException("O cadastro não tem telefone: informe o telefone para conversar pelo WhatsApp.");
+      const channel = await connectedWhatsApp(tx, contact.tenantId);
+      if (!channel) throw new UnprocessableEntityException("O restaurante não tem um WhatsApp conectado.");
+      return { tenantId: contact.tenantId, conversationId: await openWhatsAppConversation(tx, channel.id, contact) };
+    });
+    this.realtime.inboxChanged(opened.tenantId, opened.conversationId);
+    return { conversationId: opened.conversationId };
   }
 
   /** CPF completo só sob demanda, com registro em auditoria (§8). */

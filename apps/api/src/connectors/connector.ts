@@ -2,6 +2,8 @@ import type { ChannelType } from "@dishdesk/database/enums";
 
 export type OutboundText = { type: "TEXT"; text: string };
 export type OutboundTemplate = { name: string; language: string; variables: string[] };
+/** Arquivo encaminhado de outra conversa (o conteúdo em base64). */
+export type OutboundMedia = { kind: "IMAGE" | "VIDEO" | "DOCUMENT" | "AUDIO"; mimeType: string; base64: string; caption?: string; fileName?: string };
 
 /** Para onde enviar: a conta do restaurante no canal e o cliente nele. */
 export type SendTarget = { externalChannelId: string; recipientId: string; accessToken: string };
@@ -12,6 +14,8 @@ export interface ChannelConnector {
   send(target: SendTarget, message: OutboundText): Promise<{ externalMessageId: string }>;
   /** Só canais com templates (WhatsApp). */
   sendTemplate?(target: SendTarget, template: OutboundTemplate): Promise<{ externalMessageId: string }>;
+  /** Só canais que recebem arquivos enviados pelo Dish Desk (WhatsApp por QR Code). */
+  sendMedia?(target: SendTarget, media: OutboundMedia): Promise<{ externalMessageId: string }>;
 }
 
 /** Falha que não adianta repetir (ex.: 4xx da plataforma): a mensagem vira FAILED na hora. */
