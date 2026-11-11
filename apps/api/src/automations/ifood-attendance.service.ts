@@ -8,7 +8,16 @@ import { DatabaseService } from "../core/database.service.js";
 import { dispatchNoticeMessage, readyNoticeMessage } from "../orders/forecast.js";
 import { type AiJob, type OutboundJob, QUEUES } from "../queues/queues.module.js";
 import { RealtimeEmitter } from "../realtime/realtime.emitter.js";
-import { type AutomationState, automationMessage, dispatch, type InboundEvent, setAutomationState, systemEvent, tenantSettings } from "./automation.js";
+import {
+  type AutomationState,
+  automationMessage,
+  dispatch,
+  type InboundEvent,
+  leaveToTeam,
+  setAutomationState,
+  systemEvent,
+  tenantSettings,
+} from "./automation.js";
 import { extractPhone, PhoneCollectionService } from "./phone-collection.service.js";
 import { SurveyService } from "./survey.service.js";
 import { AI_REPLY_DELAY_MS } from "./triage.service.js";
@@ -36,6 +45,8 @@ export class IfoodAttendanceService {
     // A pesquisa não sai mais no iFood; esta é a nota de quem já tinha sido perguntado.
     if (await this.survey.handleAnswer(event)) return;
     if (await this.aiTakes(event, orderId)) return;
+    // Sem a IA, quem atende o cliente é a equipe: a conversa vai para a aba Ativos.
+    await leaveToTeam(this.db, event.channel.tenantId, event.conversationId);
     // Atendimento em andamento: só falta anotar o telefone, se o cliente o mandar.
     if (!event.newAttendance) return this.phoneCollection.afterInbound(event);
 

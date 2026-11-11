@@ -82,6 +82,8 @@ export type AutomationMessages = {
   courierFrontDeskNotice: string;
   /** Para o entregador: o cliente foi avisado da portaria. {pedido} */
   courierFrontDeskConfirmed: string;
+  /** Número que não bate com nenhum pedido: o entregador pode mandar de novo (uma vez). {pedido} */
+  courierOrderRetry: string;
   /** {pedido} */
   courierOrderNotFound: string;
   /** Pedido achado: pede ao entregador para contar o problema. {pedido} */
@@ -132,6 +134,7 @@ export const PERSONALITY_MESSAGES: Record<Personality, AutomationMessages> = {
     courierFrontDeskNotice: "📦 O entregador deixou seu pedido na portaria! Bom apetite 😋",
     courierFrontDeskConfirmed: "Pronto! Avisamos o cliente do pedido #{pedido} que o pedido ficou na portaria.",
     courierOrderNotFound: "Não encontramos o pedido #{pedido}. Um atendente já vai falar com você.",
+    courierOrderRetry: "Não encontramos o pedido #{pedido}. Pode conferir o número e mandar de novo?",
     courierProblemRequest: "Encontramos o pedido #{pedido}. O que aconteceu com ele?",
     courierProblemForwarded: "Certo! Já estamos encaminhando para um atendente.",
     ifoodHandoff: "Olá! 👋 Estamos chamando um atendente.",
@@ -178,6 +181,7 @@ export const PERSONALITY_MESSAGES: Record<Personality, AutomationMessages> = {
     courierFrontDeskNotice: "Informamos que o entregador deixou o seu pedido na portaria.",
     courierFrontDeskConfirmed: "O cliente do pedido #{pedido} foi avisado de que o pedido ficou na portaria.",
     courierOrderNotFound: "Não localizamos o pedido #{pedido}. Um de nossos atendentes dará continuidade em instantes.",
+    courierOrderRetry: "Não localizamos o pedido #{pedido}. Por gentileza, confira o número e envie novamente.",
     courierProblemRequest: "Localizamos o pedido #{pedido}. Por gentileza, descreva o que ocorreu.",
     courierProblemForwarded: "Agradecemos. O caso está sendo encaminhado a um atendente.",
     ifoodHandoff: "Olá. Estamos acionando um de nossos atendentes.",
@@ -220,6 +224,7 @@ export const PERSONALITY_MESSAGES: Record<Personality, AutomationMessages> = {
     courierFrontDeskNotice: "Chegou! 🎉 O entregador deixou seu pedido na portaria! Bom apetite! 😋",
     courierFrontDeskConfirmed: "Feito! 🙌 Já avisamos o cliente do pedido #{pedido} que o pedido ficou na portaria!",
     courierOrderNotFound: "Ihh, não achamos o pedido #{pedido} 😕 Mas relaxa: um atendente já vem falar com você!",
+    courierOrderRetry: "Ihh, não achamos o pedido #{pedido} 😕 Confere o número e manda de novo!",
     courierProblemRequest: "Achamos o pedido #{pedido}! Conta pra gente: o que rolou com ele?",
     courierProblemForwarded: "Anotado! 🚀 Já estamos passando pra um atendente!",
     ifoodHandoff: "Oiê! 🤩 Já estamos chamando um atendente pra você!",
@@ -261,6 +266,7 @@ export const PERSONALITY_MESSAGES: Record<Personality, AutomationMessages> = {
     courierFrontDeskNotice: "Opa! O entregador deixou seu pedido aí na portaria 📦 Bom apetite!",
     courierFrontDeskConfirmed: "Fechou! Avisamos o cliente do pedido #{pedido} que ficou na portaria 👊",
     courierOrderNotFound: "Xi, não achamos o pedido #{pedido}. Mas sossega: alguém da equipe já vem falar com você.",
+    courierOrderRetry: "Xi, não achamos o pedido #{pedido}. Dá uma conferida no número e manda de novo?",
     courierProblemRequest: "Achamos o pedido #{pedido}. Manda aí: o que rolou com ele?",
     courierProblemForwarded: "Beleza! Já estamos passando pra alguém da equipe 👊",
     ifoodHandoff: "E aí! Já estamos chamando alguém da equipe pra falar com você 😉",
@@ -306,6 +312,7 @@ export const PERSONALITY_MESSAGES: Record<Personality, AutomationMessages> = {
     courierFrontDeskNotice: "Seu pedido chegou! 🧡 O entregador deixou ele na portaria. Bom apetite!",
     courierFrontDeskConfirmed: "Prontinho! Avisamos o cliente do pedido #{pedido} que o pedido ficou na portaria. Obrigado pelo cuidado 🧡",
     courierOrderNotFound: "Não encontramos o pedido #{pedido}, mas não se preocupe: alguém da nossa equipe já vem falar com você 🧡",
+    courierOrderRetry: "Não encontramos o pedido #{pedido}. Pode conferir o número com calma e nos mandar de novo? 🧡",
     courierProblemRequest: "Encontramos o pedido #{pedido}. Pode nos contar com calma o que aconteceu?",
     courierProblemForwarded: "Obrigado por avisar! Já estamos encaminhando para alguém da nossa equipe 🧡",
     ifoodHandoff: "Olá! 🧡 Já estamos chamando alguém da nossa equipe para cuidar de você.",
@@ -347,6 +354,7 @@ export const PERSONALITY_MESSAGES: Record<Personality, AutomationMessages> = {
     courierFrontDeskNotice: "O entregador deixou seu pedido na portaria.",
     courierFrontDeskConfirmed: "Cliente do pedido #{pedido} avisado da portaria.",
     courierOrderNotFound: "Pedido #{pedido} não encontrado. Um atendente vai falar com você.",
+    courierOrderRetry: "Pedido #{pedido} não encontrado. Confira o número e envie de novo.",
     courierProblemRequest: "Pedido #{pedido} encontrado. O que aconteceu?",
     courierProblemForwarded: "Encaminhado a um atendente.",
     ifoodHandoff: "Olá. Estamos chamando um atendente.",

@@ -21,6 +21,8 @@ export type AutomationState = {
     | "awaiting_problem";
   /** O menu já foi repetido por uma resposta fora das opções: a próxima chama a equipe. */
   menuRepeated?: boolean;
+  /** Menu do entregador: o número não bateu com nenhum pedido e ele já foi pedido de novo; o próximo erro chama a equipe. */
+  orderRetried?: boolean;
   /** O cliente recebeu os links e pediu sozinho; se continuar escrevendo, o menu volta uma vez. */
   selfServed?: boolean;
   /** O atendimento começou com o restaurante fechado (aviso de fora do horário no lugar do menu). */

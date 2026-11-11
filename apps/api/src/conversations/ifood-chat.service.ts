@@ -121,17 +121,6 @@ export class IfoodChatService {
         });
         if (entry.direction === "INBOUND") unread += 1;
       }
-      const last = fresh.at(-1)!.at;
-      await tx.conversation.update({
-        where: { id: conversation.id },
-        data: {
-          ...((!conversation.lastMessageAt || conversation.lastMessageAt < last) && { lastMessageAt: last }),
-          // Cliente que escreve no chat do iFood é sempre atendido pela equipe (aba Ativos); só as mensagens da loja ou do
-          // iFood deixam a conversa na aba Automáticos.
-          ...(unread && { status: "OPEN", unreadCount: { increment: unread }, teamInvolved: true }),
-        },
-      });
-      const result = { tenantId: order.tenantId, conversationId: conversation.id };
       // As automações só entram se a conversa termina numa mensagem recente do cliente (a loja ainda não respondeu),
       // escrita depois de a loja ser conectada: o histórico que o widget mostra ao conectar não recebe resposta automática.
       const newest = fresh.at(-1)!;
@@ -141,6 +130,17 @@ export class IfoodChatService {
         newest.direction === "INBOUND" &&
         now.getTime() - newest.at.getTime() <= ATTEND_WITHIN_MS &&
         (!connectedAt || newest.at >= connectedAt);
+      const last = newest.at;
+      await tx.conversation.update({
+        where: { id: conversation.id },
+        data: {
+          ...((!conversation.lastMessageAt || conversation.lastMessageAt < last) && { lastMessageAt: last }),
+          // Mensagem do cliente que nenhuma automação vai atender é da equipe (aba Ativos). As outras ficam com o
+          // IfoodAttendanceService: a IA atende com a conversa na aba Automáticos; sem a IA, a equipe é chamada.
+          ...(unread && { status: "OPEN", unreadCount: { increment: unread }, ...(!waiting && { teamInvolved: true }) }),
+        },
+      });
+      const result = { tenantId: order.tenantId, conversationId: conversation.id };
       if (!waiting) return result;
       const inbound = fresh.filter((entry) => entry.direction === "INBOUND");
       const first = inbound[0]!;

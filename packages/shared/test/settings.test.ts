@@ -46,6 +46,7 @@ describe("personalidade do atendimento", () => {
     courierGreeting: ["nome"],
     courierArrivalConfirmed: ["pedido"],
     courierFrontDeskConfirmed: ["pedido"],
+    courierOrderRetry: ["pedido"],
     courierOrderNotFound: ["pedido"],
     courierProblemRequest: ["pedido"],
     reviewInvite: ["pedido"],

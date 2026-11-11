@@ -94,8 +94,9 @@ describe("Chat do iFood na Inbox (trava IFOOD_CHAT_BRIDGE ligada)", () => {
   it("conversa lida do widget: abre a conversa do cliente com o pedido e as mensagens, sem repetir na leitura seguinte", async () => {
     expect((await post("/ifood-chat/sync", { orderCode: "6530", messages: [automatic, question] }).expect(200)).body).toEqual({ found: true });
 
+    // O cliente escreveu e a loja não tem a IA: é da equipe (aba Ativos).
+    await settle();
     const chat = await conversation();
-    // O cliente escreveu: é da equipe (aba Ativos).
     expect(chat).toMatchObject({ contactId: order.contactId, status: "OPEN", unreadCount: 1, teamInvolved: true });
     expect((await timeline(chat.id)).slice(0, 4).map((m) => [m.direction, m.status, m.content])).toEqual([
       ["INTERNAL", null, { event: "conversation_opened", text: "Conversa aberta via iFood" }],
@@ -544,7 +545,9 @@ describe("Chat do iFood na Inbox (trava IFOOD_CHAT_BRIDGE ligada)", () => {
     };
     await say("wamid.PRT1", "Oi", "courier_menu");
     await say("wamid.PRT2", "2", "order_number_request");
-    await say("wamid.PRT3", "6541", "courier_front_desk_confirmed");
+    // Número errado (6441): ele confere e manda de novo, e o aviso sai com o número certo.
+    await say("wamid.PRT3", "6441", "order_lookup");
+    await say("wamid.PRT4", "6541", "courier_front_desk_confirmed");
 
     const done = await courier();
     expect(done).toMatchObject({ status: "RESOLVED", unreadCount: 0, awaitingAgentSince: null });
@@ -625,8 +628,17 @@ describe("Chat do iFood com o módulo Atendimento com IA", () => {
         expect(chat.awaitingAgentSince).toBeNull();
         expect(chat.automationState).toMatchObject({ ai: "on", linkedOrder: { id: expect.any(String) } });
         expect(chat.messages.some((m) => (m.content as { automation?: string }).automation === "handoff")).toBe(false);
+        // Só a IA atendeu: a conversa fica na aba Automáticos, não em Ativos.
+        expect(chat).toMatchObject({ status: "OPEN", teamInvolved: false });
       },
       { timeout: 15_000, interval: 100 },
     );
+    const chat = await admin.conversation.findFirstOrThrow({ where: { tenantId: fx.tenant.id, contactId: contact.id } });
+    const tab = async (status: string) =>
+      (await request(app.getHttpServer()).get(`/api/conversations?status=${status}`).set("Authorization", `Bearer ${token}`).expect(200)).body.items.map(
+        (c: { id: string }) => c.id,
+      );
+    expect(await tab("AUTO")).toContain(chat.id);
+    expect(await tab("ACTIVE")).not.toContain(chat.id);
   });
 });

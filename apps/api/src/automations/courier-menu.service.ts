@@ -97,6 +97,7 @@ export class CourierMenuService {
     // plataforma (só o iFood recebe o aviso automático); achado, o card dele traz o botão para falar com o cliente.
     if (!found?.order || !this.env.IFOOD_CHAT_BRIDGE) {
       const known = found && !found.order ? await this.findOrder(tx, conversation, text, false) : found;
+      if (known && !known.order && !state.orderRetried) return this.askAgain(tx, conversation, state, messages, known.code);
       if (known?.order) await systemEvent(tx, conversation, { event: "order", orderId: known.order.id, customerChat: true });
       const note =
         kind === "arrival"
@@ -134,6 +135,7 @@ export class CourierMenuService {
   /** "Problema com um pedido": com o pedido achado, o card dele fica na conversa e o entregador conta o que houve. */
   private async findProblemOrder(tx: TenantTx, conversation: Conversation, state: AutomationState, messages: AutomationMessages, text?: string): Promise<Step> {
     const found = await this.findOrder(tx, conversation, text, false);
+    if (found && !found.order && !state.orderRetried) return this.askAgain(tx, conversation, state, messages, found.code);
     if (!found?.order) {
       const note = found ? `Entregador com problema no pedido #${found.code}, que não foi encontrado` : "Entregador com problema em um pedido";
       return this.callTeam(tx, conversation, state, await this.passOn(tx, conversation, messages, found), note);
@@ -165,6 +167,13 @@ export class CourierMenuService {
       }),
     );
     return { code, order: orders.length === 1 ? orders[0]! : null };
+  }
+
+  /** Número que não bate com nenhum pedido (um dígito trocado, por exemplo): o entregador confere e manda de novo, uma vez. */
+  private async askAgain(tx: TenantTx, conversation: Conversation, state: AutomationState, messages: AutomationMessages, code: string): Promise<Step> {
+    const id = await automationMessage(tx, conversation, "order_lookup", fillMessage(messages.courierOrderRetry, { pedido: code }));
+    await setAutomationState(tx, conversation.id, { ...state, orderRetried: true });
+    return { send: [id], done: false };
   }
 
   /** Resposta ao entregador quando a equipe assume: o pedido não foi achado, ou não deu para seguir sem ela. */

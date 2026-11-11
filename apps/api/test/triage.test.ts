@@ -586,6 +586,14 @@ describe("menu de atendimento, busca do pedido e pesquisa de satisfação", () =
     await say("5511970000024", "wamid.NF1", "Oi");
     await say("5511970000024", "wamid.NF2", "3");
     await say("5511970000024", "wamid.NF3", "0998877");
+    // Primeiro erro: o entregador confere o número e manda de novo, sem chamar a equipe.
+    const retry = await conversationOf("5511970000024");
+    expect(retry.messages.at(-1)!.content).toEqual({
+      automation: "order_lookup",
+      text: "Não encontramos o pedido #998877. Pode conferir o número e mandar de novo?",
+    });
+    expect(retry.awaitingAgentSince).toBeNull();
+    await say("5511970000024", "wamid.NF4", "998877");
     const missing = await conversationOf("5511970000024");
     expect(missing.messages.map((m) => m.content)).toContainEqual({
       automation: "order_lookup",
@@ -616,9 +624,11 @@ describe("menu de atendimento, busca do pedido e pesquisa de satisfação", () =
     await tagged("5511970000026", "Entregador");
     await say("5511970000026", "wamid.PRT1", "Oi");
     await say("5511970000026", "wamid.PRT2", "2");
-    await say("5511970000026", "wamid.PRT3", "7676");
+    // Um dígito trocado (7666): o entregador corrige e a busca acha o pedido.
+    await say("5511970000026", "wamid.PRT3", "7666");
+    await say("5511970000026", "wamid.PRT4", "7676");
     const left = await conversationOf("5511970000026");
-    expect(await automations("5511970000026")).toEqual(["courier_menu", "order_number_request", "handoff"]);
+    expect(await automations("5511970000026")).toEqual(["courier_menu", "order_number_request", "order_lookup", "handoff"]);
     expect(left.messages.map((m) => m.content)).toContainEqual({ event: "handoff", text: "Entregador avisou que deixou o pedido #7676 na portaria" });
     expect(left.messages.map((m) => m.content)).toContainEqual({ event: "order", orderId: frontDesk.id, customerChat: true });
     expect(left).toMatchObject({ status: "OPEN", awaitingAgentQuiet: true });
