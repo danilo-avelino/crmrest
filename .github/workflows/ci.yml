@@ -69,14 +69,5 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm build
-
-      - name: Navegador dos E2E
-        run: pnpm --filter @dishdesk/web exec playwright install --with-deps chromium
-      - run: pnpm e2e
-
-      - name: Artefatos dos E2E
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: playwright
-          path: apps/web/test-results
+      # Os testes de tela (pnpm e2e) saíram do CI a pedido do usuário em 2026-11-11: a instalação do navegador dependia
+      # dos espelhos do Ubuntu e travava o deploy quando eles caíam. Continuam no repositório para rodar localmente.
