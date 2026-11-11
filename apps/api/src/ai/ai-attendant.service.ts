@@ -94,6 +94,7 @@ Não passe para a equipe (handoff = false):
 Mensagem de quando você passa para a equipe (handoff = true):
 - Reclamação ou problema (não uma simples pergunta): comece reconhecendo o problema que o cliente contou, com as palavras do caso (ex.: "Sinto muito pela demora do seu pedido"), e não com uma frase genérica ("Lamentamos o transtorno"). Não prometa solução, reembolso nem desconto.
 - Há atendente online (veja "Atendentes" nos DADOS): diga que alguém da equipe vai continuar o atendimento, sem fazer nenhuma pergunta (quem continua é a equipe). Não diga "um momento" nem que você vai verificar: quem verifica é a equipe.
+- Exceção, só quando os DADOS dizem que o telefone do cliente não está no cadastro: no fim da mensagem, aproveite a espera e pergunte se ele quer deixar o telefone com DDD. Sem problema com o pedido, diga que é para receber cupons pelo WhatsApp (ex.: "Vou chamar um atendente. Enquanto isso, quer deixar seu telefone com DDD para receber cupons pelo WhatsApp?"); com problema, diga que é para a equipe poder falar com ele. Essa é a única pergunta permitida.
 - Não há atendente: siga o que "Atendentes" diz nos DADOS e continue respondendo as outras dúvidas do cliente.`;
 }
 
@@ -203,8 +204,10 @@ function attendanceFacts(attendance: Attendance): string {
  */
 export function attendantOrderFacts(order: OrderFacts | null, noPhone: boolean): string {
   const facts = orderFactsOf(order, noPhone);
-  if (order?.confirmed) return facts;
-  if (order) return `${facts}\nSó fale deste pedido se o cliente falar de um pedido (atraso, andamento, problema): se ele não falou, não cite o pedido.`;
+  // Com pedido nos DADOS, o telefone ausente não consta de orderFactsOf.
+  const phoneNote = order && noPhone ? "\nO telefone do cliente não está no cadastro." : "";
+  if (order?.confirmed) return `${facts}${phoneNote}`;
+  if (order) return `${facts}${phoneNote}\nSó fale deste pedido se o cliente falar de um pedido (atraso, andamento, problema): se ele não falou, não cite o pedido.`;
   return `${facts} Se o cliente falar de um pedido (atraso, andamento), peça o número do pedido, sem dizer que não achou o pedido nem falar em cadastro: o pedido com o número que ele informar aparece aqui nos DADOS. Se ele já informou o número e o pedido continua fora dos DADOS, passe para a equipe (handoff = true), que vai conferir.`;
 }
 
@@ -288,9 +291,9 @@ export class AiAttendantService {
     const attendance = await attendanceOf(this.presence, tenantId, settings, now);
     let answer: AttendantReply | null = null;
     let failed = false;
+    const noPhone = !conversation.contact.phone && !CHANNEL_CAPABILITIES[conversation.channel.type].providesPhone;
     // Sem atendente, a IA responde tudo: o limite de respostas só serve para chamar a equipe.
     if (!attendance.available || (state.aiReplies ?? 0) < MAX_AI_REPLIES) {
-      const noPhone = !conversation.contact.phone && !CHANNEL_CAPABILITIES[conversation.channel.type].providesPhone;
       const orderFacts = attendantOrderFacts(context.order, noPhone);
       try {
         answer = await this.llm.json(
@@ -348,7 +351,9 @@ export class AiAttendantService {
       // Mensagem automática no lugar da resposta: sem resposta da LLM; passando para a equipe com uma pergunta (que ninguém
       // leria); ou sem o aviso de que não há atendente, sem estar perguntando nada. Se a IA pergunta algo (ex.: o número do
       // pedido), a resposta sai e o aviso vai logo depois.
-      const unfit = !!answer && ((handoff && answer.reply.includes("?")) || (noNotice && !answer.reply.includes("?")));
+      // Única pergunta aceita ao passar para a equipe: o pedido do telefone (cliente sem telefone no cadastro).
+      const asksPhone = !!answer && noPhone && /telefone/i.test(answer.reply);
+      const unfit = !!answer && ((handoff && answer.reply.includes("?") && !asksPhone) || (noNotice && !answer.reply.includes("?")));
       const appendNotice = noNotice && !unfit;
       const reply = answer && !unfit ? answer.reply : null;
       const messages = automationMessagesOf(settings);
@@ -390,6 +395,8 @@ export class AiAttendantService {
       await setAutomationState(tx, conversationId, {
         ...current,
         ai: handoff ? "off" : "on",
+        // A resposta do cliente com o telefone é cadastrada pela coleta de telefone, sem repetir o pedido.
+        ...(handoff && asksPhone && !current.phoneCollection && { phoneCollection: "awaiting_phone" as const }),
         aiReplies: (current.aiReplies ?? 0) + 1,
         ...(startsWaiting && { aiWaiting: true, aiWaitingReason: reason }),
         ...(confirmed && { linkedOrder: { id: confirmed, at: now.toISOString() } }),

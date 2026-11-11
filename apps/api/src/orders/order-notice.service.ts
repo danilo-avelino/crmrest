@@ -11,13 +11,19 @@ import type { TenantTx } from "@dishdesk/database";
 import { type OutboundJob, QUEUES } from "../queues/queues.module.js";
 import { RealtimeEmitter } from "../realtime/realtime.emitter.js";
 import { provenPhone, provenPhoneWhere } from "./customer-history.js";
-import { deliveredNoticeMessage, dispatchNoticeMessage, readyNoticeMessage } from "./forecast.js";
+import { deliveredNoticeMessage, dispatchNoticeMessage, promisedAt, readyNoticeMessage } from "./forecast.js";
 
 /** Status que geram aviso ao cliente. */
 export type NoticeStatus = Extract<OrderStatus, "READY" | "DISPATCHED" | "DELIVERED">;
 
 /** Conversa já encerrada ainda recebe os avisos se o cliente escreveu nela neste prazo. */
 const RECENT_CONTACT_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Movimentação que chega mais que isto depois do pedido (ou do horário prometido, no agendado) não gera aviso: a loja
+ * atualizou o status atrasada (ex.: concluiu o pedido horas depois) e o cliente já recebeu faz tempo.
+ */
+export const NOTICE_LIMIT_MS = 2 * 60 * 60 * 1000;
 
 /**
  * Avisos ao cliente sobre o andamento do pedido, na conversa do cadastro dele (WhatsApp, Instagram) e, se ele
@@ -37,8 +43,8 @@ export class OrderNoticeService {
    * achada pelo cadastro como no painel do pedido (o próprio, ou outro com o mesmo telefone, CPF ou e-mail), aberta,
    * pendente ou encerrada com mensagem do cliente nas últimas 24h. O aviso não reabre a conversa encerrada. Sem
    * conversa assim, com a janela de 24h do canal fechada, ou com o pedido feito antes de a loja ser conectada, não
-   * avisa. Pedido do iFood em que o cliente escreveu no chat (conversa ainda em andamento): o aviso vai também para o
-   * chat dele.
+   * avisa; nem passadas 2 h do pedido (NOTICE_LIMIT_MS). Pedido do iFood em que o cliente escreveu no chat (conversa
+   * ainda em andamento): o aviso vai também para o chat dele.
    */
   async statusChanged(tenantId: string, orderId: string, status: NoticeStatus, now = new Date()): Promise<void> {
     const sent = await this.db.withTenants({ tenantIds: [tenantId] }, async (tx) => {
@@ -50,6 +56,7 @@ export class OrderNoticeService {
           externalOrderId: true,
           dispatchedAt: true,
           placedAt: true,
+          raw: true,
           channelId: true,
           channel: { select: { type: true, connectedAt: true } },
           contact: true,
@@ -57,6 +64,8 @@ export class OrderNoticeService {
       });
       // Pedido feito antes de a loja ser conectada (o iFood ainda entrega as últimas horas ao conectar): sem aviso.
       if (order.channel.connectedAt && order.placedAt < order.channel.connectedAt) return [];
+      const since = Math.max(order.placedAt.getTime(), promisedAt(order.raw)?.getTime() ?? 0);
+      if (now.getTime() - since > NOTICE_LIMIT_MS) return [];
       const targets = await this.targetsOf(tx, order, now);
       if (!targets.length) return [];
       const code = order.displayCode ?? order.externalOrderId;

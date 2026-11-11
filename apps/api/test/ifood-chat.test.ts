@@ -8,7 +8,7 @@ import { INACTIVITY_CLOSE_MS, InactivityService } from "../src/automations/inact
 import { OrderNoticeService } from "../src/orders/order-notice.service.js";
 import { IFOOD_CHAT_WAIT_MS, OutboundProcessor } from "../src/outbound/outbound.processor.js";
 import { type OutboundJob, QUEUES } from "../src/queues/queues.module.js";
-import { accessTokenFor, admin, createAuthFixture, createChannelFixture, createTestApp, metaPayload, postMetaWebhook } from "./helpers.js";
+import { accessTokenFor, admin, createAuthFixture, createChannelFixture, createTestApp, metaPayload, postMetaWebhook, startMockGraph } from "./helpers.js";
 
 const EXTENSION_URL = "https://chromewebstore.google.com/detail/dish-desk/teste";
 const CLOCK = new Intl.DateTimeFormat("pt-BR", { timeStyle: "medium", timeZone: "America/Sao_Paulo" });
@@ -322,10 +322,20 @@ describe("Chat do iFood na Inbox (trava IFOOD_CHAT_BRIDGE ligada)", () => {
     ]);
     expect((await typeOutbox()).map((item) => item.orderCode)).toEqual(["6570", "6570", "6570"]);
 
+    // Status atualizado mais de 2 h depois do pedido (a loja concluiu atrasada): sem aviso.
+    await admin.order.update({ where: { id: tracked.id }, data: { placedAt: minutesAgo(121) } });
+    await notices.statusChanged(fx.tenant.id, tracked.id, "DELIVERED");
+    expect(await sentNotices()).toHaveLength(3);
+    // Agendado: conta do horário prometido, não da hora em que o pedido foi feito.
+    await admin.order.update({ where: { id: tracked.id }, data: { raw: { delivery: { deliveryDateTime: minutesAgo(30).toISOString() } } } });
+    await notices.statusChanged(fx.tenant.id, tracked.id, "DELIVERED");
+    expect(await sentNotices()).toHaveLength(4);
+    await typeOutbox();
+
     // Conversa resolvida: o cliente não está mais no chat, nada é enviado.
     await admin.conversation.update({ where: { id: chat.id }, data: { status: "RESOLVED" } });
     await notices.statusChanged(fx.tenant.id, tracked.id, "DELIVERED");
-    expect(await sentNotices()).toHaveLength(3);
+    expect(await sentNotices()).toHaveLength(4);
 
     // Chat só com mensagens da loja (o cliente não escreveu): também não.
     const quiet = await ifoodOrder("6571", "Sara Dias");
@@ -518,5 +528,67 @@ describe("Chat do iFood na Inbox (trava IFOOD_CHAT_BRIDGE ligada)", () => {
     });
     // O aviso não muda o status do pedido: a entrega vale pelo evento do iFood.
     expect((await admin.order.findUniqueOrThrow({ where: { id: delivery.id } })).status).toBe("CONFIRMED");
+  });
+});
+
+describe("Chat do iFood com o módulo Atendimento com IA", () => {
+  let app: INestApplication;
+  let fx: Awaited<ReturnType<typeof createChannelFixture>>;
+  let llm: Awaited<ReturnType<typeof startMockGraph>>;
+  let token: string;
+
+  beforeAll(async () => {
+    llm = await startMockGraph();
+    llm.reply(() => ({
+      status: 200,
+      body: { choices: [{ message: { content: JSON.stringify({ reply: "Oi! Já vamos ver isso para você.", handoff: false, reason: "", order: "none" }) } }] },
+    }));
+    app = await createTestApp({ IFOOD_WIDGET_ID: "widget-teste", IFOOD_CHAT_BRIDGE: "true", AI_BASE_URL: llm.url });
+    fx = await createChannelFixture();
+    await admin.tenantModule.create({ data: { tenantId: fx.tenant.id, module: "AI" } });
+    token = await accessTokenFor(app, fx.user.email, fx.tenant.id);
+  });
+
+  afterAll(async () => {
+    for (const job of await app.get<Queue>(getQueueToken(QUEUES.outbound)).getDelayed()) await job.remove();
+    await fx?.cleanup();
+    await app?.close();
+    await llm?.close();
+  });
+
+  it("a IA responde o cliente no lugar do chamado automático, sem alarme", async () => {
+    const contact = await admin.contact.create({
+      data: { tenantId: fx.tenant.id, name: "Rita Melo", identities: { create: { tenantId: fx.tenant.id, channelType: "IFOOD", externalId: "cliente-7001" } } },
+    });
+    await admin.order.create({
+      data: {
+        tenantId: fx.tenant.id,
+        contactId: contact.id,
+        channelId: fx.ifood.id,
+        externalOrderId: randomUUID(),
+        displayCode: "7001",
+        status: "CONFIRMED",
+        subtotal: 40,
+        deliveryFee: 5,
+        total: 45,
+        placedAt: minutesAgo(20),
+        raw: {},
+      },
+    });
+    await request(app.getHttpServer())
+      .post("/api/ifood-chat/sync")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ orderCode: "7001", messages: [shown("INBOUND", "Cadê meu pedido?", minutesAgo(1))] })
+      .expect(200);
+    await vi.waitFor(
+      async () => {
+        const chat = await admin.conversation.findFirstOrThrow({ where: { tenantId: fx.tenant.id, contactId: contact.id }, include: { messages: true } });
+        expect(chat.messages.some((m) => (m.content as { aiReply?: boolean }).aiReply)).toBe(true);
+        expect(chat.awaitingAgentSince).toBeNull();
+        expect(chat.automationState).toMatchObject({ ai: "on", linkedOrder: { id: expect.any(String) } });
+        expect(chat.messages.some((m) => (m.content as { automation?: string }).automation === "handoff")).toBe(false);
+      },
+      { timeout: 15_000, interval: 100 },
+    );
   });
 });

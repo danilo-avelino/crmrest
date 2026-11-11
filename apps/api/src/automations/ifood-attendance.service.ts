@@ -3,18 +3,21 @@ import { type AutomationMessages, automationMessagesOf } from "@dishdesk/shared"
 import { InjectQueue } from "@nestjs/bullmq";
 import { Injectable } from "@nestjs/common";
 import type { Queue } from "bullmq";
+import { LlmClient } from "../ai/llm.client.js";
 import { DatabaseService } from "../core/database.service.js";
 import { dispatchNoticeMessage, readyNoticeMessage } from "../orders/forecast.js";
-import { type OutboundJob, QUEUES } from "../queues/queues.module.js";
+import { type AiJob, type OutboundJob, QUEUES } from "../queues/queues.module.js";
 import { RealtimeEmitter } from "../realtime/realtime.emitter.js";
-import { automationMessage, dispatch, type InboundEvent, setAutomationState, systemEvent, tenantSettings } from "./automation.js";
-import { PhoneCollectionService } from "./phone-collection.service.js";
+import { type AutomationState, automationMessage, dispatch, type InboundEvent, setAutomationState, systemEvent, tenantSettings } from "./automation.js";
+import { extractPhone, PhoneCollectionService } from "./phone-collection.service.js";
 import { SurveyService } from "./survey.service.js";
+import { AI_REPLY_DELAY_MS } from "./triage.service.js";
 
 /**
- * Cliente que escreve no chat do iFood: sem menu, porque é sempre um problema com o pedido. Cada atendimento novo chama
- * a equipe na hora (com o alarme), avisa o cliente e pede o telefone de quem não tem no cadastro: a conversa do iFood
- * se encerra sozinha e depois não há como falar com ele. Se o pedido já ficou pronto ou saiu, manda também esse aviso.
+ * Cliente que escreve no chat do iFood: sem menu, porque é sempre um problema com o pedido. Com o módulo Atendimento com
+ * IA, a IA atende (já sabendo o pedido da conversa) e só chama a equipe quando precisar. Sem ele, cada atendimento novo
+ * chama a equipe na hora (com o alarme), avisa o cliente e pede o telefone de quem não tem no cadastro: a conversa do
+ * iFood se encerra sozinha e depois não há como falar com ele. Se o pedido já ficou pronto ou saiu, manda também esse aviso.
  */
 @Injectable()
 export class IfoodAttendanceService {
@@ -22,6 +25,8 @@ export class IfoodAttendanceService {
     private readonly db: DatabaseService,
     private readonly realtime: RealtimeEmitter,
     @InjectQueue(QUEUES.outbound) private readonly outbound: Queue<OutboundJob>,
+    @InjectQueue(QUEUES.ai) private readonly ai: Queue<AiJob>,
+    private readonly llm: LlmClient,
     private readonly phoneCollection: PhoneCollectionService,
     private readonly survey: SurveyService,
   ) {}
@@ -30,6 +35,7 @@ export class IfoodAttendanceService {
   async afterInbound(event: InboundEvent, orderId: string): Promise<void> {
     // A pesquisa não sai mais no iFood; esta é a nota de quem já tinha sido perguntado.
     if (await this.survey.handleAnswer(event)) return;
+    if (await this.aiTakes(event, orderId)) return;
     // Atendimento em andamento: só falta anotar o telefone, se o cliente o mandar.
     if (!event.newAttendance) return this.phoneCollection.afterInbound(event);
 
@@ -59,6 +65,38 @@ export class IfoodAttendanceService {
       return ids;
     });
     await dispatch(this.outbound, this.realtime, tenantId, event.conversationId, messageIds);
+  }
+
+  /**
+   * Atendimento com IA (módulo AI): a IA responde no lugar do chamado automático, do começo do atendimento até passar
+   * para a equipe (o alarme só toca quando ela passa). O pedido da conversa já vale como confirmado, e o aviso de pronto
+   * ou saiu fica com a IA, que lê o andamento real. O telefone que o cliente mandar é cadastrado.
+   */
+  private async aiTakes(event: InboundEvent, orderId: string): Promise<boolean> {
+    const { tenantId } = event.channel;
+    const takes = await this.db.withTenants({ tenantIds: [tenantId] }, async (tx) => {
+      if (!(await this.llm.activeFor(tx, tenantId))) return false;
+      const conversation = await tx.conversation.findUniqueOrThrow({
+        where: { id: event.conversationId },
+        select: { id: true, tenantId: true, channelId: true, automationState: true, contact: { select: { id: true, phone: true } } },
+      });
+      const state = conversation.automationState as AutomationState;
+      if (!event.newAttendance && state.ai !== "on") return false;
+      if (event.newAttendance) {
+        await setAutomationState(tx, event.conversationId, {
+          ai: "on",
+          triage: "done",
+          linkedOrder: { id: orderId, at: new Date().toISOString() },
+          ...(state.aiWaiting && { aiWaiting: true, aiWaitingReason: state.aiWaitingReason }),
+        });
+      }
+      const phone = !conversation.contact.phone && event.text ? extractPhone(event.text) : null;
+      if (phone) await this.phoneCollection.register(tx, conversation, phone);
+      return true;
+    });
+    if (!takes) return false;
+    await this.ai.add("reply", { tenantId, conversationId: event.conversationId }, { delay: AI_REPLY_DELAY_MS });
+    return true;
   }
 }
 

@@ -270,6 +270,31 @@ describe("atendimento com IA: resposta, revisão e avaliação", () => {
     expect(all.at(-1)).toMatchObject({ event: "handoff", text: "IA passou o atendimento para a equipe: Cliente mandou uma foto" });
   });
 
+  it("passando para a equipe, a IA pede o telefone de quem não o tem no cadastro (Instagram) e o cadastra", async () => {
+    const ask = "Vou chamar um atendente. Enquanto isso, quer deixar seu telefone com DDD para receber cupons pelo WhatsApp?";
+    answers.atendimento = { reply: ask, handoff: true, reason: "Cliente pediu um atendente", order: "none" };
+    const dm = async (mid: string, text: string) => {
+      await postMetaWebhook(app, instagramPayload(fx.instagram.externalId, [instagramText("IGSID-TEL", fx.instagram.externalId, mid, text)])).expect(200);
+      await drainQueues(app);
+      await settle();
+    };
+    const chat = () =>
+      admin.conversation.findFirstOrThrow({
+        where: { tenantId: fx.tenant.id, channelId: fx.instagram.id, contact: { identities: { some: { externalId: "IGSID-TEL" } } } },
+        include: { contact: true, messages: { orderBy: { createdAt: "asc" } } },
+      });
+    await dm("mid.AI-TEL-1", "Quero falar com um atendente");
+    // Passa para a equipe com a pergunta do telefone, sem trocá-la pela mensagem automática.
+    let current = await chat();
+    expect(current.messages.map((m) => m.content as Content).some((c) => c.text === ask && c.aiReply)).toBe(true);
+    expect(current.automationState).toMatchObject({ ai: "off", phoneCollection: "awaiting_phone" });
+    expect(llmCalls("atendimento").at(-1) && (llmCalls("atendimento").at(-1)!.body as LlmBody).messages[1]!.content).toContain("O telefone do cliente não está no cadastro.");
+
+    await dm("mid.AI-TEL-2", "(11) 97654-0002");
+    current = await chat();
+    expect(current.contact).toMatchObject({ phone: "+5511976540002", phoneSource: "informed_by_customer" });
+  });
+
   it("fechado, a conversa espera a equipe; sem dizer quando o restaurante volta, sai o aviso de fora do horário", async () => {
     // Abre só um minuto por semana: fechado agora, com dia e hora para voltar.
     const days = [{ open: "03:00", close: "03:01" }, null, null, null, null, null, null];
