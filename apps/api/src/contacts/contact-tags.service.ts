@@ -1,5 +1,5 @@
 import type { TenantTx } from "@dishdesk/database";
-import { AUTO_TAG_RULES, MANUAL_TAGS } from "@dishdesk/shared";
+import { AUTO_TAG_RULES, MANUAL_TAGS, RECOVERY_TAG } from "@dishdesk/shared";
 import { InjectQueue } from "@nestjs/bullmq";
 import { Injectable, Logger, type OnModuleInit } from "@nestjs/common";
 import * as Sentry from "@sentry/nestjs";
@@ -40,6 +40,13 @@ export async function refreshContactTags(tx: TenantTx, now = new Date()): Promis
       FROM ratings r JOIN conversations cv ON cv.id = r.conversation_id
       ORDER BY cv.contact_id, r.created_at DESC, r.id DESC
     ),
+    -- A última avaliação da IA em que o cliente saiu mal do atendimento.
+    last_bad AS (
+      SELECT cv.contact_id, max(e.created_at) AS at
+      FROM conversation_evaluations e JOIN conversations cv ON cv.id = e.conversation_id
+      WHERE e.satisfied = false OR e.score <= ${rules.recoveryMaxScore} OR e.churn_risk >= ${rules.recoveryMinRisk}
+      GROUP BY cv.contact_id
+    ),
     computed AS (
       SELECT c.id, ARRAY(
           SELECT manual.tag FROM unnest(${[...MANUAL_TAGS]}::text[]) WITH ORDINALITY AS manual(tag, position)
@@ -49,11 +56,14 @@ export async function refreshContactTags(tx: TenantTx, now = new Date()): Promis
           CASE WHEN k.recent_orders >= ${rules.recurringOrders} THEN 'Recorrente' END,
           CASE WHEN k.first_order >= ${since(rules.newDays)} THEN 'Novo' END,
           CASE WHEN k.last_order < ${since(rules.goneDays)} THEN 'Sumido' END,
-          CASE WHEN r.score <= ${rules.upsetMaxScore} THEN 'Insatisfeito' END
+          CASE WHEN r.score <= ${rules.upsetMaxScore} THEN 'Insatisfeito' END,
+          -- Sai com o primeiro pedido feito depois do atendimento ruim.
+          CASE WHEN b.at > COALESCE(k.last_order, '-infinity'::timestamptz) THEN ${RECOVERY_TAG} END
         ], NULL) AS tags
       FROM contacts c
       LEFT JOIN ranked k ON k.contact_id = c.id
       LEFT JOIN last_rating r ON r.contact_id = c.id
+      LEFT JOIN last_bad b ON b.contact_id = c.id
       WHERE c.deleted_at IS NULL
     )
     UPDATE contacts SET tags = computed.tags

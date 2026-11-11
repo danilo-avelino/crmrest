@@ -8,24 +8,21 @@ import {
   CreditCardIcon,
   LinkIcon,
   LoaderCircleIcon,
-  type LucideIcon,
   PlugIcon,
   SparklesIcon,
   UsersIcon,
   ZapIcon,
 } from "lucide-react";
-import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { createContext, type ReactNode, useContext, useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
-import { TenantPicker } from "@/components/auth/tenant-picker";
 import { NavRail } from "@/components/inbox/nav-rail";
-import { cn } from "@/lib/utils";
+import { SideMenu, type SideMenuGroup } from "@/components/layout/side-menu";
 
 type SettingsTenant = AuthContext["tenants"][number];
 
 /** O menu de Configurações, em grupos. A primeira página (/configuracoes) é a Personalidade. */
-const NAV: { group: string; items: { href: string; label: string; icon: LucideIcon }[] }[] = [
+const NAV: SideMenuGroup[] = [
   {
     group: "Atendimento",
     items: [
@@ -83,45 +80,15 @@ export function SettingsShell({ children }: { children: ReactNode }) {
   return (
     <div className="flex h-full overflow-hidden bg-paper">
       <NavRail />
-      <aside className="flex w-[236px] shrink-0 flex-col overflow-y-auto border-r border-rule bg-surface">
-        <div className="px-5 pt-5 pb-4">
-          <p className="font-heading text-[21px] font-bold tracking-[-0.3px]">Configurações</p>
-          {adminTenants.length > 1 ? (
-            <div className="mt-2.5">
-              <TenantPicker tenants={adminTenants} tenant={tenant} onChange={setTenantId} />
-            </div>
-          ) : (
-            <p className="mt-[3px] truncate text-[12px] text-ink-3">{tenant.name}</p>
-          )}
-        </div>
-        <nav aria-label="Seções das configurações" className="pb-5">
-          {NAV.map(({ group, items }) => (
-            <div key={group} className="mb-3">
-              <p className="mb-1 px-5 pt-1 text-[10px] font-semibold tracking-[0.1em] text-ink-3 uppercase">{group}</p>
-              <ul>
-                {items.map(({ href, label, icon: Icon }) => {
-                  const active = href === "/configuracoes" ? pathname === href : pathname.startsWith(href);
-                  return (
-                    <li key={href}>
-                      <Link
-                        href={href}
-                        aria-current={active ? "page" : undefined}
-                        className={cn(
-                          "flex items-center gap-2.5 border-l-[3px] py-2 pr-4 pl-[17px] text-[13px]",
-                          active ? "border-tomate bg-tomate-lt font-medium text-ink" : "border-transparent text-ink-2 hover:bg-paper",
-                        )}
-                      >
-                        <Icon className={cn("size-4 shrink-0", active ? "text-tomate" : "text-ink-3")} aria-hidden />
-                        {label}
-                      </Link>
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-          ))}
-        </nav>
-      </aside>
+      <SideMenu
+        title="Configurações"
+        label="Seções das configurações"
+        root="/configuracoes"
+        nav={NAV}
+        tenants={adminTenants}
+        tenant={tenant}
+        onTenantChange={setTenantId}
+      />
       <main className="min-w-0 flex-1 overflow-y-auto px-8 py-7">
         {/* Integrações usa a largura do board; as outras páginas ficam numa coluna de leitura. */}
         <div className={pathname.startsWith("/configuracoes/integracoes") ? "max-w-[1072px]" : "max-w-[760px]"}>

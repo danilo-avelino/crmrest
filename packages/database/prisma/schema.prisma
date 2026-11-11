@@ -549,6 +549,10 @@ model ConversationEvaluation {
   score          Int // 1 a 5
   summary        String? // só nas avaliações feitas pela LLM, até 07/11/2026; o Jev não escreve texto
   teamReason     String?  @map("team_reason") // TeamReason: por que precisou da equipe; null = só a IA atendeu
+  subject        String? // ContactSubject: o assunto do contato; null = avaliação anterior a 11/11/2026
+  issue          String? // ServiceIssue: o que deu errado no atendimento; null = nada
+  fault          String? // ServiceFault: de quem foi a falha (atendimento ou operação); null = sem falha
+  churnRisk      Float?   @map("churn_risk") // chance (0 a 1) de o restaurante perder o cliente
   model          String
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 

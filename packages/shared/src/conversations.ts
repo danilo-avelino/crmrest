@@ -10,7 +10,7 @@ import type {
 } from "@dishdesk/database/enums";
 import { ConversationStatus as ConversationStatusEnum } from "@dishdesk/database/enums";
 import { z } from "zod";
-import type { TeamReason, WaitingReason } from "./reports.js";
+import type { ContactSubject, ServiceFault, ServiceIssue, TeamReason, WaitingReason } from "./reports.js";
 
 /** Conteúdo de uma mensagem, conforme o tipo (texto, mídia, evento do sistema, nota...). */
 export type MessageContent = {
@@ -113,6 +113,13 @@ export type ConversationEvaluationDto = {
   agentName: string | null;
   /** Por que precisou da equipe; null = só a IA atendeu. */
   teamReason: TeamReason | null;
+  /** O assunto do contato; null nas avaliações antigas. */
+  subject: ContactSubject | null;
+  /** O que deu errado e de quem foi a falha; null = nada (ou avaliação antiga). */
+  issue: ServiceIssue | null;
+  fault: ServiceFault | null;
+  /** Chance (0 a 1) de perder o cliente; null nas avaliações antigas. */
+  churnRisk: number | null;
   /** Modelo de IA que avaliou. */
   model: string;
   createdAt: string;

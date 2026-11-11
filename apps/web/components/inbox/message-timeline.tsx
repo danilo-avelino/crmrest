@@ -17,7 +17,7 @@ import { useAuth } from "@/components/auth/auth-provider";
 import { Avatar } from "@/components/inbox/bits";
 import { MessageMedia } from "@/components/inbox/message-media";
 import { OrderCard } from "@/components/inbox/order-card";
-import { Pill, ScoreBadge } from "@/components/reports/report-ui";
+import { evaluationNotes, Pill, ScoreBadge } from "@/components/reports/report-ui";
 import { usePendingAction } from "@/hooks/use-pending-action";
 import { ApiError } from "@/lib/api";
 import { clock, weekdayClock } from "@/lib/format";
@@ -277,6 +277,7 @@ function Evaluation({ evaluation }: { evaluation: ConversationEvaluationDto }) {
         )}
         {evaluation.teamReason && <Pill tone="warning">{TEAM_REASONS[evaluation.teamReason]}</Pill>}
       </div>
+      {evaluationNotes(evaluation).length > 0 && <div className="mt-2.5 text-[12.5px] leading-[1.5] text-ink-2">{evaluationNotes(evaluation).join(" · ")}</div>}
       {evaluation.summary && <div className="mt-2.5 text-[13px] leading-[1.5] text-ink-2">{evaluation.summary}</div>}
       <div className="mt-2 text-xs text-ink-3 tabular-nums">
         {evaluation.agentName ? `Atendido por ${evaluation.agentName}` : "Só a IA atendeu"} · {clock(evaluation.createdAt)}

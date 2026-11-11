@@ -91,6 +91,7 @@ describe("aba Avaliações: notas e tempo de resposta por atendente", () => {
 
     const { body } = await report(token, "7d").expect(200);
     expect(body.summary).toEqual({ ratings: 2, averageScore: 3, handoffs: 2, answered: 1, averageResponseSeconds: 120 });
+    expect(body.scoreCounts).toEqual([0, 1, 0, 1, 0]);
     expect(body.agents).toEqual([
       { userId: fx.user.id, name: "Atendente Pipeline", ratings: 1, averageScore: 4, answered: 0, averageResponseSeconds: null },
       { userId: bruna.id, name: "Bruna Teste", ratings: 0, averageScore: null, answered: 1, averageResponseSeconds: 120 },

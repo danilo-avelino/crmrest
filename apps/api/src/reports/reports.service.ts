@@ -1,4 +1,18 @@
-import { type AgentMetrics, type MessageContent, type RatingsReportDto, type ReportPeriod, TEAM_REASONS, type TeamReason } from "@dishdesk/shared";
+import {
+  type AgentMetrics,
+  CHURN_RISK_ALERT,
+  CONTACT_SUBJECTS,
+  type ContactSubject,
+  type MessageContent,
+  type RatingsReportDto,
+  RECOVERY_TAG,
+  type ReportPeriod,
+  SERVICE_ISSUES,
+  type ServiceFault,
+  type ServiceIssue,
+  TEAM_REASONS,
+  type TeamReason,
+} from "@dishdesk/shared";
 import type { TenantScope } from "@dishdesk/database";
 import { Injectable } from "@nestjs/common";
 import type { RequestAuth } from "../auth/auth.decorators.js";
@@ -148,6 +162,14 @@ export class ReportsService {
             GROUP BY 1`
         : [];
 
+      const recovering = await tx.contact.count({ where: { tenantId, deletedAt: null, tags: { has: RECOVERY_TAG } } });
+      // Quantas avaliações caem em cada valor de um campo, do mais comum ao menos.
+      const tally = <K extends string>(keys: Record<K, string>, field: "subject" | "issue") =>
+        (Object.keys(keys) as K[])
+          .map((key) => ({ key, count: evaluations.filter((row) => row[field] === key).length }))
+          .filter((row) => row.count > 0)
+          .sort((a, b) => b.count - a.count);
+
       const userIds = [
         ...new Set(
           [
@@ -180,6 +202,8 @@ export class ReportsService {
 
       return {
         summary: { ...metrics(ratings, answered), handoffs: handoffs.length },
+        recovering,
+        scoreCounts: [1, 2, 3, 4, 5].map((value) => ratings.filter((row) => row.score === value).length),
         agents,
         unanswered: unanswered
           .sort((a, b) => b.called_at.getTime() - a.called_at.getTime())
@@ -211,6 +235,13 @@ export class ReportsService {
                 .map((reason) => ({ reason: reason as TeamReason, count: evaluations.filter((row) => row.teamReason === reason).length }))
                 .filter((row) => row.count > 0)
                 .sort((a, b) => b.count - a.count),
+              subjects: tally(CONTACT_SUBJECTS, "subject").map(({ key, count }) => ({ subject: key, count })),
+              issues: tally(SERVICE_ISSUES, "issue").map(({ key, count }) => ({ issue: key, count })),
+              faults: {
+                atendimento: evaluations.filter((row) => row.fault === "atendimento").length,
+                operacao: evaluations.filter((row) => row.fault === "operacao").length,
+              },
+              atRisk: evaluations.filter((row) => (row.churnRisk ?? 0) >= CHURN_RISK_ALERT).length,
               waiting: {
                 closed: waiting.find((row) => row.reason === "closed")?.total ?? 0,
                 full_auto: waiting.find((row) => row.reason === "full_auto")?.total ?? 0,
@@ -244,6 +275,10 @@ export class ReportsService {
                 resolved: row.resolved,
                 satisfied: row.satisfied,
                 teamReason: row.teamReason as TeamReason | null,
+                subject: row.subject as ContactSubject | null,
+                issue: row.issue as ServiceIssue | null,
+                fault: row.fault as ServiceFault | null,
+                churnRisk: row.churnRisk,
                 createdAt: row.createdAt.toISOString(),
               })),
               misconduct: misconduct.map((row) => {

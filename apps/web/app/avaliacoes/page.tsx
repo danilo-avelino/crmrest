@@ -1,5 +1,5 @@
-import { RatingsReport } from "@/components/reports/ratings-report";
+import { Overview } from "@/components/reports/overview";
 
-export default function RatingsPage() {
-  return <RatingsReport />;
+export default function OverviewPage() {
+  return <Overview />;
 }

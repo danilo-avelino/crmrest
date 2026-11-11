@@ -16,6 +16,35 @@ export const TEAM_REASONS = {
 } as const;
 export type TeamReason = keyof typeof TEAM_REASONS;
 
+/** O assunto do contato: a IA classifica ao avaliar o atendimento. */
+export const CONTACT_SUBJECTS = {
+  pedido_novo: "Fazer um pedido",
+  andamento_pedido: "Andamento do pedido",
+  problema_pedido: "Problema com o pedido",
+  cardapio: "Cardápio e preços",
+  informacoes: "Horário, endereço e entrega",
+  pagamento: "Pagamento",
+  elogio: "Elogio",
+  outro: "Outro assunto",
+} as const;
+export type ContactSubject = keyof typeof CONTACT_SUBJECTS;
+
+/** O que deu errado no atendimento (a conversa), segundo a IA. */
+export const SERVICE_ISSUES = {
+  demora: "Demora para responder",
+  informacao_errada: "Informação errada",
+  sem_solucao: "Ficou sem solução",
+  tom: "Tom inadequado",
+} as const;
+export type ServiceIssue = keyof typeof SERVICE_ISSUES;
+
+/** De quem foi a falha que incomodou o cliente: de quem atendeu ou da operação (cozinha, entrega). */
+export const SERVICE_FAULTS = { atendimento: "Atendimento", operacao: "Cozinha ou entrega" } as const;
+export type ServiceFault = keyof typeof SERVICE_FAULTS;
+
+/** Chance de perder o cliente a partir da qual o atendimento conta como "em risco". */
+export const CHURN_RISK_ALERT = 0.5;
+
 /** Por que a conversa esperou atendente: restaurante fechado, 100% automático ligado ou ninguém online. */
 export type WaitingReason = "closed" | "full_auto" | "offline";
 
@@ -80,6 +109,10 @@ export type RatingsReportDto = {
    * uma pessoa; uma por conversa e dia (Brasília). No dia de hoje, vale "até agora".
    */
   unanswered: { conversationId: string; contactName: string | null; calledAt: string; afterHours: boolean }[];
+  /** Clientes com a tag "Em recuperação" agora (não depende do período). */
+  recovering: number;
+  /** Quantas respostas à pesquisa deram cada nota no período: a posição 0 é a nota 1; a 4, a nota 5. */
+  scoreCounts: number[];
   /** A nota vai para quem respondeu por último; o tempo, para quem deu a primeira resposta. */
   agents: (AgentMetrics & { userId: string | null; name: string })[];
   recent: {
@@ -106,6 +139,14 @@ export type RatingsReportDto = {
     withTeam: number;
     /** Motivos da passagem para a equipe, do mais comum ao menos. */
     teamReasons: { reason: TeamReason; count: number }[];
+    /** Assuntos dos atendimentos avaliados, do mais comum ao menos (sem as avaliações antigas, que não têm assunto). */
+    subjects: { subject: ContactSubject; count: number }[];
+    /** O que deu errado nos atendimentos avaliados, do mais comum ao menos. */
+    issues: { issue: ServiceIssue; count: number }[];
+    /** Atendimentos com falha, por quem falhou. */
+    faults: Record<ServiceFault, number>;
+    /** Atendimentos em que a chance de perder o cliente passou de CHURN_RISK_ALERT. */
+    atRisk: number;
     /** Vezes que a IA precisou da equipe sem haver atendente, por motivo. */
     waiting: Record<WaitingReason, number>;
     /** Revisão automática das respostas de cada atendente: reescritas pela IA e mantidas como ele escreveu. */
@@ -126,6 +167,11 @@ export type RatingsReportDto = {
       satisfied: boolean | null;
       /** Por que precisou da equipe; null = só a IA atendeu. */
       teamReason: TeamReason | null;
+      /** Nulos nas avaliações antigas; `issue` e `fault` nulos também quando nada deu errado. */
+      subject: ContactSubject | null;
+      issue: ServiceIssue | null;
+      fault: ServiceFault | null;
+      churnRisk: number | null;
       createdAt: string;
     }[];
     /** Respostas que a revisão da IA bloqueou por má conduta (ofensa, grosseria), com o texto que o atendente escreveu. */

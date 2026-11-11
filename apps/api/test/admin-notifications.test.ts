@@ -96,6 +96,8 @@ describe("textos das notificações", () => {
   const report = (ai: Partial<NonNullable<RatingsReportDto["ai"]>> | null): RatingsReportDto => ({
     summary: { ratings: 4, averageScore: 4.5, answered: 10, averageResponseSeconds: 200, handoffs: 12 },
     unanswered: [{ conversationId: "c1", contactName: null, calledAt: "", afterHours: false }],
+    recovering: 0,
+    scoreCounts: [0, 0, 0, 1, 3],
     agents: [],
     recent: [],
     ai: ai && {
@@ -108,6 +110,10 @@ describe("textos das notificações", () => {
       onlyAi: 15,
       withTeam: 5,
       teamReasons: [],
+      subjects: [],
+      issues: [],
+      faults: { atendimento: 0, operacao: 0 },
+      atRisk: 0,
       waiting: { closed: 0, full_auto: 0, offline: 0 },
       reviews: [],
       rewriteExample: null,

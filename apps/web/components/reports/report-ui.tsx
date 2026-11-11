@@ -1,5 +1,6 @@
 "use client";
 
+import { CHURN_RISK_ALERT, CONTACT_SUBJECTS, type ConversationEvaluationDto, SERVICE_FAULTS, SERVICE_ISSUES } from "@dishdesk/shared";
 import { AlertTriangleIcon, StarIcon } from "lucide-react";
 import Link from "next/link";
 import { Children, type CSSProperties, type ReactNode } from "react";
@@ -22,6 +23,24 @@ export function when(iso: string, now: number): string {
 /** Parte de um total, arredondada: "14%". */
 export function share(part: number, total: number): string {
   return `${Math.round((part / total) * 100)}%`;
+}
+
+/** Chance de 0 a 1 em porcentagem: "80%". */
+export function percent(value: number): string {
+  return `${Math.round(value * 100)}%`;
+}
+
+/**
+ * O que a IA anotou além da nota: o assunto, o que deu errado, de quem foi a falha e, quando alto, o risco de perder o
+ * cliente. Vazio nas avaliações antigas.
+ */
+export function evaluationNotes({ subject, issue, fault, churnRisk }: Pick<ConversationEvaluationDto, "subject" | "issue" | "fault" | "churnRisk">): string[] {
+  return [
+    subject && `Assunto: ${CONTACT_SUBJECTS[subject]}`,
+    issue && `Problema: ${SERVICE_ISSUES[issue]}`,
+    fault && `Falha: ${SERVICE_FAULTS[fault]}`,
+    churnRisk !== null && churnRisk >= CHURN_RISK_ALERT && `Risco de perder o cliente: ${percent(churnRisk)}`,
+  ].filter((note) => typeof note === "string");
 }
 
 /** Título de um bloco grande da aba (Fraunces 22px), com selo opcional e a explicação embaixo. */
@@ -95,8 +114,9 @@ export function Table({ cols, head, children, empty }: { cols: string; head: str
 export function Row({ children, className }: { children: ReactNode; className?: string }) {
   return (
     <div role="row" className={cn("grid grid-cols-(--cols) items-center gap-4 border-t border-rule-soft px-[18px] py-3 text-[13px]", className)}>
-      {Children.map(children, (cell) => (
-        <div role="cell" className="min-w-0">
+      {/* toArray: uma célula condicional (false ou null) não ocupa coluna. */}
+      {Children.toArray(children).map((cell, index) => (
+        <div key={index} role="cell" className="min-w-0">
           {cell}
         </div>
       ))}

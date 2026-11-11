@@ -1,6 +1,16 @@
 import type { Message, Order, OrderItem, Prisma, TenantTx } from "@dishdesk/database";
 import type { ChannelType } from "@dishdesk/database/enums";
-import type { ConversationEvaluationDto, ConversationListItem, MessageContent, MessageDto, OrderDto, TeamReason } from "@dishdesk/shared";
+import type {
+  ContactSubject,
+  ConversationEvaluationDto,
+  ConversationListItem,
+  MessageContent,
+  MessageDto,
+  OrderDto,
+  ServiceFault,
+  ServiceIssue,
+  TeamReason,
+} from "@dishdesk/shared";
 import type { RequestAuth } from "../auth/auth.decorators.js";
 import { type AutomationState, RATING_ANSWER } from "../automations/automation.js";
 import { isTenantAdmin } from "../settings/tenant-admin.js";
@@ -144,6 +154,10 @@ export async function listEvaluations(
     summary: row.summary,
     agentName: row.userId ? (names.get(row.userId) ?? "Ex-atendente") : null,
     teamReason: row.teamReason as TeamReason | null,
+    subject: row.subject as ContactSubject | null,
+    issue: row.issue as ServiceIssue | null,
+    fault: row.fault as ServiceFault | null,
+    churnRisk: row.churnRisk,
     model: row.model,
     createdAt: row.createdAt.toISOString(),
   }));

@@ -433,6 +433,10 @@ describe("atendimento com IA: resposta, revisão e avaliação", () => {
       satisfaction: { type: "choice", choice: "satisfeito", confidence: 0.9, probabilities: {} },
       score: { type: "score", score: 3.6, legend: {}, probabilities: {} },
       teamReason: { type: "choice", choice: "atraso" },
+      subject: { type: "choice", choice: "andamento_pedido" },
+      issue: { type: "choice", choice: "nada" },
+      fault: { type: "choice", choice: "nenhuma" },
+      churnRisk: { type: "noul", noul: 0.08 },
     };
     const service = app.get(AiEvaluationService);
     await service.evaluate(fx.tenant.id, id);
@@ -440,7 +444,20 @@ describe("atendimento com IA: resposta, revisão e avaliação", () => {
 
     const rows = await admin.conversationEvaluation.findMany({ where: { conversationId: id } });
     expect(rows).toMatchObject([
-      { resolved: true, satisfied: true, score: 5, summary: null, teamReason: "atraso", userId: fx.user.id, model: "typesafe/jev-1.14-20261101" },
+      {
+        resolved: true,
+        satisfied: true,
+        score: 5,
+        summary: null,
+        teamReason: "atraso",
+        // "nada" e "nenhuma" não são gravados: sem problema e sem falha.
+        subject: "andamento_pedido",
+        issue: null,
+        fault: null,
+        churnRisk: 0.08,
+        userId: fx.user.id,
+        model: "typesafe/jev-1.14-20261101",
+      },
     ]);
     const sent = evaluationCalls().at(-1)!;
     expect(evaluationCalls()).toHaveLength(1);
@@ -465,12 +482,16 @@ describe("atendimento com IA: resposta, revisão e avaliação", () => {
   it("sem resposta da equipe não chama a IA: só registra, e o atendimento seguinte não relê o anterior", async () => {
     answers.atendimento = { reply: "Abrimos às 11h.", handoff: false, reason: "", order: "none" };
     answers.revisao = { misconduct: false, reason: "", text: "Já estou vendo, um instante." };
-    // Recusa na reação e no motivo: fica sem reação e com outro motivo.
+    // Recusa na reação, no motivo e no assunto: fica sem reação, com outro motivo e sem assunto.
     jevAnswers = {
       resolved: { type: "noul", noul: 0.2 },
       satisfaction: { type: "refusal" },
       score: { type: "score", score: 2 },
       teamReason: { type: "refusal" },
+      subject: { type: "refusal" },
+      issue: { type: "choice", choice: "demora" },
+      fault: { type: "choice", choice: "operacao" },
+      churnRisk: { type: "noul", noul: 0.8 },
     };
     await say("5511980000077", "wamid.AI-SO-IA-1", "Vocês abrem hoje?");
     await settle();
@@ -509,8 +530,16 @@ describe("atendimento com IA: resposta, revisão e avaliação", () => {
     await evaluation.evaluate(fx.tenant.id, id);
 
     expect(await admin.conversationEvaluation.findMany({ where: { conversationId: id, userId: fx.user.id } })).toMatchObject([
-      { resolved: false, satisfied: null, score: 3, teamReason: "outro" },
+      { resolved: false, satisfied: null, score: 3, teamReason: "outro", subject: null, issue: "demora", fault: "operacao", churnRisk: 0.8 },
     ]);
+    // Risco de perder o cliente: a tag entra na hora, e o relatório conta.
+    const { contact } = await admin.conversation.findUniqueOrThrow({ where: { id }, select: { contact: { select: { tags: true } } } });
+    expect(contact.tags).toContain("Em recuperação");
+    const after = await report();
+    expect(after.atRisk).toBe(before.atRisk + 1);
+    expect(after.faults.operacao).toBe(before.faults.operacao + 1);
+    expect(after.issues).toContainEqual({ issue: "demora", count: expect.any(Number) });
+    expect(after.recent[0]).toMatchObject({ subject: null, issue: "demora", fault: "operacao", churnRisk: 0.8 });
     const read = (evaluationCalls().at(-1)!.body as JevBody).state.conversa;
     expect(read).toContain("Meu pedido atrasou");
     expect(read).not.toContain("Vocês abrem hoje?");

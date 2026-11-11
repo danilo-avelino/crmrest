@@ -23,7 +23,7 @@ import { CHANNEL_DOT, StatusBadge } from "@/components/inbox/bits";
 import { Cpf, linkedChannels, Tags } from "@/components/inbox/client-panel";
 import { ORDER_STATUS } from "@/components/inbox/order-card";
 import { ItemOptions } from "@/components/orders/item-options";
-import { Pill, ScoreBadge } from "@/components/reports/report-ui";
+import { evaluationNotes, Pill, ScoreBadge } from "@/components/reports/report-ui";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -575,6 +575,7 @@ function EvaluationLog({ evaluation, now }: { evaluation: ConversationEvaluation
         )}
         {evaluation.teamReason && <Pill tone="warning">{TEAM_REASONS[evaluation.teamReason]}</Pill>}
       </div>
+      {evaluationNotes(evaluation).length > 0 && <p className="mt-2 text-[12px] leading-[1.5] text-ink-2">{evaluationNotes(evaluation).join(" · ")}</p>}
       {evaluation.summary && <p className="mt-2 text-[12.5px] leading-[1.5] text-ink-2">{evaluation.summary}</p>}
       <div className="mt-1.5 text-[11px] text-ink-3 tabular-nums">
         {evaluation.agentName ? `Atendido por ${evaluation.agentName}` : "Só a IA atendeu"} · {dayTime(evaluation.createdAt, now)} · {evaluation.model}

@@ -1,6 +1,7 @@
-import { type TeamReason, withoutAi } from "@dishdesk/shared";
+import { AUTO_TAG_RULES, type ContactSubject, type ServiceFault, type ServiceIssue, type TeamReason, withoutAi } from "@dishdesk/shared";
 import { Injectable } from "@nestjs/common";
 import type { Queue } from "bullmq";
+import { refreshContactTags } from "../contacts/contact-tags.service.js";
 import { DatabaseService } from "../core/database.service.js";
 import { JevClient, type JevQuestion } from "../defense/jev.client.js";
 import type { AiJob } from "../queues/queues.module.js";
@@ -41,12 +42,42 @@ const TEAM_REASON_CRITERIA: Record<TeamReason, string> = {
   outro: "Outro motivo.",
 };
 
+const SUBJECT_CRITERIA: Record<ContactSubject, string> = {
+  pedido_novo: "O cliente quis fazer um pedido ou uma reserva.",
+  andamento_pedido: "Quis saber do pedido já feito: se foi recebido, quando sai, onde está.",
+  problema_pedido: "Reclamou do pedido: atraso, item errado ou faltando, qualidade, cobrança indevida.",
+  cardapio: "Perguntou do cardápio, de preços, ingredientes ou promoções.",
+  informacoes: "Perguntou de horário, endereço, área ou taxa de entrega.",
+  pagamento: "Tratou de pagamento: formas, Pix, comprovante, troco.",
+  elogio: "Escreveu para elogiar ou agradecer.",
+  outro: "Outro assunto.",
+};
+
+/** `nada` e `nenhuma` não são gravados: a avaliação fica sem problema e sem falha. */
+const ISSUE_CRITERIA: Record<ServiceIssue | "nada", string> = {
+  demora: "O cliente esperou muito por uma resposta.",
+  informacao_errada: "O restaurante passou uma informação errada ou contraditória.",
+  sem_solucao: "O cliente ficou sem resposta ou sem solução para o que pediu.",
+  tom: "Resposta grosseira, fria ou impaciente.",
+  nada: "Nada deu errado na conversa.",
+};
+
+const FAULT_CRITERIA: Record<ServiceFault | "nenhuma", string> = {
+  atendimento: "De quem atendeu: demora, erro ou tom da conversa.",
+  operacao: "Da cozinha ou da entrega: pedido atrasado, item errado ou faltando, qualidade da comida.",
+  nenhuma: "O cliente não ficou incomodado.",
+};
+
 /** As perguntas da avaliação ao Jev. */
 export const EVALUATION_QUESTIONS = {
   resolved: { type: "noul", instructions: "O pedido ou o problema do cliente foi resolvido ou respondido?" },
   satisfaction: { type: "choice", instructions: "Como o cliente reagiu ao atendimento?", criteria: SATISFACTION },
   score: { type: "score", instructions: "Que nota o atendimento merece, pela reação do cliente? Seja justo e objetivo.", criteria: SCORE_LEVELS },
   teamReason: { type: "choice", instructions: "Qual o principal motivo de o atendimento precisar da equipe?", criteria: TEAM_REASON_CRITERIA },
+  subject: { type: "choice", instructions: "Qual o principal assunto do contato do cliente?", criteria: SUBJECT_CRITERIA },
+  issue: { type: "choice", instructions: "O que deu errado no atendimento, olhando só a conversa?", criteria: ISSUE_CRITERIA },
+  fault: { type: "choice", instructions: "Se o cliente ficou incomodado, de quem foi a falha?", criteria: FAULT_CRITERIA },
+  churnRisk: { type: "noul", instructions: "O restaurante corre o risco de perder este cliente por causa do que aconteceu neste atendimento?" },
 } satisfies Record<string, JevQuestion>;
 
 /** Agenda a avaliação de um atendimento que acabou de ser resolvido (o job confere se o restaurante tem o módulo). */
@@ -56,8 +87,9 @@ export async function scheduleEvaluation(queue: Queue<AiJob>, tenantId: string, 
 
 /**
  * Avaliação automática (E29): quando a conversa é resolvida e a equipe respondeu ao cliente, o Jev (modelo de decisão,
- * sem texto) lê o atendimento e registra se o problema foi resolvido, se o cliente ficou satisfeito, uma nota e o motivo
- * de precisar da equipe. Sem resposta da equipe, não há chamada de IA: o atendimento só fica registrado. Roda na fila ai,
+ * sem texto) lê o atendimento e registra se o problema foi resolvido, se o cliente ficou satisfeito, uma nota, o motivo
+ * de precisar da equipe, o assunto, o que deu errado, de quem foi a falha e a chance de perder o cliente. Quem sai mal
+ * do atendimento ganha a tag "Em recuperação" na hora (a regra fica em refreshContactTags). Sem resposta da equipe, não há chamada de IA: o atendimento só fica registrado. Roda na fila ai,
  * fora do caminho do atendimento.
  */
 @Injectable()
@@ -107,25 +139,29 @@ export class AiEvaluationService {
       EVALUATION_QUESTIONS,
       { privateData: true },
     );
-    const { resolved, satisfaction, score, teamReason } = answers;
+    const { resolved, satisfaction, score, teamReason, subject, issue, fault, churnRisk } = answers;
     if (resolved.type !== "noul" || score.type !== "score") throw new Error("O Jev recusou avaliar o atendimento.");
     // Recusa na reação ou no motivo: sem reação e outro motivo, em vez de perder a avaliação.
     const reaction = satisfaction.type === "choice" ? satisfaction.choice : "sem_reacao";
     const reason = teamReason.type === "choice" && teamReason.choice in TEAM_REASON_CRITERIA ? (teamReason.choice as TeamReason) : "outro";
-    await this.db.withTenants(scope, (tx) =>
-      tx.conversationEvaluation.create({
-        data: {
-          tenantId,
-          conversationId,
-          userId: attendance.userId,
-          resolved: resolved.noul >= 0.5,
-          satisfied: reaction === "satisfeito" ? true : reaction === "insatisfeito" ? false : null,
-          score: Math.min(5, Math.max(1, Math.round(score.score) + 1)),
-          teamReason: reason,
-          model,
-        },
-      }),
-    );
+    // Recusa nas perguntas novas: o campo fica vazio.
+    const choice = <K extends string>(answer: typeof subject, criteria: Record<K, string>, none?: string): K | null =>
+      answer.type === "choice" && answer.choice in criteria && answer.choice !== none ? (answer.choice as K) : null;
+    const data = {
+      resolved: resolved.noul >= 0.5,
+      satisfied: reaction === "satisfeito" ? true : reaction === "insatisfeito" ? false : null,
+      score: Math.min(5, Math.max(1, Math.round(score.score) + 1)),
+      teamReason: reason,
+      subject: choice(subject, SUBJECT_CRITERIA),
+      issue: choice(issue, ISSUE_CRITERIA, "nada"),
+      fault: choice(fault, FAULT_CRITERIA, "nenhuma"),
+      churnRisk: churnRisk.type === "noul" ? churnRisk.noul : null,
+    };
+    const atRisk = data.satisfied === false || data.score <= AUTO_TAG_RULES.recoveryMaxScore || (data.churnRisk ?? 0) >= AUTO_TAG_RULES.recoveryMinRisk;
+    await this.db.withTenants(scope, async (tx) => {
+      await tx.conversationEvaluation.create({ data: { tenantId, conversationId, userId: attendance.userId, ...data, model } });
+      if (atRisk) await refreshContactTags(tx); // a tag Em recuperação entra na hora
+    });
     this.realtime.inboxChanged(tenantId, conversationId);
   }
 }
