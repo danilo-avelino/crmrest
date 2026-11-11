@@ -60,8 +60,8 @@ const ARRIVES: Record<IntegrationType, string> = {
  */
 export function InboxHome({ onOpenCalling }: { onOpenCalling: () => void }) {
   return (
-    <div className="flex min-w-0 flex-1 overflow-y-auto border-r border-rule bg-paper">
-      <div className="mx-auto w-full max-w-[720px] px-6 pt-7 pb-10">
+    <div className="@container flex min-w-0 flex-1 overflow-y-auto border-r border-rule bg-paper">
+      <div className="mx-auto w-full max-w-[720px] px-4 pt-7 pb-10 @lg:px-6">
         <SetupReminder />
         <h1 className="font-heading text-display font-bold">Agora na Inbox</h1>
         <p className="mt-1.5 flex items-center gap-2 text-ink-3">
@@ -90,7 +90,7 @@ function Attention({ onOpenCalling }: { onOpenCalling: () => void }) {
     <b className="my-1.5 block font-heading text-[28px] leading-none font-bold tabular-nums">{amount === undefined ? "–" : count(amount)}</b>
   );
   return (
-    <div className="mt-[18px] mb-[30px] grid grid-cols-3 gap-2.5">
+    <div className="mt-[18px] mb-[30px] grid grid-cols-1 gap-2.5 @xl:grid-cols-3">
       <div className={card}>
         <span className="block text-[12px] font-medium text-ink-2">Com a equipe</span>
         {value(team)}
@@ -149,7 +149,7 @@ function Integrations() {
         Integrações
       </h2>
       <p className="mt-0.5 mb-4 text-ink-3">Por onde chegam as conversas e os pedidos.</p>
-      <ul className="grid grid-cols-2 gap-2.5">
+      <ul className="grid grid-cols-1 gap-2.5 @2xl:grid-cols-2">
         {types.map((type) => (
           <IntegrationRow key={type} type={type} channels={list.filter((channel) => channel.type === type)} admin={admin} />
         ))}
