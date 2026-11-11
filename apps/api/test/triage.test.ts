@@ -581,7 +581,7 @@ describe("menu de atendimento, busca do pedido e pesquisa de satisfação", () =
     expect(conversation.contactId).not.toBe(order.contactId);
   });
 
-  it("entregador informa um pedido que não existe, ou avisa que chegou sem o chat do iFood na Inbox: a equipe assume, sem urgência", async () => {
+  it("entregador informa um pedido que não existe, ou avisa que chegou sem o chat do iFood na Inbox: a equipe assume, sem urgência, com o card do pedido", async () => {
     await tagged("5511970000024", "Entregador");
     await say("5511970000024", "wamid.NF1", "Oi");
     await say("5511970000024", "wamid.NF2", "3");
@@ -599,7 +599,7 @@ describe("menu de atendimento, busca do pedido e pesquisa de satisfação", () =
     expect(missing.awaitingAgentSince).not.toBeNull();
 
     // Esta API de teste não tem a trava IFOOD_CHAT_BRIDGE: o aviso de chegada fica com a equipe.
-    await ifoodOrder("7272", new Date());
+    const arrival = await ifoodOrder("7272", new Date());
     await tagged("5511970000025", "Entregador");
     await say("5511970000025", "wamid.ARR1", "Oi");
     await say("5511970000025", "wamid.ARR2", "1");
@@ -607,10 +607,12 @@ describe("menu de atendimento, busca do pedido e pesquisa de satisfação", () =
     const arrived = await conversationOf("5511970000025");
     expect(await automations("5511970000025")).toEqual(["courier_menu", "order_number_request", "handoff"]);
     expect(arrived.messages.map((m) => m.content)).toContainEqual({ event: "handoff", text: "Entregador avisou que chegou com o pedido #7272" });
+    // O card traz o botão para a equipe falar com o cliente do pedido.
+    expect(arrived.messages.map((m) => m.content)).toContainEqual({ event: "order", orderId: arrival.id, customerChat: true });
     expect(arrived).toMatchObject({ status: "OPEN", awaitingAgentQuiet: true });
 
     // Deixou na portaria, também sem a ponte: a equipe avisa o cliente.
-    await ifoodOrder("7676", new Date());
+    const frontDesk = await ifoodOrder("7676", new Date());
     await tagged("5511970000026", "Entregador");
     await say("5511970000026", "wamid.PRT1", "Oi");
     await say("5511970000026", "wamid.PRT2", "2");
@@ -618,6 +620,7 @@ describe("menu de atendimento, busca do pedido e pesquisa de satisfação", () =
     const left = await conversationOf("5511970000026");
     expect(await automations("5511970000026")).toEqual(["courier_menu", "order_number_request", "handoff"]);
     expect(left.messages.map((m) => m.content)).toContainEqual({ event: "handoff", text: "Entregador avisou que deixou o pedido #7676 na portaria" });
+    expect(left.messages.map((m) => m.content)).toContainEqual({ event: "order", orderId: frontDesk.id, customerChat: true });
     expect(left).toMatchObject({ status: "OPEN", awaitingAgentQuiet: true });
   });
 

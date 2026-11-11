@@ -93,17 +93,20 @@ export class CourierMenuService {
     kind: Notice,
   ): Promise<Step> {
     const found = await this.findOrder(tx, conversation, text, true);
-    // Sem o pedido (ou sem o chat do iFood na Inbox), é a equipe que avisa o cliente.
+    // Sem o pedido (ou sem o chat do iFood na Inbox), é a equipe que avisa o cliente. O pedido pode ser de outra
+    // plataforma (só o iFood recebe o aviso automático); achado, o card dele traz o botão para falar com o cliente.
     if (!found?.order || !this.env.IFOOD_CHAT_BRIDGE) {
+      const known = found && !found.order ? await this.findOrder(tx, conversation, text, false) : found;
+      if (known?.order) await systemEvent(tx, conversation, { event: "order", orderId: known.order.id, customerChat: true });
       const note =
         kind === "arrival"
-          ? found
-            ? `Entregador avisou que chegou com o pedido #${found.code}`
+          ? known
+            ? `Entregador avisou que chegou com o pedido #${known.code}`
             : "Entregador avisou que chegou"
-          : found
-            ? `Entregador avisou que deixou o pedido #${found.code} na portaria`
+          : known
+            ? `Entregador avisou que deixou o pedido #${known.code} na portaria`
             : "Entregador avisou que deixou um pedido na portaria";
-      return this.callTeam(tx, conversation, state, await this.passOn(tx, conversation, messages, found), note);
+      return this.callTeam(tx, conversation, state, await this.passOn(tx, conversation, messages, known), note);
     }
     const noticeOf = (texts: AutomationMessages) => (kind === "arrival" ? texts.courierArrivalNotice : texts.courierFrontDeskNotice);
     const order = found.order;

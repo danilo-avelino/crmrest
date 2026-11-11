@@ -84,6 +84,14 @@ describe("webhook da Evolution", () => {
     expect(parse(upsert({ reactionMessage: { text: "👍" } }, { messageType: "reactionMessage" })).messages).toEqual([]);
   });
 
+  it("ignora a edição de uma mensagem, que chega criptografada (secretEncryptedMessage) e a Evolution não abre", () => {
+    const edit = upsert(
+      { secretEncryptedMessage: { targetMessageKey: { id: "3EB0TEXT1" }, encPayload: "xyz", encIv: "abc", secretEncType: "MESSAGE_EDIT" } },
+      { key: { id: "3EB0EDIT1", remoteJid: "5511987654321@s.whatsapp.net", fromMe: false }, messageType: "secretEncryptedMessage" },
+    );
+    expect(parseEvolution(CHANNEL_ID, "messages.upsert", edit).messages).toEqual([]);
+  });
+
   it("tipo desconhecido vira um aviso legível", () => {
     const { messages } = parseEvolution(CHANNEL_ID, "messages.upsert", upsert({ contactMessage: {} }, { messageType: "contactMessage" }));
     expect(messages[0]).toMatchObject({ type: "TEXT", metadata: { unsupportedType: "contactMessage" } });

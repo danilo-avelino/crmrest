@@ -50,8 +50,16 @@ const MEDIA_TYPES = {
   stickerMessage: "STICKER",
 } as const;
 const STATUS = { SERVER_ACK: "SENT", DELIVERY_ACK: "DELIVERED", READ: "READ", PLAYED: "READ", ERROR: "FAILED" } as const;
-// Tipos que não viram mensagem na conversa (reações, edições e apagamentos, chaves de criptografia...).
-const IGNORED_TYPES = new Set(["reactionMessage", "protocolMessage", "editedMessage", "senderKeyDistributionMessage", "pollUpdateMessage"]);
+// Tipos que não viram mensagem na conversa (reações, edições e apagamentos, chaves de criptografia...). A edição feita
+// nos aparelhos novos chega como secretEncryptedMessage, que a Evolution 2.3 não abre: o texto novo não vem.
+const IGNORED_TYPES = new Set([
+  "reactionMessage",
+  "protocolMessage",
+  "editedMessage",
+  "secretEncryptedMessage",
+  "senderKeyDistributionMessage",
+  "pollUpdateMessage",
+]);
 
 /** Um webhook da Evolution: a instância, o número dela (sem ele, ainda não conectou) e o evento. */
 export type EvolutionBatch = { instance: string; externalId: string | null; event: string; data: unknown };

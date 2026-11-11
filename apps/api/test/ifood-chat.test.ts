@@ -488,6 +488,44 @@ describe("Chat do iFood na Inbox (trava IFOOD_CHAT_BRIDGE ligada)", () => {
     expect((await timeline(chat.id)).filter((m) => (m.content as { text?: string }).text === notice.text)).toHaveLength(1);
   });
 
+  it("entregador avisa que chegou com um pedido que não é do iFood: a equipe é chamada, com o card do pedido", async () => {
+    const cardapio = await admin.channel.create({
+      data: { tenantId: fx.tenant.id, type: "CARDAPIO_WEB", name: "Cardápio Web", externalId: `cw-${randomUUID()}`, credentials: Buffer.from("-"), status: "CONNECTED" },
+    });
+    const contact = await admin.contact.create({ data: { tenantId: fx.tenant.id, name: "Marina Souza" } });
+    const order = await admin.order.create({
+      data: {
+        tenantId: fx.tenant.id, contactId: contact.id, channelId: cardapio.id, externalOrderId: randomUUID(), displayCode: "6590",
+        status: "DISPATCHED", subtotal: 40, deliveryFee: 5, total: 45, placedAt: minutesAgo(30), raw: {},
+      },
+    });
+    const waId = "5511970000039";
+    await admin.contact.create({
+      data: { tenantId: fx.tenant.id, name: "Lucas Entregador", tags: ["Entregador"], identities: { create: { tenantId: fx.tenant.id, channelType: "WHATSAPP", externalId: waId } } },
+    });
+    const courier = () =>
+      admin.conversation.findFirstOrThrow({
+        where: { channelId: fx.whatsapp.id, contact: { identities: { some: { channelType: "WHATSAPP", externalId: waId } } } },
+        include: { messages: { orderBy: { createdAt: "asc" } } },
+      });
+    const say = async (id: string, body: string, last: object) => {
+      const message = { from: waId, id, timestamp: String(Math.floor(Date.now() / 1000)), type: "text", text: { body } };
+      await postMetaWebhook(app, metaPayload(fx.whatsapp.externalId, { contacts: [{ profile: { name: "Pedro" }, wa_id: waId }], messages: [message] })).expect(200);
+      await until(async () => expect((await courier()).messages.at(-1)!.content).toMatchObject(last));
+    };
+    await say("wamid.CWA1", "Oi", { automation: "courier_menu" });
+    await say("wamid.CWA2", "1", { automation: "order_number_request" });
+    await say("wamid.CWA3", "6590", { event: "handoff" });
+
+    const called = await courier();
+    expect(called).toMatchObject({ status: "OPEN", awaitingAgentQuiet: true });
+    expect(called.awaitingAgentSince).not.toBeNull();
+    const contents = called.messages.map((m) => m.content);
+    expect(contents).toContainEqual({ event: "order", orderId: order.id, customerChat: true });
+    expect(contents).toContainEqual({ event: "handoff", text: "Entregador avisou que chegou com o pedido #6590" });
+    expect(contents.some((content) => (content as { automation?: string }).automation === "order_lookup")).toBe(false); // não diz "não encontramos"
+  });
+
   it("entregador avisa que deixou na portaria: o cliente recebe o aviso no chat do iFood do pedido e a conversa do entregador se resolve sozinha", async () => {
     const delivery = await ifoodOrder("6541", "Rita Souza");
     const waId = "5511970000032";
