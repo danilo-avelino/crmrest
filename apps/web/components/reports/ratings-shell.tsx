@@ -39,7 +39,12 @@ const PERIODS: { value: ReportPeriod; label: string }[] = [
 ];
 
 type Ratings = {
-  tenant: Tenant;
+  /** O restaurante escolhido; null = todos juntos. */
+  tenant: Tenant | null;
+  /** O que vai na consulta: o id do restaurante ou "all". */
+  tenantId: string;
+  /** Todos juntos: o nome do restaurante de uma linha. Um só: null (a linha não diz). */
+  restaurantOf: (tenantId: string) => string | null;
   period: ReportPeriod;
   setPeriod: (period: ReportPeriod) => void;
   ifoodPeriod: IfoodReviewPeriod;
@@ -55,18 +60,27 @@ export function useRatings(): Ratings {
   return value;
 }
 
+/** Todos juntos: o restaurante da linha, embaixo do nome do cliente. */
+export function RestaurantName({ tenantId }: { tenantId: string }) {
+  const name = useRatings().restaurantOf(tenantId);
+  return name ? <span className="block truncate text-xs text-ink-3">{name}</span> : null;
+}
+
 /**
  * Avaliações: menu lateral em grupos e, ao lado, a página escolhida, como em Configurações. Só administradores; no
- * painel master, o seletor no topo do menu escolhe o restaurante. Desktop no MVP.
+ * painel master, o seletor no topo do menu escolhe o restaurante ou todos juntos (o padrão com mais de um). Desktop no MVP.
  */
 export function RatingsShell({ children }: { children: ReactNode }) {
   const { session } = useAuth();
   const adminTenants = (session?.context?.tenants ?? []).filter((t) => t.role === "ADMIN");
-  const [tenantId, setTenantId] = useState(() => adminTenants[0]?.id);
+  // null = todos os restaurantes juntos.
+  const [tenantId, setTenantId] = useState<string | null>(() => (adminTenants.length > 1 ? null : (adminTenants[0]?.id ?? null)));
   const [period, setPeriod] = useState<ReportPeriod>("7d");
   const [ifoodPeriod, setIfoodPeriod] = useState<IfoodReviewPeriod>("30d");
-  const tenant = adminTenants.find((t) => t.id === tenantId) ?? adminTenants[0];
-  if (!tenant) return null;
+  if (adminTenants.length === 0) return null;
+  const all = adminTenants.length > 1 && tenantId === null;
+  const tenant = all ? null : (adminTenants.find((t) => t.id === tenantId) ?? adminTenants[0]!);
+  const restaurantOf = (id: string) => (all ? (adminTenants.find((t) => t.id === id)?.name ?? null) : null);
 
   return (
     <div className="flex h-full overflow-hidden bg-paper">
@@ -79,10 +93,11 @@ export function RatingsShell({ children }: { children: ReactNode }) {
         tenants={adminTenants}
         tenant={tenant}
         onTenantChange={setTenantId}
+        onSelectAll={() => setTenantId(null)}
       />
       <main className="min-w-0 flex-1 overflow-y-auto px-8 py-7">
         <div className="max-w-[1072px]">
-          <RatingsContext value={{ tenant, period, setPeriod, ifoodPeriod, setIfoodPeriod }}>{children}</RatingsContext>
+          <RatingsContext value={{ tenant, tenantId: tenant?.id ?? "all", restaurantOf, period, setPeriod, ifoodPeriod, setIfoodPeriod }}>{children}</RatingsContext>
         </div>
       </main>
     </div>
@@ -103,11 +118,11 @@ export function ReportPage({
   children: (data: RatingsReportDto, view: { now: number; hint?: string }) => ReactNode;
 }) {
   const { request } = useAuth();
-  const { tenant, period, setPeriod } = useRatings();
+  const { tenantId, period, setPeriod } = useRatings();
   const now = useNow(60_000);
   const report = useQuery({
-    queryKey: ["ratings-report", tenant.id, period],
-    queryFn: () => request<RatingsReportDto>(`/reports/ratings?tenantId=${tenant.id}&period=${period}`),
+    queryKey: ["ratings-report", tenantId, period],
+    queryFn: () => request<RatingsReportDto>(`/reports/ratings?tenantId=${tenantId}&period=${period}`),
     placeholderData: keepPreviousData,
   });
   return (

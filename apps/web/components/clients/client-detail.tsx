@@ -23,7 +23,7 @@ import { CHANNEL_DOT, StatusBadge } from "@/components/inbox/bits";
 import { Cpf, linkedChannels, Tags } from "@/components/inbox/client-panel";
 import { ORDER_STATUS } from "@/components/inbox/order-card";
 import { ItemOptions } from "@/components/orders/item-options";
-import { evaluationNotes, Pill, ScoreBadge } from "@/components/reports/report-ui";
+import { AiScoreBadge, evaluationNotes, Pill } from "@/components/reports/report-ui";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -563,7 +563,7 @@ function EvaluationLog({ evaluation, now }: { evaluation: ConversationEvaluation
   return (
     <div className="mt-2.5 rounded-lg border border-rule-soft bg-paper px-3 py-2.5">
       <div className="flex flex-wrap items-center gap-2">
-        <ScoreBadge value={evaluation.score} />
+        <AiScoreBadge value={evaluation.score} />
         <span className="text-[12px] font-semibold text-ink">Avaliação da IA</span>
         {evaluation.resolved ? <Pill tone="success">Resolvido</Pill> : <Pill tone="danger">Não resolvido</Pill>}
         {evaluation.satisfied === null ? (

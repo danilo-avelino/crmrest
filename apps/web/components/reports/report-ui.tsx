@@ -1,6 +1,6 @@
 "use client";
 
-import { CHURN_RISK_ALERT, CONTACT_SUBJECTS, type ConversationEvaluationDto, SERVICE_FAULTS, SERVICE_ISSUES } from "@dishdesk/shared";
+import { CHURN_RISK_ALERT, CONTACT_SUBJECTS, type ConversationEvaluationDto, GOOD_AI_SCORE, LOW_AI_SCORE, SERVICE_FAULTS, SERVICE_ISSUES } from "@dishdesk/shared";
 import { AlertTriangleIcon, StarIcon } from "lucide-react";
 import Link from "next/link";
 import { Children, type CSSProperties, type ReactNode } from "react";
@@ -143,6 +143,17 @@ export function ScoreBadge({ value }: { value: number }) {
   return (
     <span className={cn("inline-flex h-6 w-[34px] items-center justify-center rounded-lg text-[12.5px] font-bold tabular-nums", tone)} aria-label={`Nota ${rounded} de 5`}>
       {rounded}
+    </span>
+  );
+}
+
+/** Nota da IA ao atendimento, em porcentagem: verde a partir de GOOD_AI_SCORE, tomate até LOW_AI_SCORE, âmbar entre. */
+export function AiScoreBadge({ value }: { value: number }) {
+  const rounded = Math.round(value);
+  const tone = rounded >= GOOD_AI_SCORE ? PILL.success : rounded > LOW_AI_SCORE ? PILL.warning : PILL.danger;
+  return (
+    <span className={cn("inline-flex h-6 min-w-[46px] items-center justify-center rounded-lg px-1.5 text-[12.5px] font-bold tabular-nums", tone)} aria-label={`Nota ${rounded}%`}>
+      {rounded}%
     </span>
   );
 }

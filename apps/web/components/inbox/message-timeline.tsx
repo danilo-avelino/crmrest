@@ -20,7 +20,7 @@ import { Avatar } from "@/components/inbox/bits";
 import { canForward, ForwardDialog } from "@/components/inbox/forward-dialog";
 import { MessageMedia } from "@/components/inbox/message-media";
 import { OrderCard } from "@/components/inbox/order-card";
-import { evaluationNotes, Pill, ScoreBadge } from "@/components/reports/report-ui";
+import { AiScoreBadge, evaluationNotes, Pill } from "@/components/reports/report-ui";
 import { usePendingAction } from "@/hooks/use-pending-action";
 import { ApiError } from "@/lib/api";
 import { clock, weekdayClock } from "@/lib/format";
@@ -413,7 +413,7 @@ function Evaluation({ evaluation }: { evaluation: ConversationEvaluationDto }) {
   return (
     <div className="mx-auto my-1 w-full max-w-[76%] rounded-2xl border border-rule-soft bg-surface px-4 py-3.5">
       <div className="flex items-center gap-2.5">
-        <ScoreBadge value={evaluation.score} />
+        <AiScoreBadge value={evaluation.score} />
         <span className="text-[13px] font-semibold">Avaliação da IA</span>
         <div className="flex-1" />
         {evaluation.resolved ? <Pill tone="success">Resolvido</Pill> : <Pill tone="danger">Não resolvido</Pill>}

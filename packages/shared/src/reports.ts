@@ -45,6 +45,13 @@ export type ServiceFault = keyof typeof SERVICE_FAULTS;
 /** Chance de perder o cliente a partir da qual o atendimento conta como "em risco". */
 export const CHURN_RISK_ALERT = 0.5;
 
+/**
+ * Nota da IA ao atendimento, em porcentagem (1 a 100): até LOW_AI_SCORE é nota baixa (vermelho, filtro "Notas
+ * baixas", tag Em recuperação); a partir de GOOD_AI_SCORE, boa (verde); entre as duas, âmbar.
+ */
+export const LOW_AI_SCORE = 40;
+export const GOOD_AI_SCORE = 70;
+
 /** Por que a conversa esperou atendente: restaurante fechado, 100% automático ligado ou ninguém online. */
 export type WaitingReason = "closed" | "full_auto" | "offline";
 
@@ -59,6 +66,8 @@ export type IfoodReviewPeriod = (typeof IFOOD_REVIEW_PERIODS)[number];
  */
 export type IfoodReviewDto = {
   id: string;
+  /** Restaurante da loja: a resposta é pedida em nome dele. */
+  tenantId: string;
   /** Canal (loja do iFood) da avaliação: a resposta vai por ele. */
   storeId: string;
   storeName: string;
@@ -100,7 +109,7 @@ export type AgentMetrics = {
   averageResponseSeconds: number | null;
 };
 
-/** Relatório da aba Avaliações (só administradores). */
+/** Relatório da aba Avaliações (só administradores), de um restaurante ou de todos juntos (cada linha diz de qual é). */
 export type RatingsReportDto = {
   /** Toda a equipe; `handoffs` conta também os atendimentos ainda sem resposta. */
   summary: AgentMetrics & { handoffs: number };
@@ -108,7 +117,7 @@ export type RatingsReportDto = {
    * Conversas chamadas (automação passou à equipe ou chegaram fora do horário) que terminaram o dia sem resposta de
    * uma pessoa; uma por conversa e dia (Brasília). No dia de hoje, vale "até agora".
    */
-  unanswered: { conversationId: string; contactName: string | null; calledAt: string; afterHours: boolean }[];
+  unanswered: { tenantId: string; conversationId: string; contactName: string | null; calledAt: string; afterHours: boolean }[];
   /** Clientes com a tag "Em recuperação" agora (não depende do período). */
   recovering: number;
   /** Quantas respostas à pesquisa deram cada nota no período: a posição 0 é a nota 1; a 4, a nota 5. */
@@ -117,6 +126,7 @@ export type RatingsReportDto = {
   agents: (AgentMetrics & { userId: string | null; name: string })[];
   recent: {
     id: string;
+    tenantId: string;
     score: number;
     createdAt: string;
     conversationId: string;
@@ -127,8 +137,9 @@ export type RatingsReportDto = {
   /** Avaliações dos atendimentos pela IA no período; null = restaurante sem o módulo Atendimento com IA. */
   ai: {
     evaluations: number;
+    /** Nota média dos atendimentos, em porcentagem (1 a 100). */
     averageScore: number | null;
-    /** Atendimentos com o problema resolvido; clientes que reagiram e, entre eles, os satisfeitos; notas 1 e 2. */
+    /** Atendimentos com o problema resolvido; clientes que reagiram e, entre eles, os satisfeitos; notas até LOW_AI_SCORE. */
     resolved: number;
     reacted: number;
     satisfied: number;
@@ -157,11 +168,13 @@ export type RatingsReportDto = {
     agents: { userId: string | null; name: string; evaluations: number; averageScore: number | null }[];
     recent: {
       id: string;
+      tenantId: string;
       conversationId: string;
       contactName: string | null;
       /** Quem da equipe respondeu por último; null = só a IA atendeu. */
       userId: string | null;
       agentName: string | null;
+      /** Em porcentagem (1 a 100). */
       score: number;
       resolved: boolean;
       satisfied: boolean | null;
@@ -177,6 +190,7 @@ export type RatingsReportDto = {
     /** Respostas que a revisão da IA bloqueou por má conduta (ofensa, grosseria), com o texto que o atendente escreveu. */
     misconduct: {
       messageId: string;
+      tenantId: string;
       conversationId: string;
       contactName: string | null;
       agentName: string | null;

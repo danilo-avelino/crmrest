@@ -1,7 +1,7 @@
 "use client";
 
 import { count, score } from "@/lib/format";
-import { ReportPage } from "./ratings-shell";
+import { ReportPage, RestaurantName } from "./ratings-shell";
 import { BarRow, Card, ConversationLink, EmptyState, Metric, plural, Row, ScoreBadge, SectionLabel, share, Table, when } from "./report-ui";
 
 /** Avaliações → Pesquisa: as notas que os clientes deram na pesquisa enviada no fim do atendimento. */
@@ -45,7 +45,10 @@ export function Survey() {
             {recent.map((rating) => (
               <Row key={rating.id}>
                 <ScoreBadge value={rating.score} />
-                <b className="block truncate font-semibold">{rating.contactName ?? "Cliente sem nome"}</b>
+                <span className="min-w-0">
+                  <b className="block truncate font-semibold">{rating.contactName ?? "Cliente sem nome"}</b>
+                  <RestaurantName tenantId={rating.tenantId} />
+                </span>
                 {rating.agentName ?? <span className="text-tomate">Sem resposta da equipe</span>}
                 <span className="tabular-nums">{rating.orderCode ? `#${rating.orderCode}` : "—"}</span>
                 <span className="whitespace-nowrap text-ink-2">{when(rating.createdAt, now)}</span>

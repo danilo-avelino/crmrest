@@ -4,7 +4,7 @@ import type { Queue } from "bullmq";
 import request from "supertest";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { orderNumbersIn, periodGreeting } from "../src/ai/ai-attendant.service.js";
-import { AiEvaluationService } from "../src/ai/ai-evaluation.service.js";
+import { AiEvaluationService, scorePercent } from "../src/ai/ai-evaluation.service.js";
 import { AiForwardService } from "../src/ai/ai-forward.service.js";
 import { InactivityService } from "../src/automations/inactivity.service.js";
 import { PresenceService } from "../src/realtime/presence.service.js";
@@ -222,6 +222,7 @@ describe("atendimento com IA: resposta, revisão e avaliação", () => {
       expect(body.ai.misconduct).toEqual([
         {
           messageId: sent.id,
+          tenantId: fx.tenant.id,
           conversationId: id,
           contactName: "Ana Souza",
           agentName: "Atendente Pipeline",
@@ -452,7 +453,7 @@ describe("atendimento com IA: resposta, revisão e avaliação", () => {
     expect(scheduled).toHaveLength(1);
     await scheduled[0]!.remove();
 
-    // A nota vem como a posição na escala (0 a 4, fracionada): 3,6 é a nota 5.
+    // A nota vem como a posição na escala (0 a 4, fracionada) e vira porcentagem: 3,6 é 90%.
     jevAnswers = {
       resolved: { type: "noul", noul: 0.93 },
       satisfaction: { type: "choice", choice: "satisfeito", confidence: 0.9, probabilities: {} },
@@ -472,7 +473,7 @@ describe("atendimento com IA: resposta, revisão e avaliação", () => {
       {
         resolved: true,
         satisfied: true,
-        score: 5,
+        score: 90,
         summary: null,
         teamReason: "atraso",
         // "nada" e "nenhuma" não são gravados: sem problema e sem falha.
@@ -502,6 +503,28 @@ describe("atendimento com IA: resposta, revisão e avaliação", () => {
       .set("Authorization", `Bearer ${token}`)
       .expect(200);
     expect(body.evaluations).toEqual([]);
+  });
+
+  it("avaliação de antes da nota em porcentagem fica de fora da conversa e do relatório", async () => {
+    const { role } = await admin.tenantMember.findFirstOrThrow({ where: { tenantId: fx.tenant.id, userId: fx.user.id } });
+    await admin.tenantMember.updateMany({ where: { tenantId: fx.tenant.id, userId: fx.user.id }, data: { role: "ADMIN" } });
+    onTestFinished(async () => {
+      await admin.tenantMember.updateMany({ where: { tenantId: fx.tenant.id, userId: fx.user.id }, data: { role } });
+    });
+    const adminToken = await accessTokenFor(app, fx.user.email, fx.tenant.id);
+    const { id } = await conversationOf("5511980000001");
+    const legacy = await admin.conversationEvaluation.create({
+      data: { tenantId: fx.tenant.id, conversationId: id, userId: fx.user.id, resolved: false, score: 2, legacy: true, model: "jev" },
+    });
+    onTestFinished(async () => {
+      await admin.conversationEvaluation.delete({ where: { id: legacy.id } });
+    });
+
+    const { body } = await request(app.getHttpServer()).get(`/api/conversations/${id}/messages`).set("Authorization", `Bearer ${adminToken}`).expect(200);
+    // Só a avaliação nova, do teste anterior.
+    expect(body.evaluations.map((row: { id: string; score: number }) => [row.id === legacy.id, row.score])).toEqual([[false, 90]]);
+    const report = (await request(app.getHttpServer()).get(`/api/reports/ratings?tenantId=${fx.tenant.id}&period=today`).set("Authorization", `Bearer ${adminToken}`).expect(200)).body;
+    expect(report.ai.recent.map((row: { id: string }) => row.id)).not.toContain(legacy.id);
   });
 
   it("sem resposta da equipe não chama a IA: só registra, e o atendimento seguinte não relê o anterior", async () => {
@@ -555,7 +578,7 @@ describe("atendimento com IA: resposta, revisão e avaliação", () => {
     await evaluation.evaluate(fx.tenant.id, id);
 
     expect(await admin.conversationEvaluation.findMany({ where: { conversationId: id, userId: fx.user.id } })).toMatchObject([
-      { resolved: false, satisfied: null, score: 3, teamReason: "outro", subject: null, issue: "demora", fault: "operacao", churnRisk: 0.8 },
+      { resolved: false, satisfied: null, score: 50, teamReason: "outro", subject: null, issue: "demora", fault: "operacao", churnRisk: 0.8 },
     ]);
     // Risco de perder o cliente: a tag entra na hora, e o relatório conta.
     const { contact } = await admin.conversation.findUniqueOrThrow({ where: { id }, select: { contact: { select: { tags: true } } } });
@@ -807,5 +830,14 @@ describe("revisão por IA: dados que não podem mudar", () => {
     expect(keepsFacts("ja saiu", "Já saiu! Chega em 10 minutos.")).toBe(false); // dado novo
     expect(keepsFacts("pede por https://loja.exemplo.com/pedir", "Peça por aqui: https://loja.exemplo.com/pedir.")).toBe(true);
     expect(keepsFacts("segue no @restaurante", "Siga a gente no Instagram!")).toBe(false);
+  });
+});
+
+describe("nota da IA em porcentagem", () => {
+  it("o pior nível (atendimento rude) é 1%, o melhor (tudo resolvido, bem atendido) é 100%", () => {
+    expect(scorePercent(0)).toBe(1);
+    expect(scorePercent(2)).toBe(50);
+    expect(scorePercent(4)).toBe(100);
+    expect(scorePercent(3.6)).toBe(90);
   });
 });

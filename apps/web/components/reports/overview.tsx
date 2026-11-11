@@ -1,6 +1,6 @@
 "use client";
 
-import { CONTACT_SUBJECTS, type RatingsReportDto, RECOVERY_TAG, SERVICE_ISSUES, TEAM_REASONS, type WaitingReason } from "@dishdesk/shared";
+import { CONTACT_SUBJECTS, LOW_AI_SCORE, type RatingsReportDto, RECOVERY_TAG, SERVICE_ISSUES, TEAM_REASONS, type WaitingReason } from "@dishdesk/shared";
 import { ArrowRightIcon, CircleCheckIcon, InfoIcon } from "lucide-react";
 import Link from "next/link";
 import { count, score } from "@/lib/format";
@@ -49,8 +49,7 @@ function OverviewBody({ data }: { data: RatingsReportDto }) {
           <>
             <Metric
               label="Nota dos atendimentos"
-              value={ai.averageScore === null ? "—" : score(ai.averageScore)}
-              suffix={ai.averageScore === null ? undefined : "/ 5"}
+              value={ai.averageScore === null ? "—" : `${Math.round(ai.averageScore)}%`}
               detail={`${plural(ai.evaluations, "atendimento avaliado", "atendimentos avaliados")} pela IA`}
             />
             <Metric
@@ -89,7 +88,7 @@ function OverviewBody({ data }: { data: RatingsReportDto }) {
         <div className="mb-6 flex items-start gap-2.5 rounded-[10px] border border-dashed border-rule bg-paper/50 px-3.5 py-3 text-[12.5px] text-ink-2">
           <InfoIcon className="mt-px size-[15px] shrink-0 text-ink-3" aria-hidden />
           <span>
-            A IA lê cada atendimento resolvido em que a equipe respondeu, 5 minutos depois do fim, para pegar a reação do cliente, e dá uma nota de 1 a 5.
+            A IA lê cada atendimento resolvido em que a equipe respondeu, 5 minutos depois do fim, para pegar a reação do cliente, e dá uma nota de 1% (atendimento rude) a 100% (tudo resolvido com um bom atendimento).
             Os atendimentos que a IA resolveu sozinha são contados, mas não recebem nota.
           </span>
         </div>
@@ -175,7 +174,7 @@ function Attention({ data }: { data: RatingsReportDto }) {
     ai && {
       total: ai.lowScores,
       text: plural(ai.lowScores, "atendimento com nota baixa", "atendimentos com nota baixa"),
-      hint: "Nota 1 ou 2 na avaliação da IA.",
+      hint: `Nota de até ${LOW_AI_SCORE}% na avaliação da IA.`,
       href: "/avaliacoes/atendimentos",
     },
     ai && {

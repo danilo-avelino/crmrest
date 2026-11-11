@@ -1,13 +1,13 @@
 "use client";
 
-import { CHURN_RISK_ALERT, CONTACT_SUBJECTS, type RatingsReportDto, SERVICE_FAULTS, SERVICE_ISSUES } from "@dishdesk/shared";
+import { CHURN_RISK_ALERT, CONTACT_SUBJECTS, LOW_AI_SCORE, type RatingsReportDto, SERVICE_FAULTS, SERVICE_ISSUES } from "@dishdesk/shared";
 import { CheckIcon, ChevronDownIcon, SparklesIcon } from "lucide-react";
 import { useState } from "react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { count } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { ReportPage } from "./ratings-shell";
-import { Card, Chip, ConversationLink, EmptyState, percent, Pill, Row, ScoreBadge, Table, when } from "./report-ui";
+import { ReportPage, RestaurantName } from "./ratings-shell";
+import { AiScoreBadge, Card, Chip, ConversationLink, EmptyState, percent, Pill, Row, Table, when } from "./report-ui";
 
 type Ai = NonNullable<RatingsReportDto["ai"]>;
 type Filter = "all" | "low" | "unresolved" | "unsatisfied" | "risk";
@@ -54,7 +54,7 @@ function Evaluations({ ai, now, hint }: { ai: Ai; now: number; hint?: string }) 
     (evaluation) =>
       (agent === undefined || evaluation.userId === agent) &&
       (filter === "all" ||
-        (filter === "low" && evaluation.score <= 2) ||
+        (filter === "low" && evaluation.score <= LOW_AI_SCORE) ||
         (filter === "unresolved" && !evaluation.resolved) ||
         (filter === "unsatisfied" && evaluation.satisfied === false) ||
         (filter === "risk" && (evaluation.churnRisk ?? 0) >= CHURN_RISK_ALERT)),
@@ -93,7 +93,7 @@ function Evaluations({ ai, now, hint }: { ai: Ai; now: number; hint?: string }) 
         </span>
       </div>
       <Table
-        cols="44px minmax(0,1.1fr) minmax(0,1.1fr) minmax(0,1.2fr) minmax(0,1fr) 76px 96px 56px 100px"
+        cols="52px minmax(0,1.1fr) minmax(0,1.1fr) minmax(0,1.2fr) minmax(0,1fr) 76px 96px 56px 100px"
         head={["Nota", "Cliente", "Assunto", "O que deu errado", "Quem atendeu", "Resolvido", "Reação", "Risco", ""]}
         empty={
           <EmptyState
@@ -104,10 +104,11 @@ function Evaluations({ ai, now, hint }: { ai: Ai; now: number; hint?: string }) 
       >
         {shown.map((evaluation) => (
           <Row key={evaluation.id}>
-            <ScoreBadge value={evaluation.score} />
+            <AiScoreBadge value={evaluation.score} />
             <span>
               <b className="block truncate font-semibold">{evaluation.contactName ?? "Cliente sem nome"}</b>
               <span className="block text-xs whitespace-nowrap text-ink-3">{when(evaluation.createdAt, now)}</span>
+              <RestaurantName tenantId={evaluation.tenantId} />
             </span>
             <span className="text-ink-2">{evaluation.subject ? CONTACT_SUBJECTS[evaluation.subject] : "—"}</span>
             {evaluation.issue || evaluation.fault ? (

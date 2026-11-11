@@ -34,6 +34,7 @@ const dayMonth = new Intl.DateTimeFormat("pt-BR", { day: "numeric", month: "shor
  * Avaliações das lojas do iFood (lidas do iFood a cada consulta): números do período no topo e cada avaliação num
  * cartão. As que aguardam resposta (nota abaixo de 5 com comentário, por até 5 dias) abrem a resposta ao clicar.
  */
+/** `tenantId`: o restaurante ou "all" (as lojas de todos juntas). */
 export function IfoodReviews({ tenantId, period }: { tenantId: string; period: IfoodReviewPeriod }) {
   const { request } = useAuth();
   const [filter, setFilter] = useState<Filter>("all");
@@ -149,7 +150,7 @@ export function IfoodReviews({ tenantId, period }: { tenantId: string; period: I
           ) : (
             <div className="flex flex-col gap-3">
               {shown.map((review) => (
-                <ReviewBox key={`${review.storeId}-${review.id}`} review={review} tenantId={tenantId} showStore={manyStores} now={now} />
+                <ReviewBox key={`${review.storeId}-${review.id}`} review={review} showStore={manyStores} now={now} />
               ))}
             </div>
           )}
@@ -208,7 +209,7 @@ function TopAnswers({ reviews }: { reviews: IfoodReviewDto[] }) {
 }
 
 /** Uma avaliação. Aguardando resposta: clicar no cartão abre o campo de resposta. */
-function ReviewBox({ review, tenantId, showStore, now }: { review: IfoodReviewDto; tenantId: string; showStore: boolean; now: number }) {
+function ReviewBox({ review, showStore, now }: { review: IfoodReviewDto; showStore: boolean; now: number }) {
   const { request } = useAuth();
   const queryClient = useQueryClient();
   const fieldId = useId();
@@ -226,13 +227,13 @@ function ReviewBox({ review, tenantId, showStore, now }: { review: IfoodReviewDt
   const send = async () => {
     setError(null);
     try {
-      await request(`/reports/ifood-reviews/${review.storeId}/${encodeURIComponent(review.id)}/answer?tenantId=${tenantId}`, {
+      await request(`/reports/ifood-reviews/${review.storeId}/${encodeURIComponent(review.id)}/answer?tenantId=${review.tenantId}`, {
         method: "POST",
         body: { text: text.trim() },
       });
       setSent(text.trim());
       setOpen(false);
-      void queryClient.invalidateQueries({ queryKey: ["ifood-reviews", tenantId] });
+      void queryClient.invalidateQueries({ queryKey: ["ifood-reviews"] });
     } catch (failure) {
       setError(failure instanceof ApiError ? failure.message : "Não foi possível enviar ao iFood.");
     }

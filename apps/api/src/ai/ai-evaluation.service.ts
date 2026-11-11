@@ -17,14 +17,22 @@ const TRANSCRIPT_LIMIT = 80;
 const READING_GUIDE =
   'Conversa de um restaurante com um cliente. "Restaurante (automação)" são mensagens automáticas; "(IA)", do atendente virtual; "(atendente)", de uma pessoa da equipe. Cada linha começa com o horário.';
 
-/** Do pior para o melhor: a posição na escala mais 1 é a nota. */
+/**
+ * Do pior para o melhor. O Jev devolve a posição na escala (fracionada), que vira a nota em porcentagem: o primeiro
+ * nível é 1%, o último 100%, e os do meio, 25%, 50% e 75%.
+ */
 const SCORE_LEVELS = [
-  "1: cliente muito insatisfeito ou atendimento ruim (grosseria, informação errada, cliente sem resposta).",
-  "2: não resolvido ou cliente insatisfeito.",
-  "3: resolvido em parte, demorado ou não dá para saber.",
-  "4: resolvido, sem sinal de insatisfação.",
-  "5: resolvido e cliente satisfeito.",
+  "Atendimento rude ou grosseiro: o restaurante ofendeu, debochou ou tratou o cliente com desrespeito.",
+  "Cliente mal atendido: ficou sem resposta, recebeu informação errada ou foi tratado com descaso.",
+  "Atendimento educado, mas o restaurante não resolveu nem encaminhou o que o cliente pediu.",
+  "Atendimento educado que resolveu, mas com alguma falha: demora para responder ou resposta incompleta.",
+  "Tudo resolvido com um bom atendimento: educado, correto e sem demora.",
 ];
+
+/** A posição na escala (0 até o último nível) em porcentagem, de 1 a 100. */
+export function scorePercent(position: number): number {
+  return Math.min(100, Math.max(1, Math.round((position / (SCORE_LEVELS.length - 1)) * 100)));
+}
 
 const SATISFACTION = {
   satisfeito: "O cliente mostrou satisfação: agradeceu, elogiou ou deu nota alta.",
@@ -72,7 +80,12 @@ const FAULT_CRITERIA: Record<ServiceFault | "nenhuma", string> = {
 export const EVALUATION_QUESTIONS = {
   resolved: { type: "noul", instructions: "O pedido ou o problema do cliente foi resolvido ou respondido?" },
   satisfaction: { type: "choice", instructions: "Como o cliente reagiu ao atendimento?", criteria: SATISFACTION },
-  score: { type: "score", instructions: "Que nota o atendimento merece, pela reação do cliente? Seja justo e objetivo.", criteria: SCORE_LEVELS },
+  score: {
+    type: "score",
+    instructions:
+      "Que nota o atendimento do restaurante merece? Julgue só como o restaurante atendeu: a educação, se respondeu certo e se resolveu o que o cliente pediu. Atraso ou erro da cozinha e da entrega não baixam a nota se o atendimento cuidou bem do cliente, e o cliente parar de responder depois de atendido também não.",
+    criteria: SCORE_LEVELS,
+  },
   teamReason: { type: "choice", instructions: "Qual o principal motivo de o atendimento precisar da equipe?", criteria: TEAM_REASON_CRITERIA },
   subject: { type: "choice", instructions: "Qual o principal assunto do contato do cliente?", criteria: SUBJECT_CRITERIA },
   issue: { type: "choice", instructions: "O que deu errado no atendimento, olhando só a conversa?", criteria: ISSUE_CRITERIA },
@@ -150,7 +163,7 @@ export class AiEvaluationService {
     const data = {
       resolved: resolved.noul >= 0.5,
       satisfied: reaction === "satisfeito" ? true : reaction === "insatisfeito" ? false : null,
-      score: Math.min(5, Math.max(1, Math.round(score.score) + 1)),
+      score: scorePercent(score.score),
       teamReason: reason,
       subject: choice(subject, SUBJECT_CRITERIA),
       issue: choice(issue, ISSUE_CRITERIA, "nada"),

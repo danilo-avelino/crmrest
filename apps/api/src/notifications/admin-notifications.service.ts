@@ -79,7 +79,7 @@ export function weeklyReportText(restaurant: string, conversations: number, repo
   }
 
   const ratings = summary.averageScore !== null ? `• Clientes: *${number(summary.averageScore)}* de 5 (${number(summary.ratings)} ${summary.ratings === 1 ? "nota" : "notas"})` : null;
-  const aiScore = ai?.averageScore != null ? `• IA: *${number(ai.averageScore)}* de 5 (${number(ai.evaluations)} ${ai.evaluations === 1 ? "atendimento" : "atendimentos"})` : null;
+  const aiScore = ai?.averageScore != null ? `• IA: *${Math.round(ai.averageScore)}%* (${number(ai.evaluations)} ${ai.evaluations === 1 ? "atendimento" : "atendimentos"})` : null;
   const resolved = ai?.evaluations ? `• ✅ *${percent(ai.resolved, ai.evaluations)}%* dos problemas resolvidos` : null;
   if (ratings || aiScore || resolved) lines.push("", "⭐ *AVALIAÇÕES*", ...[ratings, aiScore, resolved].filter((line) => line !== null));
 
@@ -168,7 +168,7 @@ export class AdminNotificationsService implements OnModuleInit {
     const settings = adminNotificationsOf(tenant.settings);
     // Pausado: o relatório automático não sai (o de teste, pedido pelo botão, sai).
     if (!test && (!settings.weeklyReport || pausedOf(tenant.settings))) return 0;
-    const report = await this.reports.report(scope, tenantId, from);
+    const report = await this.reports.report(scope, [tenantId], from);
     return this.enqueue(tenantId, weeklyReportText(tenant.name, tenant.conversations, report, from, now), test);
   }
 

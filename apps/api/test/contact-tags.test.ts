@@ -122,7 +122,7 @@ describe("tags automáticas dos clientes", () => {
   });
 
   it("Em recuperação: entra com o atendimento ruim na avaliação da IA e sai com o pedido seguinte", async () => {
-    const evaluate = (contactId: string, data: { score: number; satisfied?: boolean; churnRisk?: number }, createdAt: Date) =>
+    const evaluate = (contactId: string, data: { score: number; satisfied?: boolean; churnRisk?: number; legacy?: boolean }, createdAt: Date) =>
       chat(contactId).then((conversation) =>
         admin.conversationEvaluation.create({
           data: { tenantId: fx.tenant.id, conversationId: conversation.id, resolved: true, model: "jev", createdAt, ...data },
@@ -130,18 +130,21 @@ describe("tags automáticas dos clientes", () => {
       );
     const notaBaixa = await contact("Nota baixa");
     await order(notaBaixa.id, daysAgo(45));
-    await evaluate(notaBaixa.id, { score: 2 }, daysAgo(3));
+    await evaluate(notaBaixa.id, { score: 35 }, daysAgo(3));
     const emRisco = await contact("Em risco"); // nunca pediu
-    await evaluate(emRisco.id, { score: 4, churnRisk: 0.7 }, daysAgo(3));
+    await evaluate(emRisco.id, { score: 75, churnRisk: 0.7 }, daysAgo(3));
     const reclamou = await contact("Reclamou");
-    await evaluate(reclamou.id, { score: 3, satisfied: false }, daysAgo(3));
+    await evaluate(reclamou.id, { score: 50, satisfied: false }, daysAgo(3));
     const tranquilo = await contact("Tranquilo");
-    await evaluate(tranquilo.id, { score: 4, satisfied: true, churnRisk: 0.2 }, daysAgo(3));
+    await evaluate(tranquilo.id, { score: 75, satisfied: true, churnRisk: 0.2 }, daysAgo(3));
     // Já voltou a pedir depois do atendimento ruim.
     const voltou = await contact("Voltou");
     await order(voltou.id, daysAgo(45));
-    await evaluate(voltou.id, { score: 1, satisfied: false }, daysAgo(40));
+    await evaluate(voltou.id, { score: 10, satisfied: false }, daysAgo(40));
     await order(voltou.id, daysAgo(35));
+    // Avaliação de antes da nota em porcentagem (1 a 5): ignorada.
+    const antiga = await contact("Avaliação antiga");
+    await evaluate(antiga.id, { score: 2, satisfied: false, legacy: true }, daysAgo(3));
 
     await refresh();
     expect(await tagsOf(notaBaixa.id)).toEqual(["Em recuperação"]);
@@ -149,6 +152,7 @@ describe("tags automáticas dos clientes", () => {
     expect(await tagsOf(reclamou.id)).toEqual(["Em recuperação"]);
     expect(await tagsOf(tranquilo.id)).toEqual([]);
     expect(await tagsOf(voltou.id)).toEqual([]);
+    expect(await tagsOf(antiga.id)).toEqual([]);
 
     // Pedido cancelado não conta como volta; o pedido feito, sim.
     await order(notaBaixa.id, daysAgo(1), "CANCELED");

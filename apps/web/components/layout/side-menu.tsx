@@ -23,6 +23,7 @@ export function SideMenu({
   tenants,
   tenant,
   onTenantChange,
+  onSelectAll,
 }: {
   title: string;
   /** Nome do menu para leitores de tela. */
@@ -30,8 +31,11 @@ export function SideMenu({
   root: string;
   nav: SideMenuGroup[];
   tenants: Tenant[];
-  tenant: Tenant;
+  /** null = todos os restaurantes (só com `onSelectAll`). */
+  tenant: Tenant | null;
   onTenantChange: (tenantId: string) => void;
+  /** Oferece "Todos os restaurantes" no seletor. */
+  onSelectAll?: () => void;
 }) {
   const pathname = usePathname();
   return (
@@ -40,10 +44,10 @@ export function SideMenu({
         <p className="font-heading text-[21px] font-bold tracking-[-0.3px]">{title}</p>
         {tenants.length > 1 ? (
           <div className="mt-2.5">
-            <TenantPicker tenants={tenants} tenant={tenant} onChange={onTenantChange} />
+            <TenantPicker tenants={tenants} tenant={tenant} onChange={onTenantChange} onSelectAll={onSelectAll} />
           </div>
         ) : (
-          <p className="mt-[3px] truncate text-[12px] text-ink-3">{tenant.name}</p>
+          <p className="mt-[3px] truncate text-[12px] text-ink-3">{tenant?.name}</p>
         )}
       </div>
       <nav aria-label={label} className="pb-5">

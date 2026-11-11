@@ -2,6 +2,7 @@ import {
   type AgentMetrics,
   CHURN_RISK_ALERT,
   CONTACT_SUBJECTS,
+  LOW_AI_SCORE,
   type ContactSubject,
   type MessageContent,
   type RatingsReportDto,
@@ -18,14 +19,15 @@ import { Injectable } from "@nestjs/common";
 import type { RequestAuth } from "../auth/auth.decorators.js";
 import { localDate } from "../automations/automation.js";
 import { DatabaseService } from "../core/database.service.js";
-import { adminScope } from "../settings/tenant-admin.js";
+import { adminScopeOf } from "../settings/tenant-admin.js";
 
 const DAY = 24 * 60 * 60 * 1000;
 
 type HandoffRow = { handed_at: Date; replied_at: Date | null; user_id: string | null };
-type UnansweredRow = { conversation_id: string; called_at: Date; after_hours: boolean; contact_name: string | null };
+type UnansweredRow = { tenant_id: string; conversation_id: string; called_at: Date; after_hours: boolean; contact_name: string | null };
 type RatingRow = {
   id: string;
+  tenant_id: string;
   score: number;
   created_at: Date;
   conversation_id: string;
@@ -44,12 +46,14 @@ type WaitingRow = { reason: string; total: number };
 export class ReportsService {
   constructor(private readonly db: DatabaseService) {}
 
+  /** `tenantId` = "all": os restaurantes juntos, cada linha com o restaurante dela. */
   async ratings(auth: RequestAuth, tenantId: string, period: ReportPeriod, now = new Date()): Promise<RatingsReportDto> {
-    return this.report(adminScope(auth, tenantId), tenantId, periodStart(period, now));
+    const scope = adminScopeOf(auth, tenantId);
+    return this.report(scope, scope.tenantIds, periodStart(period, now));
   }
 
   /** O relatório desde `from`, sem conferir quem pede (também o relatório semanal pelo WhatsApp). */
-  report(scope: TenantScope, tenantId: string, from: Date): Promise<RatingsReportDto> {
+  report(scope: TenantScope, tenantIds: string[], from: Date): Promise<RatingsReportDto> {
     return this.db.withTenants(scope, async (tx) => {
       // Cada passagem à equipe e a primeira resposta de uma pessoa depois dela (antes da próxima passagem na conversa).
       const handoffs = await tx.$queryRaw<HandoffRow[]>`
@@ -68,11 +72,11 @@ export class ReportsService {
           ORDER BY m.created_at
           LIMIT 1
         ) r ON true
-        WHERE h.tenant_id = ${tenantId}::uuid AND h.type = 'SYSTEM' AND h.content->>'event' = 'handoff' AND h.created_at >= ${from}`;
+        WHERE h.tenant_id = ANY(${tenantIds}::uuid[]) AND h.type = 'SYSTEM' AND h.content->>'event' = 'handoff' AND h.created_at >= ${from}`;
 
       // Cada nota e quem respondeu por último antes dela, no mesmo atendimento (depois da última passagem à equipe).
       const ratings = await tx.$queryRaw<RatingRow[]>`
-        SELECT r.id, r.score, r.created_at, r.conversation_id, c.name AS contact_name, o.display_code AS order_code,
+        SELECT r.id, r.tenant_id, r.score, r.created_at, r.conversation_id, c.name AS contact_name, o.display_code AS order_code,
                a.sent_by_user_id AS user_id
         FROM ratings r
         JOIN conversations cv ON cv.id = r.conversation_id
@@ -91,21 +95,21 @@ export class ReportsService {
           ORDER BY m.created_at DESC
           LIMIT 1
         ) a ON true
-        WHERE r.tenant_id = ${tenantId}::uuid AND r.created_at >= ${from}
+        WHERE r.tenant_id = ANY(${tenantIds}::uuid[]) AND r.created_at >= ${from}
         ORDER BY r.created_at DESC`;
 
       // Chamadas sem resposta humana até o fim do dia (Brasília): uma por conversa e dia, a primeira chamada do dia.
       const unanswered = await tx.$queryRaw<UnansweredRow[]>`
         WITH calls AS (
-          SELECT e.conversation_id, e.created_at, e.direction = 'OUTBOUND' AS after_hours,
+          SELECT e.tenant_id, e.conversation_id, e.created_at, e.direction = 'OUTBOUND' AS after_hours,
                  (date_trunc('day', e.created_at AT TIME ZONE 'America/Sao_Paulo') + interval '1 day') AT TIME ZONE 'America/Sao_Paulo' AS day_end
           FROM messages e
-          WHERE e.tenant_id = ${tenantId}::uuid AND e.created_at >= ${from}
+          WHERE e.tenant_id = ANY(${tenantIds}::uuid[]) AND e.created_at >= ${from}
             AND ((e.type = 'SYSTEM' AND e.content->>'event' = 'handoff')
               OR (e.direction = 'OUTBOUND' AND e.content->>'automation' = 'after_hours'))
         )
         SELECT DISTINCT ON (c.conversation_id, c.day_end)
-               c.conversation_id, c.created_at AS called_at, c.after_hours, ct.name AS contact_name
+               c.tenant_id, c.conversation_id, c.created_at AS called_at, c.after_hours, ct.name AS contact_name
         FROM calls c
         JOIN conversations cv ON cv.id = c.conversation_id
         JOIN contacts ct ON ct.id = cv.contact_id
@@ -117,23 +121,27 @@ export class ReportsService {
         ORDER BY c.conversation_id, c.day_end, c.created_at`;
 
       // Avaliações da IA (módulo Atendimento com IA): a nota vai para quem da equipe respondeu por último.
-      const aiModule = await tx.tenantModule.findUnique({ where: { tenantId_module: { tenantId, module: "AI" } }, select: { id: true } });
+      // Juntos, os números da IA vêm só dos restaurantes com o módulo.
+      const aiTenantIds = (await tx.tenantModule.findMany({ where: { tenantId: { in: tenantIds }, module: "AI" }, select: { tenantId: true } })).map(
+        (row) => row.tenantId,
+      );
+      const aiModule = aiTenantIds.length > 0;
       const evaluations = aiModule
         ? await tx.conversationEvaluation.findMany({
-            where: { tenantId, createdAt: { gte: from } },
+            where: { tenantId: { in: aiTenantIds }, legacy: false, createdAt: { gte: from } },
             orderBy: { createdAt: "desc" },
             include: { conversation: { select: { contact: { select: { name: true } } } } },
           })
         : [];
       // Atendimentos sem resposta da equipe: não passam pela avaliação, só contam.
-      const aiOnlyAttendances = aiModule ? await tx.aiOnlyAttendance.count({ where: { tenantId, createdAt: { gte: from } } }) : 0;
+      const aiOnlyAttendances = aiModule ? await tx.aiOnlyAttendance.count({ where: { tenantId: { in: aiTenantIds }, createdAt: { gte: from } } }) : 0;
       // Respostas bloqueadas pela revisão da IA por má conduta.
       const misconduct = aiModule
         ? await tx.message.findMany({
-            where: { tenantId, createdAt: { gte: from }, content: { path: ["aiReview"], equals: "blocked" } },
+            where: { tenantId: { in: aiTenantIds }, createdAt: { gte: from }, content: { path: ["aiReview"], equals: "blocked" } },
             orderBy: { createdAt: "desc" },
             take: 50,
-            select: { id: true, conversationId: true, content: true, sentByUserId: true, createdAt: true, conversation: { select: { contact: { select: { name: true } } } } },
+            select: { id: true, tenantId: true, conversationId: true, content: true, sentByUserId: true, createdAt: true, conversation: { select: { contact: { select: { name: true } } } } },
           })
         : [];
       // Revisão automática: respostas de cada atendente reescritas pela IA e mantidas.
@@ -141,13 +149,13 @@ export class ReportsService {
         ? await tx.$queryRaw<ReviewRow[]>`
             SELECT sent_by_user_id AS user_id, content->>'aiReview' AS review, count(*)::int AS total
             FROM messages
-            WHERE tenant_id = ${tenantId}::uuid AND created_at >= ${from} AND sent_by_user_id IS NOT NULL
+            WHERE tenant_id = ANY(${aiTenantIds}::uuid[]) AND created_at >= ${from} AND sent_by_user_id IS NOT NULL
               AND content->>'aiReview' IN ('rewritten', 'kept')
             GROUP BY 1, 2`
         : [];
       const rewriteExample = aiModule
         ? await tx.message.findFirst({
-            where: { tenantId, createdAt: { gte: from }, content: { path: ["aiReview"], equals: "rewritten" } },
+            where: { tenantId: { in: aiTenantIds }, createdAt: { gte: from }, content: { path: ["aiReview"], equals: "rewritten" } },
             orderBy: { createdAt: "desc" },
             select: { content: true, sentByUserId: true, createdAt: true },
           })
@@ -157,12 +165,12 @@ export class ReportsService {
         ? await tx.$queryRaw<WaitingRow[]>`
             SELECT content->>'waitingReason' AS reason, count(*)::int AS total
             FROM messages
-            WHERE tenant_id = ${tenantId}::uuid AND created_at >= ${from} AND type = 'SYSTEM'
+            WHERE tenant_id = ANY(${aiTenantIds}::uuid[]) AND created_at >= ${from} AND type = 'SYSTEM'
               AND content->>'event' = 'awaiting_agent' AND content->>'waitingReason' IS NOT NULL
             GROUP BY 1`
         : [];
 
-      const recovering = await tx.contact.count({ where: { tenantId, deletedAt: null, tags: { has: RECOVERY_TAG } } });
+      const recovering = await tx.contact.count({ where: { tenantId: { in: tenantIds }, deletedAt: null, tags: { has: RECOVERY_TAG } } });
       // Quantas avaliações caem em cada valor de um campo, do mais comum ao menos.
       const tally = <K extends string>(keys: Record<K, string>, field: "subject" | "issue") =>
         (Object.keys(keys) as K[])
@@ -182,7 +190,7 @@ export class ReportsService {
         ),
       ];
       const members = await tx.tenantMember.findMany({
-        where: { tenantId, userId: { in: userIds } },
+        where: { tenantId: { in: tenantIds }, userId: { in: userIds } },
         select: { user: { select: { id: true, name: true } } },
       });
       const names = new Map(members.map((member) => [member.user.id, member.user.name]));
@@ -208,6 +216,7 @@ export class ReportsService {
         unanswered: unanswered
           .sort((a, b) => b.called_at.getTime() - a.called_at.getTime())
           .map((row) => ({
+            tenantId: row.tenant_id,
             conversationId: row.conversation_id,
             contactName: row.contact_name,
             calledAt: row.called_at.toISOString(),
@@ -215,6 +224,7 @@ export class ReportsService {
           })),
         recent: ratings.slice(0, 50).map((row) => ({
           id: row.id,
+          tenantId: row.tenant_id,
           score: row.score,
           createdAt: row.created_at.toISOString(),
           conversationId: row.conversation_id,
@@ -228,7 +238,7 @@ export class ReportsService {
               resolved: evaluations.filter((row) => row.resolved).length,
               reacted: evaluations.filter((row) => row.satisfied !== null).length,
               satisfied: evaluations.filter((row) => row.satisfied).length,
-              lowScores: evaluations.filter((row) => row.score <= 2).length,
+              lowScores: evaluations.filter((row) => row.score <= LOW_AI_SCORE).length,
               onlyAi: aiOnlyAttendances + evaluations.filter((row) => row.userId === null).length,
               withTeam: evaluations.filter((row) => row.userId !== null).length,
               teamReasons: Object.keys(TEAM_REASONS)
@@ -267,6 +277,7 @@ export class ReportsService {
                 .sort((a, b) => (a.userId === null ? 1 : b.userId === null ? -1 : a.name.localeCompare(b.name, "pt-BR"))),
               recent: evaluations.slice(0, 50).map((row) => ({
                 id: row.id,
+                tenantId: row.tenantId,
                 conversationId: row.conversationId,
                 contactName: row.conversation.contact.name,
                 userId: row.userId,
@@ -285,6 +296,7 @@ export class ReportsService {
                 const content = row.content as MessageContent;
                 return {
                   messageId: row.id,
+                  tenantId: row.tenantId,
                   conversationId: row.conversationId,
                   contactName: row.conversation.contact.name,
                   agentName: nameOf(row.sentByUserId),

@@ -129,6 +129,7 @@ describe("aba Avaliações → iFood: avaliações das lojas e a resposta da loj
     expect(body.reviews.map((r: { id: string }) => r.id)).toEqual(["r-negativa", "r-respondida"]);
     const [negative, replied] = body.reviews;
     expect(negative).toMatchObject({
+      tenantId: fx.tenant.id,
       storeId: fx.ifood.id,
       score: 2,
       comment: "Chegou frio",
@@ -143,6 +144,9 @@ describe("aba Avaliações → iFood: avaliações das lojas e a resposta da loj
     expect(ifood.state.queries.at(-1)).toContain("pageSize=50");
 
     expect((await list("90d").expect(200)).body.reviews).toHaveLength(3);
+    // Todos os restaurantes: as lojas de cada um que a pessoa administra (aqui, um só).
+    const all = await request(app.getHttpServer()).get("/api/reports/ifood-reviews?tenantId=all&period=30d").set("Authorization", `Bearer ${token}`).expect(200);
+    expect(all.body.reviews.map((r: { id: string }) => r.id)).toEqual(["r-negativa", "r-respondida"]);
   });
 
   it("lê todas as páginas da loja", async () => {

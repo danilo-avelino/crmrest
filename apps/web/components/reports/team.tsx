@@ -4,8 +4,8 @@ import type { RatingsReportDto } from "@dishdesk/shared";
 import { AlertTriangleIcon, InfoIcon, ShieldCheckIcon } from "lucide-react";
 import { count, score } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { ReportPage } from "./ratings-shell";
-import { Card, ConversationLink, EmptyState, Metric, Pill, plural, Row, ScoreBadge, SectionLabel, share, Table, when } from "./report-ui";
+import { ReportPage, RestaurantName } from "./ratings-shell";
+import { AiScoreBadge, Card, ConversationLink, EmptyState, Metric, Pill, plural, Row, ScoreBadge, SectionLabel, share, Table, when } from "./report-ui";
 
 type Ai = NonNullable<RatingsReportDto["ai"]>;
 
@@ -77,7 +77,7 @@ function TeamBody({ data, now, hint }: { data: RatingsReportDto; now: number; hi
         {rows.map(({ userId, name, team, evaluated, review }) => (
           <Row key={userId ?? "none"}>
             <span className={cn("block truncate", userId === null && "text-ink-2")}>{name}</span>
-            {ai && <CountedScore value={evaluated?.averageScore ?? null} total={evaluated?.evaluations ?? 0} />}
+            {ai && <CountedScore value={evaluated?.averageScore ?? null} total={evaluated?.evaluations ?? 0} ai />}
             <CountedScore value={team?.averageScore ?? null} total={team?.ratings ?? 0} />
             <span className="tabular-nums">{team ? count(team.answered) : "—"}</span>
             <span className="tabular-nums">{team?.averageResponseSeconds == null ? "—" : responseShort(team.averageResponseSeconds)}</span>
@@ -129,7 +129,10 @@ function TeamBody({ data, now, hint }: { data: RatingsReportDto; now: number; hi
       >
         {unanswered.slice(0, 50).map((item) => (
           <Row key={`${item.conversationId}-${item.calledAt}`}>
-            <span className="block truncate">{item.contactName ?? "Cliente sem nome"}</span>
+            <span className="min-w-0">
+              <span className="block truncate">{item.contactName ?? "Cliente sem nome"}</span>
+              <RestaurantName tenantId={item.tenantId} />
+            </span>
             <span className="whitespace-nowrap">{when(item.calledAt, now)}</span>
             {item.afterHours ? <Pill tone="neutral">Chegou fora do horário</Pill> : <Pill tone="warning">Passado à equipe pela automação</Pill>}
             <ConversationLink id={item.conversationId} />
@@ -140,13 +143,19 @@ function TeamBody({ data, now, hint }: { data: RatingsReportDto; now: number; hi
   );
 }
 
-/** Nota média com o número de avaliações que a formam: "4,6 · 12". */
-function CountedScore({ value, total }: { value: number | null; total: number }) {
+/** Nota média com o número de avaliações que a formam: "4,6 · 12", ou "87% · 12" na nota da IA (`ai`). */
+function CountedScore({ value, total, ai = false }: { value: number | null; total: number; ai?: boolean }) {
   if (value === null) return <span className="text-ink-3">—</span>;
   return (
     <span className="inline-flex items-center gap-2 tabular-nums">
-      <ScoreBadge value={value} />
-      {score(value)}
+      {ai ? (
+        <AiScoreBadge value={value} />
+      ) : (
+        <>
+          <ScoreBadge value={value} />
+          {score(value)}
+        </>
+      )}
       <span className="text-ink-3">· {count(total)}</span>
     </span>
   );
@@ -193,7 +202,8 @@ function Misconduct({ alerts, now }: { alerts: Ai["misconduct"]; now: number }) 
               {alert.agentName ?? "Ex-atendente"}
             </div>
             <div role="cell" className="min-w-0 truncate">
-              {alert.contactName ?? "Cliente sem nome"}
+              <span className="block truncate">{alert.contactName ?? "Cliente sem nome"}</span>
+              <RestaurantName tenantId={alert.tenantId} />
             </div>
             <div role="cell" className="font-heading text-sm whitespace-pre-wrap">
               “{alert.original}”

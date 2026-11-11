@@ -6,8 +6,10 @@ import { ZodPipe } from "../common/zod.pipe.js";
 import { IfoodReviewsService } from "./ifood-reviews.service.js";
 import { ReportsService } from "./reports.service.js";
 
-const RatingsQuery = z.object({ tenantId: z.uuid(), period: z.enum(REPORT_PERIODS).default("7d") });
-const IfoodReviewsQuery = z.object({ tenantId: z.uuid(), period: z.enum(IFOOD_REVIEW_PERIODS).default("30d") });
+/** `all`: todos os restaurantes em que quem pede é administrador. */
+const TenantChoice = z.union([z.uuid(), z.literal("all")]);
+const RatingsQuery = z.object({ tenantId: TenantChoice, period: z.enum(REPORT_PERIODS).default("7d") });
+const IfoodReviewsQuery = z.object({ tenantId: TenantChoice, period: z.enum(IFOOD_REVIEW_PERIODS).default("30d") });
 const TenantQuery = z.object({ tenantId: z.uuid() });
 
 /** Relatórios do restaurante (só administradores). */

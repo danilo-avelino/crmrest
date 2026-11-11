@@ -26,3 +26,14 @@ export function adminScope(auth: RequestAuth, tenantId: string) {
   requireTenantAdmin(auth, tenantId);
   return { tenantIds: [tenantId], userId: auth.userId };
 }
+
+/**
+ * Como `adminScope`, aceitando `"all"`: todos os restaurantes do contexto em que quem pede é administrador (relatórios
+ * do painel master). Sem nenhum, recusa.
+ */
+export function adminScopeOf(auth: RequestAuth, choice: string) {
+  if (choice !== "all") return adminScope(auth, choice);
+  const tenantIds = auth.scope.tenantIds.filter((tenantId) => isTenantAdmin(auth, tenantId));
+  if (tenantIds.length === 0) throw new ForbiddenException("Só o administrador do restaurante vê os relatórios.");
+  return { tenantIds, userId: auth.userId };
+}

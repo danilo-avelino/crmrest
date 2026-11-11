@@ -109,6 +109,7 @@ export type ConversationEvaluationDto = {
   resolved: boolean;
   /** null = o cliente não reagiu. */
   satisfied: boolean | null;
+  /** Nota em porcentagem (1 a 100). */
   score: number;
   /** Só nas avaliações antigas (feitas pela LLM); as do Jev não têm resumo. */
   summary: string | null;

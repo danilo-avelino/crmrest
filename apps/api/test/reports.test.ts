@@ -120,4 +120,43 @@ describe("aba Avaliações: notas e tempo de resposta por atendente", () => {
     expect(month.unanswered).toHaveLength(3);
     expect(month.unanswered[2]).toMatchObject({ conversationId: late.id, afterHours: false });
   });
+
+  it("todos os restaurantes (painel master): junta os que a pessoa administra, cada linha com o restaurante", async () => {
+    const other = await admin.tenant.create({ data: { name: "Outro Restaurante", slug: `outro-${fx.tenant.id}` } });
+    const agentOnly = await admin.tenant.create({ data: { name: "Só Atendente", slug: `atendente-${fx.tenant.id}` } });
+    try {
+      await admin.tenantMember.createMany({
+        data: [
+          { tenantId: other.id, userId: fx.user.id, role: "ADMIN" },
+          { tenantId: agentOnly.id, userId: fx.user.id, role: "AGENT" },
+        ],
+      });
+      const rated = async (tenantId: string, score: number) => {
+        const contact = await admin.contact.create({ data: { tenantId, name: `Cliente ${score}` } });
+        const channel = await admin.channel.create({ data: { tenantId, type: "WHATSAPP", name: "WhatsApp", externalId: `wa-${tenantId}`, credentials: Buffer.from("x"), status: "CONNECTED" } });
+        const conversation = await admin.conversation.create({ data: { tenantId, contactId: contact.id, channelId: channel.id, status: "RESOLVED" } });
+        await admin.rating.create({ data: { tenantId, conversationId: conversation.id, score, channelType: "WHATSAPP" } });
+      };
+      await rated(other.id, 5);
+      await rated(agentOnly.id, 1); // só atendente ali: fica de fora
+
+      const token = await accessTokenFor(app, fx.user.email, "master");
+      const all = (await request(app.getHttpServer()).get("/api/reports/ratings?tenantId=all&period=7d").set("Authorization", `Bearer ${token}`).expect(200)).body;
+      expect(all.summary).toMatchObject({ ratings: 3, handoffs: 2 });
+      expect(all.recent.map((r: { tenantId: string; score: number }) => [r.tenantId, r.score])).toEqual([
+        [other.id, 5],
+        [fx.tenant.id, 2],
+        [fx.tenant.id, 4],
+      ]);
+      expect(all.unanswered.every((u: { tenantId: string }) => u.tenantId === fx.tenant.id)).toBe(true);
+    } finally {
+      await admin.tenant.deleteMany({ where: { id: { in: [other.id, agentOnly.id] } } });
+    }
+  });
+
+  it("todos os restaurantes sem administrar nenhum: recusa", async () => {
+    await admin.tenantMember.updateMany({ where: { tenantId: fx.tenant.id, userId: fx.user.id }, data: { role: "AGENT" } });
+    const token = await accessTokenFor(app, fx.user.email, fx.tenant.id);
+    await request(app.getHttpServer()).get("/api/reports/ratings?tenantId=all&period=7d").set("Authorization", `Bearer ${token}`).expect(403);
+  });
 });

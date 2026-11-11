@@ -44,7 +44,7 @@ export async function refreshContactTags(tx: TenantTx, now = new Date()): Promis
     last_bad AS (
       SELECT cv.contact_id, max(e.created_at) AS at
       FROM conversation_evaluations e JOIN conversations cv ON cv.id = e.conversation_id
-      WHERE e.satisfied = false OR e.score <= ${rules.recoveryMaxScore} OR e.churn_risk >= ${rules.recoveryMinRisk}
+      WHERE NOT e.legacy AND (e.satisfied = false OR e.score <= ${rules.recoveryMaxScore} OR e.churn_risk >= ${rules.recoveryMinRisk})
       GROUP BY cv.contact_id
     ),
     computed AS (

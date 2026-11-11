@@ -95,14 +95,14 @@ describe("notificações ao administrador pelo WhatsApp do restaurante", () => {
 describe("textos das notificações", () => {
   const report = (ai: Partial<NonNullable<RatingsReportDto["ai"]>> | null): RatingsReportDto => ({
     summary: { ratings: 4, averageScore: 4.5, answered: 10, averageResponseSeconds: 200, handoffs: 12 },
-    unanswered: [{ conversationId: "c1", contactName: null, calledAt: "", afterHours: false }],
+    unanswered: [{ tenantId: "t", conversationId: "c1", contactName: null, calledAt: "", afterHours: false }],
     recovering: 0,
     scoreCounts: [0, 0, 0, 1, 3],
     agents: [],
     recent: [],
     ai: ai && {
       evaluations: 20,
-      averageScore: 4.25,
+      averageScore: 82.6,
       resolved: 18,
       reacted: 0,
       satisfied: 0,
@@ -136,7 +136,7 @@ describe("textos das notificações", () => {
           { reason: "problema_pedido", count: 3 },
           { reason: "outro", count: 1 },
         ],
-        misconduct: [{ messageId: "m", conversationId: "c", contactName: null, agentName: null, original: "", reason: "", createdAt: "" }],
+        misconduct: [{ messageId: "m", tenantId: "t", conversationId: "c", contactName: null, agentName: null, original: "", reason: "", createdAt: "" }],
       }),
       from,
       to,
@@ -150,7 +150,7 @@ describe("textos das notificações", () => {
     expect(text).toContain("Reclamação de atraso\n▰▰▰▰▰▰▱▱▱▱ *60%* (6)");
     expect(text).toContain("Problema no pedido\n▰▰▰▱▱▱▱▱▱▱ *30%* (3)");
     expect(text).toContain("• Clientes: *4,5* de 5 (4 notas)");
-    expect(text).toContain("• IA: *4,3* de 5 (20 atendimentos)");
+    expect(text).toContain("• IA: *83%* (20 atendimentos)");
     expect(text).toContain("• ✅ *90%* dos problemas resolvidos");
     expect(text).toContain("🚨 *1* alerta de má conduta na semana");
   });

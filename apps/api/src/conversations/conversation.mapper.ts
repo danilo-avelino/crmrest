@@ -133,13 +133,16 @@ export function preview(type: Message["type"], content: MessageContent): string 
   return content.text ?? TYPE_PREVIEW[type] ?? "Mensagem";
 }
 
-/** Avaliações da IA (nome de quem da equipe respondeu por último incluído) das conversas que casam com `where`. */
+/**
+ * Avaliações da IA (nome de quem da equipe respondeu por último incluído) das conversas que casam com `where`. As antigas
+ * (`legacy`, de antes da nota em porcentagem) ficam de fora.
+ */
 export async function listEvaluations(
   tx: TenantTx,
   tenantId: string,
   where: Prisma.ConversationEvaluationWhereInput,
 ): Promise<ConversationEvaluationDto[]> {
-  const rows = await tx.conversationEvaluation.findMany({ where, orderBy: { createdAt: "asc" } });
+  const rows = await tx.conversationEvaluation.findMany({ where: { ...where, legacy: false }, orderBy: { createdAt: "asc" } });
   const userIds = [...new Set(rows.flatMap((row) => (row.userId ? [row.userId] : [])))];
   const members = userIds.length
     ? await tx.tenantMember.findMany({ where: { tenantId, userId: { in: userIds } }, select: { user: { select: { id: true, name: true } } } })

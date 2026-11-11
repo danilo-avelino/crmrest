@@ -1,5 +1,6 @@
 import type { ChannelType, OrderStatus } from "@dishdesk/database/enums";
 import type { CustomerCancellations, CustomerHistory } from "./orders.js";
+import { LOW_AI_SCORE } from "./reports.js";
 import { ChannelType as ChannelTypeEnum } from "@dishdesk/database/enums";
 import { parsePhoneNumberFromString } from "libphonenumber-js/min";
 import { z } from "zod";
@@ -53,8 +54,8 @@ export const AUTO_TAG_RULES = {
   newDays: 30,
   goneDays: 60,
   upsetMaxScore: 2,
-  /** Em recuperação: a IA deu esta nota ou menos ao atendimento, ou esta chance ou mais de perder o cliente. */
-  recoveryMaxScore: 2,
+  /** Em recuperação: a IA deu esta nota (em %) ou menos ao atendimento, ou esta chance ou mais de perder o cliente. */
+  recoveryMaxScore: LOW_AI_SCORE,
   recoveryMinRisk: 0.5,
 } as const;
 

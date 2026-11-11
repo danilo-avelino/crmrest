@@ -1,10 +1,11 @@
 import type { IfoodReviewDto, IfoodReviewPeriod, IfoodReviewsDto } from "@dishdesk/shared";
+import type { TenantScope } from "@dishdesk/database";
 import { Injectable, Logger, NotFoundException, UnprocessableEntityException } from "@nestjs/common";
 import type { RequestAuth } from "../auth/auth.decorators.js";
 import { IfoodAuthService, type IfoodStore } from "../connectors/ifood-auth.service.js";
 import { IfoodError, type IfoodReview } from "../connectors/ifood.client.js";
 import { DatabaseService } from "../core/database.service.js";
-import { adminScope } from "../settings/tenant-admin.js";
+import { adminScope, adminScopeOf } from "../settings/tenant-admin.js";
 
 const DAY = 24 * 60 * 60 * 1000;
 const PERIOD_DAYS: Record<IfoodReviewPeriod, number> = { "7d": 7, "30d": 30, "90d": 90 };
@@ -26,8 +27,9 @@ export class IfoodReviewsService {
     private readonly ifood: IfoodAuthService,
   ) {}
 
+  /** `tenantId` = "all": as lojas de todos os restaurantes juntas. */
   async list(auth: RequestAuth, tenantId: string, period: IfoodReviewPeriod, now = new Date()): Promise<IfoodReviewsDto> {
-    const stores = await this.stores(auth, tenantId);
+    const stores = await this.stores(adminScopeOf(auth, tenantId));
     const from = new Date(now.getTime() - PERIOD_DAYS[period] * DAY);
     const result: IfoodReviewsDto = { stores: [], unavailable: [], reviews: [] };
     if (!this.ifood.configured) return result;
@@ -57,7 +59,7 @@ export class IfoodReviewsService {
   }
 
   async answer(auth: RequestAuth, tenantId: string, storeId: string, reviewId: string, text: string): Promise<void> {
-    const store = (await this.stores(auth, tenantId)).find((s) => s.id === storeId);
+    const store = (await this.stores(adminScope(auth, tenantId))).find((s) => s.id === storeId);
     if (!store || !this.ifood.configured) throw new NotFoundException("Loja do iFood não encontrada.");
     try {
       await this.ifood.clientFor(store).answerReview(store.externalId, reviewId, text);
@@ -68,11 +70,11 @@ export class IfoodReviewsService {
     }
   }
 
-  /** Lojas do iFood conectadas no restaurante. Só o administrador. */
-  private async stores(auth: RequestAuth, tenantId: string): Promise<Store[]> {
-    return this.db.withTenants(adminScope(auth, tenantId), (tx) =>
+  /** Lojas do iFood conectadas nos restaurantes do escopo (já conferido como administrador). */
+  private async stores(scope: TenantScope): Promise<Store[]> {
+    return this.db.withTenants(scope, (tx) =>
       tx.channel.findMany({
-        where: { tenantId, type: "IFOOD", status: "CONNECTED", deletedAt: null },
+        where: { tenantId: { in: scope.tenantIds }, type: "IFOOD", status: "CONNECTED", deletedAt: null },
         select: { id: true, tenantId: true, name: true, externalId: true },
         orderBy: { name: "asc" },
       }),
@@ -92,6 +94,7 @@ function toDto(review: IfoodReview, store: Store): IfoodReviewDto {
   const status = review.status ?? "PUBLISHED";
   return {
     id: review.id,
+    tenantId: store.tenantId,
     storeId: store.id,
     storeName: store.name,
     score: review.score,

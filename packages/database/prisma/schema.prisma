@@ -546,7 +546,8 @@ model ConversationEvaluation {
   userId         String?  @map("user_id") @db.Uuid
   resolved       Boolean // o problema do cliente foi resolvido
   satisfied      Boolean? // null = o cliente não reagiu
-  score          Int // 1 a 5
+  score          Int // nota da IA em porcentagem, 1 a 100 (nas antigas, de 1 a 5)
+  legacy         Boolean  @default(false) // feita antes da nota em porcentagem (11/11/2026): o sistema ignora
   summary        String? // só nas avaliações feitas pela LLM, até 07/11/2026; o Jev não escreve texto
   teamReason     String?  @map("team_reason") // TeamReason: por que precisou da equipe; null = só a IA atendeu
   subject        String? // ContactSubject: o assunto do contato; null = avaliação anterior a 11/11/2026
