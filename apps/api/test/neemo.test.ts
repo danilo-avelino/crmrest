@@ -228,7 +228,13 @@ describe("Neemo (pedidos por polling)", () => {
     const at = (minutesAgo: number) => new Date(Date.now() - minutesAgo * 60_000).toISOString();
     neemo.state.orders["71000001"] = { ...neemo.state.orders["71000001"]!, status: 4, updated_at: at(0) };
     neemo.state.orders["71000100"] = { ...neemo.state.orders["71000100"]!, status: 3, updated_at: at(0) };
+    // Retirada: o "enviado" da Neemo é o pedido pronto, esperando o cliente.
+    neemo.state.orders["71000200"] = { ...neemo.state.orders["71000200"]!, status: 4, updated_at: at(0) };
     await service.poll();
+
+    const ready = await saved("71000200");
+    expect(ready).toMatchObject({ status: "READY", dispatchedAt: null });
+    expect((await admin.orderEvent.findMany({ where: { orderId: ready.id } })).map((e) => e.code)).toContain("READY_TO_PICKUP");
 
     const dispatched = await saved("71000001");
     expect(dispatched.status).toBe("DISPATCHED");
@@ -313,8 +319,11 @@ describe("Neemo (pedidos por polling)", () => {
     // 60000001 e 60000002, mais os dois cancelados que já estavam gravados (71000100 e 71000101), que não se repetem.
     expect(orderHistoryImport).toMatchObject({ status: "done", progress: 100, imported: 2 });
     expect(Date.parse((orderHistoryImport as { from: string }).from)).toBeLessThan(Date.now() - 199 * 86_400_000);
-    const imported = await admin.order.findMany({ where: { channelId, externalOrderId: { in: ["60000001", "60000002", "60000003"] } } });
-    expect(imported.map((o) => [o.externalOrderId, o.status, Boolean(o.importedAt)]).sort()).toEqual([
+    const imported = await admin.order.findMany({
+      where: { channelId, externalOrderId: { in: ["60000001", "60000002", "60000003"] } },
+      orderBy: { externalOrderId: "asc" },
+    });
+    expect(imported.map((o) => [o.externalOrderId, o.status, Boolean(o.importedAt)])).toEqual([
       ["60000001", "CANCELED", true],
       ["60000002", "CANCELED", true],
     ]);

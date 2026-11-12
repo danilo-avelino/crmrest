@@ -9,13 +9,12 @@ import { ENV, type Env } from "../config/env.js";
 import {
   NEEMO_CANCELED,
   NEEMO_CUSTOMERS_PAGE,
-  NEEMO_EVENT,
   NEEMO_ORDERS_PAGE,
-  NEEMO_STATUS,
   NEEMO_TAKEOUT,
   NeemoClient,
   type NeemoCustomer,
   type NeemoOrder,
+  neemoStage,
 } from "../connectors/neemo.client.js";
 import { ConnectorsService } from "../connectors/connectors.service.js";
 import { DatabaseService } from "../core/database.service.js";
@@ -36,6 +35,11 @@ const POLL_EVERY_MS = 60_000;
 const CUSTOMERS_PAGE_INTERVAL_MS = 1_000;
 const HISTORY_PAGE_INTERVAL_MS = 2_000;
 const ORDER_DETAIL_INTERVAL_MS = 600;
+/**
+ * Clientes gravados por transação. A página da API tem 500, e gravar todos numa transação só passa dos 5 s que o Prisma
+ * dá a cada uma (no banco de produção, a cada consulta soma a ida e volta pela rede).
+ */
+const CUSTOMERS_PER_TRANSACTION = 50;
 
 /**
  * Pedidos da Neemo (Linx Delivery App, cardápio digital do restaurante). Como no Cardápio Web, eles trazem o telefone,
@@ -91,14 +95,15 @@ export class NeemoService implements OnModuleInit {
     for (let page = 1; ; page++) {
       const { orders, total } = await this.client.orders(token, { modified: since, page, sort: "updated_at asc" });
       for (const summary of orders) {
-        const status = NEEMO_STATUS[summary.status];
-        if (!status) continue;
+        const stage = neemoStage(summary.status, summary.forma_entrega);
+        if (!stage) continue;
+        const { status } = stage;
         const at = new Date(summary.updated_at);
-        const updated = await this.updateStatus(channel, summary.id, status, NEEMO_EVENT[summary.status], at);
+        const updated = await this.updateStatus(channel, summary.id, status, stage.event, at);
         if (!updated) {
           const created = await this.createOrder(channel, await this.client.order(token, summary.id));
           if (created && status !== "DELIVERED" && status !== "CANCELED") await this.fraud.orderArrived(channel.tenantId, created);
-        } else if (updated.changed && (status === "DISPATCHED" || status === "DELIVERED")) {
+        } else if (updated.changed && (status === "READY" || status === "DISPATCHED" || status === "DELIVERED")) {
           await this.notices.statusChanged(channel.tenantId, updated.id, status);
         } else if (updated.changed && status === "CANCELED") {
           // Cancelado fora do Dish Desk: a Neemo não informa o motivo.
@@ -122,9 +127,13 @@ export class NeemoService implements OnModuleInit {
     const customers = await this.client.customers(token, data.page);
 
     let imported = data.imported;
-    await this.db.withTenants({ tenantIds: [data.tenantId] }, async (tx) => {
-      for (const customer of customers) if (await this.importCustomer(tx, data.tenantId, customer)) imported++;
-    });
+    for (let start = 0; start < customers.length; start += CUSTOMERS_PER_TRANSACTION) {
+      await this.db.withTenants({ tenantIds: [data.tenantId] }, async (tx) => {
+        for (const customer of customers.slice(start, start + CUSTOMERS_PER_TRANSACTION)) {
+          if (await this.importCustomer(tx, data.tenantId, customer)) imported++;
+        }
+      });
+    }
     if (customers.length === NEEMO_CUSTOMERS_PAGE) {
       const next: NeemoImportJob = { ...data, page: data.page + 1, imported };
       await this.queue.add("import-customers", next, { delay: CUSTOMERS_PAGE_INTERVAL_MS });
@@ -285,7 +294,8 @@ export class NeemoService implements OnModuleInit {
       state: address.uf || null,
       postal_code: address.cep || null,
     };
-    const canceled = NEEMO_STATUS[order.status] === "CANCELED";
+    const stage = neemoStage(order.status, order.forma_entrega);
+    const canceled = stage?.status === "CANCELED";
 
     return this.db.withTenants({ tenantIds: [channel.tenantId] }, async (tx) => {
       const contact = await this.inbound.resolveContact(tx, channel.tenantId, {
@@ -318,7 +328,7 @@ export class NeemoService implements OnModuleInit {
           channelId: channel.id,
           externalOrderId: order.id,
           displayCode: order.order_number ?? null,
-          status: NEEMO_STATUS[order.status] ?? "PLACED",
+          status: stage?.status ?? "PLACED",
           ...(canceled && { canceledAt: new Date(order.updated_at) }),
           ...(importedAt && { importedAt }),
           subtotal: order.sub_total,
@@ -371,7 +381,7 @@ function itemsOf(order: NeemoOrder, tenantId: string) {
 
 /** Linha do tempo de um pedido lido pela primeira vez: quando foi feito e, se já passou disso, a etapa em que está. */
 function stagesOf(order: NeemoOrder): { code: string; occurredAt: Date }[] {
-  const current = NEEMO_EVENT[order.status];
+  const current = neemoStage(order.status, order.forma_entrega)?.event;
   return [
     { code: "PLACED", occurredAt: new Date(order.date) },
     ...(current && current !== "PLACED" ? [{ code: current, occurredAt: new Date(order.updated_at) }] : []),

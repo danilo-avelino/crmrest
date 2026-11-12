@@ -15,6 +15,8 @@ const Text = z.string().nullish();
 export const NeemoOrderSummary = z.looseObject({
   id: Id,
   status: z.coerce.number(),
+  /** 1 = entrega, 2 = retirada. */
+  forma_entrega: z.coerce.number().nullish(),
   /** "2026-11-12T13:07:27-03:00" */
   date: z.string(),
   updated_at: z.string(),
@@ -79,32 +81,18 @@ export type NeemoCustomer = z.infer<typeof NeemoCustomer>;
 const CANCELED_BY_STORE = 3;
 export const NEEMO_CANCELED = [3, 5, 6, 7];
 
-/** Status da Neemo → status do pedido no Dish Desk. */
-export const NEEMO_STATUS: Record<number, OrderStatus> = {
-  0: "PLACED",
-  1: "CONFIRMED",
-  2: "DELIVERED",
-  3: "CANCELED",
-  4: "DISPATCHED",
-  5: "CANCELED",
-  6: "CANCELED",
-  7: "CANCELED",
-};
-
-/** Status da Neemo → etapa na linha do tempo do pedido, com os códigos dos eventos do iFood. */
-export const NEEMO_EVENT: Record<number, string> = {
-  0: "PLACED",
-  1: "CONFIRMED",
-  2: "DELIVERED",
-  3: "CANCELLED",
-  4: "DISPATCHED",
-  5: "CANCELLED",
-  6: "CANCELLED",
-  7: "CANCELLED",
-};
-
 /** Retirada na loja (forma_entrega 2): não há saída para entrega. */
 export const NEEMO_TAKEOUT = 2;
+
+/**
+ * Status da Neemo → status do pedido no Dish Desk e etapa na linha do tempo (códigos dos eventos do iFood). O "enviado"
+ * (4) de uma retirada é o pedido pronto, esperando o cliente: não saiu para entrega. null: status desconhecido.
+ */
+export function neemoStage(status: number, formaEntrega: number | null | undefined): { status: OrderStatus; event: string } | null {
+  if (NEEMO_CANCELED.includes(status)) return { status: "CANCELED", event: "CANCELLED" };
+  if (status === 4) return formaEntrega === NEEMO_TAKEOUT ? { status: "READY", event: "READY_TO_PICKUP" } : { status: "DISPATCHED", event: "DISPATCHED" };
+  return ({ 0: { status: "PLACED", event: "PLACED" }, 1: { status: "CONFIRMED", event: "CONFIRMED" }, 2: { status: "DELIVERED", event: "DELIVERED" } } as const)[status as 0 | 1 | 2] ?? null;
+}
 
 /** Máximo de pedidos por página na API. */
 export const NEEMO_ORDERS_PAGE = 50;
