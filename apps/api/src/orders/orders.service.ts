@@ -25,6 +25,7 @@ import { scopeFor } from "../conversations/conversations.service.js";
 import { openIfoodConversation } from "../conversations/ifood-conversation.js";
 import { connectedWhatsApp, openWhatsAppConversation } from "../conversations/open-whatsapp.js";
 import { DatabaseService } from "../core/database.service.js";
+import { JevClient } from "../defense/jev.client.js";
 import { RealtimeEmitter } from "../realtime/realtime.emitter.js";
 import { periodStart } from "../reports/reports.service.js";
 import { addressText } from "./address-key.js";
@@ -54,6 +55,7 @@ export class OrdersService {
     private readonly connectors: ConnectorsService,
     private readonly fraud: FraudService,
     private readonly notices: OrderNoticeService,
+    private readonly jev: JevClient,
     @Inject(ENV) private readonly env: Env,
   ) {
     this.cardapioWeb = new CardapioWebClient(env);
@@ -187,7 +189,7 @@ export class OrdersService {
       const update = async (orders: TenantTx, speakerSettings?: unknown) => {
         const order = await orders.order.findUnique({ where: { id: orderId }, select: { id: true } });
         if (!order) throw new NotFoundException("Pedido não encontrado.");
-        return { text: (await orderUpdateMessage(orders, orderId, new Date(), speakerSettings))?.text ?? null };
+        return { text: (await orderUpdateMessage(orders, orderId, new Date(), speakerSettings, this.jev))?.text ?? null };
       };
       if (!conversationId) return update(tx);
       const conversation = await tx.conversation.findUnique({ where: { id: conversationId }, select: { tenantId: true, channelId: true } });
@@ -390,7 +392,7 @@ export class OrdersService {
             },
           },
         });
-        const forecast = await forecastOrder(tx, order.id, now);
+        const forecast = await forecastOrder(tx, order.id, now, this.jev);
         const platform = PlatformOrder.safeParse(order.raw).data;
         const at = (code: string) => order.events.find((event) => event.code === code)?.occurredAt;
         return {

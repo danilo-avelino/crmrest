@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { RequestAuth } from "../auth/auth.decorators.js";
 import type { AutomationState } from "../automations/automation.js";
 import { DatabaseService } from "../core/database.service.js";
+import { JevClient } from "../defense/jev.client.js";
 import { orderUpdateMessage } from "../orders/forecast.js";
 import { latestOrderOf } from "../orders/latest-order.js";
 import { withOrderTenants } from "../orders/order-scope.js";
@@ -44,6 +45,7 @@ export class AiSuggestionService {
   constructor(
     private readonly db: DatabaseService,
     private readonly llm: LlmClient,
+    private readonly jev: JevClient,
   ) {}
 
   async suggest(auth: RequestAuth, conversationId: string, now = new Date()): Promise<ReplySuggestionDto> {
@@ -80,7 +82,7 @@ export class AiSuggestionService {
         const found = confirmed ?? (await latestOrderOf(orders, conversation.contact, now));
         if (!found) return null;
         const channel = await orders.channel.findUniqueOrThrow({ where: { id: found.channelId }, select: { type: true } });
-        const update = await orderUpdateMessage(orders, found.id, now, settings);
+        const update = await orderUpdateMessage(orders, found.id, now, settings, this.jev);
         return { ...found, confirmed: !!confirmed, byNumber: false, channelType: channel.type, update };
       });
       return { conversation, settings, history, order };

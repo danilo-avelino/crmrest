@@ -24,6 +24,7 @@ import {
 } from "../automations/automation.js";
 import { linkOrderContact, ORDER_STATUS_TEXT, TriageService } from "../automations/triage.service.js";
 import { DatabaseService } from "../core/database.service.js";
+import { JevClient } from "../defense/jev.client.js";
 import { orderUpdateMessage } from "../orders/forecast.js";
 import { latestOrderOf } from "../orders/latest-order.js";
 import { withOrderTenants } from "../orders/order-scope.js";
@@ -211,6 +212,13 @@ export function attendantOrderFacts(order: OrderFacts | null, noPhone: boolean):
   return `${facts} Se o cliente falar de um pedido (atraso, andamento), peça o número do pedido, sem dizer que não achou o pedido nem falar em cadastro: o pedido com o número que ele informar aparece aqui nos DADOS. Se ele já informou o número e o pedido continua fora dos DADOS, passe para a equipe (handoff = true), que vai conferir.`;
 }
 
+/**
+ * A previsão e a fila andam com a cozinha. Sem esta regra, a IA chamava a atualização de "correção" ("e não 21:25 como
+ * eu falei antes", "o correto são 3") e a puxava sozinha depois de um "obrigada".
+ */
+const ANDAMENTO_RULE =
+  'A previsão e a fila mudam conforme a cozinha anda. Se mudaram desde o que você já disse na CONVERSA, diga que é a atualização de agora ("agora a previsão é..."), sem chamar de correção nem dizer que errou. Depois de dizer o andamento, só fale dele de novo se o cliente perguntar.';
+
 /** O pedido do cliente nos DADOS da IA: o confirmado, o candidato a confirmar (sem o andamento liberado) ou nenhum. */
 export function orderFactsOf(order: OrderFacts | null, noPhone: boolean): string {
   if (!order) {
@@ -221,7 +229,7 @@ export function orderFactsOf(order: OrderFacts | null, noPhone: boolean): string
     order.confirmed ? "Pedido do cliente (ele confirmou que é dele):" : `Pedido que pode ser do cliente (${source}; ainda não confirmado por ele):`,
     `#${order.displayCode ?? order.externalOrderId} (${CHANNEL_LABEL[order.channelType]}), feito em ${BRASILIA_TIME.format(order.placedAt)}, ${ORDER_STATUS_TEXT[order.status]}.`,
     `Itens: ${order.items.map((item) => `${item.quantity}x ${item.name}`).join("; ")}. Total: ${BRL.format(Number(order.total))}.`,
-    ...(order.update ? [`Andamento${order.confirmed ? "" : " (só diga depois que ele confirmar que o pedido é dele)"}: ${order.update.text}`] : []),
+    ...(order.update ? [`Andamento agora${order.confirmed ? "" : " (só diga depois que ele confirmar que o pedido é dele)"}: ${order.update.text}`, ANDAMENTO_RULE] : []),
   ].join("\n");
 }
 
@@ -241,6 +249,7 @@ export class AiAttendantService {
     private readonly llm: LlmClient,
     private readonly presence: PresenceService,
     private readonly triage: TriageService,
+    private readonly jev: JevClient,
   ) {}
 
   /** Responde à última mensagem do cliente, se ninguém respondeu ainda (mensagens seguidas recebem uma resposta só). */
@@ -279,7 +288,7 @@ export class AiAttendantService {
         const found = linked ?? (await orderByNumber(orders, history, now, denied));
         if (!found) return null;
         const channel = await orders.channel.findUniqueOrThrow({ where: { id: found.channelId }, select: { type: true } });
-        const update = await orderUpdateMessage(orders, found.id, now, settings);
+        const update = await orderUpdateMessage(orders, found.id, now, settings, this.jev);
         return { ...found, confirmed: !!confirmed, byNumber: !linked, channelType: channel.type, update };
       });
       return { conversation, settings, history, lastId: last.id, order };

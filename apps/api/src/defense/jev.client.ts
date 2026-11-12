@@ -66,13 +66,14 @@ export class JevClient {
   /**
    * Faz as perguntas sobre `state`. Uma resposta do tipo errado conta como recusa. `tenantId`: o restaurante a quem a
    * chamada serve, para o painel de gastos (null: a plataforma). `privateData`: o conteúdo é de clientes dos
-   * restaurantes, e o OpenRouter só manda a provedores que não guardam os dados para treino.
+   * restaurantes, e o OpenRouter só manda a provedores que não guardam os dados para treino. `timeoutMs`: para quem
+   * espera a resposta na hora (ex.: a previsão do pedido).
    */
   async decide<K extends string>(
     tenantId: string | null,
     state: Record<string, unknown>,
     questions: Record<K, JevQuestion>,
-    options: { privateData?: boolean } = {},
+    options: { privateData?: boolean; timeoutMs?: number } = {},
   ): Promise<{ answers: Record<K, JevAnswer>; model: string }> {
     const response = await fetch(this.env.JEV_URL, {
       method: "POST",
@@ -83,7 +84,7 @@ export class JevClient {
         questions,
         ...(options.privateData && { provider: { data_collection: "deny" } }),
       }),
-      signal: AbortSignal.timeout(TIMEOUT_MS),
+      signal: AbortSignal.timeout(options.timeoutMs ?? TIMEOUT_MS),
     });
     if (!response.ok) throw new Error(`Jev respondeu ${response.status}: ${(await response.text()).slice(0, 300)}`);
     const { answers, model, usage } = Response.parse(await response.json());

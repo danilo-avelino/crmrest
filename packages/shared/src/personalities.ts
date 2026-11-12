@@ -61,6 +61,11 @@ export type AutomationMessages = {
   queueOne: string;
   /** {quantidade} */
   queueMany: string;
+  /**
+   * O restaurante não marca a saída nesta integração (ex.: Cardápio Web que vai de confirmado direto a concluído) e o
+   * tempo normal de preparo já passou: o pedido provavelmente saiu, mas não há como confirmar.
+   */
+  forecastProbablyOut: string;
   /** O pedido já saiu, na resposta ao cliente. {hora} {tempo} */
   dispatched: string;
   /** Aviso na hora em que o pedido sai. {pedido} {hora} */
@@ -122,6 +127,7 @@ export const PERSONALITY_MESSAGES: Record<Personality, AutomationMessages> = {
       "Pedimos desculpas pela demora! 🙏 Seu pedido está levando mais tempo que o normal.\nNova previsão de saída do restaurante: por volta das {hora}.",
     queueOne: "Há 1 pedido na sua frente na cozinha.",
     queueMany: "Há {quantidade} pedidos na sua frente na cozinha.",
+    forecastProbablyOut: "Pelo tempo normal de preparo, seu pedido já deve ter saído para entrega ou está saindo agora. 🛵",
     dispatched: "🛵 Seu pedido já saiu para entrega às {hora} ({tempo}).",
     dispatchNotice: "🛵 Boa notícia! Seu pedido #{pedido} saiu para entrega às {hora}.",
     deliveredNotice: "✅ Seu pedido #{pedido} foi entregue! Bom apetite 😋",
@@ -169,6 +175,7 @@ export const PERSONALITY_MESSAGES: Record<Personality, AutomationMessages> = {
       "Pedimos sinceras desculpas pela demora. Seu pedido está levando mais tempo que o habitual.\nNova previsão de saída do restaurante: por volta das {hora}.",
     queueOne: "Há 1 pedido à frente do seu na cozinha.",
     queueMany: "Há {quantidade} pedidos à frente do seu na cozinha.",
+    forecastProbablyOut: "Pelo tempo habitual de preparo, seu pedido já deve ter saído para entrega ou está saindo neste momento.",
     dispatched: "Seu pedido saiu para entrega às {hora} ({tempo}).",
     dispatchNotice: "Informamos que o seu pedido #{pedido} saiu para entrega às {hora}.",
     deliveredNotice: "Seu pedido #{pedido} foi entregue. Agradecemos a preferência e desejamos uma ótima refeição.",
@@ -212,6 +219,7 @@ export const PERSONALITY_MESSAGES: Record<Personality, AutomationMessages> = {
     forecastLate: "Poxa, desculpa a demora! 🙏 Seu pedido tá levando um pouquinho mais que o normal.\nNova previsão de saída: por volta das {hora}!",
     queueOne: "Tem só 1 pedido na sua frente na cozinha! 🍳",
     queueMany: "Tem {quantidade} pedidos na sua frente na cozinha! 🍳",
+    forecastProbablyOut: "Pelo tempo de preparo, seu pedido já deve estar a caminho ou saindo agorinha! 🛵",
     dispatched: "🛵 Seu pedido já tá a caminho! Saiu às {hora} ({tempo}).",
     dispatchNotice: "🛵 Oba! Seu pedido #{pedido} saiu para entrega às {hora}! Já já chega aí!",
     deliveredNotice: "🎉 Pedido #{pedido} entregue! Bom apetite! 😋",
@@ -254,6 +262,7 @@ export const PERSONALITY_MESSAGES: Record<Personality, AutomationMessages> = {
     forecastLate: "Foi mal pela demora! 🙏 Seu pedido tá levando mais tempo que o normal.\nNova previsão de saída: por volta das {hora}.",
     queueOne: "Tem 1 pedido na sua frente na cozinha.",
     queueMany: "Tem {quantidade} pedidos na sua frente na cozinha.",
+    forecastProbablyOut: "Pelo tempo de preparo, seu pedido já deve ter saído ou tá saindo agora. 🛵",
     dispatched: "🛵 Seu pedido já saiu, foi às {hora} ({tempo}).",
     dispatchNotice: "🛵 Opa! Seu pedido #{pedido} saiu pra entrega às {hora}.",
     deliveredNotice: "✅ Pedido #{pedido} entregue! Bom apetite 🤙",
@@ -300,6 +309,7 @@ export const PERSONALITY_MESSAGES: Record<Personality, AutomationMessages> = {
       "Pedimos desculpas de coração pela demora 🙏 Seu pedido está levando mais tempo que o normal.\nNova previsão de saída do restaurante: por volta das {hora}.",
     queueOne: "Há 1 pedido na sua frente na cozinha.",
     queueMany: "Há {quantidade} pedidos na sua frente na cozinha.",
+    forecastProbablyOut: "Pelo tempo de preparo, seu pedido já deve estar a caminho, quentinho, ou saindo agora mesmo. 🛵",
     dispatched: "🛵 Seu pedido já está a caminho! Saiu às {hora} ({tempo}).",
     dispatchNotice: "🛵 Que notícia boa! Seu pedido #{pedido} saiu para entrega às {hora}.",
     deliveredNotice: "✅ Seu pedido #{pedido} foi entregue! Esperamos que você aproveite cada pedacinho 🧡",
@@ -342,6 +352,7 @@ export const PERSONALITY_MESSAGES: Record<Personality, AutomationMessages> = {
     forecastLate: "Desculpe a demora. Nova previsão de saída: por volta das {hora}.",
     queueOne: "1 pedido na sua frente.",
     queueMany: "{quantidade} pedidos na sua frente.",
+    forecastProbablyOut: "Pelo tempo normal de preparo, o pedido já deve ter saído ou está saindo agora.",
     dispatched: "Seu pedido saiu para entrega às {hora} ({tempo}).",
     dispatchNotice: "Pedido #{pedido} saiu para entrega às {hora}.",
     deliveredNotice: "Pedido #{pedido} entregue. Bom apetite.",
