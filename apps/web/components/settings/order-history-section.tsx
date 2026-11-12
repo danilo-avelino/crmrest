@@ -23,8 +23,8 @@ export function IfoodHistoryNote() {
 }
 
 /**
- * Importação dos cancelamentos antigos do Cardápio Web ou da Neemo. Só os cancelados: é o que o alerta de fraude precisa, e o resto
- * do passado da loja não muda os relatórios. Roda em segundo plano, então a tela só acompanha.
+ * Importação do histórico da loja. Cardápio Web: só os cancelamentos, que é o que o alerta de fraude precisa. Neemo: todos
+ * os pedidos, que classificam os clientes (pedidos, total gasto, VIP, Recorrente...) e ficam fora da aba Pedidos. Roda em segundo plano, então a tela só acompanha.
  */
 export function OrderHistorySection({ tenantId, item, canEdit, queryKey }: { tenantId: string; item: IntegrationDto; canEdit: boolean; queryKey: readonly unknown[] }) {
   const { request } = useAuth();
@@ -34,7 +34,8 @@ export function OrderHistorySection({ tenantId, item, canEdit, queryKey }: { ten
   const running = state?.status === "running";
   const toast = useToast();
   const wasRunning = useRef(false);
-  const system = item.type === "NEEMO" ? "a Neemo" : "o Cardápio Web";
+  const neemo = item.type === "NEEMO";
+  const system = neemo ? "a Neemo" : "o Cardápio Web";
 
   // Avisa quando a importação termina com a tela aberta (a consulta abaixo traz o novo estado, sem recarregar).
   useEffect(() => {
@@ -60,7 +61,8 @@ export function OrderHistorySection({ tenantId, item, canEdit, queryKey }: { ten
     }
   };
 
-  const cancellations = (value: number) => `${count(value)} ${value === 1 ? "cancelamento" : "cancelamentos"}`;
+  const cancellations = (value: number) =>
+    `${count(value)} ${neemo ? (value === 1 ? "pedido" : "pedidos") : value === 1 ? "cancelamento" : "cancelamentos"}`;
   const period = state?.from ? `, de ${monthYear(state.from)} a ${monthYear(state.to)}` : "";
 
   return (
@@ -68,7 +70,10 @@ export function OrderHistorySection({ tenantId, item, canEdit, queryKey }: { ten
       <div className={TITLE}>Histórico de pedidos</div>
       {!state && (
         <p className="m-0 text-[12px] leading-normal text-ink-2">
-          Traga os cancelamentos antigos desta loja para o alerta de fraude considerar o histórico dos clientes. Importamos até onde {system} guardar.
+          {neemo
+            ? "Traga os pedidos antigos desta loja para o cadastro de cada cliente: quantos pedidos fez, quanto gastou e as tags VIP, Recorrente e Sumido. Eles também entram no alerta de fraude e não aparecem na aba Pedidos."
+            : "Traga os cancelamentos antigos desta loja para o alerta de fraude considerar o histórico dos clientes."}{" "}
+          Importamos até onde {system} guardar.
         </p>
       )}
       {running && (

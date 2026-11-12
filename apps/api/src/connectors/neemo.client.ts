@@ -11,20 +11,12 @@ const Id = z.coerce.string();
 const Money = z.coerce.number();
 const Text = z.string().nullish();
 
-/** Pedido como vem na lista: com o cliente e o endereço, sem os itens. */
-export const NeemoOrderSummary = z.looseObject({
-  id: Id,
-  status: z.coerce.number(),
-  /** 1 = entrega, 2 = retirada. */
-  forma_entrega: z.coerce.number().nullish(),
-  /** "2026-11-12T13:07:27-03:00" */
-  date: z.string(),
-  updated_at: z.string(),
-});
-export type NeemoOrderSummary = z.infer<typeof NeemoOrderSummary>;
-
 const NeemoComplement = z.looseObject({ quantity: Money.default(1), title: z.string() });
 
+/**
+ * Pedido da Neemo. Os detalhes trazem tudo; a lista traz o cliente, o endereço e os valores, sem os itens, o estado
+ * (uf), o CPF nem o código da loja.
+ */
 export const NeemoOrder = z.looseObject({
   id: Id,
   restaurant_id: Id.nullish(),
@@ -129,7 +121,7 @@ export class NeemoClient {
   async orders(
     token: string,
     query: { modified?: Date; status?: number; page?: number; limit?: number; sort?: string },
-  ): Promise<{ orders: NeemoOrderSummary[]; total: number; store: string | null }> {
+  ): Promise<{ orders: NeemoOrder[]; total: number; store: string | null }> {
     const body = await this.call(token, "POST", "/v1/order", {
       limit: String(query.limit ?? NEEMO_ORDERS_PAGE),
       page: String(query.page ?? 1),
@@ -138,7 +130,7 @@ export class NeemoClient {
       ...(query.sort && { sort: query.sort }),
     });
     const page = z
-      .looseObject({ name: z.string().nullish(), Orders: z.array(NeemoOrderSummary).default([]), paging: z.looseObject({ total: z.coerce.number() }).nullish() })
+      .looseObject({ name: z.string().nullish(), Orders: z.array(NeemoOrder).default([]), paging: z.looseObject({ total: z.coerce.number() }).nullish() })
       .parse(body);
     return { orders: page.Orders, total: page.paging?.total ?? page.Orders.length, store: page.name?.trim() || null };
   }

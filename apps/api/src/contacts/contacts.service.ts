@@ -119,8 +119,8 @@ export class ContactsService {
       const rows = pageIds ? pageIds.map((id) => found.find((row) => row.id === id)).filter((row) => row !== undefined) : found;
       const totals = await tx.order.groupBy({
         by: ["contactId"],
-        // Como no detalhe do cliente: cancelados e o histórico importado (para o alerta de fraude) não entram nos totais.
-        where: { contactId: { in: rows.map((row) => row.id) }, importedAt: null, status: { not: "CANCELED" } },
+        // Como no detalhe do cliente: cancelados não entram nos totais. O histórico importado da loja entra.
+        where: { contactId: { in: rows.map((row) => row.id) }, status: { not: "CANCELED" } },
         _count: { _all: true },
         _sum: { total: true },
       });
@@ -568,13 +568,13 @@ function requireAdmin(auth: RequestAuth, tenantId: string): void {
   }
 }
 
-/** Uma página de ids dos clientes dados, ordenada pelos pedidos que a lista exibe (sem cancelados nem importados). */
+/** Uma página de ids dos clientes dados, ordenada pelos pedidos que a lista exibe (sem cancelados). */
 async function idsByOrdersCount(tx: TenantTx, ids: string[], order: "asc" | "desc", skip: number): Promise<string[]> {
   const rows = await tx.$queryRaw<{ id: string }[]>`
     SELECT c.id FROM contacts c
     LEFT JOIN (
       SELECT contact_id, count(*) AS n FROM orders
-      WHERE status <> 'CANCELED' AND imported_at IS NULL
+      WHERE status <> 'CANCELED'
       GROUP BY contact_id
     ) o ON o.contact_id = c.id
     WHERE c.id = ANY(${ids}::uuid[])

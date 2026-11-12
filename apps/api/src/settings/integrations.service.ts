@@ -458,7 +458,7 @@ export class IntegrationsService {
     });
     if (saved.orderHistory?.startedAt === now.toISOString()) {
       if (saved.type === "NEEMO") {
-        const job: NeemoHistoryJob = { tenantId, channelId, status: 0, page: 1, seen: 0, total: 0, imported: 0 };
+        const job: NeemoHistoryJob = { tenantId, channelId, until: now.toISOString(), page: 1, seen: 0, imported: 0 };
         await this.neemoQueue.add("import-orders", job);
       } else {
         const job: CardapioWebHistoryJob = { tenantId, channelId, until: now.toISOString(), window: 0, page: 1, imported: 0 };

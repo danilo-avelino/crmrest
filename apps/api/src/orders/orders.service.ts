@@ -80,6 +80,8 @@ export class OrdersService {
   async list(auth: RequestAuth, query: OrderListQuery, now = new Date()): Promise<OrderPage> {
     const where: Prisma.OrderWhereInput = {
       placedAt: { gte: periodStart(query.period, now) },
+      // O histórico importado da loja (de antes da conexão) fica no cadastro do cliente, fora desta aba.
+      importedAt: null,
       ...(query.status && { status: query.status }),
       ...(query.channel && { channel: { type: query.channel } }),
       ...(query.production && { status: { in: IN_PRODUCTION }, dispatchedAt: null }),

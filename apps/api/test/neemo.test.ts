@@ -304,28 +304,40 @@ describe("Neemo (pedidos por polling)", () => {
     await queueIdle();
   });
 
-  it("histórico: importa os cancelamentos antigos de cada status cancelado, com o andamento", async () => {
-    const old = (id: number, status: number, daysAgo: number) =>
-      neemoOrder(id, { status, date: new Date(Date.now() - daysAgo * 86_400_000).toISOString(), updated_at: new Date(Date.now() - daysAgo * 86_400_000).toISOString() });
-    neemo.state.orders["60000001"] = old(60000001, 3, 200);
-    neemo.state.orders["60000002"] = old(60000002, 6, 90);
-    neemo.state.orders["60000003"] = old(60000003, 2, 100); // entregue: fica de fora
+  it("histórico: importa todos os pedidos antigos para o cadastro dos clientes, fora da aba Pedidos", async () => {
+    const ago = (days: number) => new Date(Date.now() - days * 86_400_000).toISOString();
+    const old = (id: number, status: number, days: number) => neemoOrder(id, { status, date: ago(days), updated_at: ago(days) });
+    neemo.state.orders["60000001"] = old(60000001, 3, 200); // cancelado
+    neemo.state.orders["60000002"] = old(60000002, 6, 90); // cancelado com estorno
+    neemo.state.orders["60000003"] = old(60000003, 2, 100); // entregue
+    neemo.state.orders["60000004"] = old(60000004, 1, 10); // ficou "confirmado" na Neemo: entra como entregue
+    neemo.state.orders["60000005"] = old(60000005, 1, 0.1); // últimas 24 h: é do polling, não do histórico
 
     const { body } = await api().post(`/api/integrations/${fx.tenant.id}/${channelId}/order-history`).set(auth()).expect(200);
     expect(body.orderHistory).toMatchObject({ status: "running", progress: 0 });
     await queueIdle();
 
     const { orderHistoryImport } = await admin.channel.findUniqueOrThrow({ where: { id: channelId } });
-    // 60000001 e 60000002, mais os dois cancelados que já estavam gravados (71000100 e 71000101), que não se repetem.
-    expect(orderHistoryImport).toMatchObject({ status: "done", progress: 100, imported: 2 });
+    // Os pedidos já gravados pelo polling (71000xxx) não se repetem.
+    expect(orderHistoryImport).toMatchObject({ status: "done", progress: 100, imported: 4 });
     expect(Date.parse((orderHistoryImport as { from: string }).from)).toBeLessThan(Date.now() - 199 * 86_400_000);
     const imported = await admin.order.findMany({
-      where: { channelId, externalOrderId: { in: ["60000001", "60000002", "60000003"] } },
+      where: { channelId, externalOrderId: { startsWith: "6000000" } },
+      include: { events: true },
       orderBy: { externalOrderId: "asc" },
     });
-    expect(imported.map((o) => [o.externalOrderId, o.status, Boolean(o.importedAt)])).toEqual([
-      ["60000001", "CANCELED", true],
-      ["60000002", "CANCELED", true],
+    expect(imported.map((o) => [o.externalOrderId, o.status, Boolean(o.importedAt), o.contactId])).toEqual([
+      ["60000001", "CANCELED", true, whatsappContactId],
+      ["60000002", "CANCELED", true, whatsappContactId],
+      ["60000003", "DELIVERED", true, whatsappContactId],
+      ["60000004", "DELIVERED", true, whatsappContactId],
     ]);
+    expect(imported[3]!.events.map((e) => e.code).sort()).toEqual(["DELIVERED", "PLACED"]);
+
+    // Fora da aba Pedidos (o de 10 dias atrás estaria nos últimos 30 dias).
+    const { body: page } = await api().get("/api/orders?period=30d&channel=NEEMO").set(auth()).expect(200);
+    expect(page.items.some((o: { id: string }) => imported.some((i) => i.id === o.id))).toBe(false);
+    // As tags do cliente já contam o histórico.
+    expect((await admin.contact.findUniqueOrThrow({ where: { id: whatsappContactId } })).tags).toContain("VIP");
   });
 });

@@ -113,6 +113,8 @@ Resumo do Sistema de Design (marca **"Dish Desk"**, Next.js + Tailwind + shadcn/
 
 Toda nova integração que for desenvolvida, deve ser verificada a possibilidade de importar os contatos de clientes para aumentar nossa base.
 
+Junto com os contatos, procurar na API o histórico de cada cliente (quantos pedidos fez, quanto gastou, primeiro e último pedido), para classificar a base importada (VIP, Recorrente, Sumido...). Se a API não tiver um resumo por cliente, ver se a lista de pedidos da loja traz o cliente e o valor (como na Neemo) e montar o histórico a partir dela.
+
 Toda nova integração também entra na landing page ([apps/web/public/index.html](apps/web/public/index.html) e [apps/web/public/funcionalidades/index.html](apps/web/public/funcionalidades/index.html)), no mínimo na faixa "Funciona com" e nas listas de canais e sistemas onde as outras aparecem.
 
 ## 10. Mensagens automáticas seguem a personalidade

@@ -34,11 +34,8 @@ export type CardapioWebImportJob = { tenantId: string; channelId: string; page: 
 export type CardapioWebHistoryJob = { tenantId: string; channelId: string; until: string; window: number; page: number; imported: number };
 /** Uma página da base de clientes da Neemo (500 por página); `imported` soma o que as páginas anteriores trouxeram. */
 export type NeemoImportJob = { tenantId: string; channelId: string; page: number; imported: number };
-/**
- * Uma página dos cancelamentos antigos da Neemo: `status` é a posição em NEEMO_CANCELED (cada status cancelado é lido à
- * parte); `seen` e `total` medem o andamento.
- */
-export type NeemoHistoryJob = { tenantId: string; channelId: string; status: number; page: number; seen: number; total: number; imported: number };
+/** Uma página do histórico de pedidos da Neemo, do mais novo ao mais antigo; `until`: quando começou; `seen`: lidos até agora. */
+export type NeemoHistoryJob = { tenantId: string; channelId: string; until: string; page: number; seen: number; imported: number };
 /** "reply": a IA responde à última mensagem do cliente; "evaluate": a IA avalia o atendimento resolvido. */
 export type AiJob = { tenantId: string; conversationId: string };
 

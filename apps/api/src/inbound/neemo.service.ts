@@ -7,7 +7,6 @@ import * as Sentry from "@sentry/nestjs";
 import type { Job, Queue } from "bullmq";
 import { ENV, type Env } from "../config/env.js";
 import {
-  NEEMO_CANCELED,
   NEEMO_CUSTOMERS_PAGE,
   NEEMO_ORDERS_PAGE,
   NEEMO_TAKEOUT,
@@ -17,6 +16,7 @@ import {
   neemoStage,
 } from "../connectors/neemo.client.js";
 import { ConnectorsService } from "../connectors/connectors.service.js";
+import { refreshContactTags } from "../contacts/contact-tags.service.js";
 import { DatabaseService } from "../core/database.service.js";
 import { FraudService } from "../orders/fraud.service.js";
 import { OrderNoticeService } from "../orders/order-notice.service.js";
@@ -31,10 +31,11 @@ const MAX_LOOKBACK_MS = 24 * 60 * 60 * 1000;
 const OVERLAP_MS = 60_000;
 /** O manual da Neemo pede cerca de 60 s entre as consultas de pedidos. */
 const POLL_EVERY_MS = 60_000;
-/** A API não publica limite de requisições: um intervalo folgado entre as páginas e os detalhes de cada pedido. */
+/** A API não publica limite de requisições: um intervalo folgado entre as páginas. */
 const CUSTOMERS_PAGE_INTERVAL_MS = 1_000;
-const HISTORY_PAGE_INTERVAL_MS = 2_000;
-const ORDER_DETAIL_INTERVAL_MS = 600;
+const HISTORY_PAGE_INTERVAL_MS = 500;
+/** O histórico deixa de fora as últimas 24 h, que o polling lê com os itens e acompanha o status. */
+const HISTORY_RECENT_MS = 24 * 60 * 60 * 1000;
 /**
  * Clientes gravados por transação. A página da API tem 500, e gravar todos numa transação só passa dos 5 s que o Prisma
  * dá a cada uma (no banco de produção, a cada consulta soma a ida e volta pela rede).
@@ -169,9 +170,11 @@ export class NeemoService implements OnModuleInit {
   }
 
   /**
-   * Importa uma página dos cancelamentos antigos da loja, para o alerta de fraude considerar o histórico, e agenda a
-   * próxima. Só os cancelados: os relatórios e as tags não contam cancelados, então o passado da loja não muda os
-   * números de hoje. Cada status cancelado é lido à parte; cada pedido exige uma consulta (a lista vem sem os itens).
+   * Importa uma página do histórico de pedidos da loja (todos, desde o primeiro) e agenda a próxima. Os pedidos entram
+   * no cadastro de cada cliente, marcados como importados: contam nos pedidos e no total gasto do cliente, nas tags (VIP,
+   * Recorrente, Sumido...) e no alerta de fraude, mas ficam fora da aba Pedidos. Vêm da lista, sem os itens (abrir cada
+   * pedido seriam dezenas de milhares de consultas). O que não foi cancelado entra como entregue: um pedido antigo que
+   * ficou "novo" ou "confirmado" na Neemo não pode parecer na cozinha. Ao terminar, as tags são recalculadas.
    */
   async importOrderHistory(data: NeemoHistoryJob): Promise<void> {
     if (!this.client.configured) return;
@@ -189,34 +192,30 @@ export class NeemoService implements OnModuleInit {
     const token = await this.tokenOf(resolved);
     if (!token) return save({ status: data.imported > 0 ? "partial" : "error" }); // desconectada no meio da importação
 
-    let { imported, seen, total } = data;
+    let { imported, seen } = data;
     try {
-      // Primeira página: conta os cancelados de todos os status, para medir o andamento.
-      if (data.status === 0 && data.page === 1) {
-        total = 0;
-        for (const status of NEEMO_CANCELED) total += (await this.client.orders(token, { status, limit: 1 })).total;
-      }
-      const status = NEEMO_CANCELED[data.status]!;
-      const { orders, total: ofStatus } = await this.client.orders(token, { status, page: data.page, sort: "id desc" });
+      const { orders, total } = await this.client.orders(token, { page: data.page, sort: "id desc" });
+      const recent = Date.parse(data.until) - HISTORY_RECENT_MS;
+      const old = orders.filter((order) => Date.parse(order.date) < recent);
       const known = new Set(
         (
           await this.db.withTenants(scope, (tx) =>
-            tx.order.findMany({ where: { channelId: data.channelId, externalOrderId: { in: orders.map((order) => order.id) } }, select: { externalOrderId: true } }),
+            tx.order.findMany({ where: { channelId: data.channelId, externalOrderId: { in: old.map((order) => order.id) } }, select: { externalOrderId: true } }),
           )
         ).map((order) => order.externalOrderId),
       );
-      for (const summary of orders) {
-        if (known.has(summary.id)) continue;
-        await new Promise((resolve) => setTimeout(resolve, ORDER_DETAIL_INTERVAL_MS));
-        if (await this.createOrder(resolved, await this.client.order(token, summary.id), new Date())) imported++;
+      for (const order of old) {
+        if (!known.has(order.id) && (await this.createOrder(resolved, order, new Date()))) imported++;
       }
       seen += orders.length;
       const oldest = orders.map((order) => new Date(order.date).toISOString()).sort()[0];
-      const lastPage = orders.length === 0 || data.page * NEEMO_ORDERS_PAGE >= ofStatus;
-      const lastStatus = data.status + 1 >= NEEMO_CANCELED.length;
-      if (lastPage && lastStatus) return await save({ status: "done", progress: 100, imported, from: oldest });
-      await save({ progress: total ? Math.min(99, Math.round((seen / total) * 100)) : 0, imported, from: oldest });
-      const next: NeemoHistoryJob = { ...data, seen, total, imported, ...(lastPage ? { status: data.status + 1, page: 1 } : { page: data.page + 1 }) };
+      if (orders.length === 0 || data.page * NEEMO_ORDERS_PAGE >= total) {
+        await save({ status: "done", progress: 100, imported, from: oldest });
+        await this.db.withTenants(scope, (tx) => refreshContactTags(tx));
+        return;
+      }
+      await save({ progress: Math.min(99, Math.round((seen / total) * 100)), imported, from: oldest });
+      const next: NeemoHistoryJob = { ...data, page: data.page + 1, seen, imported };
       await this.queue.add("import-orders", next, { delay: HISTORY_PAGE_INTERVAL_MS });
     } catch (error) {
       this.logger.warn({ tenantId: data.tenantId, channelId: data.channelId, err: error }, "Histórico de pedidos da Neemo não importado");
@@ -273,7 +272,8 @@ export class NeemoService implements OnModuleInit {
 
   /**
    * Pedido novo: cliente (pelo telefone), endereço e o pedido com os itens. Pedido sem cliente nem telefone fica de
-   * fora. `importedAt`: veio do histórico da loja, então não conta como contato recente do cliente. Devolve o id do pedido.
+   * fora. `importedAt`: veio do histórico da loja, então não conta como contato recente do cliente e, se não foi
+   * cancelado, entra como entregue. Devolve o id do pedido.
    */
   private async createOrder(channel: ResolvedChannel, order: NeemoOrder, importedAt?: Date): Promise<string | null> {
     const phone = order.phone ? customerPhone(order.phone) : null;
@@ -294,8 +294,9 @@ export class NeemoService implements OnModuleInit {
       state: address.uf || null,
       postal_code: address.cep || null,
     };
-    const stage = neemoStage(order.status, order.forma_entrega);
-    const canceled = stage?.status === "CANCELED";
+    const current = neemoStage(order.status, order.forma_entrega);
+    const canceled = current?.status === "CANCELED";
+    const stage = importedAt && !canceled ? ({ status: "DELIVERED", event: "DELIVERED" } as const) : current;
 
     return this.db.withTenants({ tenantIds: [channel.tenantId] }, async (tx) => {
       const contact = await this.inbound.resolveContact(tx, channel.tenantId, {
@@ -339,7 +340,7 @@ export class NeemoService implements OnModuleInit {
           // `order_type` é o campo que a previsão de entrega lê para saber que é retirada (como no Cardápio Web).
           raw: { ...order, order_type: takeout ? "takeout" : "delivery" } as Prisma.InputJsonObject,
           items: { create: itemsOf(order, channel.tenantId) },
-          events: { create: stagesOf(order).map((stage) => ({ tenantId: channel.tenantId, externalEventId: stage.code, ...stage })) },
+          events: { create: stagesOf(order, stage?.event).map((event) => ({ tenantId: channel.tenantId, externalEventId: event.code, ...event })) },
         },
         select: { id: true },
       });
@@ -380,8 +381,7 @@ function itemsOf(order: NeemoOrder, tenantId: string) {
 }
 
 /** Linha do tempo de um pedido lido pela primeira vez: quando foi feito e, se já passou disso, a etapa em que está. */
-function stagesOf(order: NeemoOrder): { code: string; occurredAt: Date }[] {
-  const current = neemoStage(order.status, order.forma_entrega)?.event;
+function stagesOf(order: NeemoOrder, current: string | undefined): { code: string; occurredAt: Date }[] {
   return [
     { code: "PLACED", occurredAt: new Date(order.date) },
     ...(current && current !== "PLACED" ? [{ code: current, occurredAt: new Date(order.updated_at) }] : []),
