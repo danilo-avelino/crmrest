@@ -11,6 +11,7 @@ import { RealtimeEmitter } from "../realtime/realtime.emitter.js";
 import {
   type AutomationState,
   automationMessage,
+  callTeam,
   dispatch,
   type InboundEvent,
   leaveToTeam,
@@ -47,10 +48,14 @@ export class IfoodAttendanceService {
     if (await this.aiTakes(event, orderId)) return;
     // Sem a IA, quem atende o cliente é a equipe: a conversa vai para a aba Ativos.
     await leaveToTeam(this.db, event.channel.tenantId, event.conversationId);
-    // Atendimento em andamento: só falta anotar o telefone, se o cliente o mandar.
-    if (!event.newAttendance) return this.phoneCollection.afterInbound(event);
-
     const { tenantId } = event.channel;
+    // Atendimento em andamento: chama a equipe até alguém responder e anota o telefone, se o cliente o mandar.
+    if (!event.newAttendance) {
+      await this.db.withTenants({ tenantIds: [tenantId] }, (tx) => callTeam(tx, event.conversationId));
+      this.realtime.inboxChanged(tenantId, event.conversationId);
+      return this.phoneCollection.afterInbound(event);
+    }
+
     const messageIds = await this.db.withTenants({ tenantIds: [tenantId] }, async (tx) => {
       const conversation = await tx.conversation.findUniqueOrThrow({
         where: { id: event.conversationId },

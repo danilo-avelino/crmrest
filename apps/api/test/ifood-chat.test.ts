@@ -163,7 +163,7 @@ describe("Chat do iFood na Inbox (trava IFOOD_CHAT_BRIDGE ligada)", () => {
     }
   });
 
-  it("loja puxou a conversa (no widget ou pela Inbox) e o cliente respondeu: sem chamado nem resposta automática", async () => {
+  it("loja puxou a conversa (no widget ou pela Inbox) e o cliente respondeu: sem resposta automática, só o alarme até a loja responder", async () => {
     const called = await ifoodOrder("6533", "Iane Pimentel");
     const knock = [shown("OUTBOUND", "Boa tarde, entregador está no local!", minutesAgo(2)), shown("INBOUND", "Só um minuto", minutesAgo(1))];
     await post("/ifood-chat/sync", { orderCode: "6533", messages: knock }).expect(200);
@@ -184,10 +184,10 @@ describe("Chat do iFood na Inbox (trava IFOOD_CHAT_BRIDGE ligada)", () => {
     await settle();
 
     const knocked = await admin.conversation.findFirstOrThrow({ where: { contactId: called.contactId, channelId: fx.ifood.id } });
-    expect(knocked).toMatchObject({ status: "OPEN", unreadCount: 1, awaitingAgentSince: null });
-    // Só o pedido do telefone, como em qualquer atendimento em andamento: sem chamado nem aviso do pedido.
+    expect(knocked).toMatchObject({ status: "OPEN", unreadCount: 1, awaitingAgentSince: expect.any(Date) });
+    // Só o pedido do telefone, como em qualquer atendimento em andamento: sem mensagem de chamado nem aviso do pedido.
     expect((await timeline(knocked.id)).flatMap((m) => (m.content as { automation?: string }).automation ?? [])).toEqual(["phone_collection"]);
-    expect(await admin.conversation.findUniqueOrThrow({ where: { id: chat.id } })).toMatchObject({ status: "OPEN", awaitingAgentSince: null });
+    expect(await admin.conversation.findUniqueOrThrow({ where: { id: chat.id } })).toMatchObject({ status: "OPEN", awaitingAgentSince: expect.any(Date) });
     expect((await timeline(chat.id)).slice(before).map((m) => m.content)).toEqual(
       expect.arrayContaining([{ text: "Beleza" }, { automation: "phone_collection", text: expect.any(String) }]),
     );

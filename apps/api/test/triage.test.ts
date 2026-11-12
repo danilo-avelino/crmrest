@@ -204,8 +204,17 @@ describe("menu de atendimento, busca do pedido e pesquisa de satisfação", () =
     await drainQueues(app);
     await say("5511970000030", "wamid.RS2", "Beleza");
 
-    expect(await conversationOf("5511970000030")).toMatchObject({ status: "OPEN" });
+    const reopened = await conversationOf("5511970000030");
+    expect(reopened).toMatchObject({ status: "OPEN" });
     expect(await automations("5511970000030")).toEqual(["menu"]);
+    // Ninguém respondeu: o alarme toca (e a conversa vai para Ativos) até a equipe responder; ler não basta.
+    expect(reopened.awaitingAgentSince).not.toBeNull();
+    await request(app.getHttpServer()).post(`/api/conversations/${id}/read`).set("Authorization", `Bearer ${token}`).expect(204);
+    await say("5511970000030", "wamid.RS3", "Vai demorar?");
+    expect((await conversationOf("5511970000030")).awaitingAgentSince).toEqual(reopened.awaitingAgentSince); // vale a primeira chamada
+    await request(app.getHttpServer()).post(`/api/conversations/${id}/messages`).set("Authorization", `Bearer ${token}`).send({ text: "Já saiu!" }).expect(201);
+    await drainQueues(app);
+    expect((await conversationOf("5511970000030")).awaitingAgentSince).toBeNull();
   });
 
   it("pedido de três dias atrás não é achado, e sem pedido não há pesquisa", async () => {
@@ -716,9 +725,11 @@ describe("menu de atendimento, busca do pedido e pesquisa de satisfação", () =
   });
 
   it("confirmou o pedido ainda na cozinha: recebe a previsão de saída", async () => {
-    // Um pedido que já saiu do restaurante em 15 minutos serve de base.
-    const done = await ifoodOrder("6161", new Date(Date.now() - 60 * 60_000));
-    await admin.order.update({ where: { id: done.id }, data: { status: "DISPATCHED", dispatchedAt: new Date(Date.now() - 45 * 60_000) } });
+    // Cinco pedidos que já saíram do restaurante em 15 minutos servem de base (o 6161 é usado no teste seguinte).
+    for (const code of ["6161", "6163", "6164", "6165", "6166"]) {
+      const done = await ifoodOrder(code, new Date(Date.now() - 60 * 60_000));
+      await admin.order.update({ where: { id: done.id }, data: { status: "DISPATCHED", dispatchedAt: new Date(Date.now() - 45 * 60_000) } });
+    }
 
     await say("5511970000018", "wamid.E1", "Oi");
     await say("5511970000018", "wamid.E2", "1");
@@ -734,7 +745,7 @@ describe("menu de atendimento, busca do pedido e pesquisa de satisfação", () =
     );
   });
 
-  it("o atendente respondeu antes do cliente escrever: a mensagem seguinte não chama a equipe", async () => {
+  it("o atendente respondeu antes do cliente escrever: a mensagem seguinte não passa a conversa de novo, só toca o alarme", async () => {
     const { id } = await conversationOf("5511970000018");
     await request(app.getHttpServer())
       .post(`/api/conversations/${id}/messages`)
@@ -744,7 +755,7 @@ describe("menu de atendimento, busca do pedido e pesquisa de satisfação", () =
     await drainQueues(app);
     await say("5511970000018", "wamid.E5", "Obrigado!");
     const conversation = await conversationOf("5511970000018");
-    expect(conversation.awaitingAgentSince).toBeNull();
+    expect(conversation.awaitingAgentSince).not.toBeNull(); // o alarme toca até o atendente responder
     expect(conversation.messages.map((m) => m.content as Content)).not.toContainEqual(expect.objectContaining({ event: "handoff" }));
   });
 

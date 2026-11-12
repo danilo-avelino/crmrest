@@ -75,6 +75,17 @@ export async function leaveToTeam(db: DatabaseService, tenantId: string, convers
 }
 
 /**
+ * O cliente escreveu numa conversa que está com a equipe e nenhuma automação vai responder: o alarme toca até um
+ * atendente responder (teamRepliedUpdate) ou resolver. Se já chamava, vale a primeira chamada.
+ */
+export async function callTeam(tx: TenantTx, conversationId: string): Promise<void> {
+  await tx.conversation.updateMany({
+    where: { id: conversationId, awaitingAgentSince: null },
+    data: { awaitingAgentSince: new Date(), awaitingAgentQuiet: false },
+  });
+}
+
+/**
  * A equipe respondeu (pelo Dish Desk ou pelo WhatsApp do celular): responder implica ter lido a conversa, e o
  * atendente assume, encerrando o menu automático (ou a IA) se ainda estiver aberto.
  */

@@ -20,6 +20,7 @@ import { Injectable } from "@nestjs/common";
 import type { Queue } from "bullmq";
 import { LlmClient } from "../ai/llm.client.js";
 import { mergeContacts } from "../contacts/contact-merge.js";
+import { JevClient } from "../defense/jev.client.js";
 import { orderUpdateMessage } from "../orders/forecast.js";
 import { provenPhone, provenPhoneWhere } from "../orders/customer-history.js";
 import { latestOrderOf } from "../orders/latest-order.js";
@@ -30,6 +31,7 @@ import { RealtimeEmitter } from "../realtime/realtime.emitter.js";
 import {
   type AutomationState,
   automationMessage,
+  callTeam,
   dispatch,
   firstName,
   type InboundEvent,
@@ -109,6 +111,7 @@ export class TriageService {
     private readonly survey: SurveyService,
     private readonly courierMenu: CourierMenuService,
     private readonly llm: LlmClient,
+    private readonly jev: JevClient,
   ) {}
 
   /**
@@ -194,7 +197,7 @@ export class TriageService {
   private async step(tx: TenantTx, event: InboundEvent): Promise<Step> {
     const conversation = await tx.conversation.findUniqueOrThrow({
       where: { id: event.conversationId },
-      select: { id: true, tenantId: true, channelId: true, automationState: true, contact: true },
+      select: { id: true, tenantId: true, channelId: true, automationState: true, teamInvolved: true, contact: true },
     });
     // Entregador: o menu é o dele, sem aviso de horário nem coleta de telefone.
     if (conversation.contact.tags.includes(COURIER_TAG)) return this.courierMenu.step(tx, conversation, event);
@@ -221,6 +224,8 @@ export class TriageService {
     if (state.selfServed) {
       return this.sendMenu(tx, conversation, { ...state, triage: "awaiting_option", selfServed: undefined, menuRepeated: true }, messages);
     }
+    // Escreveu numa conversa da equipe, ou retomou a resolvida respondendo ao atendente: chama até alguém responder.
+    if (conversation.teamInvolved || event.previousStatus === "RESOLVED") await callTeam(tx, conversation.id);
     return { send: [], done: true };
   }
 
@@ -386,7 +391,7 @@ export class TriageService {
             where: { id: foundOrderId },
             include: { contact: true, channel: { select: { type: true } }, tenant: { select: { name: true } } },
           });
-          return order && { order, update: await orderUpdateMessage(orders, order.id, new Date(), speaker) };
+          return order && { order, update: await orderUpdateMessage(orders, order.id, new Date(), speaker, this.jev) };
         })
       : null;
     if (!found) {
