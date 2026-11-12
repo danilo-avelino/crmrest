@@ -1,15 +1,20 @@
 import { AUTO_TAG_RULES, type ContactSubject, type ServiceFault, type ServiceIssue, type TeamReason, withoutAi } from "@dishdesk/shared";
+import type { Message } from "@dishdesk/database";
+import { InjectQueue } from "@nestjs/bullmq";
 import { Injectable } from "@nestjs/common";
 import type { Queue } from "bullmq";
 import { refreshContactTags } from "../contacts/contact-tags.service.js";
 import { DatabaseService } from "../core/database.service.js";
 import { JevClient, type JevQuestion } from "../defense/jev.client.js";
-import type { AiJob } from "../queues/queues.module.js";
+import { type AiJob, QUEUES } from "../queues/queues.module.js";
 import { RealtimeEmitter } from "../realtime/realtime.emitter.js";
 import { transcript } from "./prompts.js";
 
-/** Espera depois de resolvida: a reação do cliente (a nota da pesquisa, o "obrigado") entra na avaliação. */
-export const EVALUATION_DELAY_MS = 5 * 60_000;
+/**
+ * Espera desde a última mensagem da conversa resolvida: a reação do cliente (a nota da pesquisa, o "obrigado") e a
+ * conversa retomada logo depois entram numa avaliação só.
+ */
+export const EVALUATION_DELAY_MS = 60 * 60_000;
 /** Mensagens do atendimento que a IA lê (as mais recentes). */
 const TRANSCRIPT_LIMIT = 80;
 
@@ -94,8 +99,8 @@ export const EVALUATION_QUESTIONS = {
 } satisfies Record<string, JevQuestion>;
 
 /** Agenda a avaliação de um atendimento que acabou de ser resolvido (o job confere se o restaurante tem o módulo). */
-export async function scheduleEvaluation(queue: Queue<AiJob>, tenantId: string, conversationId: string): Promise<void> {
-  await queue.add("evaluate", { tenantId, conversationId }, { delay: EVALUATION_DELAY_MS });
+export async function scheduleEvaluation(queue: Queue<AiJob>, tenantId: string, conversationId: string, delay = EVALUATION_DELAY_MS): Promise<void> {
+  await queue.add("evaluate", { tenantId, conversationId }, { delay });
 }
 
 /**
@@ -111,11 +116,12 @@ export class AiEvaluationService {
     private readonly db: DatabaseService,
     private readonly realtime: RealtimeEmitter,
     private readonly jev: JevClient,
+    @InjectQueue(QUEUES.ai) private readonly ai: Queue<AiJob>,
   ) {}
 
-  async evaluate(tenantId: string, conversationId: string): Promise<void> {
+  async evaluate(tenantId: string, conversationId: string, now = new Date()): Promise<void> {
     const scope = { tenantIds: [tenantId] };
-    const attendance = await this.db.withTenants(scope, async (tx) => {
+    const attendance = await this.db.withTenants(scope, async (tx): Promise<{ messages: Message[]; userId: string } | { wait: number } | null> => {
       if (!this.jev.enabled) return null;
       const module = await tx.tenantModule.findUnique({ where: { tenantId_module: { tenantId, module: "AI" } }, select: { id: true } });
       if (!module) return null;
@@ -135,6 +141,9 @@ export class AiEvaluationService {
         })
       ).reverse();
       if (!messages.some((message) => message.direction === "INBOUND")) return null; // nada novo do cliente
+      // Conversa com mensagem há menos de EVALUATION_DELAY_MS (o cliente voltou a escrever): espera mais.
+      const wait = messages.at(-1)!.createdAt.getTime() + EVALUATION_DELAY_MS - now.getTime();
+      if (wait > 0) return { wait };
       const userId = messages.findLast((message) => message.direction === "OUTBOUND" && message.sentByUserId)?.sentByUserId;
       if (!userId) {
         await tx.aiOnlyAttendance.create({ data: { tenantId, conversationId } }); // a equipe não respondeu: sem chamada de IA
@@ -143,6 +152,7 @@ export class AiEvaluationService {
       return { messages, userId };
     });
     if (!attendance) return;
+    if ("wait" in attendance) return scheduleEvaluation(this.ai, tenantId, conversationId, attendance.wait);
 
     // Uma falha do Jev lança: o BullMQ tenta de novo, sem afetar a conversa. A conversa é de um cliente do restaurante:
     // só vai a provedores que não guardam os dados para treino.

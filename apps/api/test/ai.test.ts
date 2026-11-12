@@ -4,7 +4,7 @@ import type { Queue } from "bullmq";
 import request from "supertest";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { orderNumbersIn, periodGreeting } from "../src/ai/ai-attendant.service.js";
-import { AiEvaluationService, scorePercent } from "../src/ai/ai-evaluation.service.js";
+import { AiEvaluationService, EVALUATION_DELAY_MS, scorePercent } from "../src/ai/ai-evaluation.service.js";
 import { AiForwardService } from "../src/ai/ai-forward.service.js";
 import { InactivityService } from "../src/automations/inactivity.service.js";
 import { PresenceService } from "../src/realtime/presence.service.js";
@@ -107,6 +107,8 @@ describe("atendimento com IA: resposta, revisão e avaliação", () => {
       include: { messages: { orderBy: { createdAt: "asc" } } },
     });
   const contents = async (waId: string) => (await conversationOf(waId)).messages.map((m) => m.content as Content);
+  /** A hora em que a avaliação roda: passado o tempo de espera desde a última mensagem. */
+  const later = () => new Date(Date.now() + EVALUATION_DELAY_MS);
   type JevBody = { state: { conversa: string }; questions: Record<string, unknown>; provider?: unknown };
   const evaluationCalls = () => jev.requests.filter((req) => "resolved" in (req.body as JevBody).questions);
   const llmCalls = (name: string) => llm.requests.filter((req) => (req.body as LlmBody).response_format.json_schema.name === name);
@@ -448,10 +450,20 @@ describe("atendimento com IA: resposta, revisão e avaliação", () => {
       .set("Authorization", `Bearer ${token}`)
       .send({ status: "RESOLVED" })
       .expect(200);
-    // Agendada para alguns minutos depois (espera a reação do cliente): aqui, roda na hora.
-    const scheduled = (await aiQueue.getDelayed()).filter((job) => job.name === "evaluate" && job.data.conversationId === id);
+    // Agendada para 1 hora depois (espera a reação do cliente e a conversa retomada): aqui, roda na hora.
+    const evaluations = async () => (await aiQueue.getDelayed()).filter((job) => job.name === "evaluate" && job.data.conversationId === id);
+    const scheduled = await evaluations();
     expect(scheduled).toHaveLength(1);
     await scheduled[0]!.remove();
+    const service = app.get(AiEvaluationService);
+    // Rodando antes de 1 hora da última mensagem (o cliente escreveu depois de resolvida): não avalia, remarca.
+    const calls = evaluationCalls().length;
+    await service.evaluate(fx.tenant.id, id);
+    expect(evaluationCalls()).toHaveLength(calls);
+    const rescheduled = await evaluations();
+    expect(rescheduled).toHaveLength(1);
+    expect(rescheduled[0]!.delay).toBeGreaterThan(EVALUATION_DELAY_MS - 60_000);
+    await rescheduled[0]!.remove();
 
     // A nota vem como a posição na escala (0 a 4, fracionada) e vira porcentagem: 3,6 é 90%.
     jevAnswers = {
@@ -464,9 +476,8 @@ describe("atendimento com IA: resposta, revisão e avaliação", () => {
       fault: { type: "choice", choice: "nenhuma" },
       churnRisk: { type: "noul", noul: 0.08 },
     };
-    const service = app.get(AiEvaluationService);
-    await service.evaluate(fx.tenant.id, id);
-    await service.evaluate(fx.tenant.id, id); // nada novo do cliente: não avalia de novo
+    await service.evaluate(fx.tenant.id, id, later());
+    await service.evaluate(fx.tenant.id, id, later()); // nada novo do cliente: não avalia de novo
 
     const rows = await admin.conversationEvaluation.findMany({ where: { conversationId: id } });
     expect(rows).toMatchObject([
@@ -486,7 +497,7 @@ describe("atendimento com IA: resposta, revisão e avaliação", () => {
       },
     ]);
     const sent = evaluationCalls().at(-1)!;
-    expect(evaluationCalls()).toHaveLength(1);
+    expect(evaluationCalls()).toHaveLength(calls + 1);
     expect(sent.authorization).toBe("Bearer chave-de-teste");
     expect((sent.body as JevBody).provider).toEqual({ data_collection: "deny" }); // conversa de cliente: sem guardar para treino
     expect(await admin.aiUsage.findMany({ where: { tenantId: fx.tenant.id, provider: "JEV" } })).toMatchObject([
@@ -561,8 +572,8 @@ describe("atendimento com IA: resposta, revisão e avaliação", () => {
     await request(app.getHttpServer()).post(`/api/conversations/${id}/notes`).set("Authorization", `Bearer ${token}`).send({ text: "Cliente antigo" }).expect(201);
     await resolve();
     const calls = evaluationCalls().length;
-    await evaluation.evaluate(fx.tenant.id, id);
-    await evaluation.evaluate(fx.tenant.id, id); // nada novo do cliente: não conta de novo
+    await evaluation.evaluate(fx.tenant.id, id, later());
+    await evaluation.evaluate(fx.tenant.id, id, later()); // nada novo do cliente: não conta de novo
 
     expect(evaluationCalls()).toHaveLength(calls);
     expect(await admin.conversationEvaluation.count({ where: { conversationId: id } })).toBe(0);
@@ -575,7 +586,7 @@ describe("atendimento com IA: resposta, revisão e avaliação", () => {
     await request(app.getHttpServer()).post(`/api/conversations/${id}/messages`).set("Authorization", `Bearer ${token}`).send({ text: "Já estou vendo, um instante." }).expect(201);
     await settle();
     await resolve();
-    await evaluation.evaluate(fx.tenant.id, id);
+    await evaluation.evaluate(fx.tenant.id, id, later());
 
     expect(await admin.conversationEvaluation.findMany({ where: { conversationId: id, userId: fx.user.id } })).toMatchObject([
       { resolved: false, satisfied: null, score: 50, teamReason: "outro", subject: null, issue: "demora", fault: "operacao", churnRisk: 0.8 },
@@ -786,7 +797,7 @@ describe("atendimento com IA: resposta, revisão e avaliação", () => {
       await settle();
       await request(app.getHttpServer()).post(`/api/conversations/${id}/suggestion`).set("Authorization", `Bearer ${token}`).expect(422);
       await request(app.getHttpServer()).patch(`/api/conversations/${id}`).set("Authorization", `Bearer ${token}`).send({ status: "RESOLVED" }).expect(200);
-      await app.get(AiEvaluationService).evaluate(fx.tenant.id, id);
+      await app.get(AiEvaluationService).evaluate(fx.tenant.id, id, later());
       expect(llm.requests.length).toBe(before);
     }
     expect(evaluationCalls()).toHaveLength(evaluations);
