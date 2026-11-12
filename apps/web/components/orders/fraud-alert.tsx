@@ -1,6 +1,6 @@
 "use client";
 
-import { CHANNEL_LABEL, type CanceledOrderRow, type CurrentOrderDto, type CustomerCancellations, type OrderAlertDto, type OrderDto } from "@dishdesk/shared";
+import { CHANNEL_ARTICLE, CHANNEL_LABEL, type CanceledOrderRow, type CurrentOrderDto, type CustomerCancellations, type OrderAlertDto, type OrderDto } from "@dishdesk/shared";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { LoaderCircleIcon, LockIcon, ShieldAlertIcon } from "lucide-react";
 import { useState } from "react";
@@ -33,7 +33,8 @@ function plural(value: number, one: string, many: string): string {
 function cancelElsewhere(channelType: OrderDto["channelType"]): { where: string; why: string } {
   const label = CHANNEL_LABEL[channelType];
   if (channelType === "IFOOD") return { where: "no Gestor de Pedidos do iFood", why: "O Dish Desk só acompanha os pedidos do iFood." };
-  return { where: `no ${label}`, why: `O ${label} não permite cancelar pelo Dish Desk.` };
+  const article = CHANNEL_ARTICLE[channelType];
+  return { where: `n${article} ${label}`, why: `${article.toUpperCase()} ${label} não permite cancelar pelo Dish Desk.` };
 }
 
 /** Selo vermelho da lista da Inbox e da aba Pedidos. */

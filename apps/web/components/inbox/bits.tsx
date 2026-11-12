@@ -20,6 +20,7 @@ export const CHANNEL_DOT: Record<ChannelType, string> = {
   MESSENGER: "bg-ink-3",
   WEBCHAT: "bg-ink-3",
   CARDAPIO_WEB: "bg-cardapio-web",
+  NEEMO: "bg-neemo",
 };
 
 // Logo do canal no lugar das iniciais (lista de conversas); recorte quadrado e centralizado.

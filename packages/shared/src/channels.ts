@@ -19,6 +19,8 @@ export const CHANNEL_CAPABILITIES: Record<ChannelType, ChannelCapabilities> = {
   WEBCHAT: { send: false, window24h: false, providesPhone: false },
   // Cardápio Web: só pedidos (o cliente conversa pelo WhatsApp), que trazem o telefone.
   CARDAPIO_WEB: { send: false, window24h: false, providesPhone: true },
+  // Neemo (Linx Delivery App): como o Cardápio Web, só pedidos, que trazem o telefone.
+  NEEMO: { send: false, window24h: false, providesPhone: true },
 };
 
 export const CHANNEL_LABEL: Record<ChannelType, string> = {
@@ -28,4 +30,16 @@ export const CHANNEL_LABEL: Record<ChannelType, string> = {
   IFOOD: "iFood",
   WEBCHAT: "chat do site",
   CARDAPIO_WEB: "Cardápio Web",
+  NEEMO: "Neemo",
+};
+
+/** Artigo do nome de cada canal, para as frases: "o iFood", "a Neemo". */
+export const CHANNEL_ARTICLE: Record<ChannelType, "o" | "a"> = {
+  WHATSAPP: "o",
+  INSTAGRAM: "o",
+  MESSENGER: "o",
+  IFOOD: "o",
+  WEBCHAT: "o",
+  CARDAPIO_WEB: "o",
+  NEEMO: "a",
 };

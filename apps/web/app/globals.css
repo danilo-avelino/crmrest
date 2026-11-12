@@ -40,6 +40,7 @@
   --color-instagram: #e1306c;
   --color-ifood: #ea1d2c;
   --color-cardapio-web: #7c3aed;
+  --color-neemo: #ff7a00; /* meio do degradê do logo da Neemo (#ff4f08 → #ffac00) */
 
   /* Provedores de IA nos gráficos de Gastos com IA (board "Gastos com IA"); jev-ink é o texto na cor do Jev. */
   --color-claude: #c4341a;

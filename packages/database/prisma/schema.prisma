@@ -181,6 +181,7 @@ enum ChannelType {
   IFOOD
   WEBCHAT
   CARDAPIO_WEB
+  NEEMO
 }
 
 enum ChannelStatus {
@@ -204,7 +205,7 @@ model Channel {
   servedTenantIds String[] @default([]) @map("served_tenant_ids") @db.Uuid
   // Vencimento do token do WhatsApp ou do Instagram (o job diário renova antes); null = não vence ou não conferido.
   tokenExpiresAt DateTime? @map("token_expires_at") @db.Timestamptz(3)
-  // Importação dos cancelamentos antigos (Cardápio Web): andamento e resultado (OrderHistoryImport, no pacote shared).
+  // Importação dos cancelamentos antigos (Cardápio Web, Neemo): andamento e resultado (OrderHistoryImport, no pacote shared).
   orderHistoryImport Json? @map("order_history_import")
 
   tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)

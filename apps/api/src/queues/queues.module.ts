@@ -5,7 +5,7 @@ import type { Env } from "../config/env.js";
 
 /**
  * Filas (§3.1): inbound = webhooks; outbound = envios aos canais; automations = etapas das automações;
- * ifood e cardapioWeb = polling de pedidos (e, no Cardápio Web, a importação da base de clientes); channels = manutenção dos canais (renovação de tokens);
+ * ifood, cardapioWeb e neemo = polling de pedidos (e, no Cardápio Web e na Neemo, a importação da base de clientes); channels = manutenção dos canais (renovação de tokens);
  * ai = respostas e avaliações da IA (módulo Atendimento com IA), separadas para a LLM não atrasar as automações.
  */
 export const QUEUES = {
@@ -14,6 +14,7 @@ export const QUEUES = {
   automations: "automations",
   ifood: "ifood",
   cardapioWeb: "cardapio-web",
+  neemo: "neemo",
   channels: "channels",
   ai: "ai",
 } as const;
@@ -31,6 +32,13 @@ export type AdminMessageJob = { tenantId: string; phone: string; text: string };
 export type CardapioWebImportJob = { tenantId: string; channelId: string; page: number; imported: number };
 /** Uma página dos cancelamentos antigos do Cardápio Web: `window` é o período de 6 meses, contado para trás desde `until`. */
 export type CardapioWebHistoryJob = { tenantId: string; channelId: string; until: string; window: number; page: number; imported: number };
+/** Uma página da base de clientes da Neemo (500 por página); `imported` soma o que as páginas anteriores trouxeram. */
+export type NeemoImportJob = { tenantId: string; channelId: string; page: number; imported: number };
+/**
+ * Uma página dos cancelamentos antigos da Neemo: `status` é a posição em NEEMO_CANCELED (cada status cancelado é lido à
+ * parte); `seen` e `total` medem o andamento.
+ */
+export type NeemoHistoryJob = { tenantId: string; channelId: string; status: number; page: number; seen: number; total: number; imported: number };
 /** "reply": a IA responde à última mensagem do cliente; "evaluate": a IA avalia o atendimento resolvido. */
 export type AiJob = { tenantId: string; conversationId: string };
 
@@ -56,6 +64,7 @@ export class QueuesModule {
           { name: QUEUES.automations },
           { name: QUEUES.ifood },
           { name: QUEUES.cardapioWeb },
+          { name: QUEUES.neemo },
           { name: QUEUES.channels },
           { name: QUEUES.ai },
         ),

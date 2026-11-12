@@ -11,7 +11,8 @@
     "META_WEBHOOK_VERIFY_TOKEN",
     "INSTAGRAM_APP_SECRET",
     "CHANNELS_DRY_RUN",
-    "CARDAPIO_WEB_API_URL"
+    "CARDAPIO_WEB_API_URL",
+    "NEEMO_API_URL"
   ],
   "tasks": {
     "db:generate": {

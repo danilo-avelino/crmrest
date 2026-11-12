@@ -20,6 +20,7 @@ import { ENV, type Env } from "../config/env.js";
 import { CardapioWebClient } from "../connectors/cardapio-web.client.js";
 import { ConnectorsService } from "../connectors/connectors.service.js";
 import { IfoodAuthService } from "../connectors/ifood-auth.service.js";
+import { NeemoClient } from "../connectors/neemo.client.js";
 import { toOrderDto } from "../conversations/conversation.mapper.js";
 import { scopeFor } from "../conversations/conversations.service.js";
 import { openIfoodConversation } from "../conversations/ifood-conversation.js";
@@ -42,11 +43,12 @@ const PAGE_SIZE = 50;
 /** Ainda no restaurante (filtro "em produção" e o alerta de atraso). */
 const IN_PRODUCTION: OrderStatus[] = ["PLACED", "CONFIRMED", "PREPARING", "READY"];
 
-/** Aba Pedidos: todos os pedidos das integrações (iFood, Cardápio Web), sem abrir uma conversa para cada um. */
+/** Aba Pedidos: todos os pedidos das integrações (iFood, Cardápio Web, Neemo), sem abrir uma conversa para cada um. */
 @Injectable()
 export class OrdersService {
   private readonly logger = new Logger(OrdersService.name);
   private readonly cardapioWeb: CardapioWebClient;
+  private readonly neemo: NeemoClient;
 
   constructor(
     private readonly db: DatabaseService,
@@ -59,6 +61,7 @@ export class OrdersService {
     @Inject(ENV) private readonly env: Env,
   ) {
     this.cardapioWeb = new CardapioWebClient(env);
+    this.neemo = new NeemoClient(env);
   }
 
   /** Cancelar pedido do iFood: liberado pela trava própria (IFOOD_ORDER_CANCEL) ou pela das ações em geral. */
@@ -70,6 +73,7 @@ export class OrdersService {
   private canCancel(order: { status: OrderStatus; channel: { type: ChannelType } }): boolean {
     if (!CANCELABLE.has(order.status)) return false;
     if (order.channel.type === "IFOOD") return this.ifoodCancelOn() && this.ifood.configured;
+    if (order.channel.type === "NEEMO") return this.neemo.configured;
     return order.channel.type === "CARDAPIO_WEB" && this.cardapioWeb.configured;
   }
 
@@ -217,7 +221,7 @@ export class OrdersService {
   async cancellationReasons(auth: RequestAuth, orderId: string): Promise<OrderCancellationOptions> {
     const type = await this.channelTypeOf(auth, orderId);
     if (type !== "IFOOD") {
-      const order = await this.cardapioWebOrder(auth, orderId);
+      const order = await this.cancelableOrder(auth, orderId);
       return {
         reasons: [],
         reasonMode: "text",
@@ -237,7 +241,8 @@ export class OrdersService {
 
   /**
    * Cancela pelo Dish Desk. iFood: pede com um dos motivos que ele ofereceu, e o pedido vira cancelado (com a mensagem ao
-   * cliente) quando o evento chega. Cardápio Web: a API confirma na hora.
+   * cliente) quando o evento chega. Cardápio Web e Neemo: a API confirma na hora (a Neemo não recebe o motivo, que fica
+   * só no Dish Desk).
    */
   async cancel(auth: RequestAuth, orderId: string, body: CancelOrderRequest): Promise<void> {
     const markFraud = body.markFraud ?? false;
@@ -250,13 +255,19 @@ export class OrdersService {
       await this.fraud.canceledByTeam(auth, orderId, { reason: reason.description, markFraud, confirmed: false });
       return;
     }
-    const order = await this.cardapioWebOrder(auth, orderId);
+    const order = await this.cancelableOrder(auth, orderId);
     const reason = body.reason?.trim() || null;
+    const token = this.connectors.secrets(order.channel.credentials).accessToken;
+    const neemo = order.channel.type === "NEEMO";
     try {
-      await this.cardapioWeb.cancel(this.connectors.secrets(order.channel.credentials).accessToken, order.externalOrderId, reason);
+      if (neemo) await this.neemo.cancel(token, order.externalOrderId);
+      else await this.cardapioWeb.cancel(token, order.externalOrderId, reason);
     } catch (error) {
-      this.logger.warn(`Cardápio Web recusou o cancelamento: ${error instanceof Error ? error.message : String(error)}`);
-      throw new UnprocessableEntityException("O Cardápio Web não aceitou e o pedido continua ativo. Tente de novo ou cancele no painel do Cardápio Web.");
+      const system = neemo ? "A Neemo" : "O Cardápio Web";
+      this.logger.warn(`${system} recusou o cancelamento: ${error instanceof Error ? error.message : String(error)}`);
+      throw new UnprocessableEntityException(
+        `${system} não aceitou e o pedido continua ativo. Tente de novo ou cancele no painel ${neemo ? "da Neemo" : "do Cardápio Web"}.`,
+      );
     }
     await this.fraud.canceledByTeam(auth, orderId, { reason, markFraud, confirmed: true });
   }
@@ -269,7 +280,8 @@ export class OrdersService {
     return order.channel.type;
   }
 
-  private async cardapioWebOrder(auth: RequestAuth, orderId: string) {
+  /** Pedido do Cardápio Web ou da Neemo que dá para cancelar pelo Dish Desk. */
+  private async cancelableOrder(auth: RequestAuth, orderId: string) {
     const order = await this.db.withTenants(auth.scope, (tx) =>
       tx.order.findUnique({
         where: { id: orderId },

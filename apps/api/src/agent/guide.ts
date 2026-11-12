@@ -6,7 +6,7 @@ import type { OnboardingStep } from "@dishdesk/shared";
  * divide o contexto da LLM com a árvore da página.
  */
 export const GUIDE = `GUIA DO DISH DESK
-O Dish Desk junta numa Inbox só as conversas dos clientes do restaurante (WhatsApp, Instagram, iFood) e recebe os pedidos do iFood e do Cardápio Web. As configurações ficam no menu Configurações, só para o administrador, com um menu lateral (Personalidade, Horário, Links de pedido, Respostas rápidas, Integrações, Usuários, Notificações, Pagamento, Pausa). Cada tela abre direto pelo endereço (navigate: endereço do painel + o caminho abaixo), sem clicar em menus.
+O Dish Desk junta numa Inbox só as conversas dos clientes do restaurante (WhatsApp, Instagram, iFood) e recebe os pedidos do iFood, do Cardápio Web e da Neemo. As configurações ficam no menu Configurações, só para o administrador, com um menu lateral (Personalidade, Horário, Links de pedido, Respostas rápidas, Integrações, Usuários, Notificações, Pagamento, Pausa). Cada tela abre direto pelo endereço (navigate: endereço do painel + o caminho abaixo), sem clicar em menus.
 
 Implantação, nesta ordem (nenhuma integração é obrigatória: pergunte se o restaurante usa cada sistema):
 1. Horário de funcionamento: /configuracoes/horario.
@@ -20,6 +20,7 @@ Implantação, nesta ordem (nenhuma integração é obrigatória: pergunte se o 
 9. Pronto quando a primeira mensagem de um cliente chegar na Inbox: peça ao parceiro para mandar uma mensagem de teste, de outro celular, para o WhatsApp conectado.
 
 Problemas comuns:
+- Neemo (cardápio digital da Linx), se o restaurante usar: abra /configuracoes/integracoes?conectar=NEEMO; o modal pede só o Token da loja, que a Neemo gera para a loja (no painel da Neemo ou pelo suporte dela). Ao conectar, a base de clientes da loja é importada.
 - Canal desconectado ou com erro: /configuracoes/integracoes mostra o estado de cada conexão; reconectar pelo mesmo atalho da implantação (?gerenciar=WHATSAPP, ?gerenciar=IFOOD...).
 - O chat do iFood não aparece na Inbox: a extensão do Chrome do Dish Desk precisa estar instalada e o painel do Dish Desk aberto no Chrome.`;
 

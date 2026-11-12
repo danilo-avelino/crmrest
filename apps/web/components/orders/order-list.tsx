@@ -33,7 +33,7 @@ const PERIODS: { value: ReportPeriod; label: string }[] = [
   { value: "7d", label: "Últimos 7 dias" },
   { value: "30d", label: "Últimos 30 dias" },
 ];
-const ORIGINS: Channel[] = ["IFOOD", "CARDAPIO_WEB"];
+const ORIGINS: Channel[] = ["IFOOD", "CARDAPIO_WEB", "NEEMO"];
 
 /** Eventos da plataforma mostrados na linha do tempo do pedido (os demais ficam só no banco). */
 const EVENT_LABEL: Record<string, string> = {

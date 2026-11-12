@@ -23,7 +23,7 @@ export function IfoodHistoryNote() {
 }
 
 /**
- * Importação dos cancelamentos antigos do Cardápio Web. Só os cancelados: é o que o alerta de fraude precisa, e o resto
+ * Importação dos cancelamentos antigos do Cardápio Web ou da Neemo. Só os cancelados: é o que o alerta de fraude precisa, e o resto
  * do passado da loja não muda os relatórios. Roda em segundo plano, então a tela só acompanha.
  */
 export function OrderHistorySection({ tenantId, item, canEdit, queryKey }: { tenantId: string; item: IntegrationDto; canEdit: boolean; queryKey: readonly unknown[] }) {
@@ -34,6 +34,7 @@ export function OrderHistorySection({ tenantId, item, canEdit, queryKey }: { ten
   const running = state?.status === "running";
   const toast = useToast();
   const wasRunning = useRef(false);
+  const system = item.type === "NEEMO" ? "a Neemo" : "o Cardápio Web";
 
   // Avisa quando a importação termina com a tela aberta (a consulta abaixo traz o novo estado, sem recarregar).
   useEffect(() => {
@@ -67,7 +68,7 @@ export function OrderHistorySection({ tenantId, item, canEdit, queryKey }: { ten
       <div className={TITLE}>Histórico de pedidos</div>
       {!state && (
         <p className="m-0 text-[12px] leading-normal text-ink-2">
-          Traga os cancelamentos antigos desta loja para o alerta de fraude considerar o histórico dos clientes. Importamos até onde o Cardápio Web guardar.
+          Traga os cancelamentos antigos desta loja para o alerta de fraude considerar o histórico dos clientes. Importamos até onde {system} guardar.
         </p>
       )}
       {running && (
@@ -90,12 +91,12 @@ export function OrderHistorySection({ tenantId, item, canEdit, queryKey }: { ten
       {state?.status === "partial" && (
         <p className="m-0 rounded-md border border-dashed border-tag-line bg-warning-lt px-3 py-2 text-[12px] leading-normal text-warning-ink">
           Importamos <strong className="font-semibold">{cancellations(state.imported)}</strong>
-          {period}, mas o Cardápio Web parou de responder antes do fim.
+          {period}, mas {system} parou de responder antes do fim.
         </p>
       )}
       {state?.status === "error" && (
         <p role="alert" className="m-0 rounded-md border border-tomate-line bg-tomate-lt px-3 py-2 text-[12px] leading-normal text-tomate-ink">
-          Não conseguimos importar o histórico: o Cardápio Web não respondeu. Nada foi importado.
+          Não conseguimos importar o histórico: {system} não respondeu. Nada foi importado.
         </p>
       )}
       {error && (

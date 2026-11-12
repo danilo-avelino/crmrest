@@ -1,6 +1,6 @@
 # Pendências para produção — Dish Desk
 
-Atualizado em 9 de novembro de 2026.
+Atualizado em 12 de novembro de 2026.
 
 Esta é a lista do que falta para o Dish Desk atender restaurantes de verdade. Quando um item for concluído, marque `[x]` e troque a data acima.
 
@@ -115,6 +115,9 @@ Pagamento pendente (Claude, 11/10): a renovação do mensal tem 1 dia de folga; 
 
 ## 3. Riscos no código
 
+- [ ] **Neemo: ligar e testar em produção.** A integração (pedidos, base de clientes, histórico de cancelamentos e cancelar pelo Dish Desk) foi feita em 12/11 pelo Swagger público e testada contra uma API falsa; a leitura de pedidos e clientes foi conferida com o token de uma loja real, só leitura.
+  - [ ] `NEEMO_API_URL=https://deliveryapp.neemo.com.br/api/integration` na `api` da Railway (sem ela, a loja conecta, mas o token não é testado e os pedidos não chegam) — você ou Claude.
+  - [ ] Cancelar um pedido real pela Dish Desk (`PUT /v1/order/{id}` com status 3). Nunca foi chamado de verdade: a loja de teste é um restaurante em operação — você e Claude, com um pedido de teste combinado com a loja.
 - [ ] **Prevenção de fraude (E40): testar com a API real do Cardápio Web.** O cancelamento (`POST /orders/{id}/cancel`) e o histórico (`GET /orders/history`) foram feitos pela documentação e só rodaram contra uma API falsa. A documentação se contradiz sobre até quando o histórico volta (1 ou 3 anos): a importação tenta 3 anos e para quando a API recusar.
 - [x] **Prevenção de fraude (E40): ligar o cancelamento do iFood.** `IFOOD_ORDER_CANCEL=true` na `api` da Railway — Claude, 03/11. O alerta cancela pelo Dish Desk, sem liberar confirmar, marcar pronto nem despachar. Ver o E40 no [ROADMAP.md](../ROADMAP.md).
 - [ ] **Prevenção de fraude (E40): cancelar um pedido real do iFood pelo Dish Desk.** Até aqui, só com API falsa. A documentação do iFood avisa que cancelamentos em excesso geram penalidades, como fechar a loja temporariamente — você e Claude.

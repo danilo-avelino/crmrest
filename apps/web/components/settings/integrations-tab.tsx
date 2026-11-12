@@ -3,6 +3,7 @@
 import {
   AddIntegrationRequest,
   type AddIntegrationResponse,
+  CHANNEL_ARTICLE,
   CHANNEL_LABEL,
   type IfoodLinkCodeDto,
   type IfoodStoreDto,
@@ -102,6 +103,20 @@ const SYSTEMS: {
       { name: "name", label: "Nome (opcional)", placeholder: "Ex.: Loja Centro" },
     ],
   },
+  {
+    type: "NEEMO",
+    group: "Marketplaces",
+    summary: "Pedidos e base de clientes",
+    description: "Lojas da Neemo (cardápio digital da Linx). Ao conectar, a base de clientes da loja é importada; os pedidos entram no cadastro do cliente, achado pelo telefone.",
+    account: "Loja conectada",
+    idLabel: "Código da loja",
+    another: "Adicionar outra loja",
+    help: "O token é gerado pela Neemo para a loja, no painel da Neemo (Configurações → Integração) ou pelo suporte dela. Ele é testado antes de salvar.",
+    fields: [
+      { name: "apiKey", label: "Token da loja", secret: true },
+      { name: "name", label: "Nome (opcional)", placeholder: "Ex.: Loja Centro" },
+    ],
+  },
 ];
 
 type System = (typeof SYSTEMS)[number];
@@ -146,6 +161,8 @@ const ICONS: Record<IntegrationType, { tile: string; glyph: ReactNode }> = {
       </svg>
     ),
   },
+  // Degradê do logo da Neemo, com o "n" minúsculo da marca.
+  NEEMO: { tile: "bg-[linear-gradient(135deg,#ff4f08_0%,#ffac00_100%)]", glyph: <span className="font-heading font-bold">n</span> },
 };
 
 export function SystemIcon({ type, className }: { type: IntegrationType; className: string }) {
@@ -182,6 +199,12 @@ function pendingOf(type: IntegrationType, platform: IntegrationsDto["platform"])
     return {
       badge: "Conexão desligada",
       text: "A conexão com a API do Cardápio Web está desligada neste servidor: a chave não é testada e os pedidos só chegam depois que ela for ligada.",
+    };
+  }
+  if (type === "NEEMO" && !platform.neemo) {
+    return {
+      badge: "Conexão desligada",
+      text: "A conexão com a API da Neemo está desligada neste servidor: o token não é testado e os pedidos só chegam depois que ela for ligada.",
     };
   }
   return null;
@@ -420,7 +443,7 @@ function IntegrationPanel({ system, data, adding, onClose }: { system: System; d
     canServe && connected ? { serve: connected } : adding && data.canEdit && system.fields ? "form" : "details",
   );
   const tip = pendingOf(system.type, data.platform)?.text ?? system.tip;
-  const addLabel = items.some((item) => item.status !== "DISCONNECTED") ? system.another : `Conectar o ${label}`;
+  const addLabel = items.some((item) => item.status !== "DISCONNECTED") ? system.another : `Conectar ${CHANNEL_ARTICLE[system.type]} ${label}`;
   const canDisconnect = (item: IntegrationDto) => data.canEdit && item.status !== "DISCONNECTED";
   // Uma conta só: "Desconectar" e "Excluir" ficam no rodapé, como no board; com várias, cada conta tem os seus.
   const only = items.length === 1 ? items[0] : undefined;
@@ -516,7 +539,7 @@ function IntegrationPanel({ system, data, adding, onClose }: { system: System; d
                   <ServedTenants data={data} item={item} />
                 </div>
               )}
-              {item.type === "CARDAPIO_WEB" && item.status === "CONNECTED" && data.platform.cardapioWeb && (
+              {item.status === "CONNECTED" && ((item.type === "CARDAPIO_WEB" && data.platform.cardapioWeb) || (item.type === "NEEMO" && data.platform.neemo)) && (
                 <OrderHistorySection tenantId={data.tenantId} item={item} canEdit={data.canEdit} queryKey={["integrations", data.tenantId]} />
               )}
               {item.type === "IFOOD" && <IfoodHistoryNote />}
@@ -1154,7 +1177,7 @@ export function IntegrationForm({
       await queryClient.invalidateQueries({ queryKey: ["integrations", tenantId] });
       // Loja iFood nova: o widget do iFood já liga, sem recarregar a página.
       if (system.type === "IFOOD") void queryClient.invalidateQueries({ queryKey: IFOOD_WIDGET_KEY });
-      toast(`Integração com o ${label} adicionada`);
+      toast(`Integração com ${CHANNEL_ARTICLE[system.type]} ${label} adicionada`);
       onClose();
     } catch (error) {
       leaveIfBlocked(error, tenantId);

@@ -2,7 +2,7 @@ import type { ChannelStatus } from "@dishdesk/database/enums";
 import { z } from "zod";
 
 /** Sistemas que o restaurante conecta pela página Configurações → Integrações (cada um pode ter várias contas/lojas). */
-export const INTEGRATION_TYPES = ["WHATSAPP", "INSTAGRAM", "IFOOD", "CARDAPIO_WEB"] as const;
+export const INTEGRATION_TYPES = ["WHATSAPP", "INSTAGRAM", "IFOOD", "CARDAPIO_WEB", "NEEMO"] as const;
 export type IntegrationType = (typeof INTEGRATION_TYPES)[number];
 
 /** Uma conta ou loja conectada. Credenciais nunca saem da API. */
@@ -19,11 +19,11 @@ export type IntegrationDto = {
   servedTenantIds: string[];
   /** WhatsApp e Instagram: quando o token vence (ISO); null = não vence ou ainda não conferido. */
   tokenExpiresAt: string | null;
-  /** Cardápio Web: a importação dos cancelamentos antigos; null = ainda não foi feita. */
+  /** Cardápio Web e Neemo: a importação dos cancelamentos antigos; null = ainda não foi feita. */
   orderHistory: OrderHistoryImport | null;
 };
 
-/** Importação dos cancelamentos antigos da loja, para o alerta de fraude. */
+/** Importação dos cancelamentos antigos da loja (Cardápio Web, Neemo), para o alerta de fraude. */
 export type OrderHistoryImport = {
   status: "running" | "done" | "partial" | "error";
   /** 0 a 100. */
@@ -62,6 +62,7 @@ export type IntegrationsDto = {
     /** Aplicativo distribuído no iFood: cada loja autoriza o Dish Desk com um código de vinculação. */
     ifoodLinkCode: boolean;
     cardapioWeb: boolean;
+    neemo: boolean;
     /** Login do Instagram: sem o app do Instagram configurado no servidor, o botão fica desligado. */
     instagramLogin: boolean;
     /** Cadastro incorporado da Meta (WhatsApp): ids públicos que o SDK do Facebook usa no navegador. */
@@ -104,6 +105,8 @@ export const AddIntegrationRequest = z.discriminatedUnion("type", [
     apiKey: secret("Chave de API inválida."),
     name,
   }),
+  // Neemo: só o token da loja (token_account); o código da loja vem da própria API.
+  z.object({ type: z.literal("NEEMO"), apiKey: secret("Token inválido."), name }),
 ]);
 export type AddIntegrationRequest = z.infer<typeof AddIntegrationRequest>;
 

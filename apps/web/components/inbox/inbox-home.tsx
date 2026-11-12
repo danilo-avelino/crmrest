@@ -51,6 +51,7 @@ const ARRIVES: Record<IntegrationType, string> = {
   INSTAGRAM: "Mensagens diretas da conta profissional",
   IFOOD: "Pedidos das lojas do iFood",
   CARDAPIO_WEB: "Pedidos das lojas do Cardápio Web",
+  NEEMO: "Pedidos das lojas da Neemo",
 };
 
 /**

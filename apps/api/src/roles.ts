@@ -31,6 +31,7 @@ import { CardapioWebProcessor, CardapioWebService } from "./inbound/cardapio-web
 import { IfoodProcessor, IfoodService } from "./inbound/ifood.service.js";
 import { InboundProcessor } from "./inbound/inbound.processor.js";
 import { InboundService } from "./inbound/inbound.service.js";
+import { NeemoProcessor, NeemoService } from "./inbound/neemo.service.js";
 import { OrdersController } from "./orders/orders.controller.js";
 import { FraudService } from "./orders/fraud.service.js";
 import { OrderNoticeService } from "./orders/order-notice.service.js";
@@ -128,6 +129,8 @@ export class RealtimeRoleModule {}
     IfoodProcessor,
     CardapioWebService,
     CardapioWebProcessor,
+    NeemoService,
+    NeemoProcessor,
     OrderNoticeService,
     FraudService,
     ChannelTokensService,

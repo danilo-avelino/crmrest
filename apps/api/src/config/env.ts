@@ -54,6 +54,9 @@ const EnvSchema = z.object({
   IFOOD_EXTENSION_URL: z.url().optional(),
   // Cardápio Web: a chave de API é de cada loja (fica no canal); aqui só o endereço da API. Sem ele, o polling fica desligado.
   CARDAPIO_WEB_API_URL: z.url().optional(),
+  // Neemo (Linx Delivery App): o token é de cada loja (fica no canal); aqui só o endereço da API de integração
+  // (https://deliveryapp.neemo.com.br/api/integration). Sem ele, o polling fica desligado.
+  NEEMO_API_URL: z.url().optional(),
   // Stripe (assinatura depois do teste grátis). Sem a chave, o checkout e o webhook respondem 503; sem o segredo, o webhook também.
   STRIPE_SECRET_KEY: z.string().min(1).optional(),
   STRIPE_WEBHOOK_SECRET: z.string().min(1).optional(),

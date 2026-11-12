@@ -1,6 +1,6 @@
 "use client";
 
-import { CHANNEL_LABEL, type OrderCancellationOptions, type OrderDto } from "@dishdesk/shared";
+import { CHANNEL_ARTICLE, CHANNEL_LABEL, type OrderCancellationOptions, type OrderDto } from "@dishdesk/shared";
 import { useQuery } from "@tanstack/react-query";
 import { CheckCircle2Icon, LoaderCircleIcon } from "lucide-react";
 import { useId, useState } from "react";
@@ -63,6 +63,7 @@ function CancelOrderBody({
   });
 
   const label = CHANNEL_LABEL[order.channelType];
+  const article = CHANNEL_ARTICLE[order.channelType];
   const title = `Cancelar o pedido ${label} #${order.displayCode ?? order.id.slice(0, 6)}?`;
   const data = options.data;
   const list = data?.reasonMode === "list";
@@ -78,7 +79,7 @@ function CancelOrderBody({
       if (list) setSent(true);
       else close();
     } catch (failure) {
-      setRefused(failure instanceof ApiError ? failure.message : `Não foi possível falar com o ${label}. O pedido continua ativo.`);
+      setRefused(failure instanceof ApiError ? failure.message : `Não foi possível falar com ${article} ${label}. O pedido continua ativo.`);
     }
   };
 
@@ -136,7 +137,7 @@ function CancelOrderBody({
           </>
         ) : (
           <>
-            <Header title={title}>{list ? `Escolha o motivo. O ${label} só aceita os motivos da lista.` : `O pedido é cancelado também no ${label}.`}</Header>
+            <Header title={title}>{list ? `Escolha o motivo. O ${label} só aceita os motivos da lista.` : `O pedido é cancelado também n${article} ${label}.`}</Header>
             <div className="flex max-h-[60vh] flex-col gap-3.5 overflow-y-auto px-5 py-3.5">
               {refused && <ErrorBox>{refused}</ErrorBox>}
               {!data ? (

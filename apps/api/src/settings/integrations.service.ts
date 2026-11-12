@@ -3,6 +3,7 @@ import { decrypt, encrypt, parseEncryptionKey } from "@dishdesk/database";
 import {
   type AddIntegrationRequest,
   type AddIntegrationResponse,
+  CHANNEL_ARTICLE,
   CHANNEL_LABEL,
   formatPhone,
   type IfoodStoresRequest,
@@ -38,8 +39,9 @@ import { CardapioWebClient } from "../connectors/cardapio-web.client.js";
 import { IfoodError, type IfoodGrant, type IfoodMerchant } from "../connectors/ifood.client.js";
 import { ConnectorsService } from "../connectors/connectors.service.js";
 import { IfoodAuthService, type IfoodLinkCode } from "../connectors/ifood-auth.service.js";
+import { NeemoClient } from "../connectors/neemo.client.js";
 import { DatabaseService } from "../core/database.service.js";
-import { type CardapioWebHistoryJob, type CardapioWebImportJob, QUEUES } from "../queues/queues.module.js";
+import { type CardapioWebHistoryJob, type CardapioWebImportJob, type NeemoHistoryJob, type NeemoImportJob, QUEUES } from "../queues/queues.module.js";
 import { adminScope, isTenantAdmin, memberScope, requireTenantAdmin } from "./tenant-admin.js";
 
 /** O que vai para o canal depois de a credencial ser conferida no sistema de origem. */
@@ -94,7 +96,7 @@ const LOGIN_STATE_TTL_MS = 10 * 60_000;
 export type InstagramCallback = { code?: string; state?: string; error?: string };
 
 /**
- * Integrações do restaurante (Configurações → Integrações): WhatsApp, Instagram, iFood e Cardápio Web, várias de cada.
+ * Integrações do restaurante (Configurações → Integrações): WhatsApp, Instagram, iFood, Cardápio Web e Neemo, várias de cada.
  * Cada integração é um canal; as credenciais ficam cifradas e nunca voltam para o painel.
  */
 @Injectable()
@@ -102,16 +104,19 @@ export class IntegrationsService {
   private readonly logger = new Logger(IntegrationsService.name);
   private readonly key: Buffer;
   private readonly cardapioWeb: CardapioWebClient;
+  private readonly neemo: NeemoClient;
 
   constructor(
     private readonly db: DatabaseService,
     private readonly connectors: ConnectorsService,
     private readonly ifood: IfoodAuthService,
     @InjectQueue(QUEUES.cardapioWeb) private readonly cardapioWebQueue: Queue,
+    @InjectQueue(QUEUES.neemo) private readonly neemoQueue: Queue,
     @Inject(ENV) private readonly env: Env,
   ) {
     this.key = parseEncryptionKey(env.ENCRYPTION_KEY);
     this.cardapioWeb = new CardapioWebClient(env);
+    this.neemo = new NeemoClient(env);
   }
 
   async list(auth: RequestAuth, tenantId: string): Promise<IntegrationsDto> {
@@ -130,6 +135,7 @@ export class IntegrationsService {
         ifood: Boolean(this.env.IFOOD_CLIENT_ID && this.env.IFOOD_CLIENT_SECRET),
         ifoodLinkCode: this.ifood.configured && this.ifood.distributed,
         cardapioWeb: this.cardapioWeb.configured,
+        neemo: this.neemo.configured,
         instagramLogin: Boolean(this.env.INSTAGRAM_APP_ID && this.env.INSTAGRAM_APP_SECRET),
         whatsappSignup:
           this.env.META_APP_ID && this.env.META_APP_SECRET && this.env.META_EMBEDDED_SIGNUP_CONFIG_ID
@@ -176,7 +182,7 @@ export class IntegrationsService {
 
   /**
    * Confere a credencial e cadastra a integração; a mesma conta já conectada aqui só tem a credencial atualizada.
-   * Loja do Cardápio Web conectada: a base de clientes dela é importada em segundo plano.
+   * Loja do Cardápio Web ou da Neemo conectada: a base de clientes dela é importada em segundo plano.
    */
   async add(auth: RequestAuth, tenantId: string, body: AddIntegrationRequest): Promise<AddIntegrationResponse> {
     requireTenantAdmin(auth, tenantId);
@@ -197,6 +203,10 @@ export class IntegrationsService {
     if (saved.type === "CARDAPIO_WEB" && this.cardapioWeb.configured) {
       const job: CardapioWebImportJob = { tenantId, channelId: saved.id, page: 1, imported: 0 };
       await this.cardapioWebQueue.add("import-customers", job);
+    }
+    if (saved.type === "NEEMO" && this.neemo.configured) {
+      const job: NeemoImportJob = { tenantId, channelId: saved.id, page: 1, imported: 0 };
+      await this.neemoQueue.add("import-customers", job);
     }
     return saved;
   }
@@ -429,7 +439,10 @@ export class IntegrationsService {
   async importOrderHistory(auth: RequestAuth, tenantId: string, channelId: string, now = new Date()): Promise<IntegrationDto> {
     requireTenantAdmin(auth, tenantId);
     const saved = await this.db.withTenants({ tenantIds: [tenantId], userId: auth.userId }, async (tx) => {
-      const channel = await tx.channel.findFirst({ where: { id: channelId, type: "CARDAPIO_WEB", status: "CONNECTED", deletedAt: null }, select: SELECT });
+      const channel = await tx.channel.findFirst({
+        where: { id: channelId, type: { in: ["CARDAPIO_WEB", "NEEMO"] }, status: "CONNECTED", deletedAt: null },
+        select: SELECT,
+      });
       if (!channel) throw new NotFoundException("Integração não encontrada.");
       if (orderHistoryOf(channel.orderHistoryImport)?.status === "running") return toDto(channel);
       const state: OrderHistoryImport = {
@@ -444,8 +457,13 @@ export class IntegrationsService {
       return toDto(await tx.channel.update({ where: { id: channel.id }, data: { orderHistoryImport: state }, select: SELECT }));
     });
     if (saved.orderHistory?.startedAt === now.toISOString()) {
-      const job: CardapioWebHistoryJob = { tenantId, channelId, until: now.toISOString(), window: 0, page: 1, imported: 0 };
-      await this.cardapioWebQueue.add("import-orders", job);
+      if (saved.type === "NEEMO") {
+        const job: NeemoHistoryJob = { tenantId, channelId, status: 0, page: 1, seen: 0, total: 0, imported: 0 };
+        await this.neemoQueue.add("import-orders", job);
+      } else {
+        const job: CardapioWebHistoryJob = { tenantId, channelId, until: now.toISOString(), window: 0, page: 1, imported: 0 };
+        await this.cardapioWebQueue.add("import-orders", job);
+      }
     }
     return saved;
   }
@@ -606,13 +624,28 @@ export class IntegrationsService {
           // Testa a chave lendo os pedidos da última hora (quando a API do Cardápio Web está ligada neste servidor).
           if (this.cardapioWeb.configured) await this.cardapioWeb.updatedOrders(body.apiKey, new Date(Date.now() - 60 * 60_000));
           return { type: body.type, externalId: body.storeId, name: body.name || `Loja ${body.storeId}`, secrets: { accessToken: body.apiKey } };
+        case "NEEMO":
+          return { ...(await this.verifyNeemo(body.apiKey, body.name)), secrets: { accessToken: body.apiKey } };
       }
     } catch (error) {
       if (error instanceof IfoodStoreChoice) throw error;
       const reason = error instanceof Error ? error.message : String(error);
       const detail = /HTTP 40[13]/.test(reason) ? "a credencial não foi aceita" : reason.replace(/\.$/, "");
-      throw new UnprocessableEntityException(`Não foi possível conectar o ${CHANNEL_LABEL[body.type]}: ${detail}.`);
+      throw new UnprocessableEntityException(`Não foi possível conectar ${CHANNEL_ARTICLE[body.type]} ${CHANNEL_LABEL[body.type]}: ${detail}.`);
     }
+  }
+
+  /**
+   * Neemo: testa o token lendo o último pedido da loja. O código da loja (`restaurant_id`) só vem nos detalhes de um
+   * pedido; loja ainda sem pedidos fica identificada pelo próprio token (cifrado no canal, só um resumo dele aqui).
+   * O nome padrão é o da loja na Neemo. Sem a API ligada neste servidor, nada é testado.
+   */
+  private async verifyNeemo(token: string, name: string | undefined): Promise<{ type: "NEEMO"; externalId: string; name: string }> {
+    const tokenId = `token-${createHmac("sha256", this.key).update(token).digest("hex").slice(0, 16)}`;
+    if (!this.neemo.configured) return { type: "NEEMO", externalId: tokenId, name: name || "Loja Neemo" };
+    const { orders, store } = await this.neemo.orders(token, { limit: 1, sort: "id desc" });
+    const storeId = orders[0] ? (await this.neemo.order(token, orders[0].id)).restaurant_id : null;
+    return { type: "NEEMO", externalId: storeId ?? tokenId, name: name || store || (storeId ? `Loja ${storeId}` : "Loja Neemo") };
   }
 
   /** Vencimento do token do WhatsApp; se a Meta não responder, a conexão segue e o job diário confere depois. */
