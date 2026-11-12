@@ -24,6 +24,8 @@ import { cn } from "@/lib/utils";
 // tiveram automação (sem chamar a equipe) ficam em Automáticos e as resolvidas, na aba delas.
 type Tab = "ACTIVE" | "AUTO" | "RESOLVED";
 type Sub = "ALL" | "OPEN" | "PENDING";
+/** Aba e filtro da lista; ficam na InboxView para os cartões do início levarem a lista a Ativos › Todos. */
+export type ListView = { tab: Tab; sub: Sub };
 const TABS: { value: Tab; label: string }[] = [
   { value: "ACTIVE", label: "Ativos" },
   { value: "AUTO", label: "Automáticos" },
@@ -42,16 +44,21 @@ export function ConversationList({
   selectedId,
   onSelect,
   listedRef,
+  view,
+  onView,
 }: {
   selectedId: string | null;
   onSelect: (id: string) => void;
   /** Recebe as conversas na ordem mostrada (para "Resolver" abrir a seguinte). */
   listedRef: { current: string[] };
+  view: ListView;
+  onView: (view: ListView) => void;
 }) {
   const { request, session } = useAuth();
   const master = session?.context?.mode === "master";
-  const [tab, setTab] = useState<Tab>("ACTIVE");
-  const [sub, setSub] = useState<Sub>("ALL");
+  const { tab, sub } = view;
+  const setTab = (next: Tab) => onView({ tab: next, sub });
+  const setSub = (next: Sub) => onView({ tab, sub: next });
   const status = tab === "ACTIVE" ? (sub === "ALL" ? "ACTIVE" : sub) : tab;
   const [search, setSearch] = useState("");
   const [tenantId, setTenantId] = useState<string | null>(null);

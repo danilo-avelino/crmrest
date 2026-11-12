@@ -187,6 +187,9 @@
 @layer base {
   * {
     @apply border-border outline-ring/50;
+    /* Barras de rolagem finas nas colunas (proposta da Inbox). */
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-rule) transparent;
   }
   body {
     @apply bg-background text-body text-foreground;

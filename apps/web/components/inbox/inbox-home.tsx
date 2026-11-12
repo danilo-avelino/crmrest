@@ -58,7 +58,7 @@ const ARRIVES: Record<IntegrationType, string> = {
  * de hoje (TodayOrders) fica na InboxView. O design ainda não tem este estado; segue o cartão de Integrações e o painel
  * do cliente. Desktop no MVP.
  */
-export function InboxHome({ onOpenCalling }: { onOpenCalling: () => void }) {
+export function InboxHome({ onOpenCalling, onShowTeam }: { onOpenCalling: () => void; onShowTeam: () => void }) {
   return (
     <div className="@container flex min-w-0 flex-1 overflow-y-auto border-r border-rule bg-paper">
       <div className="mx-auto w-full max-w-[720px] px-4 pt-7 pb-10 @lg:px-6">
@@ -68,7 +68,7 @@ export function InboxHome({ onOpenCalling }: { onOpenCalling: () => void }) {
           <MessageSquareIcon className="size-4" aria-hidden />
           Escolha uma conversa na lista para responder.
         </p>
-        <Attention onOpenCalling={onOpenCalling} />
+        <Attention onOpenCalling={onOpenCalling} onShowTeam={onShowTeam} />
         {/* As integrações vêm antes da IA: a equipe vê logo se alguma está falhando. */}
         <Integrations />
         <AiAttendance />
@@ -77,8 +77,11 @@ export function InboxHome({ onOpenCalling }: { onOpenCalling: () => void }) {
   );
 }
 
-/** O que precisa da equipe agora: conversas com ela, quem está chamando um atendente e as mensagens não lidas. */
-function Attention({ onOpenCalling }: { onOpenCalling: () => void }) {
+/**
+ * O que precisa da equipe agora: conversas com ela, quem está chamando um atendente e as mensagens não lidas. "Com a
+ * equipe" e "Mensagens não lidas" levam a lista para Ativos › Todos; "Chamando atendente" abre quem espera há mais tempo.
+ */
+function Attention({ onOpenCalling, onShowTeam }: { onOpenCalling: () => void; onShowTeam: () => void }) {
   const { request } = useAuth();
   const now = useNow(60_000);
   const counts = useQuery({ queryKey: ["counts", null], queryFn: () => request<ConversationCounts>("/conversations/counts") });
@@ -91,13 +94,13 @@ function Attention({ onOpenCalling }: { onOpenCalling: () => void }) {
   );
   return (
     <div className="mt-[18px] mb-[30px] grid grid-cols-1 gap-2.5 @xl:grid-cols-3">
-      <div className={card}>
+      <button type="button" onClick={onShowTeam} className={cn(card, "hover:border-rule")}>
         <span className="block text-[12px] font-medium text-ink-2">Com a equipe</span>
         {value(team)}
         <small className="text-[11.5px] text-ink-3 tabular-nums">
           {data ? `${count(data.OPEN)} ${data.OPEN === 1 ? "aberta" : "abertas"} · ${count(data.PENDING)} ${data.PENDING === 1 ? "pendente" : "pendentes"}` : " "}
         </small>
-      </div>
+      </button>
       <button
         type="button"
         onClick={onOpenCalling}
@@ -111,11 +114,11 @@ function Attention({ onOpenCalling }: { onOpenCalling: () => void }) {
           {data && data.awaitingQuiet > 0 && ` · ${count(data.awaitingQuiet)} sem urgência`}
         </small>
       </button>
-      <div className={card}>
+      <button type="button" onClick={onShowTeam} className={cn(card, "hover:border-rule")}>
         <span className="block text-[12px] font-medium text-ink-2">Mensagens não lidas</span>
         {value(data?.unread)}
         <small className="text-[11.5px] text-ink-3">nas conversas abertas e pendentes</small>
-      </div>
+      </button>
     </div>
   );
 }

@@ -4,7 +4,7 @@ import { LoaderCircleIcon, WifiOffIcon } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { useRef, useState } from "react";
 import { ChannelAlert } from "@/components/inbox/channel-alert";
-import { ConversationList, useOpenCalling } from "@/components/inbox/conversation-list";
+import { ConversationList, type ListView, useOpenCalling } from "@/components/inbox/conversation-list";
 import { ConversationPane, type SideTab } from "@/components/inbox/conversation-pane";
 import { IfoodExtensionAlert } from "@/components/inbox/ifood-extension-alert";
 import { InboxHome, TodayOrders } from "@/components/inbox/inbox-home";
@@ -26,6 +26,7 @@ export function InboxView() {
   const offline = useInboxRealtime();
   // Aba do painel da direita (Cliente ou Pedidos): vale para as próximas conversas.
   const [sideTab, setSideTab] = useState<SideTab>("client");
+  const [listView, setListView] = useState<ListView>({ tab: "ACTIVE", sub: "ALL" });
   const openCalling = useOpenCalling(setSelectedId);
   // Conversas na ordem em que a lista as mostra: "Resolver" passa para a seguinte (ou a anterior, se era a última).
   const listedRef = useRef<string[]>([]);
@@ -55,7 +56,7 @@ export function InboxView() {
         <ChannelAlert />
         <IfoodExtensionAlert />
         <div className="flex min-h-0 flex-1">
-          <ConversationList selectedId={selectedId} onSelect={setSelectedId} listedRef={listedRef} />
+          <ConversationList selectedId={selectedId} onSelect={setSelectedId} listedRef={listedRef} view={listView} onView={setListView} />
           {selectedId ? (
             <ConversationPane
               key={selectedId}
@@ -67,7 +68,7 @@ export function InboxView() {
             />
           ) : (
             <>
-              <InboxHome onOpenCalling={() => openCalling()} />
+              <InboxHome onOpenCalling={() => openCalling()} onShowTeam={() => setListView({ tab: "ACTIVE", sub: "ALL" })} />
               <TodayOrders />
             </>
           )}

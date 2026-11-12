@@ -445,10 +445,13 @@ function MessageBody({ message }: { message: MessageDto }) {
           href={`https://www.google.com/maps?q=${location.latitude},${location.longitude}`}
           target="_blank"
           rel="noreferrer"
-          className="flex items-center gap-1.5 underline-offset-2 hover:underline"
+          className="group/location flex items-start gap-1.5 font-medium"
         >
-          <MapPinIcon className="size-3.5" aria-hidden />
-          {location.name ?? location.address ?? "Localização"}
+          <MapPinIcon className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+          <span>
+            <span className="underline-offset-2 group-hover/location:underline">{location.name ?? location.address ?? "Localização"}</span>
+            <small className="block text-[11px] font-normal opacity-70">Abrir no mapa</small>
+          </span>
         </a>
       )}
       {text && <div className="leading-[1.4] whitespace-pre-wrap">{text}</div>}
