@@ -15,7 +15,7 @@ a{color:inherit}a:hover{color:#C4341A}
 .tab{font-variant-numeric:tabular-nums}
 .btn{transition:transform .2s ease,box-shadow .2s ease,background-color .2s ease}
 .btn:hover{transform:translateY(-2px);box-shadow:0 10px 24px -12px rgba(0,0,0,.55)}
-.btn-t:hover{background:#A82B14 !important;color:#FFFFFF !important}
+.btn-t:hover{background:#982612 !important;color:#FFFFFF !important}
 .btn:focus-visible,summary:focus-visible,a:focus-visible{outline:2px solid #C4341A;outline-offset:3px}
 .slot{background:#FEF9EC;color:#7A5008;border:1px dashed #D9B25F;border-radius:4px;padding:1px 6px}
 .dots{background-image:radial-gradient(rgba(247,244,239,.10) 1px,transparent 1.2px);background-size:22px 22px}
@@ -54,6 +54,15 @@ details[open]{background:#FFFFFF}
 @keyframes rewrite{0%,38%{opacity:0;transform:translateY(8px)}48%,92%{opacity:1;transform:none}100%{opacity:0}}
 @keyframes caret{0%,49%{opacity:1}50%,100%{opacity:0}}
 @keyframes flag{0%,20%{transform:translateX(16px);opacity:0}30%,90%{transform:none;opacity:1}100%{opacity:0}}
+/* conversa do entregador: as mensagens entram em sequência e o recado atravessa a ponte */
+@keyframes cr1{0%,3%{opacity:0;transform:translateY(8px)}7%,95%{opacity:1;transform:none}100%{opacity:0}}
+@keyframes cr2{0%,14%{opacity:0;transform:translateY(8px)}18%,95%{opacity:1;transform:none}100%{opacity:0}}
+@keyframes cr3{0%,24%{opacity:0;transform:translateY(8px)}28%,95%{opacity:1;transform:none}100%{opacity:0}}
+@keyframes cr4{0%,34%{opacity:0;transform:translateY(8px)}38%,95%{opacity:1;transform:none}100%{opacity:0}}
+@keyframes cr5{0%,54%{opacity:0;transform:translateY(8px)}58%,95%{opacity:1;transform:none}100%{opacity:0}}
+@keyframes cr6{0%,62%{opacity:0;transform:translateY(8px)}66%,95%{opacity:1;transform:none}100%{opacity:0}}
+@keyframes cr7{0%,74%{opacity:0;transform:translateY(8px)}78%,95%{opacity:1;transform:none}100%{opacity:0}}
+@keyframes crGo{0%,42%{left:-20px;opacity:0}44%{opacity:1}53%{opacity:1}55%,100%{left:calc(100% + 10px);opacity:0}}
 
 @media (prefers-reduced-motion:no-preference){
   .b1{animation:pop .5s ease .4s both}.b2{animation:pop .5s ease 1.6s both}.b3{animation:pop .5s ease 2.6s both}.b4{animation:pop .5s ease 3.9s both}
@@ -67,7 +76,10 @@ details[open]{background:#FFFFFF}
   .rewrite{animation:rewrite 6s ease infinite}
   .caret{animation:caret 1s steps(1) infinite}
   .flag{animation:flag 5s ease infinite}
+  .cr1{animation:cr1 14s ease infinite}.cr2{animation:cr2 14s ease infinite}.cr3{animation:cr3 14s ease infinite}.cr4{animation:cr4 14s ease infinite}
+  .cr5{animation:cr5 14s ease infinite}.cr6{animation:cr6 14s ease infinite}.cr7{animation:cr7 14s ease infinite}.cr-dot{animation:crGo 14s ease-in-out infinite}
 }
+@media (max-width:720px){.cr-bridge{flex:1 1 100% !important}}
 @media (prefers-reduced-motion:reduce){.ty1,.ty2{display:none}}
 @media (min-width:960px){.stick{position:sticky;top:110px}}
 @media (max-width:720px){.hide-sm{display:none !important}.hero-stage{height:600px !important}}
@@ -98,7 +110,7 @@ details[open]{background:#FFFFFF}
     </div>
     <div style="margin-left: auto; display: flex; gap: 10px; align-items: center">
       <a href="/login" style="text-decoration: none; font-weight: 500; font-size: 14px; color: #F7F4EF; padding: 0 12px; height: 44px; display: flex; align-items: center">Entrar</a>
-      <a class="btn btn-t" href="/cadastro" style="text-decoration: none; background: #C4341A; color: #FFFFFF; font-weight: 500; font-size: 14px; padding: 0 18px; height: 44px; border-radius: 6px; display: flex; align-items: center">Testar grátis</a>
+      <a class="btn btn-t" href="/cadastro" style="text-decoration: none; background: #B02E17; color: #FFFFFF; font-weight: 500; font-size: 14px; padding: 0 18px; height: 44px; border-radius: 6px; display: flex; align-items: center">Testar grátis</a>
     </div>
   </nav>
 </header>
@@ -114,7 +126,7 @@ details[open]{background:#FFFFFF}
       <h1 style="margin: 0; font-family: Fraunces, Georgia, serif; font-weight: 700; font-size: clamp(42px, 6vw, 80px); line-height: 1.0; letter-spacing: -2px">Sexta à noite, nenhum cliente <span style="color: #C4341A; font-style: italic">sem resposta.</span></h1>
       <p style="margin: 26px 0 0; max-width: 500px; font-size: 18px; color: #CFC6BB">O Dish Desk junta WhatsApp, Instagram, iFood, Cardápio Web e Neemo numa tela só. A IA responde na hora com o cardápio e o status do pedido, e a sua equipe só entra quando o cliente precisa de uma pessoa.</p>
       <div style="display: flex; gap: 12px; margin-top: 34px; flex-wrap: wrap">
-        <a class="btn btn-t" href="/cadastro" style="text-decoration: none; background: #C4341A; color: #FFFFFF; font-weight: 500; font-size: 15px; padding: 0 24px; height: 52px; border-radius: 6px; display: flex; align-items: center">Testar grátis por 15 dias</a>
+        <a class="btn btn-t" href="/cadastro" style="text-decoration: none; background: #B02E17; color: #FFFFFF; font-weight: 500; font-size: 15px; padding: 0 24px; height: 52px; border-radius: 6px; display: flex; align-items: center">Testar grátis por 15 dias</a>
       </div>
       <p style="margin: 14px 0 0; font-size: 13px; color: #8C857D">Não pede cartão.</p>
     </div>
@@ -122,7 +134,7 @@ details[open]{background:#FFFFFF}
     <div class="hero-stage" style="flex: 1 1 520px; min-width: 0; position: relative; height: 600px">
       <!-- prato: disco tomate com borda girando -->
       <div class="pl-plate" aria-hidden="true" style="position: absolute; top: 50%; left: 50%; width: 520px; height: 520px; margin: -260px 0 0 -250px">
-        <div style="position: absolute; inset: 0; border-radius: 50%; background: #C4341A"></div>
+        <div style="position: absolute; inset: 0; border-radius: 50%; background: #B02E17"></div>
         <div style="position: absolute; inset: 34px; border-radius: 50%; border: 1px solid rgba(247,244,239,.35)"></div>
         <svg class="spin" viewBox="0 0 520 520" width="520" height="520" aria-hidden="true" style="position: absolute; inset: 0"><circle cx="260" cy="260" r="246" fill="none" stroke="#F7F4EF" stroke-opacity=".5" stroke-width="1.5" stroke-dasharray="2 10"></circle></svg>
       </div>
@@ -174,7 +186,7 @@ details[open]{background:#FFFFFF}
 </section>
 
 <!-- 2 · FAIXA DE CANAIS (tomate, em movimento) -->
-<section aria-label="Funciona com WhatsApp, Instagram, iFood, Cardápio Web e Neemo" style="background: #C4341A; color: #FFFFFF; overflow: hidden; border-top: 1px solid #A82B14; border-bottom: 1px solid #A82B14">
+<section aria-label="Funciona com WhatsApp, Instagram, iFood, Cardápio Web e Neemo" style="background: #B02E17; color: #FFFFFF; overflow: hidden; border-top: 1px solid #982612; border-bottom: 1px solid #982612">
   <div class="marq" style="display: flex; width: max-content; padding: 18px 0; font-family: Fraunces, Georgia, serif; font-weight: 600; font-size: 26px; white-space: nowrap">
     <div style="display: flex; gap: 40px; padding-right: 40px; align-items: center">
       <span>Funciona com</span><span style="opacity: .5">✦</span><span>WhatsApp</span><span style="opacity: .5">✦</span><span>Instagram</span><span style="opacity: .5">✦</span><span>iFood</span><span style="opacity: .5">✦</span><span>Cardápio Web</span><span style="opacity: .5">✦</span><span>Neemo</span><span style="opacity: .5">✦</span>
@@ -293,33 +305,80 @@ details[open]{background:#FFFFFF}
   </div>
 </section>
 
-<!-- 6 · REGRAS (escuro) -->
-<section aria-labelledby="t-regras" class="dots" style="background-color: #1A1814; color: #F7F4EF">
+<!-- 6 · ENTREGADOR (escuro): a IA leva o recado do entregador ao cliente -->
+<section id="entregador" aria-labelledby="t-entregador" class="dots" style="background-color: #1A1814; color: #F7F4EF">
   <div style="max-width: 1200px; margin: 0 auto; padding: 72px 24px">
-    <div style="display: flex; flex-wrap: wrap; gap: 32px 56px; align-items: flex-end">
-      <h2 id="t-regras" class="rv" style="flex: 1 1 460px; margin: 0; font-family: Fraunces, Georgia, serif; font-weight: 700; font-size: clamp(34px, 4.4vw, 56px); line-height: 1.04; letter-spacing: -1px">Ela só diz o que está nos <span style="color: #C4341A; font-style: italic">seus dados.</span></h2>
-      <p class="rv d1" style="flex: 1 1 340px; margin: 0; color: #CFC6BB; font-size: 17px">Sem a informação, ela não arrisca: passa para a equipe. É a regra que vem antes de todas as outras.</p>
+    <div style="display: flex; flex-wrap: wrap; gap: 24px 56px; align-items: flex-end">
+      <div class="rv" style="flex: 1 1 460px; min-width: 0">
+        <p style="margin: 0 0 14px; font-size: 13px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: #F07A62">Na hora da entrega</p>
+        <h2 id="t-entregador" style="margin: 0; font-family: Fraunces, Georgia, serif; font-weight: 700; font-size: clamp(34px, 4.4vw, 56px); line-height: 1.04; letter-spacing: -1px">O entregador avisa. A IA <span style="color: #C4341A; font-style: italic">repassa ao cliente.</span></h2>
+      </div>
+      <p class="rv d1" style="flex: 1 1 340px; margin: 0; color: #CFC6BB; font-size: 17px">Chegou na porta ou deixou na portaria? O entregador manda uma mensagem no WhatsApp do restaurante e a IA avisa o cliente no chat do pedido do iFood. Seus atendentes não precisam parar para repassar recado.</p>
     </div>
-    <div style="margin-top: 36px; display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px">
-      <div class="rv" style="background: #24211C; border: 1px solid #3A352F; border-radius: 10px; padding: 28px">
-        <p class="tab" style="margin: 0 0 18px; font-family: Fraunces, Georgia, serif; font-size: 15px; color: #C4341A">01</p>
-        <p style="margin: 0; font-weight: 600; font-size: 17px">Nunca inventa</p>
-        <p style="margin: 8px 0 0; color: #A2968A; font-size: 14px">Preço, prazo, promoção ou política que não estejam no cadastro do restaurante.</p>
+
+    <div class="rv" style="margin-top: 40px; display: flex; flex-wrap: wrap; gap: 20px; align-items: stretch; color: #1A1814; font-size: 13px">
+
+      <!-- conversa do entregador -->
+      <div aria-label="Exemplo: o entregador fala com o restaurante no WhatsApp" style="flex: 1 1 260px; min-width: 0; background: #F7F4EF; border-radius: 12px; overflow: hidden; box-shadow: 0 30px 60px -30px rgba(0,0,0,.6); display: flex; flex-direction: column">
+        <div style="background: #FFFFFF; border-bottom: 1px solid #DDD8D0; padding: 12px 16px; display: flex; align-items: center; gap: 10px">
+          <span aria-hidden="true" style="width: 32px; height: 32px; border-radius: 50%; background: #F0EDE8; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 12px">JM</span>
+          <div style="min-width: 0">
+            <p style="margin: 0; font-weight: 600; font-size: 14px">João Mendes <span style="font-size: 11px; font-weight: 500; border: 1px dashed #C4B8A0; border-radius: 4px; padding: 1px 6px; color: #4A4540; margin-left: 4px">Entregador</span></p>
+            <p style="margin: 0; font-size: 12px; color: #4A4540; display: flex; align-items: center; gap: 6px"><span style="width: 7px; height: 7px; border-radius: 50%; background: #25D366"></span>WhatsApp do restaurante</p>
+          </div>
+        </div>
+        <div style="padding: 16px; display: flex; flex-direction: column; gap: 8px; flex: 1">
+          <div class="cr1" style="align-self: flex-end; max-width: 88%; background: #1A1814; color: #F7F4EF; border-radius: 12px 12px 2px 12px; padding: 9px 12px">Olá, João! 👋 Como podemos ajudar na entrega?<br>1 - Avisar que cheguei<br>2 - Avisar que deixei na portaria<br>3 - Problema com um pedido<br>4 - Outro assunto</div>
+          <div class="cr2" style="align-self: flex-start; background: #FFFFFF; border: 1px solid #DDD8D0; border-radius: 12px 12px 12px 2px; padding: 9px 14px">2</div>
+          <div class="cr3" style="align-self: flex-end; max-width: 88%; background: #1A1814; color: #F7F4EF; border-radius: 12px 12px 2px 12px; padding: 9px 12px">Qual é o número do pedido?</div>
+          <div class="cr4" style="align-self: flex-start; background: #FFFFFF; border: 1px solid #DDD8D0; border-radius: 12px 12px 12px 2px; padding: 9px 14px">4853</div>
+          <div class="cr6" style="align-self: flex-end; max-width: 88%; background: #1A1814; color: #F7F4EF; border-radius: 12px 12px 2px 12px; padding: 9px 12px">Pronto! Avisamos o cliente do pedido #4853 que o pedido ficou na portaria.</div>
+        </div>
       </div>
-      <div class="rv d1" style="background: #24211C; border: 1px solid #3A352F; border-radius: 10px; padding: 28px">
-        <p class="tab" style="margin: 0 0 18px; font-family: Fraunces, Georgia, serif; font-size: 15px; color: #C4341A">02</p>
-        <p style="margin: 0; font-weight: 600; font-size: 17px">Respeita o cliente</p>
-        <p style="margin: 8px 0 0; color: #A2968A; font-size: 14px">A janela de 24 horas e o pedido para não receber mensagens, como qualquer envio.</p>
+
+      <!-- ponte -->
+      <div class="cr-bridge" aria-hidden="true" style="flex: 0 0 110px; align-self: center; position: relative; display: flex; flex-direction: column; align-items: center; gap: 12px">
+        <span class="hide-sm" style="position: absolute; left: -20px; right: -20px; top: 25px; border-top: 2px dashed #4A4540"></span>
+        <span class="hide-sm cr-dot" style="position: absolute; top: 21px; left: 0; width: 10px; height: 10px; border-radius: 50%; background: #C4341A; opacity: 0"></span>
+        <span class="liveT" style="position: relative; display: flex; width: 52px; height: 52px; border-radius: 10px; background: #F7F4EF; align-items: center; justify-content: center">
+          <svg width="26" height="26" viewBox="0 0 16 16" fill="none"><rect x="3" y="4" width="10" height="1.5" rx="0.75" fill="#1A1814"></rect><rect x="3" y="7.25" width="7" height="1.5" rx="0.75" fill="#1A1814"></rect><rect x="3" y="10.5" width="4.5" height="1.5" rx="0.75" fill="#C4341A"></rect></svg>
+        </span>
+        <span style="font-size: 12px; font-weight: 500; color: #CFC6BB; text-align: center; line-height: 1.35">A IA leva o recado.<br>Ninguém da equipe digita.</span>
       </div>
-      <div class="rv d2" style="background: #24211C; border: 1px solid #3A352F; border-radius: 10px; padding: 28px">
-        <p class="tab" style="margin: 0 0 18px; font-family: Fraunces, Georgia, serif; font-size: 15px; color: #C4341A">03</p>
-        <p style="margin: 0; font-weight: 600; font-size: 17px">Sabe parar</p>
-        <p style="margin: 8px 0 0; color: #A2968A; font-size: 14px">Com um limite de respostas por atendimento, a conversa vai para uma pessoa.</p>
+
+      <!-- conversa do cliente -->
+      <div aria-label="Exemplo: o cliente recebe o aviso no chat do pedido do iFood" style="flex: 1 1 260px; min-width: 0; background: #F7F4EF; border-radius: 12px; overflow: hidden; box-shadow: 0 30px 60px -30px rgba(0,0,0,.6); display: flex; flex-direction: column">
+        <div style="background: #FFFFFF; border-bottom: 1px solid #DDD8D0; padding: 12px 16px; display: flex; align-items: center; gap: 10px">
+          <span aria-hidden="true" style="width: 32px; height: 32px; border-radius: 50%; background: #F0EDE8; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 12px">MO</span>
+          <div style="min-width: 0">
+            <p style="margin: 0; font-weight: 600; font-size: 14px">Maria Oliveira <span style="font-size: 11px; font-weight: 500; border: 1px dashed #C4B8A0; border-radius: 4px; padding: 1px 6px; color: #4A4540; margin-left: 4px">Cliente</span></p>
+            <p class="tab" style="margin: 0; font-size: 12px; color: #4A4540; display: flex; align-items: center; gap: 6px"><span style="width: 7px; height: 7px; border-radius: 50%; background: #EA1D2C"></span>Chat do pedido #4853 · iFood</p>
+          </div>
+        </div>
+        <div style="padding: 16px; display: flex; flex-direction: column; gap: 8px; flex: 1">
+          <p style="align-self: center; margin: 0 0 4px; font-size: 11px; color: #7A5008; background: #FEF9EC; border: 1px solid #F0D88A; border-radius: 6px; padding: 4px 10px">Pedido saiu para entrega às 19:50</p>
+          <div class="cr5" style="align-self: flex-end; max-width: 88%; background: #1A1814; color: #F7F4EF; border-radius: 12px 12px 2px 12px; padding: 9px 12px">📦 O entregador deixou seu pedido na portaria! Bom apetite 😋</div>
+          <p class="cr5" style="align-self: flex-end; margin: -2px 2px 0; font-size: 11px; color: #4A4540">Enviada pela IA · a pedido do entregador</p>
+          <div class="cr7" style="align-self: flex-start; max-width: 88%; background: #FFFFFF; border: 1px solid #DDD8D0; border-radius: 12px 12px 12px 2px; padding: 9px 12px">Obrigada! Já estou descendo 🙏</div>
+          <div class="cr7" style="margin-top: auto; align-self: stretch; background: #FFFFFF; border: 1px solid #DDD8D0; border-radius: 8px; padding: 10px 12px; display: flex; align-items: center; gap: 10px; font-weight: 500">
+            <span class="live" style="flex: none; width: 8px; height: 8px; border-radius: 50%; background: #2D7D46"></span>Recado entregue sem ocupar um atendente
+          </div>
+        </div>
       </div>
-      <div class="rv d3" style="background: #24211C; border: 1px solid #3A352F; border-radius: 10px; padding: 28px">
-        <p class="tab" style="margin: 0 0 18px; font-family: Fraunces, Georgia, serif; font-size: 15px; color: #C4341A">04</p>
-        <p style="margin: 0; font-weight: 600; font-size: 17px">Não deixa ninguém sem resposta</p>
-        <p style="margin: 8px 0 0; color: #A2968A; font-size: 14px">Sem atendente online, avisa o cliente e a conversa espera o primeiro que chegar.</p>
+    </div>
+
+    <div style="margin-top: 20px; display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px">
+      <div class="rv" style="background: #24211C; border: 1px solid #3A352F; border-radius: 10px; padding: 24px">
+        <p style="margin: 0; font-weight: 600; font-size: 17px">“Cheguei”</p>
+        <p style="margin: 8px 0 0; color: #A2968A; font-size: 14px">O cliente fica sabendo na hora que o entregador está na porta, sem o entregador esperar alguém do restaurante atender.</p>
+      </div>
+      <div class="rv d1" style="background: #24211C; border: 1px solid #3A352F; border-radius: 10px; padding: 24px">
+        <p style="margin: 0; font-weight: 600; font-size: 17px">“Deixei na portaria”</p>
+        <p style="margin: 8px 0 0; color: #A2968A; font-size: 14px">O aviso chega no chat do pedido e fica registrado na conversa, para a equipe consultar se o cliente perguntar depois.</p>
+      </div>
+      <div class="rv d2" style="background: #24211C; border: 1px solid #3A352F; border-radius: 10px; padding: 24px">
+        <p style="margin: 0; font-weight: 600; font-size: 17px">“Problema com um pedido”</p>
+        <p style="margin: 8px 0 0; color: #A2968A; font-size: 14px">Aí sim a equipe é chamada, já com o pedido aberto na tela e o problema que o entregador contou.</p>
       </div>
     </div>
   </div>
@@ -395,7 +454,7 @@ details[open]{background:#FFFFFF}
     </div>
     <div class="rv d1" aria-label="Exemplo do alerta na Inbox" style="flex: 1 1 420px; min-width: 0; color: #1A1814; font-size: 13px">
       <div style="background: #FFFFFF; border: 1px solid #C4341A; border-radius: 10px; overflow: hidden; box-shadow: 0 30px 60px -30px rgba(0,0,0,.6)">
-        <div style="background: #C4341A; color: #FFFFFF; padding: 10px 16px; display: flex; align-items: center; gap: 8px; font-weight: 600">
+        <div style="background: #B02E17; color: #FFFFFF; padding: 10px 16px; display: flex; align-items: center; gap: 8px; font-weight: 600">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"></path><path d="M12 8v4M12 16h.01"></path></svg>
           Alerta de fraude<span style="margin-left: auto; font-weight: 400; font-size: 12px">Só a equipe vê</span>
         </div>
@@ -410,7 +469,7 @@ details[open]{background:#FFFFFF}
         </div>
         <div style="display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; padding: 12px 16px; border-top: 1px solid #E8E4DE">
           <span style="height: 32px; padding: 0 12px; border-radius: 6px; border: 1px solid #DDD8D0; display: inline-flex; align-items: center; font-weight: 500">Manter pedido</span>
-          <span style="height: 32px; padding: 0 12px; border-radius: 6px; background: #C4341A; color: #FFFFFF; display: inline-flex; align-items: center; font-weight: 500">Cancelar pedido</span>
+          <span style="height: 32px; padding: 0 12px; border-radius: 6px; background: #B02E17; color: #FFFFFF; display: inline-flex; align-items: center; font-weight: 500">Cancelar pedido</span>
         </div>
       </div>
     </div>
@@ -419,7 +478,7 @@ details[open]{background:#FFFFFF}
 
 <!-- 8 · PROVA SOCIAL (tomate): escondida até chegarem os dados reais do piloto. Para mostrar, tire o <template>. -->
 <template data-piloto="">
-<section aria-labelledby="t-prova" style="background: #C4341A; color: #FFFFFF; position: relative; overflow: hidden">
+<section aria-labelledby="t-prova" style="background: #B02E17; color: #FFFFFF; position: relative; overflow: hidden">
   <svg class="spin" aria-hidden="true" viewBox="0 0 600 600" width="600" height="600" style="position: absolute; right: -180px; top: -160px; opacity: .25"><circle cx="300" cy="300" r="290" fill="none" stroke="#FFFFFF" stroke-width="1.5" stroke-dasharray="2 12"></circle><circle cx="300" cy="300" r="230" fill="none" stroke="#FFFFFF" stroke-width="1"></circle></svg>
   <div style="max-width: 1200px; margin: 0 auto; padding: 72px 24px; position: relative">
     <div class="rv" style="display: flex; flex-wrap: wrap; gap: 20px 56px; align-items: flex-end; justify-content: space-between">
@@ -432,7 +491,7 @@ details[open]{background:#FFFFFF}
         <span style="align-self: flex-start; font-size: 11px; font-weight: 600; background: #1A1814; color: #F7F4EF; padding: 4px 9px; border-radius: 4px">Atendimento no pico</span>
         <blockquote style="margin: 0; font-family: Fraunces, Georgia, serif; font-weight: 500; font-size: 19px; line-height: 1.4"><p style="margin: 0">“Sexta à noite era mensagem chegando no WhatsApp, no Instagram e no iFood ao mesmo tempo. Hoje a IA responde quem pergunta do pedido, e a equipe só entra quando precisa.”</p></blockquote>
         <figcaption style="display: flex; align-items: center; gap: 12px; border-top: 1px solid #DDD8D0; padding-top: 16px">
-          <span aria-hidden="true" style="width: 42px; height: 42px; border-radius: 50%; background: #C4341A; color: #FFFFFF; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 13px; flex: 0 0 auto">NP</span>
+          <span aria-hidden="true" style="width: 42px; height: 42px; border-radius: 50%; background: #B02E17; color: #FFFFFF; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 13px; flex: 0 0 auto">NP</span>
           <span style="display: flex; flex-direction: column"><strong style="font-size: 14px">Nippon</strong><span style="font-size: 12px; color: #4A4540"><span class="slot">[Nome, cargo]</span></span></span>
         </figcaption>
       </figure>
@@ -460,7 +519,7 @@ details[open]{background:#FFFFFF}
         <span style="align-self: flex-start; font-size: 11px; font-weight: 600; background: #FEF9EC; color: #7A5008; padding: 4px 9px; border-radius: 4px">Tom das mensagens</span>
         <blockquote style="margin: 0; font-family: Fraunces, Georgia, serif; font-weight: 500; font-size: 19px; line-height: 1.4"><p style="margin: 0">“Cada atendente escrevia de um jeito. Agora eles digitam rápido e a IA deixa a mensagem com a cara da casa, sem mexer no que foi prometido.”</p></blockquote>
         <figcaption style="display: flex; align-items: center; gap: 12px; border-top: 1px solid #DDD8D0; padding-top: 16px">
-          <span aria-hidden="true" style="width: 42px; height: 42px; border-radius: 50%; background: #C4341A; color: #FFFFFF; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 13px; flex: 0 0 auto">AN</span>
+          <span aria-hidden="true" style="width: 42px; height: 42px; border-radius: 50%; background: #B02E17; color: #FFFFFF; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 13px; flex: 0 0 auto">AN</span>
           <span style="display: flex; flex-direction: column"><strong style="font-size: 14px">Aglio Nero</strong><span style="font-size: 12px; color: #4A4540"><span class="slot">[Nome, cargo]</span></span></span>
         </figcaption>
       </figure>
@@ -478,7 +537,7 @@ details[open]{background:#FFFFFF}
         <span style="align-self: flex-start; font-size: 11px; font-weight: 600; background: #F7F4EF; color: #1A1814; padding: 4px 9px; border-radius: 4px">Piloto</span>
         <blockquote style="margin: 0; font-family: Fraunces, Georgia, serif; font-weight: 500; font-size: 19px; line-height: 1.4"><p style="margin: 0">“Somos só delivery, então o atendimento é a nossa vitrine. Com a IA respondendo, nenhum cliente fica esperando enquanto a cozinha está a mil.”</p></blockquote>
         <figcaption style="display: flex; align-items: center; gap: 12px; border-top: 1px solid #3A352F; padding-top: 16px">
-          <span aria-hidden="true" style="width: 42px; height: 42px; border-radius: 50%; background: #C4341A; color: #FFFFFF; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 13px; flex: 0 0 auto">MD</span>
+          <span aria-hidden="true" style="width: 42px; height: 42px; border-radius: 50%; background: #B02E17; color: #FFFFFF; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 13px; flex: 0 0 auto">MD</span>
           <span style="display: flex; flex-direction: column"><strong style="font-size: 14px">Moby Dick Dark Kitchen</strong><span style="font-size: 12px; color: #A2968A"><span class="slot">[Nome, cargo]</span></span></span>
         </figcaption>
       </figure>
@@ -550,7 +609,7 @@ details[open]{background:#FFFFFF}
           <p class="tab" style="margin: 6px 0 0; font-size: 13px; color: #2D7D46; font-weight: 500">em até 10x de R$ 149 sem juros. Equivale a 2 meses grátis.</p>
         </div>
       </div>
-      <a class="btn btn-t" href="/cadastro" style="margin-top: 6px; text-decoration: none; background: #C4341A; color: #FFFFFF; font-weight: 500; font-size: 16px; height: 56px; border-radius: 6px; display: flex; align-items: center; justify-content: center">Testar grátis por 15 dias</a>
+      <a class="btn btn-t" href="/cadastro" style="margin-top: 6px; text-decoration: none; background: #B02E17; color: #FFFFFF; font-weight: 500; font-size: 16px; height: 56px; border-radius: 6px; display: flex; align-items: center; justify-content: center">Testar grátis por 15 dias</a>
       <p style="margin: 0; font-size: 13px; color: #8C857D; text-align: center">Não pede cartão.</p>
     </div>
   </div>
@@ -566,7 +625,7 @@ details[open]{background:#FFFFFF}
 </section>
 
 <nav class="mbar" aria-label="Atalhos">
-  <a href="/cadastro" style="flex: 1; text-decoration: none; background: #C4341A; color: #FFFFFF; font-weight: 500; font-size: 15px; height: 48px; border-radius: 6px; display: flex; align-items: center; justify-content: center">Testar grátis</a>
+  <a href="/cadastro" style="flex: 1; text-decoration: none; background: #B02E17; color: #FFFFFF; font-weight: 500; font-size: 15px; height: 48px; border-radius: 6px; display: flex; align-items: center; justify-content: center">Testar grátis</a>
   <a href="https://wa.me/5586999731647?text=Ol%C3%A1!%20Quero%20conhecer%20o%20Dish%20Desk." style="flex: 1; text-decoration: none; color: #F7F4EF; border: 1px solid rgba(247,244,239,.28); font-weight: 500; font-size: 15px; height: 48px; border-radius: 6px; display: flex; align-items: center; justify-content: center; gap: 8px"><span aria-hidden="true" style="width: 8px; height: 8px; border-radius: 50%; background: #25D366"></span>WhatsApp</a>
 </nav>
 </div>
