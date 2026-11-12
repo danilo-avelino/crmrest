@@ -12,28 +12,32 @@ type Tenant = AuthContext["tenants"][number];
 export type SideMenuGroup = { group: string; items: { href: string; label: string; icon: LucideIcon }[] };
 
 /**
- * Menu lateral em grupos (Configurações e Avaliações): o título da área, o restaurante e as páginas. No painel master,
- * o seletor no topo escolhe o restaurante para todas as páginas. `root`: a primeira página, ativa só no endereço exato.
+ * Menu lateral em grupos (Configurações, Avaliações e Plataforma): o título da área, o restaurante e as páginas. No
+ * painel master, o seletor no topo escolhe o restaurante para todas as páginas. `root`: a primeira página, ativa só no
+ * endereço exato. Sem restaurantes (Plataforma), mostra `subtitle` embaixo do título.
  */
 export function SideMenu({
   title,
+  subtitle,
   label,
   root,
   nav,
-  tenants,
-  tenant,
+  tenants = [],
+  tenant = null,
   onTenantChange,
   onSelectAll,
 }: {
   title: string;
+  /** Texto embaixo do título quando não há seletor de restaurante. */
+  subtitle?: string;
   /** Nome do menu para leitores de tela. */
   label: string;
   root: string;
   nav: SideMenuGroup[];
-  tenants: Tenant[];
+  tenants?: Tenant[];
   /** null = todos os restaurantes (só com `onSelectAll`). */
-  tenant: Tenant | null;
-  onTenantChange: (tenantId: string) => void;
+  tenant?: Tenant | null;
+  onTenantChange?: (tenantId: string) => void;
   /** Oferece "Todos os restaurantes" no seletor. */
   onSelectAll?: () => void;
 }) {
@@ -42,12 +46,12 @@ export function SideMenu({
     <aside className="flex w-[236px] shrink-0 flex-col overflow-y-auto border-r border-rule bg-surface">
       <div className="px-5 pt-5 pb-4">
         <p className="font-heading text-[21px] font-bold tracking-[-0.3px]">{title}</p>
-        {tenants.length > 1 ? (
+        {tenants.length > 1 && onTenantChange ? (
           <div className="mt-2.5">
             <TenantPicker tenants={tenants} tenant={tenant} onChange={onTenantChange} onSelectAll={onSelectAll} />
           </div>
         ) : (
-          <p className="mt-[3px] truncate text-[12px] text-ink-3">{tenant?.name}</p>
+          <p className="mt-[3px] truncate text-[12px] text-ink-3">{subtitle ?? tenant?.name}</p>
         )}
       </div>
       <nav aria-label={label} className="pb-5">

@@ -1,18 +1,12 @@
 "use client";
 
 import {
-  Building2Icon,
-  ChartColumnIcon,
-  CoinsIcon,
-  LightbulbIcon,
   MegaphoneIcon,
   MessageSquareIcon,
   ReceiptTextIcon,
-  ScrollTextIcon,
   SettingsIcon,
-  ShieldIcon,
+  ShieldCheckIcon,
   StarIcon,
-  TicketIcon,
   UsersIcon,
 } from "lucide-react";
 import Link from "next/link";
@@ -43,17 +37,6 @@ const ITEMS = [
   { label: "Avaliações", icon: StarIcon, href: "/avaliacoes", adminOnly: true },
   { label: "Campanhas", icon: MegaphoneIcon, href: null, adminOnly: true },
   { label: "Configurações", icon: SettingsIcon, href: "/configuracoes", adminOnly: true },
-];
-
-// Painel da plataforma (só super admin): no pé da barra, de baixo para cima a partir do avatar.
-const PLATFORM_ITEMS = [
-  { label: "Tráfego do site", icon: ChartColumnIcon, href: "/plataforma/trafego" },
-  { label: "Gastos com IA", icon: CoinsIcon, href: "/plataforma/ia" },
-  { label: "Sugestões dos restaurantes", icon: LightbulbIcon, href: "/plataforma/sugestoes" },
-  { label: "Tickets de suporte", icon: TicketIcon, href: "/plataforma/tickets" },
-  { label: "Defesa da API", icon: ShieldIcon, href: "/plataforma/seguranca" },
-  { label: "Auditoria da plataforma", icon: ScrollTextIcon, href: "/plataforma/auditoria" },
-  { label: "Restaurantes da plataforma", icon: Building2Icon, href: "/plataforma" },
 ];
 
 const ITEM_CLASS = "mt-1 flex size-9 items-center justify-center rounded-lg first-of-type:mt-0";
@@ -120,24 +103,22 @@ export function NavRail({ onHome }: { onHome?: () => void }) {
 
       <div className="flex-1" />
 
+      {/* Painel da plataforma (só super admin): um ícone no pé da barra; as páginas ficam no menu lateral dele. */}
       {session.user.isSuperAdmin && (
         <div className="mb-3 flex flex-col items-center">
           <div className="mb-2 h-px w-6 bg-[#2D2A24]" aria-hidden />
-          {PLATFORM_ITEMS.map(({ label, icon: Icon, href }) => {
-            const active = href === "/plataforma" ? pathname === href : pathname.startsWith(href);
-            return (
-              <Link
-                key={href}
-                href={href}
-                aria-label={label}
-                title={label}
-                aria-current={active ? "page" : undefined}
-                className={cn(ITEM_CLASS, active ? "bg-[#2D2A24] text-paper" : "text-[#5C5750] hover:bg-[#2D2A24] hover:text-paper")}
-              >
-                <Icon className="size-[18px]" aria-hidden />
-              </Link>
-            );
-          })}
+          <Link
+            href="/plataforma"
+            aria-label="Plataforma"
+            title="Plataforma"
+            aria-current={pathname.startsWith("/plataforma") ? "page" : undefined}
+            className={cn(
+              ITEM_CLASS,
+              pathname.startsWith("/plataforma") ? "bg-[#2D2A24] text-paper" : "text-[#5C5750] hover:bg-[#2D2A24] hover:text-paper",
+            )}
+          >
+            <ShieldCheckIcon className="size-[18px]" aria-hidden />
+          </Link>
         </div>
       )}
 

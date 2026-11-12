@@ -1,5 +1,6 @@
 import { RequireSuperAdmin } from "@/components/auth/require-context";
 import { NavRail } from "@/components/inbox/nav-rail";
+import { PlatformMenu } from "@/components/platform/platform-menu";
 
 /** Painel da plataforma (Super Admin, E16): só a equipe da plataforma. Desktop no MVP. */
 export default function PlatformLayout({ children }: LayoutProps<"/plataforma">) {
@@ -7,6 +8,7 @@ export default function PlatformLayout({ children }: LayoutProps<"/plataforma">)
     <RequireSuperAdmin>
       <div className="flex h-full overflow-hidden bg-paper">
         <NavRail />
+        <PlatformMenu />
         {children}
       </div>
     </RequireSuperAdmin>
