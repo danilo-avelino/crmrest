@@ -13,9 +13,10 @@ Conferida no código. **✅ Feito** quer dizer que o épico está no código. **
 | Fase | Feito | Falta |
 |---|---|---|
 | **1 — MVP, com a IA no atendimento** | E1–E11, E27–E29 | **E12:** backup diário (o Supabase está no plano Free). Sentry (api e web) e Bull Board estão no ar desde 30/10/2026. |
-| **2 — Pós-MVP** | E13–E15, E17, E26, E30 | **E16:** entrar no painel de um restaurante para suporte (impersonação auditada). **E18:** Inbox para tablet. **E32–E39:** reputação e avaliações. **E40 (parcial):** no código desde 02/11/2026; falta testar com a API real do Cardápio Web e com um pedido real do iFood. |
-| **3 — Campanhas** | — | **E19:** os módulos já são ligados por restaurante pela plataforma; falta o estado bloqueado do módulo Campanhas. **E25:** a assinatura do Dish Desk pela Stripe existe; falta a cobrança do módulo. **E20–E24:** não começaram. |
+| **2 — Pós-MVP** | E13–E15, E17, E26, E30 | **E16:** entrar no painel de um restaurante para suporte (impersonação auditada). **E18:** Inbox para tablet. **E32–E39:** reputação e avaliações. **E40 (parcial):** no código desde 02/11/2026; falta testar com a API real do Cardápio Web e com um pedido real do iFood. **E47:** recado do cliente para o entregador; entrou no roadmap em 12/11/2026, não começou. |
+| **3 — Campanhas** | — | **E19:** os módulos já são ligados por restaurante pela plataforma; falta o estado bloqueado do módulo Campanhas. **E25:** a assinatura do Dish Desk pela Stripe existe; falta a cobrança do módulo. **E20–E24, E45–E46:** não começaram. |
 | **4 — Agente de implantação e suporte** | — | **E31:** falta o teste com o Chrome de verdade. |
+| **5 — Cardápio digital próprio e pedido pela IA** | — | **E41–E44:** entraram no roadmap em 11/11/2026; não começaram. |
 
 Os canais estão no código, mas três dependem de terceiros para chegar aos restaurantes:
 - **Instagram (E6):** só funciona para contas testadoras até a análise da Meta.
@@ -389,6 +390,25 @@ O alerta na Inbox (board "Prevenção de fraude · Inbox e Landing"): o pedido d
 - A definir:
   - **mobile e tablet:** o alerta e o painel do pedido entram na Inbox para tablet (E18) e na versão mobile, depois do MVP.
 
+### Entregadores (E47)
+
+#### E47 — Recado do cliente para o entregador · **M** · depende de: E27, E7 (evento `ASSIGN_DRIVER` com o telefone do entregador), menu do entregador · **⬜ A fazer**
+Pedido do usuário em 12/11/2026, a partir da análise do dia 11/11 do Grupo Moby Dick ([docs/plano-correcoes-11-11.md](docs/plano-correcoes-11-11.md), com a lista dos recados no fim).
+- **Por quê:**
+  - Em 11/11 foram cerca de 20 recados de clientes para o entregador, o motivo mais comum de a IA chamar a equipe. Exemplos: "deixa na recepção", "interfona", "buzina e bate no portão", "quarto 202", "o código é 0084".
+  - A equipe os copiava à mão para o entregador pelo WhatsApp do celular. Em 2 casos a IA prometeu passar o recado e ninguém passou.
+  - 243 dos 257 pedidos do dia traziam o nome e o telefone do entregador no `ASSIGN_DRIVER` (frota própria pelo Foody Delivery).
+- Como cliente, no chat do iFood ou no WhatsApp com o pedido confirmado, quero mandar um recado para o entregador e saber que ele recebeu.
+- Como restaurante, quero que a IA identifique o recado e o mande ao entregador do pedido, pelo WhatsApp que atende a loja, sem chamar a equipe.
+  - Contam como recado: instrução de entrega (portaria, recepção, interfone, buzina, quarto, ponto de referência), código de entrega e "estou descendo".
+  - A mensagem ao entregador leva o número do pedido e as palavras do cliente.
+  - A IA confirma ao cliente que o recado foi passado.
+- Como atendente, quero ver o recado nas duas conversas (a do cliente e a do entregador), como evento.
+- **Sem como passar:** pedido ainda sem entregador, sem o telefone dele ou já concluído, ou plataforma que não informa o entregador (Cardápio Web). A IA passa para a equipe, como hoje, com o motivo "Recado para o entregador".
+- As mensagens novas (ao entregador e a confirmação ao cliente) entram em `AutomationMessages`, uma por personalidade (CLAUDE.md §10).
+- Fora do escopo por enquanto: levar a resposta do entregador de volta ao cliente. A resposta dele cai no menu do entregador.
+- A definir: se o recado também vale para o entregador do iFood (sem frota própria), que não tem telefone no pedido.
+
 #### E30 — Assistente de configuração (primeiro acesso) · **M** · depende de: E14, E15 · **✅ Feito**
 - Como admin de um restaurante novo, quero um **assistente passo a passo** no primeiro acesso, que me ensine a configurar o sistema até a primeira mensagem chegar na Inbox.
 - **Regra obrigatória:** antes de cada integração, o assistente **pergunta se o restaurante vai usar aquele sistema** ("Você atende pelo WhatsApp?", "Você vende pelo iFood?"). Com "sim", abre o passo a passo daquela integração. Com "não" ou "agora não", pula para a próxima. Nenhuma integração é obrigatória.
@@ -410,7 +430,7 @@ O alerta na Inbox (board "Prevenção de fraude · Inbox e Landing"): o pedido d
 ### Ordem sugerida (Fase 2)
 `E14 Canais → E17 Estados de erro → E15 Configurações → E30 Assistente de configuração → E13 Clientes/merge → E18 Tablet → E16 Super Admin`
 
-Canais vem primeiro porque elimina o onboarding manual por script, que é o gargalo para o 2º restaurante. O assistente de configuração (E30) vem logo depois de Configurações porque só guia o admin pelas telas do E14 e do E15. O Super Admin vem por último porque, com poucos tenants, o seed e o banco resolvem. O **E26 (previsão de saída)** entra logo depois que a integração com o iFood (E7) estiver concluída e homologada, independentemente da ordem acima.
+Canais vem primeiro porque elimina o onboarding manual por script, que é o gargalo para o 2º restaurante. O assistente de configuração (E30) vem logo depois de Configurações porque só guia o admin pelas telas do E14 e do E15. O Super Admin vem por último porque, com poucos tenants, o seed e o banco resolvem. O **E26 (previsão de saída)** entra logo depois que a integração com o iFood (E7) estiver concluída e homologada, independentemente da ordem acima. O **E47 (recado para o entregador)** não depende dos outros e pode entrar a qualquer momento.
 
 ---
 
@@ -423,6 +443,8 @@ Canais vem primeiro porque elimina o onboarding manual por script, que é o garg
 #### E20 — Segmentos · **M** · depende de: E13 · **⬜ A fazer**
 - Como admin, quero criar segmentos salvos (sem pedido há N dias, aniversariantes, tag, canal, bairro) e ver a contagem de contatos.
 - O segmento só inclui contatos com **opt-in de marketing no WhatsApp**.
+- Como admin, quero a **matriz RFV** (recência, frequência e valor; método da Repediu): cada cliente cai sozinho num grupo (campeões, fiéis, promissores, em risco, perdidos), que se atualiza conforme ele compra ou para de comprar. Os grupos viram segmentos prontos.
+- Como admin, quero filtrar pelo **produto preferido** (o que o cliente mais pede no cardápio próprio, E41, e nas integrações), para oferecer o que ele já gosta.
 
 #### E21 — Templates WhatsApp · **M** · depende de: E5, E14 · **⬜ A fazer**
 - Como admin, quero criar templates, enviá-los para aprovação da Meta e acompanhar o status.
@@ -431,6 +453,7 @@ Canais vem primeiro porque elimina o onboarding manual por script, que é o garg
 #### E22 — Criação de campanha em etapas · **M** · depende de: E20, E21 · **⬜ A fazer**
 - Como admin, quero criar a campanha em 4 passos: **segmento → template → pré-visualizar → agendar**.
 - Como admin, quero salvar rascunho e ver a lista de campanhas com status (Rascunho, Agendada, Enviando, Concluída) e abas.
+- Como admin, quero que a campanha leve o **link do cardápio próprio** (E41) com o **cupom** (E44) já aplicado, e que o cliente possa responder e pedir pela IA na mesma conversa (E43).
 
 #### E23 — Motor de disparo · **G** · depende de: E22 · **⬜ A fazer**
 - Como plataforma, quero a fila `campaigns` com workers próprios e prioridade **menor** que o atendimento.
@@ -447,10 +470,33 @@ Canais vem primeiro porque elimina o onboarding manual por script, que é o garg
 - Como plataforma, quero que o módulo seja ativado ou desativado conforme o status do pagamento (`expiresAt`).
 - Decidir antes: o custo das mensagens Meta fica na conta do restaurante ou é intermediado pela plataforma? (especificação §14)
 
-### Ordem sugerida (Fase 3)
-`E19 Gating → E21 Templates → E20 Segmentos → E22 Criação → E23 Disparo → E24 Relatório → E25 Faturamento`
+### Métodos da Repediu (pesquisa de 11/11/2026)
+Pedido do usuário em 11/11/2026: o disparo de campanhas segue os métodos da [Repediu](https://repediu.com.br/funcionalidades) e fica ligado ao cardápio próprio (Fase 5). Lido no site deles:
+- **Segmentação:** matriz RFV automática (campeões, fiéis, promissores, em risco, perdidos), filtros cruzados (canal, valor gasto, frequência, bairro, produto preferido) e disparo de um segmento com um clique. Entra no E20.
+- **Automações:** montagem com gatilho, condição, espera e ação, com mais de 30 modelos prontos (reativação após 30 dias sem pedido, boas-vindas, aniversário, carrinho abandonado após 5 min, avaliação baixa do iFood avisando o gerente). Se o cliente não responde em 48 h, tentam de novo em outro canal com o mesmo cupom. Entra no E45.
+- **Cupons:** cupons personalizados por segmento, com controle de uso. Não achei cashback nem programa de pontos. Entra no E44.
+- **Medição:** atribuição de conversão com janela configurável por grupo RFV (ex.: 2 dias para fiéis, 7 para perdidos), ROAS por campanha, clientes recuperados, LTV, recompra e coorte. Entra no E46.
+- **Canais:** o WhatsApp deles é só pela **API oficial** (contratada direto com a Meta). Têm também SMS, RCS, e-mail, voz e exportação de públicos para anúncios da Meta.
+- **Fica de fora por enquanto:** SMS, RCS, e-mail, voz, públicos para anúncios, previsão de gênero e gatilho por clima. Os números de resultado do site (ex.: "+34% de recompra no WhatsApp") são do marketing deles, sem metodologia.
+- **Decidir antes do E21:** o nosso WhatsApp é pela Evolution API (QR Code) desde 21/10/2026. Os templates da Meta (E21) só existem na API oficial, e disparo em massa por número conectado via QR Code corre risco de banimento do número do restaurante. Escolher entre usar a API oficial só para as campanhas ou disparar pela Evolution com limite baixo e risco assumido.
 
-O E25 pode começar em paralelo a partir do E19. A ativação pode ser manual (Super Admin) até o faturamento ficar pronto.
+#### E45 — Automações de marketing (jornadas) · **G** · depende de: E23, E44 · **⬜ A fazer**
+- Como admin, quero montar automações com **gatilho → condição → espera → ação**, ver cada execução e ligar ou desligar cada uma.
+- Gatilhos: sem pedido há N dias, primeiro pedido, aniversário, entrou num grupo RFV (ex.: virou "em risco"), ganhou a tag "Em recuperação", carrinho abandonado no cardápio próprio (E41), pedido pela IA que não foi até o Pix (E43) e avaliação negativa (E34).
+- Ações: mandar mensagem (com cupom do E44 e link do cardápio), pôr ou tirar tag, avisar a equipe.
+- Como admin, quero começar por **modelos prontos**: reativação, boas-vindas, aniversário, carrinho abandonado e recuperação. O texto padrão de cada modelo segue a personalidade do atendimento (CLAUDE.md §10).
+- Como plataforma, quero respeitar opt-in, opt-out e um limite de mensagens de marketing por cliente por semana, somando campanhas e automações.
+- A definir: o limite semanal e se a automação sai do mesmo número do atendimento.
+
+#### E46 — Receita atribuída às campanhas · **M** · depende de: E24, E41 · **⬜ A fazer**
+- Como admin, quero saber quanto cada campanha e cada automação vendeu.
+- Pedido com o cupom ou pelo link da campanha conta como **conversão certa**. Outro pedido do cliente dentro da janela (configurável por grupo RFV) conta como **conversão provável**, mostrada à parte. Pedidos do iFood e do Cardápio Web entram na janela, porque o cliente pode voltar por lá.
+- Como admin, quero ver receita, pedidos, clientes recuperados (voltaram depois de estar em risco ou perdidos), custo (mensagens e desconto dado) e retorno.
+
+### Ordem sugerida (Fase 3)
+`E19 Gating → E21 Templates → E20 Segmentos → E22 Criação → E23 Disparo → E24 Relatório → E25 Faturamento → E45 Automações → E46 Receita atribuída`
+
+O E25 pode começar em paralelo a partir do E19. A ativação pode ser manual (Super Admin) até o faturamento ficar pronto. O E45 e o E46 esperam o cardápio próprio e os cupons (E41 e E44, Fase 5).
 
 ---
 
@@ -479,6 +525,60 @@ Objetivo: a IA da extensão do Chrome faz a implantação com o restaurante e at
   - se o agente é gratuito na implantação ou entra na cobrança da IA;
   - o horário de atendimento do suporte humano;
   - se o suporte também fica disponível fora da extensão (no Dish Desk web, para quem não usa Chrome).
+
+---
+
+## Fase 5 — Cardápio digital próprio e pedido pela IA
+
+Objetivo: o restaurante vende pelo próprio cardápio do Dish Desk, sem comissão de marketplace. A IA conhece o cardápio, recomenda e fecha o pedido pelo WhatsApp com Pix. Os cupons e as campanhas (Fase 3) levam o cliente a esse cardápio. Pedido do usuário em 11/11/2026.
+
+Ainda não há board no [Dish Desk Design.html](Dish%20Desk%20Design.html) para estas telas (cardápio público, cadastro do cardápio, cupons): pedir o design antes de construir (CLAUDE.md §8).
+
+#### E41 — Cardápio digital próprio · **G** · depende de: E15 · **⬜ A fazer**
+- Como admin, quero cadastrar categorias e itens (nome, descrição, preço, foto), adicionais e opções (tamanho, sabor, ponto), e pausar o item que acabou.
+- Como admin, quero importar o cardápio do Cardápio Web (e do Anota AI, quando existir), se a API deixar, para não cadastrar tudo de novo.
+- Como admin, quero marcar itens como **destaque**: são os que a IA indica primeiro (E42).
+- Como admin, quero configurar área e taxa de entrega (por bairro ou distância), pedido mínimo e retirada. O horário é o de Configurações.
+- Como cliente, quero abrir o cardápio por um link, montar o carrinho, escolher entrega ou retirada, aplicar cupom (E44) e pagar com Pix.
+- Como atendente, quero que o pedido do cardápio entre como os outros (card do pedido, painel do cliente, previsão de saída do E26, alerta de fraude do E40) e avançar o status (confirmado, em preparo, pronto, saiu, entregue). Os avisos ao cliente seguem a personalidade (CLAUDE.md §10).
+- Regra 9 do CLAUDE.md: quem pede vira contato, com o opt-in de marketing pedido no checkout.
+- Sem chat no cardápio (decidido em 11/11/2026): o cliente fala com a loja pelo WhatsApp, para o restaurante ter o número dele.
+- Entra na landing, nas listas de funcionalidades.
+- A definir: onde a cozinha vê o pedido (tela de pedidos no Dish Desk, impressão ou envio a um PDV); o endereço do link (subdomínio do Dish Desk ou domínio do restaurante); outras formas de pagamento (cartão ou dinheiro na entrega); se o cardápio é um módulo pago.
+
+#### E42 — IA com acesso ao cardápio · **M** · depende de: E41, E27 · **⬜ A fazer**
+- Como cliente, quero perguntar à IA sobre os itens (o que vem, tamanho, preço, se tem opção sem lactose, se tem hoje) e receber a resposta certa.
+- Como restaurante, quero que a IA indique primeiro os **itens em destaque** e sugira um complemento (bebida, sobremesa) quando fizer sentido, sem insistir.
+- Mesma regra do E27: a IA só afirma o que está no cardápio. Ingrediente ou alergia sem informação, ela diz que não sabe e chama a equipe. Item pausado nunca é oferecido.
+- Como cliente, quero receber a foto do item na conversa. Depende do envio de mídia (Itens ainda sem fase).
+
+#### E43 — Pedido completo pelo WhatsApp com Pix · **G** · depende de: E41, E42, provedor de Pix · **⬜ A fazer**
+- Como cliente, quero fazer o pedido inteiro na conversa do WhatsApp, sem abrir o site: a IA mostra opções com fotos, recomenda, monta o pedido, pergunta os adicionais, entrega ou retirada e o endereço (confirma o que já está no cadastro) e aplica o cupom.
+- Antes de cobrar, a IA manda o **resumo** (itens, adicionais, taxa, desconto, total, endereço e previsão do E26) e pede a confirmação.
+- Depois da confirmação, a IA manda o **Pix copia e cola** (e o QR Code em imagem), com o valor e a validade.
+- **Regra obrigatória:** o pedido só vai para a produção quando o provedor do Pix confirmar o pagamento. Comprovante mandado pelo cliente não vale (print falso é golpe comum). Pix vencido: a IA pergunta se gera outro, e nada vai para a cozinha.
+- Paga, a IA confirma ao cliente e o pedido segue como os do cardápio (E41), com o alerta de fraude do E40.
+- Endereço fora da área, item que acabou no meio da conversa ou cliente que quer mudar o pedido depois de pagar: a IA chama a equipe.
+- Os textos fixos (resumo, Pix, pagamento confirmado, Pix vencido) entram em `AutomationMessages`, um por personalidade (CLAUDE.md §10).
+- A definir:
+  - o provedor do Pix: o dinheiro cai na conta do restaurante, então ele conecta a própria conta (ex.: Mercado Pago, Efí, Asaas, InfinitePay). Conferir quais têm cobrança Pix com aviso de pagamento (webhook);
+  - se o Dish Desk cobra taxa por pedido;
+  - a validade do Pix e o estorno de pedido cancelado depois de pago;
+  - se vale também no Instagram Direct.
+
+#### E44 — Cupons criados pela IA para os perfis de cliente · **M** · depende de: E41, E20 · **⬜ A fazer**
+- Como admin, quero criar cupons (percentual, valor fixo, frete grátis, item grátis) com validade, pedido mínimo e limite de uso por cliente e no total. Valem no cardápio próprio (E41) e no pedido pela IA (E43).
+- Como admin, quero que a IA **sugira cupons para cada perfil**: os grupos RFV do E20, a tag "Em recuperação", aniversariantes e clientes novos. A sugestão traz o público, o desconto, a validade e o porquê (ex.: "em risco: 15% até domingo; ticket médio R$ 62"). Eu aprovo ou ajusto antes de o cupom valer.
+- Como plataforma, quero cupom com código único por cliente, para medir o uso e evitar que circule.
+- Os cupons entram nas campanhas (E22, variável `{{cupom}}`) e nas automações (E45). A tag "Em recuperação" já existe para ser o público do cupom de recuperação (decidido em 11/11/2026).
+- Como admin, quero ver cupons usados, receita e desconto dado.
+- A definir: o desconto máximo que a IA pode sugerir; se a IA pode oferecer na conversa, por conta própria, um cupom já aprovado (ex.: para quem reclamou).
+- Fora do escopo: cupom no iFood e no Cardápio Web, que são sistemas de terceiros.
+
+### Ordem sugerida (Fase 5)
+`E41 Cardápio → E42 IA com o cardápio → E43 Pedido pelo WhatsApp com Pix → E44 Cupons`
+
+Depois do E44, a Fase 3 segue com as automações (E45) e a receita atribuída (E46).
 
 ---
 
