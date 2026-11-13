@@ -5,6 +5,7 @@ import {
   CHANNEL_LABEL,
   type ChannelHealthDto,
   type ConversationCounts,
+  type ConversationDayStats,
   INTEGRATION_TYPES,
   type IntegrationType,
   type OrderListItem,
@@ -70,6 +71,7 @@ export function InboxHome({ onOpenCalling, onShowTeam }: { onOpenCalling: () => 
           Escolha uma conversa na lista para responder.
         </p>
         <Attention onOpenCalling={onOpenCalling} onShowTeam={onShowTeam} />
+        <Today />
         {/* As integrações vêm antes da IA: a equipe vê logo se alguma está falhando. */}
         <Integrations />
         <AiAttendance />
@@ -121,6 +123,55 @@ function Attention({ onOpenCalling, onShowTeam }: { onOpenCalling: () => void; o
         <small className="text-[11.5px] text-ink-3">nas conversas abertas e pendentes</small>
       </button>
     </div>
+  );
+}
+
+/**
+ * Conversas do dia até agora: quantas o cliente abriu (escreveu hoje), quantas estão resolvidas e quantas a IA e as
+ * automações resolveram sem a equipe. A chave em "counts" faz o realtime atualizar junto com os cartões de cima.
+ */
+function Today() {
+  const { request } = useAuth();
+  const today = useQuery({
+    queryKey: ["counts", "today"],
+    queryFn: () => request<ConversationDayStats>("/conversations/today"),
+  });
+  const data = today.data;
+  const card = "rounded-2xl border border-rule-soft bg-surface px-4 py-3.5";
+  const value = (amount: number | undefined) => (
+    <b className="my-1.5 block font-heading text-[28px] leading-none font-bold tabular-nums">{amount === undefined ? "–" : count(amount)}</b>
+  );
+  const share = data && data.resolved > 0 ? Math.round((data.resolvedWithoutTeam / data.resolved) * 100) : null;
+  const stillOpen = data ? data.opened - data.resolved : 0;
+
+  return (
+    <section aria-labelledby="inbox-hoje" className="mb-[30px]">
+      <h2 id="inbox-hoje" className="font-heading text-[16px] font-bold tracking-[-0.3px]">
+        Hoje até agora
+      </h2>
+      <p className="mt-0.5 mb-4 text-ink-3">Conversas desde a meia-noite.</p>
+      <div className="grid grid-cols-1 gap-2.5 @xl:grid-cols-3">
+        <div className={card}>
+          <span className="block text-[12px] font-medium text-ink-2">Conversas abertas</span>
+          {value(data?.opened)}
+          <small className="text-[11.5px] text-ink-3">clientes que escreveram hoje</small>
+        </div>
+        <div className={card}>
+          <span className="block text-[12px] font-medium text-ink-2">Resolvidas</span>
+          {value(data?.resolved)}
+          <small className="text-[11.5px] text-ink-3 tabular-nums">
+            {data ? `${count(stillOpen)} ainda em aberto` : " "}
+          </small>
+        </div>
+        <div className={card}>
+          <span className="block text-[12px] font-medium text-ink-2">Resolvidas sem a equipe</span>
+          <span className="text-success">{value(data?.resolvedWithoutTeam)}</span>
+          <small className="text-[11.5px] text-ink-3 tabular-nums">
+            {share === null ? "só com a IA e as automações" : `${share}% das resolvidas, só com a IA e as automações`}
+          </small>
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -524,7 +575,7 @@ export function TodayOrders({ embedded }: { embedded?: boolean }) {
 
   if (embedded) return <div className="flex min-h-0 flex-1 flex-col">{body}</div>;
   return (
-    <aside aria-labelledby="inbox-pedidos-hoje" className="flex w-[344px] shrink-0 flex-col bg-surface">
+    <aside aria-labelledby="inbox-pedidos-hoje" className="flex w-[clamp(288px,26vw,344px)] shrink-0 flex-col bg-surface">
       <div className="flex shrink-0 items-start justify-between gap-3 border-b border-rule px-4 pt-4 pb-3.5">
         <div>
           <h2 id="inbox-pedidos-hoje" className="font-heading text-[16px] font-bold tracking-[-0.3px]">

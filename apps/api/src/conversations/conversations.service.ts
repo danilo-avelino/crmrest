@@ -3,6 +3,7 @@ import type { ChannelType, MessageType } from "@dishdesk/database/enums";
 import {
   CHANNEL_CAPABILITIES,
   type ConversationCounts,
+  type ConversationDayStats,
   type ConversationListQuery,
   type ConversationMessages,
   type ConversationPage,
@@ -28,7 +29,7 @@ import type { Queue } from "bullmq";
 import { scheduleEvaluation } from "../ai/ai-evaluation.service.js";
 import { LlmClient } from "../ai/llm.client.js";
 import type { RequestAuth } from "../auth/auth.decorators.js";
-import { AUTOMATIC_ONLY, type AutomationState, channelSends, isPaused, teamRepliedUpdate, WITH_TEAM } from "../automations/automation.js";
+import { AUTOMATIC_ONLY, type AutomationState, channelSends, isPaused, localDate, teamRepliedUpdate, WITH_TEAM } from "../automations/automation.js";
 import { contactsAwaitingDecision } from "../orders/fraud-alert.js";
 import { ENV, type Env } from "../config/env.js";
 import { ConnectorsService } from "../connectors/connectors.service.js";
@@ -116,6 +117,30 @@ export class ConversationsService {
     for (const group of groups) counts[group.status] = group._count._all;
     counts.OPEN = open;
     return counts;
+  }
+
+  /**
+   * Conversas do dia, desde a meia-noite de Brasília (a RLS limita aos restaurantes do escopo). Equipe = mensagem de uma
+   * pessoa (pelo painel ou pelo WhatsApp do celular) ou o atendimento passado para ela, hoje. A conversa só da equipe
+   * (alerta de fraude) não entra: o cliente nem está nela.
+   */
+  async today(auth: RequestAuth, tenantId?: string, now = new Date()): Promise<ConversationDayStats> {
+    const from = new Date(`${localDate(now)}T00:00:00-03:00`);
+    const [row] = await this.db.withTenants(scopeFor(auth, tenantId), (tx) =>
+      tx.$queryRaw<ConversationDayStats[]>`
+        SELECT count(*)::int AS opened,
+               count(*) FILTER (WHERE c.status = 'RESOLVED')::int AS resolved,
+               count(*) FILTER (WHERE c.status = 'RESOLVED' AND NOT EXISTS (
+                 SELECT 1 FROM messages m
+                 WHERE m.conversation_id = c.id AND m.created_at >= ${from}
+                   AND ((m.direction = 'OUTBOUND' AND (m.sent_by_user_id IS NOT NULL OR m.content->>'fromPhone' = 'true'))
+                     OR (m.type = 'SYSTEM' AND m.content->>'event' IN ('handoff', 'awaiting_agent')))
+               ))::int AS "resolvedWithoutTeam"
+        FROM conversations c
+        WHERE NOT c.team_only
+          AND EXISTS (SELECT 1 FROM messages m WHERE m.conversation_id = c.id AND m.direction = 'INBOUND' AND m.created_at >= ${from})`,
+    );
+    return row ?? { opened: 0, resolved: 0, resolvedWithoutTeam: 0 };
   }
 
   async get(auth: RequestAuth, id: string) {

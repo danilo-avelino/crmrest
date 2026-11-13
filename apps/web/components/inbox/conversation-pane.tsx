@@ -95,6 +95,15 @@ export function ConversationPane({
       void queryClient.invalidateQueries({ queryKey: ["conversation", conversationId] });
     });
   }, [unread, conversationId, request, queryClient]);
+  // Resolvida com ela aberta por outro caminho (uma automação, como a de inatividade, ou outra pessoa): sai dela como no
+  // "Resolver", para a seguinte da lista ou, sem nenhuma, para o início. Aberta já resolvida (aba Resolvidos), fica.
+  const status = conversation.data?.status;
+  const seenStatus = useRef(status);
+  useEffect(() => {
+    const before = seenStatus.current;
+    seenStatus.current = status;
+    if (status === "RESOLVED" && before !== undefined && before !== "RESOLVED") onOpenConversation(nextConversationId());
+  }, [status, onOpenConversation, nextConversationId]);
   useInboundBeep(conversationId, messages.data);
 
   if (conversation.isPending || messages.isPending) {
@@ -132,7 +141,7 @@ export function ConversationPane({
         />
         <Composer conversation={conversation.data} />
       </section>
-      <aside className="flex min-h-0 w-[344px] shrink-0 flex-col bg-surface">
+      <aside className="flex min-h-0 w-[clamp(288px,26vw,344px)] shrink-0 flex-col bg-surface">
         <SideTabs tab={sideTab} onTab={onSideTab} />
         {sideTab === "client" ? (
           <ClientPanel

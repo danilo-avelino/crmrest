@@ -105,7 +105,7 @@ export function ConversationList({
   const tenantName = (session?.context?.tenants ?? []).find((tenant) => tenant.id === tenantId)?.name;
 
   return (
-    <section className="flex w-80 shrink-0 flex-col border-r border-rule bg-surface">
+    <section className="flex w-[clamp(248px,24vw,320px)] shrink-0 flex-col border-r border-rule bg-surface">
       <header className="flex h-[52px] shrink-0 items-center justify-between border-b border-rule px-4">
         <h2 className="font-heading text-[16px] font-bold tracking-[-0.3px]">Inbox</h2>
         {master && (

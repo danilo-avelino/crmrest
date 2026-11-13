@@ -211,6 +211,12 @@ export type ConversationCounts = Record<ConversationStatus, number> & {
   urgentSince: string | null;
   unread: number;
 };
+/**
+ * Conversas do dia (desde a meia-noite de Brasília), no início da Inbox. `opened` = conversas em que o cliente escreveu
+ * hoje; `resolved` = quantas delas estão resolvidas; `resolvedWithoutTeam` = resolvidas sem a equipe: ninguém respondeu
+ * (nem pelo celular) e o atendimento não foi passado para a equipe.
+ */
+export type ConversationDayStats = { opened: number; resolved: number; resolvedWithoutTeam: number };
 /** `evaluations`: avaliações da IA, na ordem em que foram feitas (vazio para quem não é administrador). */
 export type ConversationMessages = { messages: MessageDto[]; orders: Record<string, OrderDto>; evaluations: ConversationEvaluationDto[] };
 

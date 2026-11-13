@@ -39,15 +39,15 @@ export function SetupReminder() {
   const name = admins.length > 1 ? admins.find((tenant) => tenant.id === pending.tenantId)?.name : null;
 
   return (
-    <div className="mb-8 flex items-center gap-3.5 rounded-xl border border-tomate-line bg-tomate-lt px-4 py-3.5">
+    <div className="mb-8 flex flex-wrap items-center gap-3.5 rounded-xl border border-tomate-line bg-tomate-lt px-4 py-3.5">
       <ProgressRing done={done} />
-      <div className="min-w-0 flex-1">
+      <div className="min-w-[180px] flex-1">
         <p className="text-[13px] font-semibold">Termine a configuração{name && ` de ${name}`}</p>
         <p className="text-[12px] text-ink-2">
           {done} de {TOTAL} passos. Próximo: {STEP_INFO[pending.steps[resumeIndex(pending)]!.step].next}.
         </p>
       </div>
-      <Link href={`/assistente?restaurante=${pending.tenantId}`} className={buttonVariants({ variant: "accent" })}>
+      <Link href={`/assistente?restaurante=${pending.tenantId}`} className={cn(buttonVariants({ variant: "accent" }), "ml-auto")}>
         Continuar
       </Link>
     </div>

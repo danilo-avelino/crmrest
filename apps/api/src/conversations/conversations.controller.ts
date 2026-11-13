@@ -1,6 +1,7 @@
 import { Readable } from "node:stream";
 import {
   type ConversationCounts,
+  type ConversationDayStats,
   ConversationListQuery,
   type ConversationMessages,
   type ConversationPage,
@@ -39,6 +40,14 @@ export class ConversationsController {
     @CurrentAuth() auth: RequestAuth,
   ): Promise<ConversationCounts> {
     return this.conversations.counts(auth, query.tenantId);
+  }
+
+  @Get("today")
+  today(
+    @Query(new ZodPipe(ConversationListQuery.pick({ tenantId: true }))) query: { tenantId?: string },
+    @CurrentAuth() auth: RequestAuth,
+  ): Promise<ConversationDayStats> {
+    return this.conversations.today(auth, query.tenantId);
   }
 
   @Get(":id")
