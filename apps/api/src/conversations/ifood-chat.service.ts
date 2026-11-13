@@ -11,6 +11,7 @@ import { InjectQueue } from "@nestjs/bullmq";
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import type { Queue } from "bullmq";
 import type { RequestAuth } from "../auth/auth.decorators.js";
+import { type AutomationState, teamRepliedUpdate } from "../automations/automation.js";
 import { INACTIVITY_CLOSE_MS } from "../automations/inactivity.service.js";
 import { claimReviewInvites, settleReviewInvite } from "../automations/review-invite.service.js";
 import { ENV, type Env } from "../config/env.js";
@@ -35,6 +36,13 @@ const HOUR_MS = 60 * 60_000;
 const ATTEND_WITHIN_MS = 2 * HOUR_MS;
 /** Mensagem do cliente até este tempo depois de um balão da loja, na mesma leitura do widget, é resposta à loja. */
 const STORE_REPLY_MS = 5 * 60_000;
+/**
+ * Texto que a loja já mandou igual em outros chats nestes dias é mensagem automática dela ("Seu pedido acaba de ser
+ * entregue..."), mesmo logo depois de uma mensagem do cliente: não conta como resposta da equipe.
+ */
+const STORE_TEMPLATE_MS = 3 * 24 * HOUR_MS;
+/** O widget mostra assim a mensagem que não saiu: ela não chegou ao cliente e não entra na Inbox. */
+const NOT_SENT = /Mensagem não enviada\s*$/;
 const BRASILIA_DAY = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" });
 
 type ChatOrder = { id: string; tenantId: string; contactId: string; channelId: string; conversationId: string | null; externalOrderId: string; placedAt: Date };
@@ -84,7 +92,9 @@ export class IfoodChatService {
       if (!order) return null;
       // O convite de avaliação não aparece na Inbox: sem ele na cópia, a resposta do cliente segue como numa conversa nova.
       const invite = order.reviewInvite?.text;
-      const entries = transcript(order, body.messages).filter((entry) => !(entry.direction === "OUTBOUND" && invite && squash(entry.text) === squash(invite)));
+      const entries = transcript(order, body.messages).filter(
+        (entry) => !(entry.direction === "OUTBOUND" && ((invite && squash(entry.text) === squash(invite)) || NOT_SENT.test(entry.text))),
+      );
       const known = await tx.message.findMany({
         where: { channelId: order.channelId, externalMessageId: { in: entries.map((entry) => entry.key) } },
         select: { externalMessageId: true },
@@ -95,16 +105,26 @@ export class IfoodChatService {
       const conversation = await openIfoodConversation(tx, order, fresh[0]!.at);
       // Última vez que cliente e equipe se falaram, antes das mensagens novas (as automáticas do iFood não contam).
       const touch = await tx.message.findFirst({
-        where: { conversationId: conversation.id, OR: [{ direction: "INBOUND" }, { direction: "OUTBOUND", sentByUserId: { not: null } }] },
+        where: {
+          conversationId: conversation.id,
+          OR: [
+            { direction: "INBOUND" },
+            { direction: "OUTBOUND", sentByUserId: { not: null } },
+            { direction: "OUTBOUND", content: { path: ["storeReply"], equals: true } },
+          ],
+        },
         orderBy: { createdAt: "desc" },
-        select: { createdAt: true, sentByUserId: true },
+        select: { createdAt: true, sentByUserId: true, content: true },
       });
       let unread = 0;
       /** Saídas escritas no próprio widget (as da Inbox, inclusive as automáticas, só são confirmadas). */
       const typed = new Set<Entry>();
+      let storeReplied = false;
       for (const entry of fresh) {
         if (entry.direction === "OUTBOUND" && (await this.confirmSent(tx, conversation.id, entry))) continue;
         if (entry.direction === "OUTBOUND") typed.add(entry);
+        const storeReply = entry.direction === "OUTBOUND" && (await this.isStoreReply(tx, order.channelId, entries, entry, now));
+        storeReplied ||= storeReply;
         await tx.message.create({
           data: {
             tenantId: order.tenantId,
@@ -113,7 +133,7 @@ export class IfoodChatService {
             externalMessageId: entry.key,
             direction: entry.direction,
             type: "TEXT",
-            content: { text: entry.text } satisfies MessageContent,
+            content: { text: entry.text, ...(storeReply && { storeReply: true }) } satisfies MessageContent,
             // Saída que não partiu da Inbox: escrita no próprio widget ou mensagem automática do iFood.
             status: entry.direction === "INBOUND" ? "DELIVERED" : "SENT",
             createdAt: entry.at,
@@ -131,6 +151,13 @@ export class IfoodChatService {
         now.getTime() - newest.at.getTime() <= ATTEND_WITHIN_MS &&
         (!connectedAt || newest.at >= connectedAt);
       const last = newest.at;
+      // A loja respondeu ao cliente pelo Gestor: como a resposta pela Inbox, a IA sai e o alarme para. Sem isso, a IA
+      // respondia por cima da loja e voltava na mensagem seguinte do cliente (12/11/2026).
+      if (storeReplied) {
+        const current = await tx.conversation.findUniqueOrThrow({ where: { id: conversation.id }, select: { status: true, automationState: true } });
+        const { unreadCount: _, ...replied } = teamRepliedUpdate(current.status, current.automationState as AutomationState);
+        await tx.conversation.update({ where: { id: conversation.id }, data: replied });
+      }
       await tx.conversation.update({
         where: { id: conversation.id },
         data: {
@@ -148,8 +175,9 @@ export class IfoodChatService {
       // Cliente respondendo à loja não começa atendimento: a equipe já está na conversa. A loja falou pela Inbox, ou no
       // widget logo antes, na mesma leitura (só o lado do balão não basta: o iFood manda mensagens automáticas desse lado).
       const before = fresh[fresh.indexOf(first) - 1];
+      const byTeam = !!touch?.sentByUserId || !!(touch?.content as MessageContent | undefined)?.storeReply;
       const answering =
-        (recent && !!touch?.sentByUserId) || (!!before && typed.has(before) && first.at.getTime() - before.at.getTime() < STORE_REPLY_MS);
+        (recent && byTeam) || (!!before && typed.has(before) && first.at.getTime() - before.at.getTime() < STORE_REPLY_MS);
       // Como nos outros canais: conversa nova, resolvida ou sem interação há INACTIVITY_CLOSE_MS começa um atendimento.
       const event = {
         channel: { id: order.channelId, tenantId: order.tenantId, type: "IFOOD" as const },
@@ -246,6 +274,25 @@ export class IfoodChatService {
 
   private requireEnabled(): void {
     if (!this.env.IFOOD_CHAT_BRIDGE) throw new NotFoundException();
+  }
+
+  /**
+   * Mensagem escrita no Gestor é resposta da loja ao cliente quando vem até STORE_REPLY_MS depois de uma mensagem dele
+   * e não é uma mensagem automática da loja (o mesmo texto em outros chats).
+   */
+  private async isStoreReply(tx: TenantTx, channelId: string, entries: Entry[], entry: Entry, now: Date): Promise<boolean> {
+    const asked = entries.slice(0, entries.indexOf(entry)).reverse().find((item) => item.direction === "INBOUND");
+    if (!asked || entry.at.getTime() - asked.at.getTime() >= STORE_REPLY_MS) return false;
+    const same = await tx.message.findFirst({
+      where: {
+        channelId,
+        direction: "OUTBOUND",
+        createdAt: { gte: new Date(now.getTime() - STORE_TEMPLATE_MS) },
+        content: { path: ["text"], equals: entry.text },
+      },
+      select: { id: true },
+    });
+    return !same;
   }
 
   /** A mensagem lida é uma resposta que o painel digitou a partir da Inbox? Então já está na conversa: só ganha a identificação. */

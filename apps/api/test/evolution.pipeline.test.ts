@@ -191,6 +191,31 @@ describe("WhatsApp por QR Code (Evolution API)", () => {
     await admin.message.delete({ where: { id: pending.id } });
   });
 
+  it("a equipe responde pelo celular e resolve: a mensagem seguinte do cliente responde a ela, sem abrir um atendimento novo", async () => {
+    const customer = "5511922220003";
+    await webhook(textFrom(customer, "3EB0RES1", "Vocês têm mesa?")).expect(200);
+    await drainQueues(app);
+    const conversation = await admin.conversation.findFirstOrThrow({ where: { channelId, contact: { phone: `+${customer}` } } });
+    await webhook(
+      envelope("messages.upsert", {
+        key: { id: "3EB0RES2", remoteJid: `${customer}@s.whatsapp.net`, fromMe: true },
+        pushName: "Restaurante",
+        messageType: "conversation",
+        messageTimestamp: nowSeconds(),
+        message: { conversation: "Temos sim, pode vir" },
+      }),
+    ).expect(200);
+    await drainQueues(app);
+    await admin.conversation.update({ where: { id: conversation.id }, data: { status: "RESOLVED" } });
+    const menus = () => admin.message.count({ where: { conversationId: conversation.id, content: { path: ["automation"], equals: "menu" } } });
+    const before = await menus();
+
+    await webhook(textFrom(customer, "3EB0RES3", "Obrigada!")).expect(200);
+    await drainQueues(app);
+    expect(await menus()).toBe(before);
+    expect((await admin.conversation.findUniqueOrThrow({ where: { id: conversation.id } })).automationState).toMatchObject({ triage: "done" });
+  });
+
   it("número que não tem WhatsApp: a mensagem falha na hora, com o motivo", async () => {
     const conversation = await admin.conversation.findFirstOrThrow({ where: { channelId, contact: { phone: "+5511922220001" } } });
     evolution.reply((req) =>

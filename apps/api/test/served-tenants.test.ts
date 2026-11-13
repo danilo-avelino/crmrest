@@ -4,6 +4,7 @@ import type { INestApplication } from "@nestjs/common";
 import type { Queue } from "bullmq";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { OrderNoticeService } from "../src/orders/order-notice.service.js";
 import { QUEUES } from "../src/queues/queues.module.js";
 import { accessTokenFor, admin, createChannelFixture, createTestApp, drainQueues, metaPayload, postMetaWebhook } from "./helpers.js";
 
@@ -130,6 +131,13 @@ describe("canal que atende outros restaurantes", () => {
     const current = await api().get(`/api/orders/current?conversationId=${conversation.id}`).set("Authorization", `Bearer ${token}`).expect(200);
     expect(current.body.current.order).toMatchObject({ id: order.id, restaurantName: unitB.name });
     await api().get(`/api/orders/${order.id}/forecast?conversationId=${conversation.id}`).set("Authorization", `Bearer ${token}`).expect(200);
+
+    // O pedido sai para entrega na unidade B: o aviso vai para a conversa do grupo em que o cliente o confirmou.
+    await admin.order.update({ where: { id: order.id }, data: { status: "DISPATCHED", dispatchedAt: new Date() } });
+    await app.get(OrderNoticeService).statusChanged(unitB.id, order.id, "DISPATCHED");
+    await drainQueues(app);
+    expect((await contents("5511970000202")).at(-1)).toMatchObject({ automation: "order_dispatched" });
+    expect((await contents("5511970000202")).at(-1)?.text).toContain("#7002");
   });
 
   describe("entregador", () => {

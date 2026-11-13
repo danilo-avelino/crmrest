@@ -20,7 +20,7 @@ const TRANSCRIPT_LIMIT = 80;
 
 /** Como ler a conversa que vai para o Jev (cada linha começa com o horário e diz quem escreveu). */
 const READING_GUIDE =
-  'Conversa de um restaurante com um cliente. "Restaurante (automação)" são mensagens automáticas; "(IA)", do atendente virtual; "(atendente)", de uma pessoa da equipe. Cada linha começa com o horário.';
+  'Conversa de um restaurante com um cliente. "Restaurante (automação)" são mensagens automáticas; "(IA)", do atendente virtual; "(atendente)", de uma pessoa da equipe; "(loja)", da loja pelo portal do canal (digitada por alguém ou automática dela). Cada linha começa com o horário.';
 
 /**
  * Do pior para o melhor. O Jev devolve a posição na escala (fracionada), que vira a nota em porcentagem: o primeiro

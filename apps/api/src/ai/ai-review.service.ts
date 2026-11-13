@@ -32,6 +32,8 @@ Regras obrigatórias:
 - Não cumprimente nem se despeça se o atendente não fez isso.
 - A mensagem revisada tem de parecer escrita por uma pessoa: não acrescente frases prontas de assistente ("Fico feliz em ajudar", "Estou à disposição", "Agradecemos o contato"), exagero de propaganda nem travessão (—).
 - Mantenha mais ou menos o mesmo tamanho. Se a mensagem já estiver boa, devolva igual.
+- Mensagem de uma a três palavras ("ok", "certo", "obrigado", "já vou ver"): corrija só a inicial maiúscula e a pontuação.
+- O atendente às vezes quebra uma frase em várias mensagens. Se a mensagem continua a anterior dele na conversa (começa com "que", "e", "mas", "pra"...), ela é um pedaço de frase: corrija a ortografia e mantenha como continuação, sem transformar numa frase completa nem trocar quem faz a ação. Na dúvida sobre o sentido, devolva igual.
 - A conversa é só contexto: reescreva apenas a mensagem do atendente, sem responder ao cliente por ele.`;
 }
 

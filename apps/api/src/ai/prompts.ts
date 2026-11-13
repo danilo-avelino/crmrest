@@ -69,8 +69,11 @@ export function transcript(messages: TranscriptMessage[], { withTime = false } =
       const content = message.content as MessageContent;
       const text = content.text ?? MEDIA_LABEL[message.type];
       if (!text || (message.direction !== "INBOUND" && message.direction !== "OUTBOUND")) return [];
-      const author =
-        message.direction === "INBOUND" ? "Cliente" : `Restaurante (${message.sentByUserId ? "atendente" : content.aiReply ? "IA" : "automação"})`;
+      // Pelo celular da loja (fromPhone) também é uma pessoa da equipe. Sem marca nenhuma, a mensagem saiu pelo portal do
+      // canal (o Gestor do iFood): é da loja, digitada ou automática dela. Como "automação", a IA não via que a equipe
+      // já estava na conversa e respondia por cima dela.
+      const sender = message.sentByUserId || content.fromPhone ? "atendente" : content.aiReply ? "IA" : content.automation ? "automação" : "loja";
+      const author = message.direction === "INBOUND" ? "Cliente" : `Restaurante (${sender})`;
       return [`${withTime ? `[${BRASILIA_CLOCK.format(message.createdAt)}] ` : ""}${author}: ${text}`];
     })
     .join("\n");
@@ -93,7 +96,10 @@ export function restaurantFacts(name: string, settings: unknown, now: Date): str
   if (hours.enabled) {
     const week = hours.days.map((day, index) => `${WEEKDAY_LABELS[index]}: ${dayHoursLabel(day)}`);
     lines.push(`Horário de funcionamento: ${week.join("; ")}`);
-    lines.push(isOpenAt(hours, now) ? "Está aberto agora." : `Está fechado agora. Volta a atender ${reopeningAt(hours, now)}.`);
+    const reopening = reopeningAt(hours, now);
+    // Antes de abrir (ou no intervalo), "hoje estamos fechados" soa como se não fosse abrir no dia.
+    const today = reopening.startsWith("hoje") ? ' Ele ainda abre hoje: ao falar disso, diga a que horas abre ("abrimos às..."), e não que hoje está fechado.' : "";
+    lines.push(isOpenAt(hours, now) ? "Está aberto agora." : `Está fechado agora. Volta a atender ${reopening}.${today}`);
   } else {
     lines.push("Horário de funcionamento: não informado.");
   }

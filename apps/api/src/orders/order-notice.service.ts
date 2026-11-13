@@ -2,7 +2,7 @@ import type { ChannelType, OrderStatus } from "@dishdesk/database/enums";
 import type { AutomationMessages } from "@dishdesk/shared";
 import { automationMessagesOf, CHANNEL_CAPABILITIES, CHANNEL_LABEL, fillMessage, PERSONALITY_INFO, personalityOf } from "@dishdesk/shared";
 import { InjectQueue } from "@nestjs/bullmq";
-import { Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable, Logger } from "@nestjs/common";
 import type { Queue } from "bullmq";
 import { automationMessage, dispatch, firstName, isPaused, tenantSettings } from "../automations/automation.js";
 import { ENV, type Env } from "../config/env.js";
@@ -31,6 +31,8 @@ export const NOTICE_LIMIT_MS = 2 * 60 * 60 * 1000;
  */
 @Injectable()
 export class OrderNoticeService {
+  private readonly logger = new Logger(OrderNoticeService.name);
+
   constructor(
     private readonly db: DatabaseService,
     private readonly realtime: RealtimeEmitter,
@@ -78,11 +80,70 @@ export class OrderNoticeService {
             : status === "DISPATCHED"
               ? await automationMessage(tx, target, "order_dispatched", dispatchNoticeMessage(code, order.dispatchedAt ?? now, messages))
               : await automationMessage(tx, target, "order_delivered", deliveredNoticeMessage(code, messages));
-        notices.push({ conversationId: target.id, messageId });
+        notices.push({ conversationId: target.id, messageId, channelType: target.channel.type });
       }
       return notices;
     });
     for (const notice of sent) await dispatch(this.outbound, this.realtime, tenantId, notice.conversationId, [notice.messageId]);
+    // Sem conversa do cliente no restaurante do pedido (só o chat do iFood, ou nada), o aviso vai para a conversa de outro
+    // restaurante em que ele confirmou o pedido: o WhatsApp do grupo que atende esta unidade.
+    // Uma falha aqui não derruba o job: refeito, ele repetiria os avisos que já saíram.
+    if (!sent.some((notice) => notice.channelType !== "IFOOD")) {
+      await this.noticeElsewhere(tenantId, orderId, status, now).catch((error: unknown) => {
+        this.logger.warn(`Aviso do pedido ${orderId} em outro restaurante: ${error instanceof Error ? error.message : String(error)}`);
+      });
+    }
+  }
+
+  /**
+   * Conversas de outros restaurantes (os que têm um canal que atende este) em que o cliente confirmou o pedido, com as
+   * mesmas regras das conversas do próprio restaurante: aberta ou com mensagem do cliente nas últimas 24 h, e com a
+   * janela do canal aberta. O aviso sai no tom do restaurante da conversa.
+   */
+  private async noticeElsewhere(tenantId: string, orderId: string, status: NoticeStatus, now: Date): Promise<void> {
+    const order = await this.db.withTenants({ tenantIds: [tenantId] }, async (tx) => {
+      const order = await tx.order.findUniqueOrThrow({
+        where: { id: orderId },
+        select: { displayCode: true, externalOrderId: true, dispatchedAt: true, placedAt: true, raw: true, channel: { select: { connectedAt: true } } },
+      });
+      if (order.channel.connectedAt && order.placedAt < order.channel.connectedAt) return null;
+      const since = Math.max(order.placedAt.getTime(), promisedAt(order.raw)?.getTime() ?? 0);
+      return now.getTime() - since > NOTICE_LIMIT_MS ? null : order;
+    });
+    if (!order) return;
+    const serving = await this.db.client.$queryRaw<{ id: string }[]>`SELECT id FROM app.serving_tenants(${tenantId}::uuid)`;
+    const code = order.displayCode ?? order.externalOrderId;
+    for (const { id: servingId } of serving) {
+      const sent = await this.db.withTenants({ tenantIds: [servingId] }, async (tx) => {
+        if (await isPaused(tx, servingId)) return [];
+        const conversations = await tx.conversation.findMany({
+          where: {
+            teamOnly: false,
+            automationState: { path: ["linkedOrder", "id"], equals: orderId },
+            OR: [
+              { status: { not: "RESOLVED" } },
+              { messages: { some: { direction: "INBOUND", createdAt: { gt: new Date(now.getTime() - RECENT_CONTACT_MS) } } } },
+            ],
+          },
+          select: { id: true, tenantId: true, channelId: true, windowExpiresAt: true, channel: { select: { type: true } } },
+          orderBy: { lastMessageAt: { sort: "desc", nulls: "last" } },
+        });
+        const target = conversations.find((c) => {
+          const capabilities = CHANNEL_CAPABILITIES[c.channel.type];
+          return c.channel.type !== "IFOOD" && capabilities.send && (!capabilities.window24h || (c.windowExpiresAt && c.windowExpiresAt > now));
+        });
+        if (!target) return [];
+        const messages = automationMessagesOf(await tenantSettings(tx, servingId));
+        const messageId =
+          status === "READY"
+            ? await automationMessage(tx, target, "order_ready", readyNoticeMessage(code, messages))
+            : status === "DISPATCHED"
+              ? await automationMessage(tx, target, "order_dispatched", dispatchNoticeMessage(code, order.dispatchedAt ?? now, messages))
+              : await automationMessage(tx, target, "order_delivered", deliveredNoticeMessage(code, messages));
+        return [{ conversationId: target.id, messageId }];
+      });
+      for (const notice of sent) await dispatch(this.outbound, this.realtime, servingId, notice.conversationId, [notice.messageId]);
+    }
   }
 
   /** A equipe cancelou o pedido pelo Dish Desk: a mensagem, no tom do restaurante, vai pelas mesmas conversas dos avisos. */

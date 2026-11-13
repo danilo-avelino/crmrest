@@ -90,6 +90,11 @@ export type MessageContent = {
   /** Resposta que a equipe mandou pelo WhatsApp do celular (WhatsApp por QR Code), fora do Dish Desk. */
   fromPhone?: boolean;
   /**
+   * Chat do iFood: mensagem que a loja digitou no Gestor de Pedidos logo depois de uma mensagem do cliente. Conta como
+   * resposta da equipe (as automáticas da loja, que chegam sem mensagem do cliente antes, não ganham a marca).
+   */
+  storeReply?: boolean;
+  /**
    * Revisão da resposta do atendente pela IA, antes do envio: "pending" = ainda no worker; "rewritten" = o texto é o da
    * IA e `original` é o que o atendente escreveu (só a equipe vê); "kept" = saiu o texto do atendente; "blocked" = má
    * conduta (ofensa, grosseria): a mensagem não foi enviada e virou um alerta interno, com o texto em `original` e o

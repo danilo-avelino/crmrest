@@ -29,6 +29,38 @@ const ORDER_STEP: Partial<Record<string, AutomationState["triage"]>> = {
   "3": "awaiting_problem_order",
 };
 
+// Número do pedido numa frase do entregador: 2 a 6 dígitos soltos (telefone e valor ficam de fora pelo tamanho ou
+// pela vírgula). "089p" (dígito trocado por letra) não conta.
+const COURIER_ORDER = /(?<![\d,.])(\d{2,6})(?![\d,.]|\s*(?:min|reais|r\$))/i;
+const FRONT_DESK = /portaria|recep[cç][aã]o|deixei|entreguei|seguran[cç]a|guarita|eclusa|vigia|porteiro|balc[aã]o/i;
+const ARRIVAL = /cheguei|chegando|t[oô]\s*(?:aqui|aq|na\s+porta|no\s+local|em\s+frente|l[aá])|estou\s+(?:aqui|aq|na\s+porta|no\s+local)|na\s+frente|na\s+porta|aguard|esperando|avis[ae]/i;
+const PICKUP = /buscar|pegar|coletar|retirar/i;
+const PROBLEM = /m[aá]quina|maquininha|defeito|endere[cç]o\s+errado|cancel|ningu[eé]m|n[aã]o\s+(?:atende|responde|recebe|passa|desce|aceita)/i;
+
+/** O que o entregador pediu numa frase, sem passar pelo menu. */
+export type CourierShortcut =
+  | { kind: Notice; code: string }
+  | { kind: "pickup"; code?: string }
+  | { kind: "problem" }
+  | { kind: "number"; code: string };
+
+/**
+ * Lê o pedido do entregador escrito numa frase ("1024 tá na portaria", "Avisa pro pedido 3289", "6552", "vim buscar"),
+ * sem LLM. Portaria vence chegada ("8240 avisa q tá na portaria"); problema vence os dois. null = não deu para entender.
+ */
+export function courierShortcut(text: string | undefined): CourierShortcut | null {
+  if (!text) return null;
+  const code = COURIER_ORDER.exec(text)?.[1];
+  if (PROBLEM.test(text)) return { kind: "problem" };
+  if (PICKUP.test(text)) return code ? { kind: "pickup", code } : { kind: "pickup" };
+  if (!code) return null;
+  if (FRONT_DESK.test(text)) return { kind: "front_desk", code };
+  if (ARRIVAL.test(text)) return { kind: "arrival", code };
+  // Só o número (com "pedido", "#" ou pontuação em volta): o menu pergunta o que fazer com ele.
+  if (/^\s*(?:o\s+)?(?:pedido\s*)?(?:n[º°]\.?\s*)?#?\s*\d{2,6}\s*[.!?]*\s*$/i.test(text)) return { kind: "number", code };
+  return null;
+}
+
 /**
  * Menu de quem tem a tag Entregador, no lugar do menu de atendimento (sem aviso de fora do horário nem coleta de telefone):
  * avisar o cliente que chegou ou que deixou o pedido na portaria (pelo chat do iFood do pedido), relatar um problema com
@@ -46,8 +78,18 @@ export class CourierMenuService {
   async step(tx: TenantTx, conversation: Conversation, event: InboundEvent): Promise<Step> {
     const messages = automationMessagesOf(await tenantSettings(tx, conversation.tenantId));
     const state = conversation.automationState as AutomationState;
-    if (event.newAttendance) return this.sendMenu(tx, conversation, { triage: "awaiting_option" }, messages);
-    if (state.triage === "awaiting_option") return this.chooseOption(tx, conversation, state, messages, event.text);
+    if (event.newAttendance) {
+      // Quem já sabe o menu manda a opção ou o aviso inteiro logo na primeira mensagem ("1", "1024 tá na portaria").
+      const fresh: AutomationState = { triage: "awaiting_option" };
+      return (
+        (await this.shortcut(tx, conversation, fresh, messages, event.text)) ??
+        (/^\s*[1234]\s*$/.test(event.text ?? "") ? this.chooseOption(tx, conversation, fresh, messages, event.text) : this.sendMenu(tx, conversation, fresh, messages))
+      );
+    }
+    if (state.triage === "awaiting_option") {
+      if (/^\s*[1234](?!\d)/.test(event.text ?? "")) return this.chooseOption(tx, conversation, state, messages, event.text);
+      return (await this.shortcut(tx, conversation, state, messages, event.text)) ?? this.chooseOption(tx, conversation, state, messages, event.text);
+    }
     if (state.triage === "awaiting_arrival_order") return this.notifyCustomer(tx, conversation, state, messages, event.text, "arrival");
     if (state.triage === "awaiting_front_desk_order") return this.notifyCustomer(tx, conversation, state, messages, event.text, "front_desk");
     if (state.triage === "awaiting_problem_order") return this.findProblemOrder(tx, conversation, state, messages, event.text);
@@ -56,7 +98,40 @@ export class CourierMenuService {
       await setAutomationState(tx, conversation.id, { ...state, triage: "done" });
       return { send: [id], done: false, handoff: true, handoffText: "Entregador relatou um problema com um pedido" };
     }
+    // Atendimento já com a equipe: o aviso completo numa frase ainda vai para o cliente, sem encerrar a conversa
+    // ("Cadê o meu robô?", 12/11/2026). O resto é conversa com a equipe.
+    if (state.triage === "done") {
+      const asked = courierShortcut(event.text);
+      if (asked?.kind === "arrival" || asked?.kind === "front_desk") {
+        return this.notifyCustomer(tx, conversation, state, messages, asked.code, asked.kind, { keepOpen: true });
+      }
+    }
     return { send: [], done: false };
+  }
+
+  /** O entregador escreveu o pedido numa frase: segue direto, sem o menu. null = a frase não diz o que ele quer. */
+  private async shortcut(
+    tx: TenantTx,
+    conversation: Conversation,
+    state: AutomationState,
+    messages: AutomationMessages,
+    text: string | undefined,
+  ): Promise<Step | null> {
+    const asked = courierShortcut(text);
+    if (!asked) return null;
+    if (asked.kind === "arrival" || asked.kind === "front_desk") return this.notifyCustomer(tx, conversation, state, messages, asked.code, asked.kind);
+    if (asked.kind === "problem") {
+      const id = await automationMessage(tx, conversation, "handoff", messages.courierProblemForwarded);
+      await setAutomationState(tx, conversation.id, { ...state, triage: "done" });
+      return { send: [id], done: false, handoff: true, handoffText: `Entregador relatou um problema: "${text!.trim().slice(0, 150)}"` };
+    }
+    if (asked.kind === "pickup") {
+      const code = asked.code ?? state.courierOrder;
+      const note = code ? `Entregador veio buscar o pedido #${code}` : "Entregador veio buscar um pedido";
+      return this.callTeam(tx, conversation, state, await automationMessage(tx, conversation, "handoff", messages.handoff), note);
+    }
+    // Só o número: o menu pergunta o aviso, e a opção escolhida usa este número.
+    return this.sendMenu(tx, conversation, { ...state, triage: "awaiting_option", courierOrder: asked.code }, messages);
   }
 
   private async sendMenu(tx: TenantTx, conversation: Conversation, next: AutomationState, messages: AutomationMessages): Promise<Step> {
@@ -70,6 +145,11 @@ export class CourierMenuService {
     const option = /^\s*([1234])(?!\d)/.exec(text ?? "")?.[1];
     // 1, 2 e 3 pedem o número do pedido; 4 (outro assunto) chama a equipe.
     const next = option && ORDER_STEP[option];
+    // O número já veio antes da opção: o aviso sai sem perguntar de novo.
+    if (state.courierOrder && (option === "1" || option === "2")) {
+      return this.notifyCustomer(tx, conversation, state, messages, state.courierOrder, option === "1" ? "arrival" : "front_desk");
+    }
+    if (state.courierOrder && option === "3") return this.findProblemOrder(tx, conversation, state, messages, state.courierOrder);
     if (next) {
       const id = await automationMessage(tx, conversation, "order_number_request", messages.courierOrderNumberRequest);
       await setAutomationState(tx, conversation.id, { ...state, triage: next });
@@ -91,10 +171,13 @@ export class CourierMenuService {
     messages: AutomationMessages,
     text: string | undefined,
     kind: Notice,
+    { keepOpen = false } = {},
   ): Promise<Step> {
     const found = await this.findOrder(tx, conversation, text, true);
     // Sem o pedido (ou sem o chat do iFood na Inbox), é a equipe que avisa o cliente. O pedido pode ser de outra
     // plataforma (só o iFood recebe o aviso automático); achado, o card dele traz o botão para falar com o cliente.
+    // Com a equipe já na conversa, sem o pedido no iFood quem cuida é ela: nada de pedir o número de novo.
+    if (keepOpen && (!found?.order || !this.env.IFOOD_CHAT_BRIDGE)) return { send: [], done: false };
     if (!found?.order || !this.env.IFOOD_CHAT_BRIDGE) {
       const known = found && !found.order ? await this.findOrder(tx, conversation, text, false) : found;
       if (known && !known.order && !state.orderRetried) return this.askAgain(tx, conversation, state, messages, known.code);
@@ -128,7 +211,7 @@ export class CourierMenuService {
     const confirmation = fillMessage(kind === "arrival" ? messages.courierArrivalConfirmed : messages.courierFrontDeskConfirmed, { pedido: found.code });
     const id = await automationMessage(tx, conversation, kind === "arrival" ? "courier_arrival_confirmed" : "courier_front_desk_confirmed", confirmation);
     await setAutomationState(tx, conversation.id, { ...state, triage: "done" });
-    await tx.conversation.update({ where: { id: conversation.id }, data: { status: "RESOLVED", unreadCount: 0 } });
+    if (!keepOpen) await tx.conversation.update({ where: { id: conversation.id }, data: { status: "RESOLVED", unreadCount: 0 } });
     return { send: [id], done: false, alsoSend };
   }
 

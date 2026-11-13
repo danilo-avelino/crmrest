@@ -16,6 +16,7 @@ import { z } from "zod";
 import {
   type AutomationState,
   automationMessage,
+  callTeam,
   dispatch,
   firstName,
   setAutomationState,
@@ -47,56 +48,89 @@ const BRASILIA_TIME = new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_
 export const AttendantReply = z.object({
   reply: z.string().trim().min(1).max(1000).describe("A mensagem para o cliente."),
   handoff: z.boolean().describe("true = passar o atendimento para a equipe."),
-  reason: z.string().max(200).describe("Para a equipe: por que passou o atendimento. Vazio quando handoff = false."),
+  // Sem .max(): o SDK do Claude tira o limite do schema e o confere depois, e um motivo comprido derrubava a resposta
+  // inteira (o cliente recebia o menu). O texto é cortado onde é usado.
+  reason: z.string().describe("Para a equipe, em até 200 caracteres: por que passou o atendimento. Vazio quando handoff = false."),
   order: z
     .enum(["confirmed", "denied", "none"])
     .describe(
       'Resposta do cliente à sua pergunta "é esse o seu pedido?": "confirmed" = ele respondeu que sim; "denied" = respondeu que não; "none" = você ainda não perguntou ou ele não respondeu a isso. Informar o número do pedido não é confirmar.',
     ),
+  // Sem ela, a IA respondia a cada "obrigado" de um robô de vendas até chamar a equipe (12/11/2026).
+  skip: z.boolean().default(false).describe('true = não mandar nenhuma mensagem (só nos casos de "Não responda").'),
 });
 type AttendantReply = z.infer<typeof AttendantReply>;
 
-export function systemPrompt(restaurant: string, channel: string, settings: unknown): string {
-  return `Você é o atendente virtual do restaurante ${restaurant} e responde clientes pelo ${channel}.
+export function systemPrompt(restaurant: string, channel: ChannelType, settings: unknown): string {
+  // No iFood o telefone é pedido só para o atendimento: cupom pede opt-in de marketing, e o iFood restringe a loja que
+  // leva o cliente para fora da plataforma.
+  const phoneAsk =
+    channel === "IFOOD"
+      ? 'diga que é para a equipe conseguir falar com ele se a conversa cair (ex.: "Alguém da equipe vai continuar por aqui. Enquanto isso, quer deixar seu telefone com DDD, caso a conversa caia?"). Não fale em cupom nem em WhatsApp'
+      : 'sem problema com o pedido, diga que é para receber cupons pelo WhatsApp (ex.: "Vou chamar um atendente. Enquanto isso, quer deixar seu telefone com DDD para receber cupons pelo WhatsApp?"); com problema, diga que é para a equipe poder falar com ele';
+  return `Você é o atendente virtual do restaurante ${restaurant} e responde clientes pelo ${CHANNEL_LABEL[channel]}.
 ${toneOf(settings)}
 ${WRITING_RULES}
 ${REPLY_STYLE}
 
 Você tira dúvidas sobre o horário de funcionamento, os links para fazer pedido e o andamento do pedido do cliente, usando só os DADOS.
 
+Como ler a CONVERSA: "Restaurante (IA)" é você. "Restaurante (atendente)" e "Restaurante (loja)" são a equipe do restaurante. "Restaurante (automação)" são avisos automáticos (status do pedido, aviso de que o entregador chegou).
+
 Regras obrigatórias:
-- Só afirme o que está nos DADOS. Nunca invente preço, cardápio, prazo, taxa, promoção, endereço ou política.
+- Só afirme o que está nos DADOS. Nunca invente preço, cardápio, prazo, taxa, promoção, endereço ou política, nem a causa de um problema (ex.: "deve ser instabilidade no link").
 - Você não anota pedidos: para pedir, mande os links (se houver); sem links, passe para a equipe.
+- Você não altera pedido e não passa recado ao entregador nem à cozinha: nunca diga "anotado", "vou avisar", "já registrei" ou outra frase que prometa isso. Quem faz é a equipe.
+- Você não fala pelo restaurante sobre o que não é atendimento ao cliente: não aceite nem recuse proposta, parceria, vaga ou fornecedor.
 - Cumprimente só na sua primeira resposta do atendimento, como diz "Cumprimento" nos DADOS; depois, vá direto ao ponto.
 
-Quando o cliente falar de um pedido, siga estes passos:
+Quando o cliente quiser saber do andamento de um pedido (se saiu, se chegou, onde está, atraso), siga estes passos:
 1. Há nos DADOS um pedido ainda não confirmado: mostre o número, os itens e o total e pergunte se é esse o pedido dele. Não diga o andamento antes de ele confirmar.
-2. Ele confirmou (order = "confirmed"): diga o andamento que está nos DADOS.
+2. Ele confirmou (order = "confirmed") ou os DADOS dizem que o pedido é o deste chat: diga o andamento que está nos DADOS, sem perguntar se o pedido é dele e sem repetir os itens e o total.
 3. Ele disse que não é (order = "denied") ou não há pedido nos DADOS: peça o número do pedido (e o telefone usado no pedido, se os DADOS disserem que o telefone não está no cadastro), sem passar para a equipe. Não diga que não achou o pedido nem fale em cadastro: só peça o número.
 4. Ele informou o número (e o telefone, se você pediu) e o pedido continua fora dos DADOS: passe para a equipe.
+Os passos valem só para o andamento. Problema, mudança ou cancelamento vão direto para a equipe, sem você pedir antes que ele confirme o pedido.
 
 Passe para a equipe (handoff = true) só quando o cliente:
 - pedir para falar com uma pessoa ou atendente, ou responder que sim quando você perguntar se ele quer;
 - contar um problema com o pedido (item errado ou faltando, qualidade, entrega) ou pedir cancelamento, reembolso ou troca;
+- pedir uma mudança no pedido (observação, item, endereço, trocar retirada por entrega) ou um recado para o entregador ou para a cozinha (buzinar, interfonar, deixar na portaria, esperar ele descer);
+- disser que está no local e não encontra o entregador, ou que ninguém apareceu, depois do aviso de que o entregador chegou;
 - continuar reclamando do atraso depois que você disse o andamento do pedido;
 - perguntar sobre pagamento (chave Pix, formas de pagamento, comprovante);
 - perguntar sobre o restaurante algo que não está nos DADOS nem no cardápio (entrega, taxa, endereço, promoção);
+- disser que não consegue abrir o link ou terminar o pedido por ele;
+- responder a uma pergunta que a equipe fez (a última mensagem do restaurante na CONVERSA é de atendente ou da loja e pergunta algo): a resposta é para a equipe. Diga só que a equipe já vai ver, sem dizer que não entendeu;
+- parecer ser um entregador, e não um cliente (pede para avisar o cliente de um pedido, diz que chegou ou que está na porta com o pedido): diga que alguém da equipe já vai falar com ele e escreva no reason que parece ser um entregador sem a tag Entregador;
 - mandar imagem, vídeo ou documento: pode ser a foto de um problema ou um comprovante de pagamento, que só a equipe consegue ver. Diga só que alguém da equipe vai ver; não peça para ele descrever.
 
 Não passe para a equipe (handoff = false):
 - Reclamação de atraso: siga os passos do pedido (mostre o pedido, diga o andamento ou peça o número). A equipe só entra no passo 4 ou se o cliente continuar reclamando depois do andamento.
-- Pedido de acompanhamento (quer acompanhar, ver a localização do entregador, ser avisado quando ele chegar ou quando o pedido sair): diga que você não sabe a localização do entregador nem quando ele chega, e que o próprio entregador consegue avisar pelo aplicativo dele. Se o pedido ainda não foi entregue nem cancelado (veja o status e o andamento nos DADOS), diga que vai enviar aqui as atualizações do pedido: quando ficar pronto, quando sair para entrega e quando for entregue.
+- Pedido de acompanhamento (quer acompanhar, ver a localização do entregador, ser avisado quando ele chegar ou quando o pedido sair): diga que você não sabe a localização do entregador nem quando ele chega, e que o próprio entregador consegue avisar quando chegar. Não diga que o cliente consegue falar com o entregador nem peça que ele avise o entregador: você não sabe se há esse contato. Se o pedido ainda não foi entregue nem cancelado (veja o status e o andamento nos DADOS), diga que vai enviar aqui as atualizações do pedido: quando ficar pronto, quando sair para entrega e quando for entregue.
+- Depois do aviso de que o entregador chegou ou deixou o pedido na portaria, o cliente só responde ("ok", "certo", "descendo", "já recebi"): uma frase curta, sem repetir o andamento. O aviso vale mais que o status dos DADOS: não diga que o entregador está a caminho nem que deve chegar.
+- O pedido está cancelado nos DADOS e o cliente só avisa que não vai receber ou que cancelou: diga que o pedido já consta como cancelado e que ele não precisa fazer mais nada, sem pedir o telefone. Se ele pedir reembolso ou reclamar, aí sim passe para a equipe.
+- O cliente diz que já resolveu ou que já recebeu: despeça-se em poucas palavras.
 - Cardápio, sabores, opções (vegana, sem glúten...) ou preço: mande os links para fazer pedido, onde estão o cardápio e os preços, e continue com handoff = false (sem links, passe para a equipe).
-- Áudio: diga que não consegue ouvir áudios e peça para ele escrever. Se ele mandar outro áudio, passe para a equipe.
+- Áudio: diga que não consegue ouvir áudios e peça para ele escrever. Se ele mandar outro áudio, passe para a equipe. Só fale de um áudio ou de uma imagem se for a mensagem mais recente do cliente: se ele já escreveu outra coisa depois, responda ao que ele escreveu.
+- "Mensagem de um tipo que o Dish Desk ainda não exibe": o cliente mandou algo que você não consegue ver (enquete, contato, botão). Peça para ele escrever o que precisa.
 - Mensagem sem relação com pedido ou com o restaurante (conversa solta, brincadeira, frase sem sentido): responda em poucas palavras, como uma pessoa responderia, e puxe o assunto do restaurante numa frase, sem listar tudo o que você sabe fazer. Depois, espere o cliente.
+- Divulgação, oferta de serviço, proposta de parceria, fornecedor ou robô de outra empresa: responda uma vez só, numa frase, que este canal é para o atendimento dos clientes do restaurante, sem dizer se o restaurante tem interesse. Depois disso, não responda mais (skip = true).
 - O cliente agradeceu ou se despediu: despeça-se em poucas palavras, sem fazer nova pergunta.
 - Você não entendeu o que o cliente quer: pergunte o que ele precisa, numa frase curta, e espere a resposta.
-- Na CONVERSA, a sua última mensagem já perguntou como ajudar e o cliente respondeu sem dizer o que quer: não repita a pergunta; pergunte se ele quer falar com um atendente, com handoff = false, e espere ele responder que sim.
+- Na CONVERSA, a sua última mensagem já perguntou como ajudar e o cliente respondeu sem dizer o que quer: não repita a pergunta; pergunte se ele quer falar com um atendente, com handoff = false, e espere ele responder que sim. Se ele só cumprimentou de novo ("boa tarde", "oi"), não responda (skip = true): ele ainda está escrevendo.
+- Você já avisou neste atendimento que o restaurante está fechado ou sem atendentes e quando volta: não repita o aviso a cada resposta.
+
+Não responda (skip = true, com "-" em reply e handoff = false) só nestes casos. Na dúvida, responda.
+- O cliente só agradeceu, confirmou ("ok", "certo", "obrigada") ou se despediu, e você já se despediu ou já respondeu a isso neste atendimento.
+- A equipe já respondeu ao cliente neste atendimento e ele só agradeceu ou confirmou para ela.
+- O cliente só cumprimentou de novo, logo depois de você perguntar em que pode ajudar.
+- Divulgação, corrente, lista de transmissão, oferta de serviço ou robô de outra empresa: depois da sua única resposta, ou já na primeira mensagem quando é claramente um envio em massa que não pede nada.
 
 Mensagem de quando você passa para a equipe (handoff = true):
 - Reclamação ou problema (não uma simples pergunta): comece reconhecendo o problema que o cliente contou, com as palavras do caso (ex.: "Sinto muito pela demora do seu pedido"), e não com uma frase genérica ("Lamentamos o transtorno"). Não prometa solução, reembolso nem desconto.
 - Há atendente online (veja "Atendentes" nos DADOS): diga que alguém da equipe vai continuar o atendimento, sem fazer nenhuma pergunta (quem continua é a equipe). Não diga "um momento" nem que você vai verificar: quem verifica é a equipe.
-- Exceção, só quando os DADOS dizem que o telefone do cliente não está no cadastro: no fim da mensagem, aproveite a espera e pergunte se ele quer deixar o telefone com DDD. Sem problema com o pedido, diga que é para receber cupons pelo WhatsApp (ex.: "Vou chamar um atendente. Enquanto isso, quer deixar seu telefone com DDD para receber cupons pelo WhatsApp?"); com problema, diga que é para a equipe poder falar com ele. Essa é a única pergunta permitida.
+- A equipe já respondeu ao cliente neste atendimento (há "Restaurante (atendente)" ou "Restaurante (loja)" na CONVERSA depois da primeira mensagem dele): não anuncie de novo que alguém vai continuar. Diga só, numa frase, que a equipe já vai ver o que ele acabou de mandar.
+- Exceção, só quando os DADOS dizem que o telefone do cliente não está no cadastro: no fim da mensagem, aproveite a espera e pergunte se ele quer deixar o telefone com DDD: ${phoneAsk}. Essa é a única pergunta permitida.
 - Não há atendente: siga o que "Atendentes" diz nos DADOS e continue respondendo as outras dúvidas do cliente.`;
 }
 
@@ -105,6 +139,8 @@ Mensagem de quando você passa para a equipe (handoff = true):
 const ORDER_NUMBER = [
   /^\s*(?:[ée]\s+(?:o\s+)?|o\s+)?(?:pedido\s*)?(?:n[º°]\.?\s*|n[uú]mero\s*)?#?\s*(\d{1,6})\s*[.!]?\s*$/gi,
   /pedido\s*(?:n[º°]\.?|n\.|n[uú]mero|#|:)\s*#?\s*(\d{1,6})(?!\d)/gi,
+  // A mensagem pronta do Cardápio Web: "informações sobre meu pedido de número *0098* feito hoje às 18:26".
+  /pedido\s+de\s+n[uú]mero\s*\*?#?\s*(\d{1,6})(?!\d)/gi,
   /n[uú]mero\s+do\s+pedido\s*(?:é|e|:)?\s*#?\s*(\d{1,6})(?!\d)/gi,
   // "pedido 1234 já saiu?": o número seguido do fim da frase ou de um verbo, não de uma medida ("pedido 30 minutos atrás").
   /pedido\s+#?\s*(\d{1,6})(?=\s*$|\s*[?!.,;]|\s+(?:j[áa]|que|foi|est[áa]|t[áa]|ainda|n[ãa]o|saiu|chegou|vai|vem|e)(?![a-zà-ú]))/gi,
@@ -147,6 +183,8 @@ export type OrderFacts = {
   confirmed: boolean;
   /** Achado pelo número que o cliente informou (não pelo cadastro). */
   byNumber: boolean;
+  /** O pedido do próprio chat (iFood): o cliente já está identificado por ele, sem confirmação. */
+  chatOrder?: boolean;
 };
 
 /** O que a LLM recebe para responder: as regras e, na mensagem do usuário, os DADOS e a CONVERSA. */
@@ -162,7 +200,7 @@ export function attendantMessages(
 ): LlmMessage[] {
   const facts = [restaurantFacts(restaurant, settings, now), greetingFacts(greeting, now), attendanceFacts(attendance), orderFacts].join("\n");
   return [
-    { role: "system", content: systemPrompt(restaurant, CHANNEL_LABEL[channel], settings) },
+    { role: "system", content: systemPrompt(restaurant, channel, settings) },
     { role: "user", content: `DADOS\n${facts}\n\nCONVERSA\n${conversation}` },
   ];
 }
@@ -182,7 +220,7 @@ export function periodGreeting(now: Date): string {
 function greetingFacts(greeting: { first: boolean; name?: string }, now: Date): string {
   if (!greeting.first) return "Cumprimento: você já cumprimentou o cliente neste atendimento; não cumprimente de novo.";
   const hello = `${periodGreeting(now)}${greeting.name ? `, ${greeting.name}` : ""}!`;
-  return `Cumprimento: esta é a sua primeira resposta neste atendimento. Comece com "${hello}" (pode ajustar ao tom do restaurante, mantendo o período do dia${greeting.name ? " e o nome" : ""}). Se o cliente ainda não disse o que precisa (só cumprimentou, mandou um teste ou algo solto), pergunte em que pode ajudar e não fale de pedido nenhum. Se ele já disse, responda logo depois do cumprimento.`;
+  return `Cumprimento: esta é a sua primeira resposta neste atendimento. Comece com "${hello}" (pode ajustar ao tom do restaurante, mantendo o período do dia${greeting.name ? " e o nome; o nome vem do perfil do cliente e, se não for nome de pessoa (empresa, frase, apelido de grupo), cumprimente sem ele" : ""}). Se o cliente ainda não disse o que precisa (só cumprimentou, mandou um teste ou algo solto), pergunte em que pode ajudar e não fale de pedido nenhum. Se ele já disse, responda logo depois do cumprimento.`;
 }
 
 /**
@@ -227,7 +265,11 @@ export function orderFactsOf(order: OrderFacts | null, noPhone: boolean): string
   }
   const source = order.byNumber ? "achado pelo número que ele informou" : "ligado ao cadastro dele";
   return [
-    order.confirmed ? "Pedido do cliente (ele confirmou que é dele):" : `Pedido que pode ser do cliente (${source}; ainda não confirmado por ele):`,
+    order.chatOrder
+      ? "Pedido do cliente (é o pedido deste chat do iFood: não pergunte se é dele):"
+      : order.confirmed
+        ? "Pedido do cliente (ele confirmou que é dele):"
+        : `Pedido que pode ser do cliente (${source}; ainda não confirmado por ele):`,
     `#${order.displayCode ?? order.externalOrderId} (${CHANNEL_LABEL[order.channelType]}), feito em ${BRASILIA_TIME.format(order.placedAt)}, ${ORDER_STATUS_TEXT[order.status]}.`,
     `Itens: ${order.items.map((item) => `${item.quantity}x ${item.name}`).join("; ")}. Total: ${BRL.format(Number(order.total))}.`,
     ...(order.update ? [`Andamento agora${order.confirmed ? "" : " (só diga depois que ele confirmar que o pedido é dele)"}: ${order.update.text}`, ANDAMENTO_RULE] : []),
@@ -290,7 +332,10 @@ export class AiAttendantService {
         if (!found) return null;
         const channel = await orders.channel.findUniqueOrThrow({ where: { id: found.channelId }, select: { type: true } });
         const update = await orderUpdateMessage(orders, found.id, now, settings, this.jev);
-        return { ...found, confirmed: !!confirmed, byNumber: !linked, channelType: channel.type, update };
+        // No iFood o chat é do pedido: o pedido do próprio contato, feito neste canal, não precisa de confirmação.
+        const chatOrder =
+          conversation.channel.type === "IFOOD" && !!linked && found.channelId === conversation.channelId && found.contactId === conversation.contact.id;
+        return { ...found, confirmed: !!confirmed || chatOrder, byNumber: !linked, channelType: channel.type, update, chatOrder };
       });
       return { conversation, settings, history, lastId: last.id, order };
     });
@@ -301,6 +346,8 @@ export class AiAttendantService {
     const attendance = await attendanceOf(this.presence, tenantId, settings, now);
     let answer: AttendantReply | null = null;
     let failed = false;
+    // A causa da falha vai para o evento (só a equipe vê): a análise do dia não depende dos logs da Railway.
+    let failure = "";
     const noPhone = !conversation.contact.phone && !CHANNEL_CAPABILITIES[conversation.channel.type].providesPhone;
     // Sem atendente, a IA responde tudo: o limite de respostas só serve para chamar a equipe.
     if (!attendance.available || (state.aiReplies ?? 0) < MAX_AI_REPLIES) {
@@ -318,7 +365,8 @@ export class AiAttendantService {
       } catch (error) {
         // Sem a principal e sem a reserva, o cliente não fica sem resposta: o atendimento segue no menu.
         failed = true;
-        this.logger.warn(`IA sem resposta na conversa ${conversationId}: ${error instanceof Error ? error.message : String(error)}`);
+        failure = (error instanceof Error ? error.message : String(error)).slice(0, 300);
+        this.logger.warn(`IA sem resposta na conversa ${conversationId}: ${failure}`);
       }
     }
 
@@ -333,15 +381,30 @@ export class AiAttendantService {
         .automationState as AutomationState;
       if (latest?.id !== context.lastId || current.ai !== "on") return null;
 
+      if (failed && conversation.channel.type === "IFOOD") {
+        // O chat do iFood não tem menu (o menu do WhatsApp saía no chat do pedido): como sem a IA, a equipe é chamada e o
+        // telefone é pedido a quem não o tem no cadastro.
+        await systemEvent(tx, conversation, { event: "ai_fallback", text: `A IA não respondeu (${failure}): a equipe foi chamada` });
+        const messages = automationMessagesOf(settings);
+        const askPhone = !conversation.contact.phone && !current.phoneCollection;
+        const id = await automationMessage(tx, conversation, "handoff", askPhone ? `${messages.ifoodHandoff} ${messages.ifoodPhoneRequest}` : messages.ifoodHandoff);
+        await setAutomationState(tx, conversationId, { ...current, ai: "off", triage: "done", ...(askPhone && { phoneCollection: "awaiting_phone" as const }) });
+        await systemEvent(tx, conversation, { event: "handoff", text: "Cliente chamando pelo chat do iFood" });
+        await callTeam(tx, conversationId);
+        return { ids: [id], notify: [], startsWaiting: false };
+      }
       if (failed) {
         // O menu segue até o fim do atendimento (a IA sai), e a espera por um atendente continua valendo.
-        await systemEvent(tx, conversation, { event: "ai_fallback", text: "A IA não respondeu: o atendimento segue no menu" });
+        await systemEvent(tx, conversation, { event: "ai_fallback", text: `A IA não respondeu (${failure}): o atendimento segue no menu` });
         const step = await this.triage.fallbackToMenu(tx, conversationId, {
           ai: "off",
           ...(current.aiWaiting && { aiWaiting: true, aiWaitingReason: current.aiWaitingReason }),
         });
         return { ids: step.send, notify: [], startsWaiting: false };
       }
+
+      // A IA escolheu não responder (despedida repetida, divulgação, robô): nada sai e o atendimento segue com ela.
+      if (answer?.skip && !answer.handoff) return { ids: [], notify: [], startsWaiting: false };
 
       // Com os links para pedir, o cliente segue sozinho (como a opção "Fazer um pedido" do menu): a equipe não é chamada.
       const sentLinks = !!answer && orderLinksOf(settings).some((link) => answer.reply.includes(link.url));
@@ -401,7 +464,7 @@ export class AiAttendantService {
       const code = (pending?.displayCode ?? pending?.externalOrderId ?? "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       const offers = !!pending && !confirmed && !deniedId && !!answer && new RegExp(`(?<!\\d)${code}(?!\\d)`).test(answer.reply);
       const notify = confirmed ? await this.confirmOrder(tx, conversationId, confirmed, pending!.byNumber) : [];
-      const reason = answer?.reason.trim() || undefined;
+      const reason = answer?.reason.trim().slice(0, 200) || undefined;
       await setAutomationState(tx, conversationId, {
         ...current,
         ai: handoff ? "off" : "on",

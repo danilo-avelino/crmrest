@@ -3,9 +3,12 @@ import type { INestApplication } from "@nestjs/common";
 import type { Queue } from "bullmq";
 import request from "supertest";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
-import { orderNumbersIn, periodGreeting } from "../src/ai/ai-attendant.service.js";
+import { orderFactsOf, orderNumbersIn, periodGreeting, systemPrompt } from "../src/ai/ai-attendant.service.js";
 import { AiEvaluationService, EVALUATION_DELAY_MS, scorePercent } from "../src/ai/ai-evaluation.service.js";
 import { AiForwardService } from "../src/ai/ai-forward.service.js";
+import { transcript } from "../src/ai/prompts.js";
+import { firstName } from "../src/automations/automation.js";
+import { courierShortcut } from "../src/automations/courier-menu.service.js";
 import { InactivityService } from "../src/automations/inactivity.service.js";
 import { PresenceService } from "../src/realtime/presence.service.js";
 import { keepsFacts } from "../src/ai/ai-review.service.js";
@@ -245,6 +248,21 @@ describe("atendimento com IA: resposta, revisão e avaliação", () => {
     }
   });
 
+  it("a IA escolhe não responder (despedida repetida, divulgação): nada sai e ela continua no atendimento", async () => {
+    answers.atendimento = { reply: "Este canal é para o atendimento dos nossos clientes.", handoff: false, reason: "", order: "none" };
+    await say("5511980000031", "wamid.AI-SKIP-1", "Sou o Max, do Hits. Posso te apresentar uma oferta?");
+    await settle();
+    const sent = graph.requests.length;
+
+    answers.atendimento = { reply: "-", handoff: false, reason: "", order: "none", skip: true };
+    await say("5511980000031", "wamid.AI-SKIP-2", "Obrigado! Um ótimo dia para vocês 😊");
+    await settle();
+
+    expect(graph.requests.length).toBe(sent);
+    expect((await contents("5511980000031")).filter((c) => c.aiReply)).toHaveLength(1);
+    expect((await conversationOf("5511980000031")).automationState).toMatchObject({ ai: "on", aiReplies: 1 });
+  });
+
   it("a IA passa para a equipe quando não pode resolver, e para de responder", async () => {
     answers.atendimento = { reply: "Sinto muito! Alguém da equipe já vai falar com você.", handoff: true, reason: "Cliente reclamou do atraso", order: "none" };
     await say("5511980000002", "wamid.AI-5", "Meu pedido está atrasado há uma hora!");
@@ -430,7 +448,8 @@ describe("atendimento com IA: resposta, revisão e avaliação", () => {
 
     const conversation = await conversationOf("5511980000003");
     expect(conversation.messages.map((m) => m.content as Content).slice(-2)).toMatchObject([
-      { event: "ai_fallback", text: "A IA não respondeu: o atendimento segue no menu" },
+      // A causa vai junto, para a equipe (aqui, o HTTP 500 da LLM falsa).
+      { event: "ai_fallback", text: "A IA não respondeu (A LLM respondeu HTTP 500.): o atendimento segue no menu" },
       { automation: "menu" },
     ]);
     expect(conversation.automationState).toMatchObject({ ai: "off", triage: "awaiting_option" });
@@ -831,6 +850,89 @@ describe("atendimento com IA: número do pedido informado pelo cliente", () => {
     expect(orderNumbersIn(["Pedido Nº 1\nFeito às 13:44"])).toEqual(["1"]);
     expect(orderNumbersIn(["o número do pedido é 5150", "pedido: 77"])).toEqual(["5150", "77"]);
     expect(orderNumbersIn(["quero 2 pizzas", "fiz o pedido há 30 minutos", "86999731647", "(86) 99973-1647"])).toEqual([]);
+  });
+
+  it("entregador: lê o aviso escrito numa frase, sem o menu", () => {
+    expect(courierShortcut("1024 tá na portaria")).toEqual({ kind: "front_desk", code: "1024" });
+    expect(courierShortcut("8240 avisa q tá na portaria")).toEqual({ kind: "front_desk", code: "8240" });
+    expect(courierShortcut("0535 Entregue na portaria")).toEqual({ kind: "front_desk", code: "0535" });
+    expect(courierShortcut("Avisa pro pedido 3289")).toEqual({ kind: "arrival", code: "3289" });
+    expect(courierShortcut("2141 pedi pra aguardar na entrada da lateral")).toEqual({ kind: "arrival", code: "2141" });
+    expect(courierShortcut("6552")).toEqual({ kind: "number", code: "6552" });
+    expect(courierShortcut("pedido 41867")).toEqual({ kind: "number", code: "41867" });
+    expect(courierShortcut("Vim buscar")).toEqual({ kind: "pickup" });
+    expect(courierShortcut("Máquina que tou tá com defeito")).toEqual({ kind: "problem" });
+    expect(courierShortcut("Ja tô aqui a 10 minutos")).toBeNull();
+    expect(courierShortcut("Oi")).toBeNull();
+    expect(courierShortcut("Pedido 089p")).toBeNull();
+    expect(courierShortcut("86994990211")).toBeNull();
+  });
+
+  it("lê o número da mensagem pronta do Cardápio Web, com o negrito do WhatsApp", () => {
+    const text = "Olá, meu nome é *Gabriela Cordeiro* e gostaria de saber informações sobre meu pedido de número *0098* feito hoje às 18:26";
+    expect(orderNumbersIn([text])).toEqual(["0098", "98"]);
+  });
+});
+
+describe("atendimento com IA: o que a IA lê", () => {
+  const message = (content: object, sentByUserId: string | null = null) => ({
+    direction: "OUTBOUND",
+    type: "TEXT" as const,
+    content,
+    sentByUserId,
+    createdAt: new Date(),
+  });
+
+  it("a conversa diz quem escreveu: atendente (painel ou celular), IA, automação ou a loja pelo portal do canal", () => {
+    const lines = transcript([
+      { ...message({ text: "ventania eletro" }), direction: "INBOUND" },
+      message({ text: "Já vou ver" }, "user-1"),
+      message({ text: "pedido em produção", fromPhone: true }),
+      message({ text: "Abrimos às 11h", aiReply: true }),
+      message({ text: "Seu pedido saiu", automation: "order_dispatched" }),
+      message({ text: "qual nome do local de entrega?" }),
+    ]).split("\n");
+    expect(lines).toEqual([
+      "Cliente: ventania eletro",
+      "Restaurante (atendente): Já vou ver",
+      "Restaurante (atendente): pedido em produção",
+      "Restaurante (IA): Abrimos às 11h",
+      "Restaurante (automação): Seu pedido saiu",
+      "Restaurante (loja): qual nome do local de entrega?",
+    ]);
+  });
+
+  it("o cumprimento usa só nome com letras, com a inicial maiúscula", () => {
+    expect(firstName("Ana Souza")).toBe("Ana");
+    expect(firstName("PATRICIA AGUIAR DE ALMEIDA")).toBe("Patricia");
+    expect(firstName("carlos eduardo")).toBe("Carlos");
+    expect(firstName("João Vitor Mendes 😁")).toBe("João");
+    expect(firstName("😃")).toBeUndefined();
+    expect(firstName("✨")).toBeUndefined();
+    expect(firstName(null)).toBeUndefined();
+  });
+
+  it("no chat do iFood o pedido é o do chat, sem confirmação, e o telefone é pedido sem falar em cupom", () => {
+    const order = {
+      displayCode: "5467",
+      externalOrderId: "x",
+      channelType: "IFOOD" as const,
+      placedAt: new Date("2026-11-12T19:04:00-03:00"),
+      status: "DISPATCHED" as const,
+      items: [{ quantity: 1, name: "Pepperoni" }],
+      total: "47.01",
+      update: { text: "Saiu para entrega às 19:15." },
+      confirmed: true,
+      byNumber: false,
+      chatOrder: true,
+    };
+    const facts = orderFactsOf(order, false);
+    expect(facts).toContain("Pedido do cliente (é o pedido deste chat do iFood: não pergunte se é dele):\n#5467");
+    expect(facts).toContain("Andamento agora: Saiu para entrega às 19:15.");
+
+    expect(systemPrompt("Aglio Nero", "IFOOD", {})).not.toContain("cupons");
+    expect(systemPrompt("Aglio Nero", "IFOOD", {})).toContain("caso a conversa caia");
+    expect(systemPrompt("Aglio Nero", "WHATSAPP", {})).toContain("para receber cupons pelo WhatsApp");
   });
 });
 

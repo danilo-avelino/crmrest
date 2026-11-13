@@ -23,6 +23,8 @@ export type AutomationState = {
   menuRepeated?: boolean;
   /** Menu do entregador: o número não bateu com nenhum pedido e ele já foi pedido de novo; o próximo erro chama a equipe. */
   orderRetried?: boolean;
+  /** Menu do entregador: número que ele mandou antes de escolher a opção; o aviso usa esse número, sem pedir de novo. */
+  courierOrder?: string;
   /** O cliente recebeu os links e pediu sozinho; se continuar escrevendo, o menu volta uma vez. */
   selfServed?: boolean;
   /** O atendimento começou com o restaurante fechado (aviso de fora do horário no lugar do menu). */
@@ -207,8 +209,15 @@ export async function dispatch(
   realtime.inboxChanged(tenantId, conversationId);
 }
 
+/**
+ * O primeiro nome, para cumprimentar. O nome vem do perfil do cliente no canal: sem letras ("😃", "✨") não há nome,
+ * e todo em maiúsculas ou minúsculas ("PATRICIA", "carlos") ganha só a inicial maiúscula.
+ */
 export function firstName(name: string | null): string | undefined {
-  return name?.trim().split(/\s+/)[0] || undefined;
+  const first = name?.trim().split(/\s+/)[0]?.replace(/[^\p{L}'-]/gu, "") ?? "";
+  if (first.length < 2) return undefined;
+  const plain = first === first.toUpperCase() || first === first.toLowerCase();
+  return plain ? first[0]!.toUpperCase() + first.slice(1).toLowerCase() : first;
 }
 
 const BRASILIA = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" });

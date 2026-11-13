@@ -396,11 +396,14 @@ export class InboundService {
       const last = await tx.message.findFirst({
         where: { conversationId: latest.id, direction: { in: ["INBOUND", "OUTBOUND"] } },
         orderBy: { createdAt: "desc" },
-        select: { createdAt: true, sentByUserId: true },
+        select: { createdAt: true, sentByUserId: true, content: true },
       });
       const recent = !!last && at.getTime() - last.createdAt.getTime() < INACTIVITY_CLOSE_MS;
       // Resolvida também começa um atendimento, a não ser que a equipe tenha escrito depois: o cliente está respondendo a ela.
-      const newAttendance = !recent || (latest.status === "RESOLVED" && !last?.sentByUserId);
+      // Vale também a resposta pelo WhatsApp do celular (fromPhone): sem isso, a equipe respondia, resolvia e a IA voltava
+      // na mensagem seguinte do cliente (12/11/2026).
+      const byTeam = !!last?.sentByUserId || !!(last?.content as MessageContent | undefined)?.fromPhone;
+      const newAttendance = !recent || (latest.status === "RESOLVED" && !byTeam);
       return { id: latest.id, previousStatus: latest.status, newAttendance };
     }
 
