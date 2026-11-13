@@ -95,6 +95,10 @@ export type AutomationMessages = {
   courierProblemRequest: string;
   /** O entregador contou o problema: a equipe é chamada. */
   courierProblemForwarded: string;
+  /** Resposta do entregador fora das opções: as opções 1 a 4 vêm logo abaixo. */
+  courierNotUnderstood: string;
+  /** O entregador mandou só o número e o pedido existe: as opções 1 a 4 vêm logo abaixo. {pedido} */
+  courierOrderFound: string;
   /** Primeira resposta ao cliente que escreve no chat do iFood: a equipe já está sendo chamada. */
   ifoodHandoff: string;
   /** Vem logo depois de `ifoodHandoff`, quando o cadastro não tem telefone. */
@@ -143,6 +147,8 @@ export const PERSONALITY_MESSAGES: Record<Personality, AutomationMessages> = {
     courierOrderRetry: "Não encontramos o pedido #{pedido}. Pode conferir o número e mandar de novo?",
     courierProblemRequest: "Encontramos o pedido #{pedido}. O que aconteceu com ele?",
     courierProblemForwarded: "Certo! Já estamos encaminhando para um atendente.",
+    courierNotUnderstood: "Não consigo te entender dessa forma. Responda apenas com um número.",
+    courierOrderFound: "Encontramos o pedido #{pedido}! 👍 Como podemos ajudar?",
     ifoodHandoff: "Olá! 👋 Estamos chamando um atendente.",
     ifoodPhoneRequest:
       "Enquanto ele chega, pode nos enviar seu número de telefone com DDD? É comum a conversa do iFood encerrar e ficarmos sem ter como entrar em contato.",
@@ -191,6 +197,8 @@ export const PERSONALITY_MESSAGES: Record<Personality, AutomationMessages> = {
     courierOrderRetry: "Não localizamos o pedido #{pedido}. Por gentileza, confira o número e envie novamente.",
     courierProblemRequest: "Localizamos o pedido #{pedido}. Por gentileza, descreva o que ocorreu.",
     courierProblemForwarded: "Agradecemos. O caso está sendo encaminhado a um atendente.",
+    courierNotUnderstood: "Não foi possível compreender sua mensagem. Por gentileza, responda apenas com o número da opção.",
+    courierOrderFound: "Localizamos o pedido #{pedido}. Por gentileza, escolha uma das opções:",
     ifoodHandoff: "Olá. Estamos acionando um de nossos atendentes.",
     ifoodPhoneRequest:
       "Enquanto isso, poderia, por gentileza, informar seu telefone com DDD? É comum a conversa do iFood ser encerrada, o que nos impede de retomar o contato.",
@@ -235,6 +243,8 @@ export const PERSONALITY_MESSAGES: Record<Personality, AutomationMessages> = {
     courierOrderRetry: "Ihh, não achamos o pedido #{pedido} 😕 Confere o número e manda de novo!",
     courierProblemRequest: "Achamos o pedido #{pedido}! Conta pra gente: o que rolou com ele?",
     courierProblemForwarded: "Anotado! 🚀 Já estamos passando pra um atendente!",
+    courierNotUnderstood: "Ops, assim não consegui te entender 😅 Responde só com o número, tá?",
+    courierOrderFound: "Achamos o pedido #{pedido}! 🎉 O que você precisa?",
     ifoodHandoff: "Oiê! 🤩 Já estamos chamando um atendente pra você!",
     ifoodPhoneRequest:
       "Enquanto ele chega, manda seu telefone com DDD? 📱 É que a conversa do iFood costuma encerrar e aí a gente fica sem ter como te chamar!",
@@ -278,6 +288,8 @@ export const PERSONALITY_MESSAGES: Record<Personality, AutomationMessages> = {
     courierOrderRetry: "Xi, não achamos o pedido #{pedido}. Dá uma conferida no número e manda de novo?",
     courierProblemRequest: "Achamos o pedido #{pedido}. Manda aí: o que rolou com ele?",
     courierProblemForwarded: "Beleza! Já estamos passando pra alguém da equipe 👊",
+    courierNotUnderstood: "Xi, assim não consigo te entender. Manda só o número 👇",
+    courierOrderFound: "Achamos o pedido #{pedido} 👊 Qual vai ser?",
     ifoodHandoff: "E aí! Já estamos chamando alguém da equipe pra falar com você 😉",
     ifoodPhoneRequest: "Enquanto isso, passa seu telefone com DDD? A conversa do iFood costuma fechar e aí a gente fica sem ter como te achar.",
   },
@@ -325,6 +337,8 @@ export const PERSONALITY_MESSAGES: Record<Personality, AutomationMessages> = {
     courierOrderRetry: "Não encontramos o pedido #{pedido}. Pode conferir o número com calma e nos mandar de novo? 🧡",
     courierProblemRequest: "Encontramos o pedido #{pedido}. Pode nos contar com calma o que aconteceu?",
     courierProblemForwarded: "Obrigado por avisar! Já estamos encaminhando para alguém da nossa equipe 🧡",
+    courierNotUnderstood: "Desculpe, não consigo te entender dessa forma 🧡 Pode responder apenas com um número?",
+    courierOrderFound: "Encontramos o pedido #{pedido} 🧡 Como podemos te ajudar com ele?",
     ifoodHandoff: "Olá! 🧡 Já estamos chamando alguém da nossa equipe para cuidar de você.",
     ifoodPhoneRequest:
       "Enquanto isso, pode nos deixar seu telefone com DDD? É comum a conversa do iFood encerrar, e não queremos perder o contato com você.",
@@ -368,6 +382,8 @@ export const PERSONALITY_MESSAGES: Record<Personality, AutomationMessages> = {
     courierOrderRetry: "Pedido #{pedido} não encontrado. Confira o número e envie de novo.",
     courierProblemRequest: "Pedido #{pedido} encontrado. O que aconteceu?",
     courierProblemForwarded: "Encaminhado a um atendente.",
+    courierNotUnderstood: "Não entendi. Responda apenas com um número.",
+    courierOrderFound: "Pedido #{pedido} encontrado. Escolha uma opção:",
     ifoodHandoff: "Olá. Estamos chamando um atendente.",
     ifoodPhoneRequest: "Enquanto isso, informe seu telefone com DDD: a conversa do iFood costuma encerrar e ficamos sem contato.",
   },

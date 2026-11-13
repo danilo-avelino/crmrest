@@ -130,12 +130,21 @@ export class CourierMenuService {
       const note = code ? `Entregador veio buscar o pedido #${code}` : "Entregador veio buscar um pedido";
       return this.callTeam(tx, conversation, state, await automationMessage(tx, conversation, "handoff", messages.handoff), note);
     }
-    // Só o número: o menu pergunta o aviso, e a opção escolhida usa este número.
-    return this.sendMenu(tx, conversation, { ...state, triage: "awaiting_option", courierOrder: asked.code }, messages);
+    // Só o número: o menu pergunta o aviso, e a opção escolhida usa este número. Com o pedido achado, o menu diz isso.
+    const next: AutomationState = { ...state, triage: "awaiting_option", courierOrder: asked.code };
+    const found = await this.findOrder(tx, conversation, asked.code, false);
+    if (found?.order) return this.sendMenu(tx, conversation, next, messages, fillMessage(messages.courierOrderFound, { pedido: found.code }));
+    return this.sendMenu(tx, conversation, next, messages);
   }
 
-  private async sendMenu(tx: TenantTx, conversation: Conversation, next: AutomationState, messages: AutomationMessages): Promise<Step> {
-    const text = menuMessage(messages.courierGreeting, firstName(conversation.contact.name), COURIER_MENU_OPTIONS);
+  private async sendMenu(
+    tx: TenantTx,
+    conversation: Conversation,
+    next: AutomationState,
+    messages: AutomationMessages,
+    greeting = messages.courierGreeting,
+  ): Promise<Step> {
+    const text = menuMessage(greeting, firstName(conversation.contact.name), COURIER_MENU_OPTIONS);
     const id = await automationMessage(tx, conversation, "courier_menu", text);
     await setAutomationState(tx, conversation.id, next);
     return { send: [id], done: false };
@@ -155,8 +164,12 @@ export class CourierMenuService {
       await setAutomationState(tx, conversation.id, { ...state, triage: next });
       return { send: [id], done: false };
     }
-    // Resposta fora das opções: repete o menu uma vez; na segunda, chama a equipe.
-    if (!option && !state.menuRepeated) return this.sendMenu(tx, conversation, { ...state, menuRepeated: true }, messages);
+    // Resposta fora das opções: o aviso de que não deu para entender e as opções de novo, quantas vezes for preciso.
+    // A equipe só é chamada pela opção 4 (ou por um pedido escrito que a automação entenda).
+    if (!option) {
+      const id = await automationMessage(tx, conversation, "courier_menu", menuMessage(messages.courierNotUnderstood, undefined, COURIER_MENU_OPTIONS));
+      return { send: [id], done: false };
+    }
     return this.callTeam(tx, conversation, state, await automationMessage(tx, conversation, "handoff", messages.handoff), "Entregador chamando");
   }
 

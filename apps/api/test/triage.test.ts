@@ -565,6 +565,35 @@ describe("menu de atendimento, busca do pedido e pesquisa de satisfação", () =
     expect(await automations("5511970000021")).toEqual(["courier_menu", "handoff"]);
   });
 
+  it("entregador responde o menu sem número: avisa que não entendeu e repete as opções, sem chamar a equipe", async () => {
+    await tagged("5511970000028", "Entregador");
+    await say("5511970000028", "wamid.NU1", "Pedido 2650");
+    await say("5511970000028", "wamid.NU2", "Pedir pra derce pega o pedido por favor");
+    const again = `Não consigo te entender dessa forma. Responda apenas com um número.\n${COURIER_MENU}`;
+    expect((await contents("5511970000028")).at(-1)).toEqual({ automation: "courier_menu", text: again });
+    await say("5511970000028", "wamid.NU3", "Me ajuda aí");
+    const conversation = await conversationOf("5511970000028");
+    expect(conversation.messages.at(-1)!.content).toEqual({ automation: "courier_menu", text: again });
+    expect(conversation.automationState).toEqual({ triage: "awaiting_option", courierOrder: "2650" });
+    expect(conversation.awaitingAgentSince).toBeNull();
+
+    await say("5511970000028", "wamid.NU4", "4");
+    expect(await automations("5511970000028")).toEqual(["courier_menu", "courier_menu", "courier_menu", "handoff"]);
+  });
+
+  it("entregador manda só o número de um pedido que existe: o menu avisa que o pedido foi encontrado", async () => {
+    await ifoodOrder("7878", new Date());
+    await tagged("5511970000029", "Entregador");
+    await say("5511970000029", "wamid.OF1", "Pedido 7878");
+    expect((await contents("5511970000029")).at(-1)).toEqual({
+      automation: "courier_menu",
+      text: `Encontramos o pedido #7878! 👍 Como podemos ajudar?\n${COURIER_MENU}`,
+    });
+    // A opção escolhida usa o número já mandado (sem a trava IFOOD_CHAT_BRIDGE, a equipe avisa o cliente).
+    await say("5511970000029", "wamid.OF2", "1");
+    expect(await contents("5511970000029")).toContainEqual({ event: "handoff", text: "Entregador avisou que chegou com o pedido #7878" });
+  });
+
   it("entregador com problema em um pedido: o card do pedido fica na conversa e o relato chama a equipe com o alarme", async () => {
     const order = await ifoodOrder("7171", new Date());
     await tagged("5511970000023", "Entregador");
