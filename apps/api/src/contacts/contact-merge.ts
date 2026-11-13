@@ -5,9 +5,16 @@ export type MergeResult = { merged: true; contactId: string } | { merged: false;
 /**
  * Une dois cadastros do mesmo cliente (ex.: o do WhatsApp e o de um pedido do iFood). Fica o mais antigo, completado
  * com o que só o outro tinha; identidades, conversas, pedidos, endereços e consentimentos passam para ele.
- * Telefones ou CPFs diferentes indicam pessoas diferentes: nesse caso nada é unido.
+ * Telefones ou CPFs diferentes indicam pessoas diferentes: nesse caso nada é unido. `audit`: o que mais fica registrado
+ * na auditoria (ex.: a união feita pelo Jev, com a chance que ele deu).
  */
-export async function mergeContacts(tx: TenantTx, a: Contact, b: Contact, userId?: string): Promise<MergeResult> {
+export async function mergeContacts(
+  tx: TenantTx,
+  a: Contact,
+  b: Contact,
+  userId?: string,
+  audit: Record<string, string | number> = {},
+): Promise<MergeResult> {
   if (a.id === b.id) return { merged: true, contactId: a.id };
   if (a.phone && b.phone && a.phone !== b.phone) return { merged: false, conflict: "telefone" };
   if (a.cpfHash && b.cpfHash && a.cpfHash !== b.cpfHash) return { merged: false, conflict: "CPF" };
@@ -41,7 +48,7 @@ export async function mergeContacts(tx: TenantTx, a: Contact, b: Contact, userId
   });
   await tx.contact.delete({ where: { id: drop.id } });
   await tx.auditLog.create({
-    data: { tenantId: keep.tenantId, userId, action: "contact.merged", entity: "contact", entityId: keep.id, data: { mergedContactId: drop.id } },
+    data: { tenantId: keep.tenantId, userId, action: "contact.merged", entity: "contact", entityId: keep.id, data: { mergedContactId: drop.id, ...audit } },
   });
   return { merged: true, contactId: keep.id };
 }

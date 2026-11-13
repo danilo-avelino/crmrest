@@ -1,3 +1,4 @@
+import type { DuplicateReason } from "@dishdesk/shared";
 import { BullModule } from "@nestjs/bullmq";
 import { type DynamicModule, Global, Module } from "@nestjs/common";
 import type { InboundEvent } from "../automations/automation.js";
@@ -6,7 +7,8 @@ import type { Env } from "../config/env.js";
 /**
  * Filas (§3.1): inbound = webhooks; outbound = envios aos canais; automations = etapas das automações;
  * ifood, cardapioWeb e neemo = polling de pedidos (e, no Cardápio Web e na Neemo, a importação da base de clientes); channels = manutenção dos canais (renovação de tokens);
- * ai = respostas e avaliações da IA (módulo Atendimento com IA), separadas para a LLM não atrasar as automações.
+ * ai = respostas e avaliações da IA (módulo Atendimento com IA), separadas para a LLM não atrasar as automações, e a
+ * revisão dos possíveis duplicados pelo Jev (com prioridade menor que as respostas).
  */
 export const QUEUES = {
   inbound: "inbound",
@@ -38,6 +40,8 @@ export type NeemoImportJob = { tenantId: string; channelId: string; page: number
 export type NeemoHistoryJob = { tenantId: string; channelId: string; until: string; page: number; seen: number; imported: number };
 /** "reply": a IA responde à última mensagem do cliente; "evaluate": a IA avalia o atendimento resolvido. */
 export type AiJob = { tenantId: string; conversationId: string };
+/** "duplicate-review" (fila ai): o Jev revisa um possível duplicado (ids em ordem, como na consulta) antes de ir ao admin. */
+export type DuplicateReviewJob = { tenantId: string; contactIds: [string, string]; reasons: DuplicateReason[] };
 
 @Global()
 @Module({})

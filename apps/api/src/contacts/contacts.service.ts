@@ -31,11 +31,12 @@ import { ENV, type Env } from "../config/env.js";
 import { conversationListInclude, listEvaluations, toListItem, toOrderDto } from "../conversations/conversation.mapper.js";
 import { connectedWhatsApp, openWhatsAppConversation } from "../conversations/open-whatsapp.js";
 import { DatabaseService } from "../core/database.service.js";
+import { JevClient } from "../defense/jev.client.js";
 import { customerHistory, linkedOrdersWhere } from "../orders/customer-history.js";
 import { customerCancellations } from "../orders/fraud-alert.js";
 import { RealtimeEmitter } from "../realtime/realtime.emitter.js";
 import { isTenantAdmin } from "../settings/tenant-admin.js";
-import { findDuplicatePairs } from "./contact-duplicates.js";
+import { duplicateAddressKey, findDuplicatePairs } from "./contact-duplicates.js";
 import { mergeContacts } from "./contact-merge.js";
 import { contactSearch } from "./contact-search.js";
 import { refreshContactTags } from "./contact-tags.service.js";
@@ -54,6 +55,7 @@ export class ContactsService {
   constructor(
     private readonly db: DatabaseService,
     private readonly realtime: RealtimeEmitter,
+    private readonly jev: JevClient,
     @Inject(ENV) env: Env,
   ) {
     this.key = parseEncryptionKey(env.ENCRYPTION_KEY);
@@ -301,43 +303,59 @@ export class ContactsService {
     });
   }
 
-  /** Fila de possíveis duplicados, só dos restaurantes em que o usuário é admin. */
+  /**
+   * Fila de possíveis duplicados, só dos restaurantes em que o usuário é admin. Com o Jev ligado, só os pares que ele
+   * já revisou e não descartou (os que ele uniu sozinho já não existem).
+   */
   async duplicates(auth: RequestAuth): Promise<DuplicatePair[]> {
     const tenantIds = auth.tenants.filter((tenant) => tenant.role === "ADMIN").map((tenant) => tenant.id);
     if (tenantIds.length === 0) throw new ForbiddenException("Só administradores do restaurante revisam duplicados.");
 
     return this.db.withTenants({ tenantIds, userId: auth.userId }, async (tx) => {
-      const pairs = await findDuplicatePairs(tx);
+      const pairs = await findDuplicatePairs(tx, this.jev.enabled ? "queue" : "queue-without-jev");
       const contacts = await tx.contact.findMany({
         where: { id: { in: [...new Set(pairs.flatMap((pair) => [pair.a, pair.b]))] } },
         include: {
           identities: { select: { channelType: true } },
-          addresses: { select: { street: true, number: true } },
+          addresses: { select: { street: true, number: true, complement: true, district: true, city: true, state: true } },
           _count: { select: { orders: true, conversations: true } },
         },
       });
-      const sides = new Map(
-        contacts.map((contact): [string, DuplicateSide] => [
-          contact.id,
-          {
-            id: contact.id,
-            name: contact.name,
-            phone: contact.phone,
-            tags: contact.tags,
-            channels: [...new Set(contact.identities.map((identity) => identity.channelType))],
-            // Mesma chave que a união usa para não repetir endereços.
-            addressKeys: contact.addresses.map((address) => `${address.street}|${address.number ?? ""}`),
-            ordersCount: contact._count.orders,
-            conversationsCount: contact._count.conversations,
-            firstSeenAt: contact.firstSeenAt.toISOString(),
-          },
-        ]),
-      );
+      const byId = new Map(contacts.map((contact) => [contact.id, contact]));
+      // Um cadastro pode estar em mais de um par: o endereço que bate depende do outro lado.
+      const side = (contact: (typeof contacts)[number], other: (typeof contacts)[number]): DuplicateSide => {
+        const otherKeys = new Set(other.addresses.map(duplicateAddressKey).filter(Boolean));
+        return {
+          id: contact.id,
+          name: contact.name,
+          phone: contact.phone,
+          email: contact.email,
+          cpfMasked: contact.cpfEncrypted ? maskCpf(decrypt(contact.cpfEncrypted, this.key)) : null,
+          tags: contact.tags,
+          channels: [...new Set(contact.identities.map((identity) => identity.channelType))],
+          addresses: contact.addresses.map((address) => ({
+            text: [
+              [address.street, address.number, address.complement].filter(Boolean).join(", "),
+              address.district,
+              `${address.city} - ${address.state}`,
+            ]
+              .filter(Boolean)
+              .join(" · "),
+            matches: otherKeys.has(duplicateAddressKey(address)),
+          })),
+          // Mesma chave que a união usa para não repetir endereços.
+          addressKeys: contact.addresses.map((address) => `${address.street}|${address.number ?? ""}`),
+          ordersCount: contact._count.orders,
+          conversationsCount: contact._count.conversations,
+          firstSeenAt: contact.firstSeenAt.toISOString(),
+          lastSeenAt: contact.lastSeenAt?.toISOString() ?? null,
+        };
+      };
       return pairs.map((pair) => {
-        const [a, b] = [sides.get(pair.a)!, sides.get(pair.b)!];
+        const [a, b] = [byId.get(pair.a)!, byId.get(pair.b)!];
         // Como na união: fica o mais antigo (no empate, o primeiro).
         const [keep, other] = a.firstSeenAt <= b.firstSeenAt ? [a, b] : [b, a];
-        return { tenantId: pair.tenantId, reasons: pair.reasons, keep, other };
+        return { tenantId: pair.tenantId, reasons: pair.reasons, sameChance: pair.sameChance, keep: side(keep, other), other: side(other, keep) };
       });
     });
   }

@@ -215,21 +215,37 @@ export type ContactSummary = {
 /** Por que dois cadastros parecem ser da mesma pessoa. */
 export type DuplicateReason = "phone" | "cpf" | "email" | "name" | "address";
 
+/** Endereço para comparar: `matches` quando o outro cadastro tem o mesmo (rua, número, complemento e cidade). */
+export type DuplicateAddress = { text: string; matches: boolean };
+
 export type DuplicateSide = {
   id: string;
   name: string | null;
   phone: string | null;
+  email: string | null;
+  cpfMasked: string | null;
   tags: string[];
   channels: ChannelType[];
+  addresses: DuplicateAddress[];
   /** Endereços como "rua|número" normalizados: os repetidos não passam na união. */
   addressKeys: string[];
   ordersCount: number;
   conversationsCount: number;
   firstSeenAt: string;
+  lastSeenAt: string | null;
 };
 
-/** Par da fila de possíveis duplicados (só admin). Na união fica `keep`, o cadastro mais antigo. */
-export type DuplicatePair = { tenantId: string; reasons: DuplicateReason[]; keep: DuplicateSide; other: DuplicateSide };
+/**
+ * Par da fila de possíveis duplicados (só admin). Na união fica `keep`, o cadastro mais antigo. `sameChance`: a chance
+ * de ser a mesma pessoa que o Jev deu (0 a 1); null com o Jev desligado.
+ */
+export type DuplicatePair = {
+  tenantId: string;
+  reasons: DuplicateReason[];
+  sameChance: number | null;
+  keep: DuplicateSide;
+  other: DuplicateSide;
+};
 
 export const ContactPairRequest = z.object({ contactIds: z.tuple([z.uuid(), z.uuid()]) });
 export type ContactPairRequest = z.infer<typeof ContactPairRequest>;

@@ -19,6 +19,7 @@ import { ReviewInviteService } from "./automations/review-invite.service.js";
 import { SurveyService } from "./automations/survey.service.js";
 import { TriageService } from "./automations/triage.service.js";
 import { ChannelTokensProcessor, ChannelTokensService } from "./channels/channel-tokens.service.js";
+import { ContactDuplicateReviewService } from "./contacts/contact-duplicate-review.service.js";
 import { ContactTagsService } from "./contacts/contact-tags.service.js";
 import { ContactsController } from "./contacts/contacts.controller.js";
 import { ContactsService } from "./contacts/contacts.service.js";
@@ -124,6 +125,7 @@ export class RealtimeRoleModule {}
     IfoodAttendanceService,
     InactivityService,
     ContactTagsService,
+    ContactDuplicateReviewService,
     AutomationsProcessor,
     IfoodService,
     IfoodProcessor,

@@ -65,6 +65,7 @@ model Tenant {
   contactIdentities   ContactIdentity[]
   contactAddresses    ContactAddress[]
   duplicateDismissals ContactDuplicateDismissal[]
+  duplicateReviews    ContactDuplicateReview[]
   consents            Consent[]
   conversations       Conversation[]
   messages            Message[]
@@ -245,6 +246,8 @@ model Contact {
   orders        Order[]
   dismissedAsA  ContactDuplicateDismissal[] @relation("DismissedA")
   dismissedAsB  ContactDuplicateDismissal[] @relation("DismissedB")
+  reviewedAsA   ContactDuplicateReview[]    @relation("ReviewedA")
+  reviewedAsB   ContactDuplicateReview[]    @relation("ReviewedB")
 
   @@index([tenantId, phone])
   @@index([tenantId, cpfHash])
@@ -303,6 +306,27 @@ model ContactDuplicateDismissal {
   @@unique([contactAId, contactBId])
   @@index([tenantId])
   @@map("contact_duplicate_dismissals")
+}
+
+// O que o Jev disse de um possível duplicado, antes de o par chegar à fila do admin. Vale para os motivos da época:
+// se o par passa a bater em outros dados, ele é revisado de novo.
+model ContactDuplicateReview {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  contactAId String   @map("contact_a_id") @db.Uuid // sempre o menor id do par
+  contactBId String   @map("contact_b_id") @db.Uuid
+  reasons    String[] // 'phone', 'cpf', 'email', 'name', 'address', em ordem alfabética
+  sameChance Float    @map("same_chance") // chance de ser a mesma pessoa (0 a 1)
+  model      String
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  tenant   Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contactA Contact @relation("ReviewedA", fields: [contactAId], references: [id], onDelete: Cascade)
+  contactB Contact @relation("ReviewedB", fields: [contactBId], references: [id], onDelete: Cascade)
+
+  @@unique([contactAId, contactBId])
+  @@index([tenantId])
+  @@map("contact_duplicate_reviews")
 }
 
 model Consent {

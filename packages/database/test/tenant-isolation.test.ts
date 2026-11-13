@@ -28,6 +28,7 @@ const tenantTables: Record<string, (db: TenantTx) => Promise<Row[]>> = {
   contact_identities: (db) => db.contactIdentity.findMany({ select: { id: true, tenantId: true } }),
   contact_addresses: (db) => db.contactAddress.findMany({ select: { id: true, tenantId: true } }),
   contact_duplicate_dismissals: (db) => db.contactDuplicateDismissal.findMany({ select: { id: true, tenantId: true } }),
+  contact_duplicate_reviews: (db) => db.contactDuplicateReview.findMany({ select: { id: true, tenantId: true } }),
   consents: (db) => db.consent.findMany({ select: { id: true, tenantId: true } }),
   conversations: (db) => db.conversation.findMany({ select: { id: true, tenantId: true } }),
   messages: (db) => db.message.findMany({ select: { id: true, tenantId: true } }),
@@ -89,6 +90,7 @@ async function seedTenant(label: string): Promise<Seeded> {
   const homonym = await admin.contact.create({ data: { tenantId, name: `Cliente ${label}` } });
   const [first, second] = [contact.id, homonym.id].sort();
   await admin.contactDuplicateDismissal.create({ data: { tenantId, contactAId: first!, contactBId: second! } });
+  await admin.contactDuplicateReview.create({ data: { tenantId, contactAId: first!, contactBId: second!, reasons: ["name"], sameChance: 0.1, model: "teste" } });
   const conversation = await admin.conversation.create({
     data: { tenantId, contactId: contact.id, channelId: channel.id, status: "OPEN", assignedUserId: user.id },
   });
