@@ -103,6 +103,7 @@ export class IfoodAttendanceService {
           ai: "on",
           triage: "done",
           linkedOrder: { id: orderId, at: new Date().toISOString() },
+          ...(event.previousStatus === "RESOLVED" && { aiReopened: true }),
           ...(state.aiWaiting && { aiWaiting: true, aiWaitingReason: state.aiWaitingReason }),
         });
       }

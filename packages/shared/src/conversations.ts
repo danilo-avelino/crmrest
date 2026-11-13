@@ -62,6 +62,8 @@ export type MessageContent = {
     | "awaiting_agent"
     /** A principal e a reserva da IA não responderam: o atendimento segue no menu. */
     | "ai_fallback"
+    /** O cliente só respondeu "ok" ou "boa noite" numa conversa resolvida: a IA não respondeu e ela continua resolvida. */
+    | "ai_skip"
     | "cancellation_alert"
     /** Prevenção de fraude: só a equipe vê. */
     | "fraud_alert"
@@ -214,9 +216,19 @@ export type ConversationCounts = Record<ConversationStatus, number> & {
 /**
  * Conversas do dia (desde a meia-noite de Brasília), no início da Inbox. `opened` = conversas em que o cliente escreveu
  * hoje; `resolved` = quantas delas estão resolvidas; `resolvedWithoutTeam` = resolvidas sem a equipe: ninguém respondeu
- * (nem pelo celular) e o atendimento não foi passado para a equipe.
+ * (nem pelo celular) e o atendimento não foi passado para a equipe. `calledTeam` = conversas passadas para a equipe hoje;
+ * `averageResponseSeconds` = da passagem à primeira resposta de uma pessoa (como na aba Avaliações); `ratings` e
+ * `averageScore` = notas da pesquisa de satisfação dadas hoje (1 a 5).
  */
-export type ConversationDayStats = { opened: number; resolved: number; resolvedWithoutTeam: number };
+export type ConversationDayStats = {
+  opened: number;
+  resolved: number;
+  resolvedWithoutTeam: number;
+  calledTeam: number;
+  averageResponseSeconds: number | null;
+  ratings: number;
+  averageScore: number | null;
+};
 /** `evaluations`: avaliações da IA, na ordem em que foram feitas (vazio para quem não é administrador). */
 export type ConversationMessages = { messages: MessageDto[]; orders: Record<string, OrderDto>; evaluations: ConversationEvaluationDto[] };
 

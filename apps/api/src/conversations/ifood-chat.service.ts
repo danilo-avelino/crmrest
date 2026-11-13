@@ -11,14 +11,15 @@ import { InjectQueue } from "@nestjs/bullmq";
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import type { Queue } from "bullmq";
 import type { RequestAuth } from "../auth/auth.decorators.js";
-import { type AutomationState, teamRepliedUpdate } from "../automations/automation.js";
+import { type AutomationState, setAutomationState, teamRepliedUpdate } from "../automations/automation.js";
 import { INACTIVITY_CLOSE_MS } from "../automations/inactivity.service.js";
+import { extractPhone, registerPhone } from "../automations/phone-collection.service.js";
 import { claimReviewInvites, settleReviewInvite } from "../automations/review-invite.service.js";
 import { ENV, type Env } from "../config/env.js";
 import { DatabaseService } from "../core/database.service.js";
 import { type AutomationJob, QUEUES } from "../queues/queues.module.js";
 import { RealtimeEmitter } from "../realtime/realtime.emitter.js";
-import { openIfoodConversation } from "./ifood-conversation.js";
+import { ifoodChatKey, ifoodChatOrderOf, openIfoodConversation } from "./ifood-conversation.js";
 import { ifoodWidgetScope } from "./ifood-widget-scope.js";
 
 /**
@@ -158,6 +159,9 @@ export class IfoodChatService {
         const { unreadCount: _, ...replied } = teamRepliedUpdate(current.status, current.automationState as AutomationState);
         await tx.conversation.update({ where: { id: conversation.id }, data: replied });
       }
+      // O telefone pedido chegou numa leitura que termina na loja (a resposta da Inbox foi digitada no widget depois do
+      // número, 13/11): nenhuma automação olha a mensagem, e o número se perdia.
+      if (!waiting) await this.registerAskedPhone(tx, conversation.id, fresh);
       await tx.conversation.update({
         where: { id: conversation.id },
         data: {
@@ -196,6 +200,20 @@ export class IfoodChatService {
     return { found: changed !== null };
   }
 
+  /** Cadastra o telefone que o cliente mandou depois de a coleta pedir. */
+  private async registerAskedPhone(tx: TenantTx, conversationId: string, fresh: Entry[]): Promise<void> {
+    const conversation = await tx.conversation.findUniqueOrThrow({
+      where: { id: conversationId },
+      select: { id: true, tenantId: true, channelId: true, automationState: true, contact: { select: { id: true, phone: true } } },
+    });
+    const state = conversation.automationState as AutomationState;
+    if (state.phoneCollection !== "awaiting_phone" || conversation.contact.phone) return;
+    const phone = fresh.flatMap((entry) => (entry.direction === "INBOUND" ? [extractPhone(entry.text)] : [])).find((found) => !!found);
+    if (!phone) return;
+    await registerPhone(tx, conversation, phone);
+    await setAutomationState(tx, conversationId, { ...state, phoneCollection: "phone_collected" });
+  }
+
   /** Respostas pendentes das conversas do iFood. Cada uma vai para um painel só, que a digita no chat do pedido. */
   async claim(auth: RequestAuth, now = new Date()): Promise<IfoodChatOutboxItem[]> {
     this.requireEnabled();
@@ -204,7 +222,14 @@ export class IfoodChatService {
         where: { direction: "OUTBOUND", status: "PENDING", externalMessageId: null, channel: { type: "IFOOD" } },
         orderBy: { createdAt: "asc" },
         take: 10,
-        select: { id: true, tenantId: true, conversationId: true, content: true, conversation: { select: { contactId: true, channelId: true } } },
+        select: {
+          id: true,
+          tenantId: true,
+          conversationId: true,
+          content: true,
+          createdAt: true,
+          conversation: { select: { contactId: true, channelId: true } },
+        },
       });
       const items: IfoodChatOutboxItem[] = [];
       const failed: { tenantId: string; conversationId: string }[] = [];
@@ -217,9 +242,20 @@ export class IfoodChatService {
           data: { externalMessageId: `${CLAIM}${randomUUID()}` },
         });
         if (!count) continue;
-        // O chat do iFood é por pedido: a resposta vai para o último pedido do cliente na loja.
+        // O chat do iFood é por pedido: a resposta vai para o chat em que o cliente escreveu por último; sem mensagem dele,
+        // para o último pedido do cliente na loja. Com dois pedidos, a resposta sobre o #0028 saía no chat do #8270 (13/11).
+        const asked = await tx.message.findFirst({
+          where: { conversationId: message.conversationId, direction: "INBOUND", externalMessageId: { startsWith: "ifood-chat:" }, createdAt: { lte: message.createdAt } },
+          orderBy: { createdAt: "desc" },
+          select: { externalMessageId: true },
+        });
+        const chat = ifoodChatOrderOf(asked?.externalMessageId);
         const order = await tx.order.findFirst({
-          where: { contactId: message.conversation.contactId, channelId: message.conversation.channelId, displayCode: { not: null } },
+          where: {
+            channelId: message.conversation.channelId,
+            displayCode: { not: null },
+            ...(chat ? { externalOrderId: chat } : { contactId: message.conversation.contactId }),
+          },
           orderBy: { placedAt: "desc" },
           select: { displayCode: true },
         });
@@ -331,7 +367,7 @@ function transcript(order: ChatOrder, messages: IfoodChatSync["messages"]): Entr
     repeats.set(shown, repeat + 1);
     const hash = createHash("sha256").update(`${shown}|${repeat}`).digest("hex").slice(0, 24);
     // A posição desempata mensagens do mesmo segundo, na ordem em que o widget as mostra.
-    return { key: `ifood-chat:${order.externalOrderId}:${hash}`, at: new Date(time + position), direction: message.direction, text: message.text };
+    return { key: `${ifoodChatKey(order.externalOrderId)}${hash}`, at: new Date(time + position), direction: message.direction, text: message.text };
   });
 }
 

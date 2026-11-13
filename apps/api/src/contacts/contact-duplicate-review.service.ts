@@ -36,7 +36,7 @@ const SAME_PERSON: Record<"same", JevQuestion> = {
 
 /**
  * O Jev revisa os possíveis duplicados antes de o admin vê-los: os que ele diz serem pessoas diferentes saem da fila;
- * os com o mesmo telefone ou CPF em que ele tem certeza são unidos sem o admin; o resto vai para a fila. De hora em hora
+ * os com o mesmo telefone ou CPF em que ele tem certeza são unidos sem o admin; o resto vai para a fila. Todo dia às 8h
  * a varredura põe na fila ai um job por par ainda não revisado. Sem JEV_API_KEY, nada roda e a fila mostra todos os pares.
  * Vão ao Jev os nomes, os canais e os endereços; telefone, CPF e e-mail não vão, só se são iguais.
  */
@@ -52,9 +52,15 @@ export class ContactDuplicateReviewService implements OnModuleInit {
   ) {}
 
   async onModuleInit(): Promise<void> {
-    // De hora em hora, fora da hora cheia (a das tags). Cron, e não `every`: o `every` roda também ao subir a API, e os
-    // testes (no banco do dev) varreriam os restaurantes de verdade com o Jev falso.
-    if (this.jev.enabled) await this.queue.upsertJobScheduler("duplicate-review-sweep", { pattern: "30 * * * *" }, { name: "duplicate-review-sweep" });
+    // Uma vez por dia, às 8h. Cron, e não `every`: o `every` roda também ao subir a API, e os testes (no banco do dev)
+    // varreriam os restaurantes de verdade com o Jev falso. O mesmo id substitui o agendamento antigo (de hora em hora).
+    if (this.jev.enabled) {
+      await this.queue.upsertJobScheduler(
+        "duplicate-review-sweep",
+        { pattern: "0 8 * * *", tz: "America/Sao_Paulo" },
+        { name: "duplicate-review-sweep" },
+      );
+    }
   }
 
   async sweep(): Promise<void> {
@@ -64,7 +70,7 @@ export class ContactDuplicateReviewService implements OnModuleInit {
       try {
         await this.enqueue(tenantId);
       } catch (error) {
-        // Segue para os outros restaurantes; a próxima hora tenta de novo.
+        // Segue para os outros restaurantes; a varredura do dia seguinte tenta de novo.
         this.logger.warn({ tenantId, err: error }, "Possíveis duplicados não enviados ao Jev");
         Sentry.captureException(error, { tags: { tenantId } });
       }

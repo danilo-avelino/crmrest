@@ -3,7 +3,7 @@ import type { INestApplication } from "@nestjs/common";
 import type { Queue } from "bullmq";
 import request from "supertest";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
-import { orderFactsOf, orderNumbersIn, periodGreeting, systemPrompt } from "../src/ai/ai-attendant.service.js";
+import { orderFactsOf, orderNumbersIn, otherOrderNumber, periodGreeting, systemPrompt } from "../src/ai/ai-attendant.service.js";
 import { AiEvaluationService, EVALUATION_DELAY_MS, scorePercent } from "../src/ai/ai-evaluation.service.js";
 import { AiForwardService } from "../src/ai/ai-forward.service.js";
 import { transcript } from "../src/ai/prompts.js";
@@ -263,6 +263,29 @@ describe("atendimento com IA: resposta, revisão e avaliação", () => {
     expect((await conversationOf("5511980000031")).automationState).toMatchObject({ ai: "on", aiReplies: 1 });
   });
 
+  it("conversa resolvida em que o cliente só responde \"ok\": a IA não responde e ela continua resolvida", async () => {
+    answers.atendimento = { reply: "Abrimos às 18h.", handoff: false, reason: "", order: "none" };
+    await say("5511980000014", "wamid.AI-RE-1", "Que horas vocês abrem?");
+    await settle();
+    const { id } = await conversationOf("5511980000014");
+    await request(app.getHttpServer()).patch(`/api/conversations/${id}`).set("Authorization", `Bearer ${token}`).send({ status: "RESOLVED" }).expect(200);
+    const sent = graph.requests.length;
+
+    answers.atendimento = { reply: "-", handoff: false, reason: "", order: "none", skip: true };
+    await say("5511980000014", "wamid.AI-RE-2", "Ok, boa noite");
+    await settle();
+
+    // A IA soube que a conversa estava resolvida.
+    expect((llmCalls("atendimento").at(-1)!.body as LlmBody).messages[1]!.content).toContain("Retomada: a conversa já tinha sido atendida e resolvida");
+    expect(graph.requests.length).toBe(sent);
+    const conversation = await conversationOf("5511980000014");
+    expect(conversation).toMatchObject({ status: "RESOLVED", unreadCount: 0, teamInvolved: false, awaitingAgentSince: null });
+    expect(conversation.messages.at(-1)!.content).toEqual({
+      event: "ai_skip",
+      text: "O cliente só respondeu ao fim do atendimento: a conversa continua resolvida",
+    });
+  });
+
   it("a IA passa para a equipe quando não pode resolver, e para de responder", async () => {
     answers.atendimento = { reply: "Sinto muito! Alguém da equipe já vai falar com você.", handoff: true, reason: "Cliente reclamou do atraso", order: "none" };
     await say("5511980000002", "wamid.AI-5", "Meu pedido está atrasado há uma hora!");
@@ -439,6 +462,27 @@ describe("atendimento com IA: resposta, revisão e avaliação", () => {
     expect(conversation.messages.at(-1)!.content).toEqual({ text: "O cardápio e os preços estão aqui: https://pedir.exemplo.com/loja", aiReply: true });
     expect(conversation.automationState).toMatchObject({ ai: "on" });
     expect(conversation.awaitingAgentSince).toBeNull();
+  });
+
+  it("resposta que fala dos links sem os endereços sai com os links no fim, uma vez só", async () => {
+    const orderLinks = [{ label: "Cardápio", url: "https://pedir.exemplo.com/loja" }];
+    await admin.tenant.update({ where: { id: fx.tenant.id }, data: { settings: { orderLinks } } });
+    const reply = "O preço do combo está nos links de pedido. Quer que eu chame um atendente?";
+    answers.atendimento = { reply, handoff: false, reason: "Preço", order: "none" };
+    try {
+      await say("5511980000013", "wamid.AI-L2", "Qual o valor do combo especial?");
+      await settle();
+      expect((await conversationOf("5511980000013")).messages.at(-1)!.content).toEqual({
+        text: `${reply}\nCardápio: https://pedir.exemplo.com/loja`,
+        aiReply: true,
+      });
+      // Os links já estão na conversa: a próxima resposta não os repete.
+      await say("5511980000013", "wamid.AI-L3", "36 peças");
+      await settle();
+    } finally {
+      await admin.tenant.update({ where: { id: fx.tenant.id }, data: { settings: {} } });
+    }
+    expect((await conversationOf("5511980000013")).messages.at(-1)!.content).toEqual({ text: reply, aiReply: true });
   });
 
   it("sem a principal e sem a reserva, o atendimento segue no menu até o fim", async () => {
@@ -929,10 +973,20 @@ describe("atendimento com IA: o que a IA lê", () => {
     const facts = orderFactsOf(order, false);
     expect(facts).toContain("Pedido do cliente (é o pedido deste chat do iFood: não pergunte se é dele):\n#5467");
     expect(facts).toContain("Andamento agora: Saiu para entrega às 19:15.");
+    expect(facts).toContain("Este chat é só do pedido #5467, e o número não muda: não peça o número do pedido e não fale de nenhum outro número");
 
     expect(systemPrompt("Aglio Nero", "IFOOD", {})).not.toContain("cupons");
     expect(systemPrompt("Aglio Nero", "IFOOD", {})).toContain("caso a conversa caia");
     expect(systemPrompt("Aglio Nero", "WHATSAPP", {})).toContain("para receber cupons pelo WhatsApp");
+  });
+
+  it("trava do chat do iFood: acha na resposta outro número de pedido, com ou sem os zeros à esquerda", () => {
+    expect(otherOrderNumber("Pelo nosso registro, o pedido é o #8270 (e não o #0028 que citei antes).", "8270")).toBe("0028");
+    expect(otherOrderNumber("Seu pedido #0028 saiu para entrega às 12:31.", "8270")).toBe("0028");
+    expect(otherOrderNumber("O pedido nº 1234 não é deste chat.", "0028")).toBe("1234");
+    expect(otherOrderNumber("Seu pedido #0028 saiu às 12:31, total de R$ 31,89, há 30 minutos.", "0028")).toBeNull();
+    expect(otherOrderNumber("Seu pedido #28 saiu para entrega.", "0028")).toBeNull();
+    expect(otherOrderNumber("Me chama no 89 99463-0817 se precisar; seu pedido 2 pizzas saiu.", "0028")).toBeNull();
   });
 });
 

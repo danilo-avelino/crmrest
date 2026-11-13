@@ -4,6 +4,14 @@ import { CHANNEL_LABEL, type MessageContent } from "@dishdesk/shared";
 
 type IfoodOrder = { id: string; tenantId: string; contactId: string; channelId: string; conversationId: string | null };
 
+/** Começo da identificação das mensagens copiadas do chat de um pedido do iFood (o chat é por pedido). */
+export const ifoodChatKey = (externalOrderId: string) => `ifood-chat:${externalOrderId}:`;
+
+/** O pedido (externalOrderId) de cujo chat a mensagem foi copiada; null para a que não veio do widget. */
+export function ifoodChatOrderOf(externalMessageId: string | null | undefined): string | null {
+  return externalMessageId?.match(/^ifood-chat:([^:]+):/)?.[1] ?? null;
+}
+
 /**
  * Conversa do cliente no canal iFood da loja (a última, ou uma nova, criada com `status`), com o pedido na linha do tempo.
  * `previousStatus`: como a conversa estava; null = acabou de ser criada.

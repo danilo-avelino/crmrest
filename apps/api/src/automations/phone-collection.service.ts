@@ -75,25 +75,8 @@ export class PhoneCollectionService {
    * Cadastra o telefone que o cliente informou na conversa (aqui ou ao responder a IA) e, se outro cadastro já tinha
    * este telefone, avisa a equipe na conversa.
    */
-  async register(
-    tx: TenantTx,
-    conversation: { id: string; tenantId: string; channelId: string; contact: { id: string } },
-    phone: string,
-  ): Promise<void> {
-    // Quem já tinha este telefone (o cadastro mais antigo, se houver mais de um).
-    const known = await tx.contact.findFirst({
-      where: { phone, deletedAt: null, id: { not: conversation.contact.id } },
-      orderBy: { firstSeenAt: "asc" },
-    });
-    await tx.contact.update({
-      where: { id: conversation.contact.id },
-      data: { phone, phoneSource: "informed_by_customer", phoneStatus: "ok" },
-    });
-    await systemEvent(tx, conversation, { event: "phone_collected", text: "Telefone informado e cadastrado" });
-    if (known) {
-      const text = `${known.name ?? "Outro cliente"} já tem este telefone. Se for a mesma pessoa, una os cadastros em Clientes → Duplicados`;
-      await systemEvent(tx, conversation, { event: "possible_duplicate", text });
-    }
+  register(tx: TenantTx, conversation: PhoneConversation, phone: string): Promise<void> {
+    return registerPhone(tx, conversation, phone);
   }
 
   /** Um único lembrete, se o cliente ainda não informou o telefone. */
@@ -139,6 +122,26 @@ export class PhoneCollectionService {
         contact: { select: { id: true, phone: true } },
       },
     });
+  }
+}
+
+type PhoneConversation = { id: string; tenantId: string; channelId: string; contact: { id: string } };
+
+/** O corpo de PhoneCollectionService.register, para quem não tem o serviço (a leitura do chat do iFood). */
+export async function registerPhone(tx: TenantTx, conversation: PhoneConversation, phone: string): Promise<void> {
+  // Quem já tinha este telefone (o cadastro mais antigo, se houver mais de um).
+  const known = await tx.contact.findFirst({
+    where: { phone, deletedAt: null, id: { not: conversation.contact.id } },
+    orderBy: { firstSeenAt: "asc" },
+  });
+  await tx.contact.update({
+    where: { id: conversation.contact.id },
+    data: { phone, phoneSource: "informed_by_customer", phoneStatus: "ok" },
+  });
+  await systemEvent(tx, conversation, { event: "phone_collected", text: "Telefone informado e cadastrado" });
+  if (known) {
+    const text = `${known.name ?? "Outro cliente"} já tem este telefone. Se for a mesma pessoa, una os cadastros em Clientes → Duplicados`;
+    await systemEvent(tx, conversation, { event: "possible_duplicate", text });
   }
 }
 

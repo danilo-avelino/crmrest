@@ -181,6 +181,7 @@ export class TriageService {
       if (event.newAttendance) {
         await setAutomationState(tx, event.conversationId, {
           ai: "on",
+          ...(event.previousStatus === "RESOLVED" && { aiReopened: true }),
           ...(state.aiWaiting && { aiWaiting: true, aiWaitingReason: state.aiWaitingReason }),
         });
       }

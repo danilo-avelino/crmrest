@@ -122,12 +122,12 @@ export class ConversationsService {
   /**
    * Conversas do dia, desde a meia-noite de Brasília (a RLS limita aos restaurantes do escopo). Equipe = mensagem de uma
    * pessoa (pelo painel ou pelo WhatsApp do celular) ou o atendimento passado para ela, hoje. A conversa só da equipe
-   * (alerta de fraude) não entra: o cliente nem está nela.
+   * (alerta de fraude) não entra: o cliente nem está nela. O tempo de resposta e a nota seguem a aba Avaliações.
    */
   async today(auth: RequestAuth, tenantId?: string, now = new Date()): Promise<ConversationDayStats> {
     const from = new Date(`${localDate(now)}T00:00:00-03:00`);
-    const [row] = await this.db.withTenants(scopeFor(auth, tenantId), (tx) =>
-      tx.$queryRaw<ConversationDayStats[]>`
+    return this.db.withTenants(scopeFor(auth, tenantId), async (tx) => {
+      const [conversations] = await tx.$queryRaw<Pick<ConversationDayStats, "opened" | "resolved" | "resolvedWithoutTeam">[]>`
         SELECT count(*)::int AS opened,
                count(*) FILTER (WHERE c.status = 'RESOLVED')::int AS resolved,
                count(*) FILTER (WHERE c.status = 'RESOLVED' AND NOT EXISTS (
@@ -138,9 +138,37 @@ export class ConversationsService {
                ))::int AS "resolvedWithoutTeam"
         FROM conversations c
         WHERE NOT c.team_only
-          AND EXISTS (SELECT 1 FROM messages m WHERE m.conversation_id = c.id AND m.direction = 'INBOUND' AND m.created_at >= ${from})`,
-    );
-    return row ?? { opened: 0, resolved: 0, resolvedWithoutTeam: 0 };
+          AND EXISTS (SELECT 1 FROM messages m WHERE m.conversation_id = c.id AND m.direction = 'INBOUND' AND m.created_at >= ${from})`;
+      // Cada passagem à equipe e a primeira resposta de uma pessoa depois dela, antes da próxima passagem.
+      const [team] = await tx.$queryRaw<Pick<ConversationDayStats, "calledTeam" | "averageResponseSeconds">[]>`
+        SELECT count(DISTINCT h.conversation_id)::int AS "calledTeam",
+               avg(EXTRACT(EPOCH FROM r.created_at - h.created_at))::float8 AS "averageResponseSeconds"
+        FROM messages h
+        LEFT JOIN LATERAL (
+          SELECT m.created_at
+          FROM messages m
+          WHERE m.conversation_id = h.conversation_id
+            AND m.direction = 'OUTBOUND' AND m.sent_by_user_id IS NOT NULL AND m.created_at > h.created_at
+            AND NOT EXISTS (
+              SELECT 1 FROM messages n
+              WHERE n.conversation_id = h.conversation_id AND n.type = 'SYSTEM' AND n.content->>'event' = 'handoff'
+                AND n.created_at > h.created_at AND n.created_at < m.created_at
+            )
+          ORDER BY m.created_at
+          LIMIT 1
+        ) r ON true
+        WHERE h.type = 'SYSTEM' AND h.content->>'event' = 'handoff' AND h.created_at >= ${from}`;
+      const ratings = await tx.rating.aggregate({ where: { createdAt: { gte: from } }, _count: { _all: true }, _avg: { score: true } });
+      return {
+        opened: conversations?.opened ?? 0,
+        resolved: conversations?.resolved ?? 0,
+        resolvedWithoutTeam: conversations?.resolvedWithoutTeam ?? 0,
+        calledTeam: team?.calledTeam ?? 0,
+        averageResponseSeconds: team?.averageResponseSeconds ?? null,
+        ratings: ratings._count._all,
+        averageScore: ratings._avg.score,
+      };
+    });
   }
 
   async get(auth: RequestAuth, id: string) {

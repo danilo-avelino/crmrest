@@ -24,6 +24,7 @@ import {
   systemEvent,
 } from "../automations/automation.js";
 import { linkOrderContact, ORDER_STATUS_TEXT, TriageService } from "../automations/triage.service.js";
+import { ifoodChatOrderOf } from "../conversations/ifood-conversation.js";
 import { DatabaseService } from "../core/database.service.js";
 import { JevClient } from "../defense/jev.client.js";
 import { orderUpdateMessage } from "../orders/forecast.js";
@@ -110,7 +111,7 @@ Não passe para a equipe (handoff = false):
 - Depois do aviso de que o entregador chegou ou deixou o pedido na portaria, o cliente só responde ("ok", "certo", "descendo", "já recebi"): uma frase curta, sem repetir o andamento. O aviso vale mais que o status dos DADOS: não diga que o entregador está a caminho nem que deve chegar.
 - O pedido está cancelado nos DADOS e o cliente só avisa que não vai receber ou que cancelou: diga que o pedido já consta como cancelado e que ele não precisa fazer mais nada, sem pedir o telefone. Se ele pedir reembolso ou reclamar, aí sim passe para a equipe.
 - O cliente diz que já resolveu ou que já recebeu: despeça-se em poucas palavras.
-- Cardápio, sabores, opções (vegana, sem glúten...) ou preço: mande os links para fazer pedido, onde estão o cardápio e os preços, e continue com handoff = false (sem links, passe para a equipe).
+- Cardápio, sabores, opções (vegana, sem glúten...) ou preço, mesmo de um item ou combo específico: você não sabe nenhum preço. Escreva na mensagem os links para fazer pedido, com o endereço completo como está nos DADOS, diga que lá estão o cardápio e os preços e pergunte se ele quer que você chame um atendente, com handoff = false. Se os links já estão na CONVERSA, não mande de novo: diga que os preços estão nos links que você mandou e faça a mesma pergunta. Sem links, passe para a equipe.
 - Áudio: diga que não consegue ouvir áudios e peça para ele escrever. Se ele mandar outro áudio, passe para a equipe. Só fale de um áudio ou de uma imagem se for a mensagem mais recente do cliente: se ele já escreveu outra coisa depois, responda ao que ele escreveu.
 - "Mensagem de um tipo que o Dish Desk ainda não exibe": o cliente mandou algo que você não consegue ver (enquete, contato, botão). Peça para ele escrever o que precisa.
 - Mensagem sem relação com pedido ou com o restaurante (conversa solta, brincadeira, frase sem sentido): responda em poucas palavras, como uma pessoa responderia, e puxe o assunto do restaurante numa frase, sem listar tudo o que você sabe fazer. Depois, espere o cliente.
@@ -170,6 +171,15 @@ async function orderByNumber(orders: TenantTx, history: { direction: string; con
   return found.length === 1 ? found[0]! : null;
 }
 
+/** Número de pedido citado na resposta que não é `code` (o pedido do chat do iFood), com ou sem os zeros à esquerda. */
+export function otherOrderNumber(reply: string, code: string): string | null {
+  const plain = (number: string) => number.replace(/^0+(?=\d)/, "");
+  for (const match of reply.matchAll(/(?:#\s*|pedido\s+(?:n[º°.]?\s*)?)(\d{3,6})(?!\d)/gi)) {
+    if (plain(match[1]!) !== plain(code)) return match[1]!;
+  }
+  return null;
+}
+
 export type OrderFacts = {
   displayCode: string | null;
   externalOrderId: string;
@@ -196,7 +206,7 @@ export function attendantMessages(
   orderFacts: string,
   conversation: string,
   attendance: Attendance,
-  greeting: { first: boolean; name?: string },
+  greeting: { first: boolean; name?: string; reopened?: boolean },
 ): LlmMessage[] {
   const facts = [restaurantFacts(restaurant, settings, now), greetingFacts(greeting, now), attendanceFacts(attendance), orderFacts].join("\n");
   return [
@@ -217,10 +227,15 @@ export function periodGreeting(now: Date): string {
  * Como começar a resposta. Na primeira do atendimento, o cumprimento do horário com o nome e a pergunta de como ajudar
  * (sem ela, a IA abria uma conversa nova mostrando o pedido de ontem); a instrução vai no dado, que o modelo segue melhor.
  */
-function greetingFacts(greeting: { first: boolean; name?: string }, now: Date): string {
+function greetingFacts(greeting: { first: boolean; name?: string; reopened?: boolean }, now: Date): string {
   if (!greeting.first) return "Cumprimento: você já cumprimentou o cliente neste atendimento; não cumprimente de novo.";
   const hello = `${periodGreeting(now)}${greeting.name ? `, ${greeting.name}` : ""}!`;
-  return `Cumprimento: esta é a sua primeira resposta neste atendimento. Comece com "${hello}" (pode ajustar ao tom do restaurante, mantendo o período do dia${greeting.name ? " e o nome; o nome vem do perfil do cliente e, se não for nome de pessoa (empresa, frase, apelido de grupo), cumprimente sem ele" : ""}). Se o cliente ainda não disse o que precisa (só cumprimentou, mandou um teste ou algo solto), pergunte em que pode ajudar e não fale de pedido nenhum. Se ele já disse, responda logo depois do cumprimento.`;
+  // Cliente respondendo ao último recado da equipe numa conversa já resolvida (13/11: "Boa noite" depois do "Ok" do
+  // atendente reabria a conversa e a IA cumprimentava de novo).
+  const reopened = greeting.reopened
+    ? 'Retomada: a conversa já tinha sido atendida e resolvida, e o cliente voltou a escrever. Se ele só cumprimentou, agradeceu, confirmou ("ok", "boa noite", "obrigado") ou repetiu o que já tinha dito e a equipe ou você já respondeu, não responda (skip = true): a conversa continua resolvida. Se ele pediu algo novo, responda normalmente.\n'
+    : "";
+  return `${reopened}Cumprimento: esta é a sua primeira resposta neste atendimento. Comece com "${hello}" (pode ajustar ao tom do restaurante, mantendo o período do dia${greeting.name ? " e o nome; o nome vem do perfil do cliente e, se não for nome de pessoa (empresa, frase, apelido de grupo), cumprimente sem ele" : ""}). Se o cliente ainda não disse o que precisa (só cumprimentou, mandou um teste ou algo solto), pergunte em que pode ajudar e não fale de pedido nenhum. Se ele já disse, responda logo depois do cumprimento.`;
 }
 
 /**
@@ -272,6 +287,11 @@ export function orderFactsOf(order: OrderFacts | null, noPhone: boolean): string
         : `Pedido que pode ser do cliente (${source}; ainda não confirmado por ele):`,
     `#${order.displayCode ?? order.externalOrderId} (${CHANNEL_LABEL[order.channelType]}), feito em ${BRASILIA_TIME.format(order.placedAt)}, ${ORDER_STATUS_TEXT[order.status]}.`,
     `Itens: ${order.items.map((item) => `${item.quantity}x ${item.name}`).join("; ")}. Total: ${BRL.format(Number(order.total))}.`,
+    ...(order.chatOrder
+      ? [
+          `Este chat é só do pedido #${order.displayCode ?? order.externalOrderId}, e o número não muda: não peça o número do pedido e não fale de nenhum outro número, mesmo que o cliente cite outro. Se ele perguntar de outro pedido, diga que este chat é do pedido #${order.displayCode ?? order.externalOrderId} e que, sobre outro pedido, ele precisa escrever no chat daquele pedido no iFood.`,
+        ]
+      : []),
     ...(order.update ? [`Andamento agora${order.confirmed ? "" : " (só diga depois que ele confirmar que o pedido é dele)"}: ${order.update.text}`, ANDAMENTO_RULE] : []),
   ].join("\n");
 }
@@ -312,30 +332,44 @@ export class AiAttendantService {
         },
       });
       if ((conversation.automationState as AutomationState).ai !== "on") return null;
-      const history = (
+      const recent = (
         await tx.message.findMany({
           where: { conversationId, direction: { in: ["INBOUND", "OUTBOUND"] }, createdAt: { gte: new Date(now.getTime() - HISTORY_MS) } },
           orderBy: { createdAt: "desc" },
           take: HISTORY_LIMIT,
         })
       ).reverse();
-      const last = history.at(-1);
+      const last = recent.at(-1);
       if (last?.direction !== "INBOUND") return null; // já respondida: por outro job, pela equipe ou por uma automação
+      // No iFood o chat é de um pedido só: o da mensagem do cliente. A conversa da Inbox junta os chats de todos os pedidos
+      // dele na loja, mas a IA lê só este, como o cliente o vê.
+      const chat = conversation.channel.type === "IFOOD" ? ifoodChatOrderOf(last.externalMessageId) : null;
+      const history = chat
+        ? recent.filter((message) => [null, chat].includes(ifoodChatOrderOf(message.externalMessageId)))
+        : recent;
       const settings = conversation.tenant.settings;
       const state = conversation.automationState as AutomationState;
       const denied = state.aiDeniedOrderIds ?? [];
       // O pedido que o cliente confirmou neste atendimento; senão, o candidato a confirmar: o do cadastro ou o do número informado.
       const order = await withOrderTenants(this.db, tx, conversation.channelId, async (orders) => {
+        // No iFood, o pedido do chat e nenhum outro: nem o do cadastro, nem um número que o cliente cite (13/11: a IA
+        // "corrigia" o #0028 para o #8270, os dois do mesmo cliente).
+        if (chat) {
+          const found = await orders.order.findUnique({
+            where: { channelId_externalOrderId: { channelId: conversation.channelId, externalOrderId: chat } },
+            include: { items: true },
+          });
+          if (!found) return null;
+          const update = await orderUpdateMessage(orders, found.id, now, settings, this.jev);
+          return { ...found, confirmed: true, byNumber: false, channelType: "IFOOD" as const, update, chatOrder: true };
+        }
         const confirmed = state.linkedOrder ? await orders.order.findUnique({ where: { id: state.linkedOrder.id }, include: { items: true } }) : null;
         const linked = confirmed ?? (await latestOrderOf(orders, conversation.contact, now, denied));
         const found = linked ?? (await orderByNumber(orders, history, now, denied));
         if (!found) return null;
         const channel = await orders.channel.findUniqueOrThrow({ where: { id: found.channelId }, select: { type: true } });
         const update = await orderUpdateMessage(orders, found.id, now, settings, this.jev);
-        // No iFood o chat é do pedido: o pedido do próprio contato, feito neste canal, não precisa de confirmação.
-        const chatOrder =
-          conversation.channel.type === "IFOOD" && !!linked && found.channelId === conversation.channelId && found.contactId === conversation.contact.id;
-        return { ...found, confirmed: !!confirmed || chatOrder, byNumber: !linked, channelType: channel.type, update, chatOrder };
+        return { ...found, confirmed: !!confirmed, byNumber: !linked, channelType: channel.type, update, chatOrder: false };
       });
       return { conversation, settings, history, lastId: last.id, order };
     });
@@ -360,6 +394,7 @@ export class AiAttendantService {
           attendantMessages(conversation.tenant.name, conversation.channel.type, settings, now, orderFacts, transcript(context.history), attendance, {
             first: !state.aiReplies,
             name: firstName(conversation.contact.name),
+            reopened: state.aiReopened && !state.aiReplies,
           }),
         );
       } catch (error) {
@@ -368,6 +403,22 @@ export class AiAttendantService {
         failure = (error instanceof Error ? error.message : String(error)).slice(0, 300);
         this.logger.warn(`IA sem resposta na conversa ${conversationId}: ${failure}`);
       }
+    }
+    // Trava do chat do iFood: a resposta que cita outro número de pedido não sai, e a equipe é chamada.
+    const chatCode = context.order?.chatOrder ? (context.order.displayCode ?? context.order.externalOrderId) : null;
+    const other = answer && chatCode ? otherOrderNumber(answer.reply, chatCode) : null;
+    if (other) {
+      failed = true;
+      failure = `a resposta citou o pedido #${other}, e este chat é do #${chatCode}`;
+      answer = null;
+      this.logger.warn(`IA citou outro pedido na conversa ${conversationId}: ${failure}`);
+    }
+    // A LLM às vezes fala "os links de pedido" sem escrever os endereços (Moby Dick, 13/11): eles vão no fim da resposta,
+    // a menos que já estejam na conversa.
+    const links = orderLinksOf(settings);
+    const sent = (text: string) => links.some((link) => text.includes(link.url));
+    if (answer && links.length && !answer.handoff && !answer.skip && /\blinks?\b/i.test(answer.reply) && !sent(answer.reply) && !sent(transcript(context.history))) {
+      answer = { ...answer, reply: `${answer.reply}\n${links.map((link) => `${link.label}: ${link.url}`).join("\n")}` };
     }
 
     const done = await this.db.withTenants(scope, async (tx) => {
@@ -404,10 +455,16 @@ export class AiAttendantService {
       }
 
       // A IA escolheu não responder (despedida repetida, divulgação, robô): nada sai e o atendimento segue com ela.
-      if (answer?.skip && !answer.handoff) return { ids: [], notify: [], startsWaiting: false };
+      if (answer?.skip && !answer.handoff) {
+        // Só um "ok" ou "boa noite" na conversa resolvida: ela continua resolvida, sem chamar ninguém.
+        if (!current.aiReopened || current.aiReplies) return { ids: [], notify: [], startsWaiting: false };
+        await systemEvent(tx, conversation, { event: "ai_skip", text: "O cliente só respondeu ao fim do atendimento: a conversa continua resolvida" });
+        await tx.conversation.update({ where: { id: conversationId }, data: { status: "RESOLVED", unreadCount: 0, teamInvolved: false, awaitingAgentSince: null } });
+        return { ids: [], notify: [conversationId], startsWaiting: false };
+      }
 
       // Com os links para pedir, o cliente segue sozinho (como a opção "Fazer um pedido" do menu): a equipe não é chamada.
-      const sentLinks = !!answer && orderLinksOf(settings).some((link) => answer.reply.includes(link.url));
+      const sentLinks = !!answer && sent(answer.reply);
       // O cliente precisa da equipe (ou a IA chegou ao limite de respostas). Com atendente, a IA passa a conversa e sai; sem, ela continua
       // atendendo e a conversa espera alguém (aiWaiting).
       // Sem atendente, a resposta que diz "estamos sem atendentes" promete encaminhar a conversa: ela espera alguém mesmo

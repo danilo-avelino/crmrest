@@ -21,9 +21,10 @@ describe("Conversas do dia (início da Inbox)", () => {
     const [waA, waB] = await Promise.all([channel(a.id), channel(b.id)]);
 
     type Msg = { direction: "INBOUND" | "OUTBOUND" | "INTERNAL"; type?: "TEXT" | "SYSTEM"; content?: object; at?: Date; byUser?: boolean };
-    const chat = async (tenantId: string, channelId: string, status: "OPEN" | "RESOLVED", messages: Msg[], teamOnly = false) => {
+    const chat = async (tenantId: string, channelId: string, status: "OPEN" | "RESOLVED", messages: Msg[], teamOnly = false, score = 0) => {
       const contact = await admin.contact.create({ data: { tenantId, name: "Cliente" } });
       const conversation = await admin.conversation.create({ data: { tenantId, contactId: contact.id, channelId, status, teamOnly } });
+      if (score) await admin.rating.create({ data: { tenantId, conversationId: conversation.id, score, channelType: "WHATSAPP" } });
       await admin.message.createMany({
         data: messages.map((m) => ({
           tenantId,
@@ -38,14 +39,23 @@ describe("Conversas do dia (início da Inbox)", () => {
       });
     };
     const inbound: Msg = { direction: "INBOUND" };
+    const handoff: Msg = { direction: "INTERNAL", type: "SYSTEM", content: { event: "handoff", text: "IA passou" }, at: secondsAgo(10) };
 
     await Promise.all([
-      // Resolvida só com a IA: sem a equipe.
-      chat(a.id, waA.id, "RESOLVED", [inbound, { direction: "OUTBOUND" }]),
+      // Resolvida só com a IA: sem a equipe. Nota 5.
+      chat(a.id, waA.id, "RESOLVED", [inbound, { direction: "OUTBOUND" }], false, 5),
       // A equipe respondeu pelo painel, pelo celular ou recebeu o atendimento: com a equipe.
-      chat(a.id, waA.id, "RESOLVED", [inbound, { direction: "OUTBOUND", byUser: true }]),
+      // A passagem respondida um minuto depois entra no tempo de resposta. Nota 4.
+      chat(
+        a.id,
+        waA.id,
+        "RESOLVED",
+        [inbound, { ...handoff, at: secondsAgo(65) }, { direction: "OUTBOUND", byUser: true }],
+        false,
+        4,
+      ),
       chat(a.id, waA.id, "RESOLVED", [inbound, { direction: "OUTBOUND", content: { text: "ok", fromPhone: true } }]),
-      chat(a.id, waA.id, "RESOLVED", [inbound, { direction: "INTERNAL", type: "SYSTEM", content: { event: "handoff", text: "IA passou" } }]),
+      chat(a.id, waA.id, "RESOLVED", [inbound, handoff]),
       // Ainda aberta.
       chat(a.id, waA.id, "OPEN", [inbound]),
       // Cliente escreveu ontem e a equipe respondeu ontem; hoje só a IA: conta como hoje, sem a equipe.
@@ -73,12 +83,28 @@ describe("Conversas do dia (início da Inbox)", () => {
   const get = (path: string, token: string) => request(app.getHttpServer()).get(`/api${path}`).set("Authorization", `Bearer ${token}`);
 
   it("conta as conversas em que o cliente escreveu hoje e as resolvidas sem a equipe", async () => {
-    expect((await get("/conversations/today", tenantToken).expect(200)).body).toEqual({ opened: 6, resolved: 5, resolvedWithoutTeam: 2 });
+    expect((await get("/conversations/today", tenantToken).expect(200)).body).toEqual({
+      opened: 6,
+      resolved: 5,
+      resolvedWithoutTeam: 2,
+      calledTeam: 2,
+      averageResponseSeconds: expect.closeTo(60, 0), // a passagem sem resposta não entra na média
+      ratings: 2,
+      averageScore: 4.5,
+    });
   });
 
   it("no painel master junta os restaurantes e filtra por um deles", async () => {
-    expect((await get("/conversations/today", masterToken).expect(200)).body).toEqual({ opened: 7, resolved: 6, resolvedWithoutTeam: 3 });
-    expect((await get(`/conversations/today?tenantId=${fx.b.id}`, masterToken).expect(200)).body).toEqual({ opened: 1, resolved: 1, resolvedWithoutTeam: 1 });
+    expect((await get("/conversations/today", masterToken).expect(200)).body).toMatchObject({ opened: 7, resolved: 6, resolvedWithoutTeam: 3 });
+    expect((await get(`/conversations/today?tenantId=${fx.b.id}`, masterToken).expect(200)).body).toEqual({
+      opened: 1,
+      resolved: 1,
+      resolvedWithoutTeam: 1,
+      calledTeam: 0,
+      averageResponseSeconds: null,
+      ratings: 0,
+      averageScore: null,
+    });
     await get(`/conversations/today?tenantId=${fx.c.id}`, masterToken).expect(403);
   });
 });

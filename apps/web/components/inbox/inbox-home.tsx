@@ -17,11 +17,10 @@ import {
   AlertTriangleIcon,
   BotIcon,
   LoaderCircleIcon,
-  MessageSquareIcon,
   PlusIcon,
 } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
 import { ORDER_TONE } from "@/components/clients/client-detail";
 import { useIfoodWidget } from "@/components/ifood-widget";
@@ -40,7 +39,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { connectIfoodChat, type IfoodChatStatus, useIfoodChatState } from "@/hooks/use-ifood-chat";
 import { useNow } from "@/hooks/use-now";
-import { ago, clock, count, currency } from "@/lib/format";
+import { ago, clock, count, currency, responseTime, score } from "@/lib/format";
 import { setIfoodWidgetChoice, useIfoodWidgetChoice } from "@/lib/ifood-widget-choice";
 import { cn } from "@/lib/utils";
 
@@ -56,22 +55,16 @@ const ARRIVES: Record<IntegrationType, string> = {
 };
 
 /**
- * Inbox sem conversa aberta: a situação de cada integração (com o atalho para conectar). A barra lateral com os pedidos
- * de hoje (TodayOrders) fica na InboxView. O design ainda não tem este estado; segue o cartão de Integrações e o painel
- * do cliente. Desktop no MVP.
+ * Inbox sem conversa aberta: os números do dia e a situação de cada integração (com o atalho para conectar). A barra
+ * lateral com os pedidos de hoje (TodayOrders) fica na InboxView. O design ainda não tem este estado; segue o cartão de
+ * Integrações e o painel do cliente. Desktop no MVP.
  */
-export function InboxHome({ onOpenCalling, onShowTeam }: { onOpenCalling: () => void; onShowTeam: () => void }) {
+export function InboxHome({ onOpenCalling }: { onOpenCalling: () => void }) {
   return (
     <div className="@container flex min-w-0 flex-1 overflow-y-auto border-r border-rule bg-paper">
       <div className="mx-auto w-full max-w-[720px] px-4 pt-7 pb-10 @lg:px-6">
         <SetupReminder />
-        <h1 className="font-heading text-display font-bold">Agora na Inbox</h1>
-        <p className="mt-1.5 flex items-center gap-2 text-ink-3">
-          <MessageSquareIcon className="size-4" aria-hidden />
-          Escolha uma conversa na lista para responder.
-        </p>
-        <Attention onOpenCalling={onOpenCalling} onShowTeam={onShowTeam} />
-        <Today />
+        <Today onOpenCalling={onOpenCalling} />
         {/* As integrações vêm antes da IA: a equipe vê logo se alguma está falhando. */}
         <Integrations />
         <AiAttendance />
@@ -80,69 +73,38 @@ export function InboxHome({ onOpenCalling, onShowTeam }: { onOpenCalling: () => 
   );
 }
 
-/**
- * O que precisa da equipe agora: conversas com ela, quem está chamando um atendente e as mensagens não lidas. "Com a
- * equipe" e "Mensagens não lidas" levam a lista para Ativos › Todos; "Chamando atendente" abre quem espera há mais tempo.
- */
-function Attention({ onOpenCalling, onShowTeam }: { onOpenCalling: () => void; onShowTeam: () => void }) {
-  const { request } = useAuth();
-  const now = useNow(60_000);
-  const counts = useQuery({ queryKey: ["counts", null], queryFn: () => request<ConversationCounts>("/conversations/counts") });
-  const data = counts.data;
-  const team = data ? data.OPEN + data.PENDING : undefined;
-  const urgent = data ? data.awaitingAgent - data.awaitingQuiet : 0;
-  const card = "rounded-2xl border border-rule-soft bg-surface px-4 py-3.5 text-left";
-  const value = (amount: number | undefined) => (
-    <b className="my-1.5 block font-heading text-[28px] leading-none font-bold tabular-nums">{amount === undefined ? "–" : count(amount)}</b>
-  );
+const TILE = "rounded-2xl border border-rule-soft bg-surface px-4 py-3.5 text-left";
+
+function Tile({ label, value, suffix, tone, children }: { label: string; value: string | undefined; suffix?: string; tone?: string; children: ReactNode }) {
   return (
-    <div className="mt-[18px] mb-[30px] grid grid-cols-1 gap-2.5 @xl:grid-cols-3">
-      <button type="button" onClick={onShowTeam} className={cn(card, "hover:border-rule")}>
-        <span className="block text-[12px] font-medium text-ink-2">Com a equipe</span>
-        {value(team)}
-        <small className="text-[11.5px] text-ink-3 tabular-nums">
-          {data ? `${count(data.OPEN)} ${data.OPEN === 1 ? "aberta" : "abertas"} · ${count(data.PENDING)} ${data.PENDING === 1 ? "pendente" : "pendentes"}` : " "}
-        </small>
-      </button>
-      <button
-        type="button"
-        onClick={onOpenCalling}
-        disabled={urgent === 0}
-        className={cn(card, "disabled:cursor-default", urgent > 0 ? "border-tomate-line bg-tomate-lt hover:border-tomate" : "")}
-      >
-        <span className="block text-[12px] font-medium text-ink-2">Chamando atendente</span>
-        <span className={urgent > 0 ? "text-tomate" : undefined}>{value(data && urgent)}</span>
-        <small className="text-[11.5px] text-ink-3 tabular-nums">
-          {urgent > 0 && data?.urgentSince ? `a mais antiga espera há ${ago(data.urgentSince, now)}` : "ninguém esperando"}
-          {data && data.awaitingQuiet > 0 && ` · ${count(data.awaitingQuiet)} sem urgência`}
-        </small>
-      </button>
-      <button type="button" onClick={onShowTeam} className={cn(card, "hover:border-rule")}>
-        <span className="block text-[12px] font-medium text-ink-2">Mensagens não lidas</span>
-        {value(data?.unread)}
-        <small className="text-[11.5px] text-ink-3">nas conversas abertas e pendentes</small>
-      </button>
-    </div>
+    <>
+      <span className="block text-[12px] font-medium text-ink-2">{label}</span>
+      <b className={cn("my-1.5 block font-heading text-[28px] leading-none font-bold tabular-nums", tone)}>
+        {value ?? "–"}
+        {suffix && <small className="ml-1 font-sans text-[13px] font-medium text-ink-3">{suffix}</small>}
+      </b>
+      <small className="text-[11.5px] text-ink-3 tabular-nums">{children}</small>
+    </>
   );
 }
 
 /**
- * Conversas do dia até agora: quantas o cliente abriu (escreveu hoje), quantas estão resolvidas e quantas a IA e as
- * automações resolveram sem a equipe. A chave em "counts" faz o realtime atualizar junto com os cartões de cima.
+ * Conversas do dia até agora: abertas (o cliente escreveu hoje), resolvidas, resolvidas sem a equipe, quantas chamaram a
+ * equipe (com quem espera agora: o clique abre quem espera há mais tempo), o tempo de resposta da equipe e a nota da
+ * pesquisa. As chaves em "counts" fazem o realtime atualizar os números.
  */
-function Today() {
+function Today({ onOpenCalling }: { onOpenCalling: () => void }) {
   const { request } = useAuth();
+  const now = useNow(60_000);
   const today = useQuery({
     queryKey: ["counts", "today"],
     queryFn: () => request<ConversationDayStats>("/conversations/today"),
   });
+  const counts = useQuery({ queryKey: ["counts", null], queryFn: () => request<ConversationCounts>("/conversations/counts") });
   const data = today.data;
-  const card = "rounded-2xl border border-rule-soft bg-surface px-4 py-3.5";
-  const value = (amount: number | undefined) => (
-    <b className="my-1.5 block font-heading text-[28px] leading-none font-bold tabular-nums">{amount === undefined ? "–" : count(amount)}</b>
-  );
+  const waiting = counts.data ? counts.data.awaitingAgent - counts.data.awaitingQuiet : 0;
+  const whole = (amount: number | undefined) => (amount === undefined ? undefined : count(amount));
   const share = data && data.resolved > 0 ? Math.round((data.resolvedWithoutTeam / data.resolved) * 100) : null;
-  const stillOpen = data ? data.opened - data.resolved : 0;
 
   return (
     <section aria-labelledby="inbox-hoje" className="mb-[30px]">
@@ -151,24 +113,47 @@ function Today() {
       </h2>
       <p className="mt-0.5 mb-4 text-ink-3">Conversas desde a meia-noite.</p>
       <div className="grid grid-cols-1 gap-2.5 @xl:grid-cols-3">
-        <div className={card}>
-          <span className="block text-[12px] font-medium text-ink-2">Conversas abertas</span>
-          {value(data?.opened)}
-          <small className="text-[11.5px] text-ink-3">clientes que escreveram hoje</small>
+        <div className={TILE}>
+          <Tile label="Conversas abertas" value={whole(data?.opened)}>
+            clientes que escreveram hoje
+          </Tile>
         </div>
-        <div className={card}>
-          <span className="block text-[12px] font-medium text-ink-2">Resolvidas</span>
-          {value(data?.resolved)}
-          <small className="text-[11.5px] text-ink-3 tabular-nums">
-            {data ? `${count(stillOpen)} ainda em aberto` : " "}
-          </small>
+        <div className={TILE}>
+          <Tile label="Resolvidas" value={whole(data?.resolved)}>
+            {data ? `${count(data.opened - data.resolved)} ainda em aberto` : " "}
+          </Tile>
         </div>
-        <div className={card}>
-          <span className="block text-[12px] font-medium text-ink-2">Resolvidas sem a equipe</span>
-          <span className="text-success">{value(data?.resolvedWithoutTeam)}</span>
-          <small className="text-[11.5px] text-ink-3 tabular-nums">
+        <div className={TILE}>
+          <Tile label="Resolvidas sem a equipe" value={whole(data?.resolvedWithoutTeam)} tone="text-success">
             {share === null ? "só com a IA e as automações" : `${share}% das resolvidas, só com a IA e as automações`}
-          </small>
+          </Tile>
+        </div>
+        <button
+          type="button"
+          onClick={onOpenCalling}
+          disabled={waiting === 0}
+          className={cn(TILE, "disabled:cursor-default", waiting > 0 && "border-tomate-line bg-tomate-lt hover:border-tomate")}
+        >
+          <Tile label="Chamaram a equipe" value={whole(data?.calledTeam)}>
+            {waiting > 0 ? (
+              <span className="font-medium text-tomate">
+                {waiting === 1 ? "1 esperando agora" : `${count(waiting)} esperando agora`}
+                {counts.data?.urgentSince && `, há ${ago(counts.data.urgentSince, now)}`}
+              </span>
+            ) : (
+              "ninguém esperando agora"
+            )}
+          </Tile>
+        </button>
+        <div className={TILE}>
+          <Tile label="Tempo de resposta" value={data?.averageResponseSeconds == null ? undefined : responseTime(data.averageResponseSeconds)}>
+            média até a primeira resposta da equipe
+          </Tile>
+        </div>
+        <div className={TILE}>
+          <Tile label="Nota do atendimento" value={data?.averageScore == null ? undefined : score(data.averageScore)} suffix={data?.averageScore == null ? undefined : "/ 5"}>
+            {data ? (data.ratings === 0 ? "nenhuma avaliação hoje" : `${count(data.ratings)} ${data.ratings === 1 ? "avaliação" : "avaliações"} hoje`) : " "}
+          </Tile>
         </div>
       </div>
     </section>

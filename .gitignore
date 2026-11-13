@@ -15,3 +15,6 @@ packages/database/src/generated/
 # Saídas do graphify e documentação do Jev (material de consulta local)
 graphify-out/
 docs/jev-typesafe.md
+
+# Logs de conversas do Dish Desk (dados de clientes)
+logs/*.md

@@ -68,7 +68,7 @@ export function InboxView() {
             />
           ) : (
             <>
-              <InboxHome onOpenCalling={() => openCalling()} onShowTeam={() => setListView({ tab: "ACTIVE", sub: "ALL" })} />
+              <InboxHome onOpenCalling={() => openCalling()} />
               <TodayOrders />
             </>
           )}
