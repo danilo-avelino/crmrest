@@ -284,7 +284,7 @@ export function OrderList() {
 }
 
 /** Itens e linha do tempo do pedido (como a plataforma informou). Também no modal dos pedidos em produção da Inbox. */
-export function OrderDetails({ order }: { order: OrderListItem }) {
+export function OrderDetails({ order, withChat = true }: { order: OrderListItem; withChat?: boolean }) {
   const timeline = order.events.filter((event) => EVENT_LABEL[event.code]);
   return (
     <div className="grid grid-cols-2 gap-3">
@@ -345,7 +345,7 @@ export function OrderDetails({ order }: { order: OrderListItem }) {
         )}
       </div>
       {order.platform && <PlatformInfo info={order.platform} />}
-      <OrderActions order={order} />
+      <OrderActions order={order} withChat={withChat} />
     </div>
   );
 }

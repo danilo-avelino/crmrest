@@ -8,6 +8,7 @@ import {
   type ConversationDayStats,
   INTEGRATION_TYPES,
   type IntegrationType,
+  type OrderCustomerChat,
   type OrderListItem,
   type OrderPage,
   type OrderStageCounts,
@@ -17,6 +18,7 @@ import {
   AlertTriangleIcon,
   BotIcon,
   LoaderCircleIcon,
+  MessageCircleIcon,
   PlusIcon,
 } from "lucide-react";
 import Link from "next/link";
@@ -25,6 +27,7 @@ import { useAuth } from "@/components/auth/auth-provider";
 import { ORDER_TONE } from "@/components/clients/client-detail";
 import { useIfoodWidget } from "@/components/ifood-widget";
 import { ChannelDot, StatusBadge } from "@/components/inbox/bits";
+import { useDebounced } from "@/components/inbox/conversation-list";
 import { ORDER_STATUS } from "@/components/inbox/order-card";
 import { SetupReminder } from "@/components/onboarding/setup-reminder";
 import { OrderDetails } from "@/components/orders/order-list";
@@ -37,8 +40,10 @@ import {
 } from "@/components/settings/integrations-tab";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import { useToast } from "@/components/ui/toast";
 import { connectIfoodChat, type IfoodChatStatus, useIfoodChatState } from "@/hooks/use-ifood-chat";
 import { useNow } from "@/hooks/use-now";
+import { ApiError } from "@/lib/api";
 import { ago, clock, count, currency, responseTime, score } from "@/lib/format";
 import { setIfoodWidgetChoice, useIfoodWidgetChoice } from "@/lib/ifood-widget-choice";
 import { cn } from "@/lib/utils";
@@ -405,6 +410,37 @@ function IfoodChatRow({ storeUrl }: { storeUrl?: string | null }) {
   );
 }
 
+/**
+ * "Abrir conversa" no topo do modal do pedido: a conversa com o cliente pelo WhatsApp, se o cadastro tem telefone, ou
+ * pelo chat do iFood do pedido (a mesma regra do botão da aba Pedidos). Sem os dois, o aviso no lugar do botão.
+ */
+function OrderChatButton({ order, onOpen }: { order: OrderListItem; onOpen: (conversationId: string) => void }) {
+  const { request } = useAuth();
+  const queryClient = useQueryClient();
+  const toast = useToast();
+  const chat = useQuery({
+    queryKey: ["order-customer-chat", order.id],
+    queryFn: () => request<OrderCustomerChat>(`/orders/${order.id}/customer-chat`),
+  });
+  if (!chat.data) return null;
+  if (!chat.data.channel) return <span className="text-[11px] text-ink-3">Sem contato pelo Dish Desk</span>;
+  const open = async () => {
+    try {
+      const { conversationId } = await request<{ conversationId: string }>(`/orders/${order.id}/customer-chat`, { method: "POST" });
+      void queryClient.invalidateQueries({ queryKey: ["conversations"] });
+      onOpen(conversationId);
+    } catch (failure) {
+      toast(failure instanceof ApiError ? failure.message : "Não foi possível abrir a conversa.");
+    }
+  };
+  return (
+    <Button variant="outline" size="sm" onClick={open}>
+      <MessageCircleIcon aria-hidden />
+      Abrir conversa
+    </Button>
+  );
+}
+
 const PRODUCTION = new URLSearchParams({ period: "today", production: "true", page: "1" }).toString();
 
 /** Pedidos de hoje ainda em produção (a mesma consulta na barra do início e na aba Pedidos da conversa). */
@@ -419,28 +455,44 @@ export function useProductionOrders() {
 
 /**
  * Pedidos de hoje ainda em produção, do mais antigo para o mais novo, com o alerta de atraso e o número de cada etapa no
- * topo. O clique abre o pedido num modal com os detalhes e as ações da aba Pedidos. Sem conversa aberta, é a barra da
- * direita do início; com uma conversa, é a aba Pedidos do painel dela (`embedded`).
+ * topo. O clique abre o pedido num modal com os detalhes, as ações da aba Pedidos e o atalho para a conversa com o
+ * cliente. Sem conversa aberta, é a barra da direita do início; com uma conversa, é a aba Pedidos do painel dela
+ * (`embedded`), onde `search` (a busca da barra de abas) troca a lista pelos pedidos de hoje com o número ou o nome.
  */
-export function TodayOrders({ embedded }: { embedded?: boolean }) {
+export function TodayOrders({
+  embedded,
+  search = "",
+  onOpenConversation,
+}: {
+  embedded?: boolean;
+  search?: string;
+  onOpenConversation: (id: string) => void;
+}) {
   const { request, session } = useAuth();
   const master = session?.context?.mode === "master";
   const now = useNow(60_000);
   const [selected, setSelected] = useState<OrderListItem | null>(null);
-  const orders = useProductionOrders();
+  const production = useProductionOrders();
+  const term = useDebounced(search.trim(), 300);
+  const found = useQuery({
+    queryKey: ["orders", "search", term],
+    queryFn: () => request<OrderPage>(`/orders?${new URLSearchParams({ period: "today", q: term, page: "1" })}`),
+    enabled: term !== "",
+  });
+  const orders = term ? found : production;
   const stages = useQuery({
     queryKey: ["orders", "stages"],
     queryFn: () => request<OrderStageCounts>("/orders/stages"),
     refetchInterval: 30_000,
   });
   const data = orders.data;
-  // Atrasados em produção e prontos (a lista de produção inclui os prontos que ainda não saíram).
-  const late = data?.items.filter((order) => order.late).length ?? 0;
+  // Atrasados em produção e prontos (a lista de produção inclui os prontos que ainda não saíram), mesmo durante a busca.
+  const late = production.data?.items.filter((order) => order.late).length ?? 0;
   // O modal acompanha a lista; o pedido que sai da produção (ex.: despachado) continua aberto como estava.
   const open = selected && (data?.items.find((order) => order.id === selected.id) ?? selected);
   const strip = [
     { label: "Em produção", value: stages.data?.production },
-    { label: "Atrasados", value: data && late, alert: late > 0 },
+    { label: "Atrasados", value: production.data && late, alert: late > 0 },
     { label: "Prontos", value: stages.data?.ready },
     { label: "Em rota", value: stages.data?.dispatched },
     { label: "Entregues", value: stages.data?.delivered },
@@ -477,6 +529,8 @@ export function TodayOrders({ embedded }: { embedded?: boolean }) {
               Tentar novamente
             </Button>
           </div>
+        ) : data!.items.length === 0 && term ? (
+          <p className="px-4 py-8 text-center leading-normal text-ink-3">Nenhum pedido de hoje com “{term}”.</p>
         ) : data!.items.length === 0 ? (
           <p className="px-4 py-8 text-center leading-normal text-ink-3">
             Nenhum pedido em produção.
@@ -538,7 +592,16 @@ export function TodayOrders({ embedded }: { embedded?: boolean }) {
                   </DialogTitle>
                   {open.late && <StatusBadge tone="open">Atrasado</StatusBadge>}
                   <StatusBadge tone={ORDER_TONE[open.status]}>{ORDER_STATUS[open.status].label}</StatusBadge>
-                  <CloseButton onClick={() => setSelected(null)} />
+                  <span className="ml-auto flex items-center gap-2">
+                    <OrderChatButton
+                      order={open}
+                      onOpen={(conversationId) => {
+                        setSelected(null);
+                        onOpenConversation(conversationId);
+                      }}
+                    />
+                    <CloseButton onClick={() => setSelected(null)} />
+                  </span>
                 </div>
                 <DialogDescription className="tabular-nums">
                   <Link href={`/clientes/${open.contact.id}`} className="text-ink-2 hover:text-tomate hover:underline">
@@ -549,7 +612,7 @@ export function TodayOrders({ embedded }: { embedded?: boolean }) {
                 </DialogDescription>
               </div>
               <div className="overflow-y-auto bg-paper px-6 py-4">
-                <OrderDetails order={open} />
+                <OrderDetails order={open} withChat={false} />
               </div>
             </>
           )}
@@ -558,8 +621,7 @@ export function TodayOrders({ embedded }: { embedded?: boolean }) {
     </>
   );
 
-  if (embedded) return <div className="flex min-h-0 flex-1 flex-col">{body}</div>;
-  return (
+  if (embedded) return <div className="flex min-h-0 flex-1 flex-col">{body}</div>;  return (
     <aside aria-labelledby="inbox-pedidos-hoje" className="flex w-[clamp(288px,26vw,344px)] shrink-0 flex-col bg-surface">
       <div className="flex shrink-0 items-start justify-between gap-3 border-b border-rule px-4 pt-4 pb-3.5">
         <div>

@@ -351,6 +351,17 @@ describe("iFood (pedidos por polling)", () => {
       .set("Authorization", `Bearer ${token}`)
       .expect(200);
     expect(filtered.body.items.map((o: { displayCode: string }) => o.displayCode)).toEqual(["4852"]);
+
+    // Busca da aba Pedidos da Inbox: pelo número (com ou sem "#") ou pelo nome do cliente, sem diferenciar maiúsculas.
+    const search = async (q: string) =>
+      (await request(app.getHttpServer()).get(`/api/orders?period=7d&q=${encodeURIComponent(q)}`).set("Authorization", `Bearer ${token}`).expect(200))
+        .body.items as { displayCode: string; contact: { name: string } }[];
+    expect((await search("5010")).map((o) => o.displayCode)).toEqual(["5010"]);
+    expect((await search("#501")).map((o) => o.displayCode)).toEqual(["5010"]);
+    const byName = await search("carlos");
+    expect(byName.map((o) => o.displayCode)).toContain("5010");
+    expect(byName.every((o) => /carlos/i.test(o.contact.name))).toBe(true);
+    expect(await search("ninguém com este nome")).toEqual([]);
   });
 
   it("widget do iFood: id do widget e as lojas iFood do restaurante", async () => {

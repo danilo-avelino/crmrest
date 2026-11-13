@@ -45,7 +45,7 @@ type ReasonPicker = {
  * só acompanha o iFood: não há botões, e o pedido do cliente aparece como aviso. Com alerta de fraude, o cancelamento
  * fica no próprio alerta.
  */
-export function OrderActions({ order }: { order: OrderListItem }) {
+export function OrderActions({ order, withChat = true }: { order: OrderListItem; /** false: o "Abrir conversa" fica no topo do modal (Inbox). */ withChat?: boolean }) {
   const { request } = useAuth();
   const queryClient = useQueryClient();
   const toast = useToast();
@@ -77,7 +77,7 @@ export function OrderActions({ order }: { order: OrderListItem }) {
     queryKey: ["order-customer-chat", order.id],
     queryFn: () => request<OrderCustomerChat>(`/orders/${order.id}/customer-chat`),
   });
-  const canChat = Boolean(chat.data?.channel);
+  const canChat = withChat && Boolean(chat.data?.channel);
 
   // Com alerta de fraude em aberto, a decisão de cancelar é tomada no próprio alerta.
   const showCancel = order.cancelable && !order.alert;

@@ -85,6 +85,12 @@ export class OrdersService {
       ...(query.status && { status: query.status }),
       ...(query.channel && { channel: { type: query.channel } }),
       ...(query.production && { status: { in: IN_PRODUCTION }, dispatchedAt: null }),
+      ...(query.q && {
+        OR: [
+          { displayCode: { contains: query.q.replace(/^#\s*/, "") } },
+          { contact: { name: { contains: query.q, mode: "insensitive" as const } } },
+        ],
+      }),
     };
     const sort = query.production ? "asc" : "desc";
     const [rows, total, histories, late, alerts, cancellations] = await this.db.withTenants(scopeFor(auth, query.tenantId), async (tx) => {

@@ -12,6 +12,8 @@ export const OrderListQuery = z.object({
   channel: z.enum(ChannelTypeEnum).optional(),
   /** Só os pedidos em produção (ainda não saíram do restaurante), do mais antigo para o mais novo. */
   production: z.stringbool().optional(),
+  /** Busca pelo número do pedido (com ou sem "#") ou pelo nome do cliente. */
+  q: z.string().trim().max(60).optional(),
   page: z.coerce.number().int().min(1).default(1),
 });
 export type OrderListQuery = z.infer<typeof OrderListQuery>;

@@ -69,7 +69,7 @@ export function InboxView() {
           ) : (
             <>
               <InboxHome onOpenCalling={() => openCalling()} />
-              <TodayOrders />
+              <TodayOrders onOpenConversation={setSelectedId} />
             </>
           )}
         </div>
