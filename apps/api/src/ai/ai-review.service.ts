@@ -48,6 +48,17 @@ export function keepsFacts(original: string, rewritten: string): boolean {
   return before.every((fact) => rewritten.includes(fact)) && after.every((fact) => original.includes(fact));
 }
 
+const squash = (text: string) => text.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+
+/**
+ * A reescrita é outra mensagem da conversa, e não a do atendente: 13/11/2026, "para tentar contato" (continuação da
+ * anterior) saiu como a mensagem anterior inteira. Reenviar a mesma mensagem de propósito continua valendo.
+ */
+export function echoes(rewritten: string, original: string, history: { content: unknown }[]): boolean {
+  const said = new Set(history.map((message) => squash((message.content as MessageContent).text ?? "")));
+  return said.has(squash(rewritten)) && !said.has(squash(original));
+}
+
 /**
  * Revisão por IA (E28): a resposta do atendente é reescrita no tom da personalidade do restaurante antes do envio (o
  * OutboundProcessor chama antes de mandar). Se a LLM falhar ou mudar algum dado, sai o texto do atendente. Uma
@@ -92,6 +103,7 @@ export class AiReviewService {
         { role: "user", content: `CONVERSA ATÉ AGORA\n${transcript(context.history)}\n\nMENSAGEM DO ATENDENTE PARA REESCREVER\n${original}` },
       ]);
       if (result.misconduct) misconduct = result.reason || "Mensagem ofensiva ao cliente";
+      else if (echoes(result.text, original, context.history)) this.logger.warn(`Revisão da mensagem ${messageId} repetiu outra mensagem da conversa: sai o texto do atendente`);
       else if (keepsFacts(original, result.text)) rewritten = result.text;
       else this.logger.warn(`Revisão da mensagem ${messageId} mudou um dado: sai o texto do atendente`);
     } catch (error) {

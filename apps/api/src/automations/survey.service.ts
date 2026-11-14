@@ -33,6 +33,7 @@ export class SurveyService {
 
   /** Roda quando a conversa é resolvida: só pergunta se o atendimento teve um pedido associado hoje. */
   async request(tenantId: string, conversationId: string, now = new Date()): Promise<void> {
+    if (!this.env.SURVEY_ENABLED) return;
     const messageId = await this.db.withTenants({ tenantIds: [tenantId] }, async (tx) => {
       const conversation = await this.load(tx, conversationId);
       const state = conversation.automationState as AutomationState;

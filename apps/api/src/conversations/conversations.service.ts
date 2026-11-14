@@ -7,6 +7,8 @@ import {
   type ConversationListQuery,
   type ConversationMessages,
   type ConversationPage,
+  COURIER_TAG,
+  type CourierCheckRequest,
   FORWARDABLE_TYPES,
   type MessageContent,
   type MessageDto,
@@ -29,7 +31,7 @@ import type { Queue } from "bullmq";
 import { scheduleEvaluation } from "../ai/ai-evaluation.service.js";
 import { LlmClient } from "../ai/llm.client.js";
 import type { RequestAuth } from "../auth/auth.decorators.js";
-import { AUTOMATIC_ONLY, type AutomationState, channelSends, isPaused, localDate, teamRepliedUpdate, WITH_TEAM } from "../automations/automation.js";
+import { AUTOMATIC_ONLY, type AutomationState, channelSends, isPaused, localDate, setAutomationState, systemEvent, teamRepliedUpdate, WITH_TEAM } from "../automations/automation.js";
 import { contactsAwaitingDecision } from "../orders/fraud-alert.js";
 import { ENV, type Env } from "../config/env.js";
 import { ConnectorsService } from "../connectors/connectors.service.js";
@@ -122,7 +124,7 @@ export class ConversationsService {
   /**
    * Conversas do dia, desde a meia-noite de Brasília (a RLS limita aos restaurantes do escopo). Equipe = mensagem de uma
    * pessoa (pelo painel ou pelo WhatsApp do celular) ou o atendimento passado para ela, hoje. A conversa só da equipe
-   * (alerta de fraude) não entra: o cliente nem está nela. O tempo de resposta e a nota seguem a aba Avaliações.
+   * (alerta de fraude) não entra: o cliente nem está nela. O tempo de resposta e a nota da IA seguem a aba Avaliações.
    */
   async today(auth: RequestAuth, tenantId?: string, now = new Date()): Promise<ConversationDayStats> {
     const from = new Date(`${localDate(now)}T00:00:00-03:00`);
@@ -158,15 +160,19 @@ export class ConversationsService {
           LIMIT 1
         ) r ON true
         WHERE h.type = 'SYSTEM' AND h.content->>'event' = 'handoff' AND h.created_at >= ${from}`;
-      const ratings = await tx.rating.aggregate({ where: { createdAt: { gte: from } }, _count: { _all: true }, _avg: { score: true } });
+      const evaluations = await tx.conversationEvaluation.aggregate({
+        where: { legacy: false, createdAt: { gte: from } },
+        _count: { _all: true },
+        _avg: { score: true },
+      });
       return {
         opened: conversations?.opened ?? 0,
         resolved: conversations?.resolved ?? 0,
         resolvedWithoutTeam: conversations?.resolvedWithoutTeam ?? 0,
         calledTeam: team?.calledTeam ?? 0,
         averageResponseSeconds: team?.averageResponseSeconds ?? null,
-        ratings: ratings._count._all,
-        averageScore: ratings._avg.score,
+        evaluations: evaluations._count._all,
+        aiScore: evaluations._avg.score,
       };
     });
   }
@@ -498,6 +504,31 @@ export class ConversationsService {
       await this.automations.add("survey", { tenantId: conversation.tenantId, conversationId });
       await scheduleEvaluation(this.ai, conversation.tenantId, conversationId);
     }
+    this.realtime.inboxChanged(conversation.tenantId, conversationId);
+    return toListItem(conversation, auth);
+  }
+
+  /**
+   * Resposta da equipe ao modal "Esta pessoa é um entregador?" (a IA desconfiou na conversa): sim põe a tag Entregador no
+   * cadastro (o próximo atendimento já abre no menu do entregador); não só fecha a pergunta. Nos dois casos a IA não
+   * pergunta de novo neste atendimento.
+   */
+  async courierCheck(auth: RequestAuth, conversationId: string, body: CourierCheckRequest) {
+    const conversation = await this.db.withTenants(auth.scope, async (tx) => {
+      const current = await this.requireConversation(tx, conversationId);
+      const state = current.automationState as AutomationState;
+      const { courierCheck: _, ...rest } = state;
+      await setAutomationState(tx, conversationId, { ...rest, courierChecked: true });
+      const contact = await tx.contact.findUniqueOrThrow({ where: { id: current.contactId }, select: { tags: true } });
+      if (body.courier && !contact.tags.includes(COURIER_TAG)) {
+        await tx.contact.update({ where: { id: current.contactId }, data: { tags: [COURIER_TAG, ...contact.tags] } });
+      }
+      await systemEvent(tx, current, {
+        event: "courier_check",
+        text: body.courier ? "A equipe confirmou que é um entregador: o cadastro ganhou a tag Entregador" : "A equipe disse que não é um entregador",
+      });
+      return tx.conversation.findUniqueOrThrow({ where: { id: conversationId }, include: conversationListInclude });
+    });
     this.realtime.inboxChanged(conversation.tenantId, conversationId);
     return toListItem(conversation, auth);
   }

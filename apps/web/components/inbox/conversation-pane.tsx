@@ -9,7 +9,7 @@ import {
   type UpdateConversationRequest,
 } from "@dishdesk/shared";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckIcon, ChevronDownIcon, EllipsisIcon, LoaderCircleIcon, SearchIcon, UserRoundIcon, XIcon } from "lucide-react";
+import { BikeIcon, CheckIcon, ChevronDownIcon, EllipsisIcon, LoaderCircleIcon, SearchIcon, UserRoundIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
 import { ClientDetail } from "@/components/clients/client-detail";
@@ -17,11 +17,11 @@ import { Avatar, ChannelDot, StatusBadge, TeamOnlyBadge } from "@/components/inb
 import { ClientPanel } from "@/components/inbox/client-panel";
 import { beep } from "@/components/inbox/conversation-list";
 import { Composer } from "@/components/inbox/composer";
-import { TodayOrders, useProductionOrders } from "@/components/inbox/inbox-home";
+import { OrderSearchField, TodayOrders, useProductionOrders } from "@/components/inbox/inbox-home";
 import { MessageTimeline } from "@/components/inbox/message-timeline";
 import { ConversationFraudAlert } from "@/components/orders/fraud-alert";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -29,8 +29,10 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useToast } from "@/components/ui/toast";
 import { usePendingAction } from "@/hooks/use-pending-action";
 import { useNow } from "@/hooks/use-now";
+import { ApiError } from "@/lib/api";
 import { ago, count } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -157,6 +159,7 @@ export function ConversationPane({
           <TodayOrders embedded search={orderSearch ?? ""} onOpenConversation={onOpenConversation} />
         )}
       </aside>
+      <CourierCheckDialog key={conversationId} conversation={conversation.data} />
       {/* Cadastro completo do cliente, como na aba Clientes. */}
       <Dialog open={profileOpen} onOpenChange={setProfileOpen}>
         <DialogContent aria-label="Cadastro do cliente" className="flex h-[min(820px,calc(100vh-4rem))] w-[1080px]">
@@ -164,6 +167,65 @@ export function ConversationPane({
         </DialogContent>
       </Dialog>
     </>
+  );
+}
+
+/**
+ * A IA achou que quem escreve é um entregador (sem a tag Entregador): a conversa abre perguntando à equipe. Sim põe a tag
+ * no cadastro (o próximo atendimento já abre no menu do entregador); não fecha a pergunta. "Ver a conversa antes" só
+ * esconde o modal até a conversa ser aberta de novo.
+ */
+function CourierCheckDialog({ conversation }: { conversation: ConversationListItem }) {
+  const { request } = useAuth();
+  const queryClient = useQueryClient();
+  const toast = useToast();
+  const [later, setLater] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const check = conversation.courierCheck;
+  const answer = async (courier: boolean) => {
+    setError(null);
+    try {
+      const updated = await request<ConversationListItem>(`/conversations/${conversation.id}/courier-check`, { method: "POST", body: { courier } });
+      queryClient.setQueryData(["conversation", conversation.id], updated);
+      void queryClient.invalidateQueries({ queryKey: ["conversations"] });
+      void queryClient.invalidateQueries({ queryKey: ["messages", conversation.id] });
+      toast(courier ? "Marcado como entregador" : "Marcado como cliente");
+    } catch (failure) {
+      setError(failure instanceof ApiError ? failure.message : "Não foi possível salvar a resposta. Tente novamente.");
+    }
+  };
+  return (
+    <Dialog open={!!check && !later} onOpenChange={(open) => !open && setLater(true)}>
+      <DialogContent className="w-[420px]">
+        <div className="border-b border-rule px-5 pt-[18px] pb-3.5">
+          <DialogTitle className="mb-0.5 flex items-center gap-2">
+            <BikeIcon className="size-4 text-ink-3" aria-hidden />
+            Esta pessoa é um entregador?
+          </DialogTitle>
+          <DialogDescription>
+            A IA achou que {conversation.contact.name ?? "quem escreve nesta conversa"} pode ser um entregador, e não um cliente. Se for, o
+            cadastro ganha a tag Entregador e as próximas mensagens já recebem o menu do entregador.
+          </DialogDescription>
+        </div>
+        {check && <p className="mx-5 mt-3.5 rounded-lg bg-paper px-3 py-2.5 text-[12.5px] text-ink-2">{check.reason}</p>}
+        {error && (
+          <p role="alert" className="mx-5 mt-2 text-[11.5px] text-tomate">
+            {error}
+          </p>
+        )}
+        <div className="mt-3.5 flex justify-end gap-2 border-t border-rule px-5 py-3">
+          <Button variant="ghost" size="sm" onClick={() => setLater(true)}>
+            Ver a conversa antes
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => answer(false)}>
+            Não é
+          </Button>
+          <Button size="sm" onClick={() => answer(true)}>
+            Sim, é entregador
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -187,21 +249,7 @@ function SideTabs({
   if (search !== null) {
     return (
       <div className="flex h-[52px] shrink-0 items-center border-b border-rule px-3">
-        <label className="flex h-8 flex-1 items-center gap-2 rounded-md border border-rule bg-paper px-2.5 focus-within:border-ink">
-          <SearchIcon className="size-3.5 shrink-0 text-ink-3" aria-hidden />
-          <input
-            autoFocus
-            value={search}
-            onChange={(event) => onSearch(event.target.value)}
-            onKeyDown={(event) => event.key === "Escape" && onSearch(null)}
-            placeholder="Buscar pedido por número ou nome"
-            aria-label="Buscar pedido de hoje por número ou nome do cliente"
-            className="w-full bg-transparent text-[12px] outline-none placeholder:text-ink-3"
-          />
-          <button type="button" aria-label="Fechar a busca" onClick={() => onSearch(null)} className="shrink-0 text-ink-3 hover:text-ink">
-            <XIcon className="size-3.5" aria-hidden />
-          </button>
-        </label>
+        <OrderSearchField value={search} onChange={onSearch} />
       </div>
     );
   }

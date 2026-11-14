@@ -3,15 +3,15 @@ import type { INestApplication } from "@nestjs/common";
 import type { Queue } from "bullmq";
 import request from "supertest";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
-import { orderFactsOf, orderNumbersIn, otherOrderNumber, periodGreeting, systemPrompt } from "../src/ai/ai-attendant.service.js";
+import { ORDER_ARRIVAL_WAIT_MS, orderFactsOf, orderNumbersIn, otherOrderNumber, periodGreeting, systemPrompt, teamRepliedSince } from "../src/ai/ai-attendant.service.js";
 import { AiEvaluationService, EVALUATION_DELAY_MS, scorePercent } from "../src/ai/ai-evaluation.service.js";
 import { AiForwardService } from "../src/ai/ai-forward.service.js";
 import { transcript } from "../src/ai/prompts.js";
 import { firstName } from "../src/automations/automation.js";
-import { courierShortcut } from "../src/automations/courier-menu.service.js";
+import { courierShortcut, onlyOrder } from "../src/automations/courier-menu.service.js";
 import { InactivityService } from "../src/automations/inactivity.service.js";
 import { PresenceService } from "../src/realtime/presence.service.js";
-import { keepsFacts } from "../src/ai/ai-review.service.js";
+import { echoes, keepsFacts } from "../src/ai/ai-review.service.js";
 import { QUEUES } from "../src/queues/queues.module.js";
 import {
   accessTokenFor,
@@ -258,8 +258,14 @@ describe("atendimento com IA: resposta, revisão e avaliação", () => {
     await say("5511980000031", "wamid.AI-SKIP-2", "Obrigado! Um ótimo dia para vocês 😊");
     await settle();
 
+    // Reply vazio com skip (13/11, robô de dedetização): também não sai nada, e o atendimento não cai no menu.
+    answers.atendimento = { reply: "", handoff: false, reason: "", order: "none", skip: true };
+    await say("5511980000031", "wamid.AI-SKIP-3", "Solicite um orçamento sem compromisso!");
+    await settle();
+
     expect(graph.requests.length).toBe(sent);
     expect((await contents("5511980000031")).filter((c) => c.aiReply)).toHaveLength(1);
+    expect((await contents("5511980000031")).some((c) => c.event === "ai_fallback")).toBe(false);
     expect((await conversationOf("5511980000031")).automationState).toMatchObject({ ai: "on", aiReplies: 1 });
   });
 
@@ -284,6 +290,31 @@ describe("atendimento com IA: resposta, revisão e avaliação", () => {
       event: "ai_skip",
       text: "O cliente só respondeu ao fim do atendimento: a conversa continua resolvida",
     });
+  });
+
+  it("a IA acha que é um entregador: a conversa pergunta à equipe, e o sim põe a tag Entregador", async () => {
+    answers.atendimento = {
+      reply: "Certo, alguém da equipe já vai falar com você.",
+      handoff: true,
+      reason: "Parece ser um entregador: pede para avisar o cliente do pedido 117",
+      order: "none",
+      courier: true,
+    };
+    await say("5511980000042", "wamid.AI-COURIER-1", "Avisa pro cliente do pedido 117 que tô aqui");
+    await settle();
+    const { id, contactId } = await conversationOf("5511980000042");
+    const api = request(app.getHttpServer());
+    const opened = await api.get(`/api/conversations/${id}`).set("Authorization", `Bearer ${token}`).expect(200);
+    expect(opened.body.courierCheck).toEqual({ reason: "Parece ser um entregador: pede para avisar o cliente do pedido 117" });
+
+    const answered = await api.post(`/api/conversations/${id}/courier-check`).set("Authorization", `Bearer ${token}`).send({ courier: true }).expect(200);
+    expect(answered.body.courierCheck).toBeNull();
+    expect((await admin.contact.findUniqueOrThrow({ where: { id: contactId } })).tags).toContain("Entregador");
+    expect((await contents("5511980000042")).filter((c) => c.event === "courier_check").map((c) => c.text)).toEqual([
+      "A IA acha que quem escreve é um entregador: a equipe confirma",
+      "A equipe confirmou que é um entregador: o cadastro ganhou a tag Entregador",
+    ]);
+    await api.post(`/api/conversations/${id}/courier-check`).set("Authorization", `Bearer ${token}`).send({ courier: "sim" }).expect(400);
   });
 
   it("a IA passa para a equipe quando não pode resolver, e para de responder", async () => {
@@ -751,6 +782,30 @@ describe("atendimento com IA: resposta, revisão e avaliação", () => {
   };
   const promptOf = () => (llmCalls("atendimento").at(-1)!.body as LlmBody).messages[1]!.content;
 
+  it("mensagem pronta do Cardápio Web antes de o pedido chegar: a IA espera e procura de novo, sem chamar a equipe", async () => {
+    answers.atendimento = { reply: "Encontrei o pedido #7123. É esse?", handoff: false, reason: "", order: "none" };
+    const calls = llmCalls("atendimento").length;
+    await say("5511980000041", "wamid.AI-CW-1", "Olá, meu nome é *Antônio* e gostaria de saber informações sobre meu pedido de número *7123* feito hoje às 12:19");
+    // A resposta não saiu: o job foi agendado de novo, para depois do tempo de espera.
+    const { id } = await conversationOf("5511980000041");
+    const retry = await vi.waitFor(
+      async () => {
+        const job = (await aiQueue.getJobs(["delayed"])).find((item) => item.name === "reply" && item.data.conversationId === id && item.opts.delay === ORDER_ARRIVAL_WAIT_MS);
+        expect(job).toBeDefined();
+        return job!;
+      },
+      { timeout: 10_000, interval: 100 },
+    );
+    expect(llmCalls("atendimento").length).toBe(calls);
+    expect(retry.opts.delay).toBe(ORDER_ARRIVAL_WAIT_MS);
+
+    await orderFor("7123");
+    await retry.promote();
+    await settle();
+    expect(promptOf()).toContain("#7123 (iFood)");
+    expect((await contents("5511980000041")).some((c) => c.event === "handoff")).toBe(false);
+  });
+
   it("como no menu, a IA mostra o pedido e só dá o andamento depois da confirmação, que une os cadastros", async () => {
     // O cliente já escreveu antes; depois, um pedido entra em outro cadastro com o mesmo telefone do WhatsApp.
     answers.atendimento = { reply: "Olá! Em que posso ajudar?", handoff: false, reason: "", order: "none" };
@@ -912,6 +967,17 @@ describe("atendimento com IA: número do pedido informado pelo cliente", () => {
     expect(courierShortcut("86994990211")).toBeNull();
   });
 
+  it("entregador: com o mesmo número de ontem ou de outra loja, vale o pedido em andamento ou o único de hoje", () => {
+    const now = new Date("2026-11-13T23:41:00Z"); // 20:41 em Brasília
+    const yesterday = { id: "ontem", status: "DELIVERED" as const, placedAt: new Date("2026-11-12T16:11:00Z") };
+    const today = { id: "hoje", status: "DISPATCHED" as const, placedAt: new Date("2026-11-13T22:54:00Z") };
+    expect(onlyOrder([yesterday, today], now)?.id).toBe("hoje");
+    expect(onlyOrder([yesterday, { ...today, status: "DELIVERED" as const }], now)?.id).toBe("hoje");
+    expect(onlyOrder([today, { ...today, id: "outra loja" }], now)).toBeNull();
+    expect(onlyOrder([yesterday], now)?.id).toBe("ontem");
+    expect(onlyOrder([], now)).toBeNull();
+  });
+
   it("lê o número da mensagem pronta do Cardápio Web, com o negrito do WhatsApp", () => {
     const text = "Olá, meu nome é *Gabriela Cordeiro* e gostaria de saber informações sobre meu pedido de número *0098* feito hoje às 18:26";
     expect(orderNumbersIn([text])).toEqual(["0098", "98"]);
@@ -954,6 +1020,7 @@ describe("atendimento com IA: o que a IA lê", () => {
     expect(firstName("😃")).toBeUndefined();
     expect(firstName("✨")).toBeUndefined();
     expect(firstName(null)).toBeUndefined();
+    expect(firstName("rafaelsilvasilva9400")).toBeUndefined();
   });
 
   it("no chat do iFood o pedido é o do chat, sem confirmação, e o telefone é pedido sem falar em cupom", () => {
@@ -978,6 +1045,26 @@ describe("atendimento com IA: o que a IA lê", () => {
     expect(systemPrompt("Aglio Nero", "IFOOD", {})).not.toContain("cupons");
     expect(systemPrompt("Aglio Nero", "IFOOD", {})).toContain("caso a conversa caia");
     expect(systemPrompt("Aglio Nero", "WHATSAPP", {})).toContain("para receber cupons pelo WhatsApp");
+    // Pagamento: a IA só diz que chama a equipe, sem falar do que vê ou não vê (pedido do usuário, 14/11/2026).
+    expect(systemPrompt("Aglio Nero", "WHATSAPP", {})).toContain("Não diga se você vê ou não o pagamento");
+  });
+
+  it("pedido cancelado: a IA recebe o motivo que a loja deu", () => {
+    const order = {
+      displayCode: "56",
+      externalOrderId: "x",
+      channelType: "CARDAPIO_WEB" as const,
+      placedAt: new Date("2026-11-13T11:52:00-03:00"),
+      status: "CANCELED" as const,
+      items: [{ quantity: 1, name: "Arroz de costela" }],
+      total: "54.39",
+      update: null,
+      confirmed: false,
+      byNumber: false,
+      cancellationReason: "Pedido fora da área de entrega",
+    };
+    expect(orderFactsOf(order, false)).toContain("Motivo do cancelamento, dado pela loja: Pedido fora da área de entrega.");
+    expect(orderFactsOf({ ...order, status: "DELIVERED" as const }, false)).not.toContain("Motivo do cancelamento");
   });
 
   it("trava do chat do iFood: acha na resposta outro número de pedido, com ou sem os zeros à esquerda", () => {
@@ -988,6 +1075,21 @@ describe("atendimento com IA: o que a IA lê", () => {
     expect(otherOrderNumber("Seu pedido #28 saiu para entrega.", "0028")).toBeNull();
     expect(otherOrderNumber("Me chama no 89 99463-0817 se precisar; seu pedido 2 pizzas saiu.", "0028")).toBeNull();
   });
+
+  it("depois do horário, conta como atendente a equipe que respondeu na conversa há pouco (painel ou celular da loja)", () => {
+    const at = new Date("2026-11-14T02:04:00Z");
+    const message = (content: object, sentByUserId: string | null, minutes: number, direction = "OUTBOUND") => ({
+      direction,
+      content,
+      sentByUserId,
+      createdAt: new Date(at.getTime() - minutes * 60_000),
+    });
+    const since = at.getTime() - 15 * 60_000;
+    expect(teamRepliedSince([message({ text: "É nessa rua." }, "user-1", 8)], since)).toBe(true);
+    expect(teamRepliedSince([message({ text: "ok", fromPhone: true }, null, 3)], since)).toBe(true);
+    expect(teamRepliedSince([message({ text: "É nessa rua." }, "user-1", 40)], since)).toBe(false);
+    expect(teamRepliedSince([message({ text: "Boa noite!", aiReply: true }, null, 2), message({ text: "Oi" }, null, 1, "INBOUND")], since)).toBe(false);
+  });
 });
 
 describe("revisão por IA: dados que não podem mudar", () => {
@@ -997,6 +1099,13 @@ describe("revisão por IA: dados que não podem mudar", () => {
     expect(keepsFacts("ja saiu", "Já saiu! Chega em 10 minutos.")).toBe(false); // dado novo
     expect(keepsFacts("pede por https://loja.exemplo.com/pedir", "Peça por aqui: https://loja.exemplo.com/pedir.")).toBe(true);
     expect(keepsFacts("segue no @restaurante", "Siga a gente no Instagram!")).toBe(false);
+  });
+
+  it("recusa a reescrita que repete outra mensagem da conversa, mas aceita o reenvio de propósito", () => {
+    const history = [{ content: { text: "Avisa pro cliente do pedido 117 que tô aqui" } }, { content: { text: "É do app, o número está na comanda." } }];
+    expect(echoes("É do app, o número está na comanda.", "para tentar contato", history)).toBe(true);
+    expect(echoes("Para tentar contato.", "para tentar contato", history)).toBe(false);
+    expect(echoes("É do app, o número está na comanda.", "é do app, o número está na comanda", history)).toBe(false);
   });
 });
 

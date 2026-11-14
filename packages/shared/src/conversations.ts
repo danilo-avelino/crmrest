@@ -64,6 +64,8 @@ export type MessageContent = {
     | "ai_fallback"
     /** O cliente só respondeu "ok" ou "boa noite" numa conversa resolvida: a IA não respondeu e ela continua resolvida. */
     | "ai_skip"
+    /** A IA acha que quem escreve é um entregador sem a tag: a equipe confirma no modal da conversa. */
+    | "courier_check"
     | "cancellation_alert"
     /** Prevenção de fraude: só a equipe vê. */
     | "fraud_alert"
@@ -198,6 +200,8 @@ export type ConversationListItem = {
   lastMessage: { direction: Direction; preview: string } | null;
   /** Código do último pedido ligado à conversa (cabeçalho "iFood · #485329"). */
   orderCode: string | null;
+  /** A IA acha que quem escreve é um entregador (sem a tag Entregador): a conversa abre perguntando à equipe. `reason`: o porquê. */
+  courierCheck: { reason: string } | null;
 };
 
 export type ConversationPage = { items: ConversationListItem[]; nextCursor: string | null };
@@ -217,8 +221,8 @@ export type ConversationCounts = Record<ConversationStatus, number> & {
  * Conversas do dia (desde a meia-noite de Brasília), no início da Inbox. `opened` = conversas em que o cliente escreveu
  * hoje; `resolved` = quantas delas estão resolvidas; `resolvedWithoutTeam` = resolvidas sem a equipe: ninguém respondeu
  * (nem pelo celular) e o atendimento não foi passado para a equipe. `calledTeam` = conversas passadas para a equipe hoje;
- * `averageResponseSeconds` = da passagem à primeira resposta de uma pessoa (como na aba Avaliações); `ratings` e
- * `averageScore` = notas da pesquisa de satisfação dadas hoje (1 a 5).
+ * `averageResponseSeconds` = da passagem à primeira resposta de uma pessoa (como na aba Avaliações); `evaluations` e
+ * `aiScore` = avaliações do atendimento feitas pela IA hoje e a nota média delas (em porcentagem, 1 a 100).
  */
 export type ConversationDayStats = {
   opened: number;
@@ -226,8 +230,8 @@ export type ConversationDayStats = {
   resolvedWithoutTeam: number;
   calledTeam: number;
   averageResponseSeconds: number | null;
-  ratings: number;
-  averageScore: number | null;
+  evaluations: number;
+  aiScore: number | null;
 };
 /** `evaluations`: avaliações da IA, na ordem em que foram feitas (vazio para quem não é administrador). */
 export type ConversationMessages = { messages: MessageDto[]; orders: Record<string, OrderDto>; evaluations: ConversationEvaluationDto[] };
@@ -279,6 +283,10 @@ export const UpdateConversationRequest = z
   })
   .refine((body) => body.status !== undefined || body.assignedUserId !== undefined, "Nada para alterar.");
 export type UpdateConversationRequest = z.infer<typeof UpdateConversationRequest>;
+
+/** Resposta da equipe à pergunta da IA: quem escreve é (true) ou não é (false) um entregador. */
+export const CourierCheckRequest = z.object({ courier: z.boolean() });
+export type CourierCheckRequest = z.infer<typeof CourierCheckRequest>;
 
 /** Membro de um restaurante, para atribuir conversas. */
 export type MemberDto = { id: string; name: string; tenantId: string; role: TenantRole };

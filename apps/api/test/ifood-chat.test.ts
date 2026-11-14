@@ -629,6 +629,42 @@ describe("Chat do iFood na Inbox (trava IFOOD_CHAT_BRIDGE ligada)", () => {
     await typeOutbox();
   });
 
+  it('entregador: o pedido de ontem com o mesmo número não esconde o de hoje, o aviso por extenso usa o número já dito e "10 mim" não é pedido', async () => {
+    const today = await ifoodOrder("6547", "Gil Souza");
+    const other = await admin.contact.create({ data: { tenantId: fx.tenant.id, name: "Ivo Melo" } });
+    await admin.order.create({
+      data: {
+        tenantId: fx.tenant.id, contactId: other.id, channelId: fx.ifood.id, externalOrderId: randomUUID(), displayCode: "6547",
+        status: "DELIVERED", subtotal: 40, deliveryFee: 5, total: 45, placedAt: minutesAgo(24 * 60), raw: {},
+      },
+    });
+    const waId = "5511970000034";
+    await admin.contact.create({
+      data: { tenantId: fx.tenant.id, name: "Ian Entregador", tags: ["Entregador"], identities: { create: { tenantId: fx.tenant.id, channelType: "WHATSAPP", externalId: waId } } },
+    });
+    const courier = () =>
+      admin.conversation.findFirstOrThrow({
+        where: { channelId: fx.whatsapp.id, contact: { identities: { some: { channelType: "WHATSAPP", externalId: waId } } } },
+        include: { messages: { orderBy: { createdAt: "asc" } } },
+      });
+    const say = async (id: string, body: string, last: object) => {
+      const message = { from: waId, id, timestamp: String(Math.floor(Date.now() / 1000)), type: "text", text: { body } };
+      await postMetaWebhook(app, metaPayload(fx.whatsapp.externalId, { contacts: [{ profile: { name: "Ian" }, wa_id: waId }], messages: [message] })).expect(200);
+      await until(async () => expect((await courier()).messages.at(-1)!.content).toMatchObject(last));
+    };
+
+    await say("wamid.DUP1", "6547", { automation: "courier_menu", text: expect.stringContaining("Encontramos o pedido #6547") });
+    await say("wamid.DUP2", "Estou aq no endereço", { automation: "courier_arrival_confirmed" });
+    const chat = await admin.conversation.findFirstOrThrow({ where: { contactId: today.contactId, channelId: fx.ifood.id } });
+    expect((await timeline(chat.id)).map((m) => m.content)).toContainEqual({ automation: "courier_arrival", text: "O entregador nos avisou que está na sua porta! 🛵" });
+
+    await admin.message.updateMany({ where: { conversationId: (await courier()).id }, data: { createdAt: minutesAgo(60) } });
+    await say("wamid.DUP3", "1", { automation: "order_number_request" });
+    await say("wamid.DUP4", "Já deu os 10 mim", { event: "handoff", text: "Entregador avisou que chegou" });
+    expect((await courier()).messages.some((m) => /#10\b/.test((m.content as { text?: string }).text ?? ""))).toBe(false);
+    await typeOutbox();
+  });
+
   it("a loja responde ao cliente pelo Gestor: conta como resposta da equipe, mas a mensagem automática dela não conta", async () => {
     const order = await ifoodOrder("6544", "Dora Melo");
     await post("/ifood-chat/sync", { orderCode: "6544", messages: [shown("INBOUND", "Cadê meu pedido?", minutesAgo(3))] }).expect(200);

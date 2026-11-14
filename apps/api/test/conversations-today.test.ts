@@ -21,10 +21,14 @@ describe("Conversas do dia (início da Inbox)", () => {
     const [waA, waB] = await Promise.all([channel(a.id), channel(b.id)]);
 
     type Msg = { direction: "INBOUND" | "OUTBOUND" | "INTERNAL"; type?: "TEXT" | "SYSTEM"; content?: object; at?: Date; byUser?: boolean };
-    const chat = async (tenantId: string, channelId: string, status: "OPEN" | "RESOLVED", messages: Msg[], teamOnly = false, score = 0) => {
+    const chat = async (tenantId: string, channelId: string, status: "OPEN" | "RESOLVED", messages: Msg[], teamOnly = false, score = 0, legacy = false) => {
       const contact = await admin.contact.create({ data: { tenantId, name: "Cliente" } });
       const conversation = await admin.conversation.create({ data: { tenantId, contactId: contact.id, channelId, status, teamOnly } });
-      if (score) await admin.rating.create({ data: { tenantId, conversationId: conversation.id, score, channelType: "WHATSAPP" } });
+      if (score) {
+        await admin.conversationEvaluation.create({
+          data: { tenantId, conversationId: conversation.id, resolved: true, score, legacy, model: "jev" },
+        });
+      }
       await admin.message.createMany({
         data: messages.map((m) => ({
           tenantId,
@@ -42,19 +46,20 @@ describe("Conversas do dia (início da Inbox)", () => {
     const handoff: Msg = { direction: "INTERNAL", type: "SYSTEM", content: { event: "handoff", text: "IA passou" }, at: secondsAgo(10) };
 
     await Promise.all([
-      // Resolvida só com a IA: sem a equipe. Nota 5.
-      chat(a.id, waA.id, "RESOLVED", [inbound, { direction: "OUTBOUND" }], false, 5),
+      // Resolvida só com a IA: sem a equipe. Nota da IA 90%.
+      chat(a.id, waA.id, "RESOLVED", [inbound, { direction: "OUTBOUND" }], false, 90),
       // A equipe respondeu pelo painel, pelo celular ou recebeu o atendimento: com a equipe.
-      // A passagem respondida um minuto depois entra no tempo de resposta. Nota 4.
+      // A passagem respondida um minuto depois entra no tempo de resposta. Nota da IA 70%.
       chat(
         a.id,
         waA.id,
         "RESOLVED",
         [inbound, { ...handoff, at: secondsAgo(65) }, { direction: "OUTBOUND", byUser: true }],
         false,
-        4,
+        70,
       ),
-      chat(a.id, waA.id, "RESOLVED", [inbound, { direction: "OUTBOUND", content: { text: "ok", fromPhone: true } }]),
+      // Avaliação antiga (nota de 1 a 5): fica de fora da média.
+      chat(a.id, waA.id, "RESOLVED", [inbound, { direction: "OUTBOUND", content: { text: "ok", fromPhone: true } }], false, 2, true),
       chat(a.id, waA.id, "RESOLVED", [inbound, handoff]),
       // Ainda aberta.
       chat(a.id, waA.id, "OPEN", [inbound]),
@@ -89,8 +94,8 @@ describe("Conversas do dia (início da Inbox)", () => {
       resolvedWithoutTeam: 2,
       calledTeam: 2,
       averageResponseSeconds: expect.closeTo(60, 0), // a passagem sem resposta não entra na média
-      ratings: 2,
-      averageScore: 4.5,
+      evaluations: 2,
+      aiScore: 80,
     });
   });
 
@@ -102,8 +107,8 @@ describe("Conversas do dia (início da Inbox)", () => {
       resolvedWithoutTeam: 1,
       calledTeam: 0,
       averageResponseSeconds: null,
-      ratings: 0,
-      averageScore: null,
+      evaluations: 0,
+      aiScore: null,
     });
     await get(`/conversations/today?tenantId=${fx.c.id}`, masterToken).expect(403);
   });

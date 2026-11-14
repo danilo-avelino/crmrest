@@ -5,6 +5,7 @@ import {
   ConversationListQuery,
   type ConversationMessages,
   type ConversationPage,
+  CourierCheckRequest,
   ForwardMessageRequest,
   type MessageDto,
   type ReplySuggestionDto,
@@ -62,6 +63,17 @@ export class ConversationsController {
     @CurrentAuth() auth: RequestAuth,
   ) {
     return this.conversations.update(auth, id, body);
+  }
+
+  /** Modal "Esta pessoa é um entregador?": a resposta da equipe. */
+  @Post(":id/courier-check")
+  @HttpCode(200)
+  courierCheck(
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body(new ZodPipe(CourierCheckRequest)) body: CourierCheckRequest,
+    @CurrentAuth() auth: RequestAuth,
+  ) {
+    return this.conversations.courierCheck(auth, id, body);
   }
 
   @Get(":id/messages")

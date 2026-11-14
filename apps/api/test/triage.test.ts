@@ -21,7 +21,7 @@ describe("menu de atendimento, busca do pedido e pesquisa de satisfação", () =
 
   beforeAll(async () => {
     graph = await startMockGraph();
-    app = await createTestApp({ CHANNELS_DRY_RUN: "false", META_GRAPH_URL: graph.url });
+    app = await createTestApp({ CHANNELS_DRY_RUN: "false", META_GRAPH_URL: graph.url, SURVEY_ENABLED: "true" });
     fx = await createChannelFixture();
     token = await accessTokenFor(app, fx.user.email, fx.tenant.id);
   });
@@ -799,5 +799,14 @@ describe("menu de atendimento, busca do pedido e pesquisa de satisfação", () =
     const confirmed = (await contents("5511970000019")).at(-1)!;
     expect(confirmed.automation).toBe("order_confirmed");
     expect(confirmed.text).toMatch(/^Pedido confirmado 👍\n🛵 Seu pedido já saiu para entrega às \d{2}:\d{2} \(45 minutos atrás\)\.\n\n/);
+  });
+});
+
+describe("pesquisa de satisfação suspensa (SURVEY_ENABLED desligada)", () => {
+  it("não pergunta nada no fim do atendimento", async () => {
+    const db = { withTenants: vi.fn() };
+    const survey = new SurveyService(db as never, {} as never, {} as never, { SURVEY_ENABLED: false } as never);
+    await survey.request("restaurante", "conversa");
+    expect(db.withTenants).not.toHaveBeenCalled();
   });
 });

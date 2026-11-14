@@ -20,6 +20,8 @@ import {
   LoaderCircleIcon,
   MessageCircleIcon,
   PlusIcon,
+  SearchIcon,
+  XIcon,
 } from "lucide-react";
 import Link from "next/link";
 import { type ReactNode, useState } from "react";
@@ -44,7 +46,7 @@ import { useToast } from "@/components/ui/toast";
 import { connectIfoodChat, type IfoodChatStatus, useIfoodChatState } from "@/hooks/use-ifood-chat";
 import { useNow } from "@/hooks/use-now";
 import { ApiError } from "@/lib/api";
-import { ago, clock, count, currency, responseTime, score } from "@/lib/format";
+import { ago, clock, count, currency, responseTime } from "@/lib/format";
 import { setIfoodWidgetChoice, useIfoodWidgetChoice } from "@/lib/ifood-widget-choice";
 import { cn } from "@/lib/utils";
 
@@ -95,8 +97,8 @@ function Tile({ label, value, suffix, tone, children }: { label: string; value: 
 
 /**
  * Conversas do dia até agora: abertas (o cliente escreveu hoje), resolvidas, resolvidas sem a equipe, quantas chamaram a
- * equipe (com quem espera agora: o clique abre quem espera há mais tempo), o tempo de resposta da equipe e a nota da
- * pesquisa. As chaves em "counts" fazem o realtime atualizar os números.
+ * equipe (com quem espera agora: o clique abre quem espera há mais tempo), o tempo de resposta da equipe e a nota que a
+ * IA deu aos atendimentos. As chaves em "counts" fazem o realtime atualizar os números.
  */
 function Today({ onOpenCalling }: { onOpenCalling: () => void }) {
   const { request } = useAuth();
@@ -156,8 +158,12 @@ function Today({ onOpenCalling }: { onOpenCalling: () => void }) {
           </Tile>
         </div>
         <div className={TILE}>
-          <Tile label="Nota do atendimento" value={data?.averageScore == null ? undefined : score(data.averageScore)} suffix={data?.averageScore == null ? undefined : "/ 5"}>
-            {data ? (data.ratings === 0 ? "nenhuma avaliação hoje" : `${count(data.ratings)} ${data.ratings === 1 ? "avaliação" : "avaliações"} hoje`) : " "}
+          <Tile label="Nota do atendimento" value={data?.aiScore == null ? undefined : `${Math.round(data.aiScore)}%`}>
+            {data
+              ? data.evaluations === 0
+                ? "nenhum atendimento avaliado pela IA hoje"
+                : `avaliada pela IA em ${count(data.evaluations)} ${data.evaluations === 1 ? "atendimento" : "atendimentos"}`
+              : " "}
           </Tile>
         </div>
       </div>
@@ -410,6 +416,27 @@ function IfoodChatRow({ storeUrl }: { storeUrl?: string | null }) {
   );
 }
 
+/** Campo da busca de pedido (aba Pedidos da conversa e barra do início): o X e o Esc fecham (null). */
+export function OrderSearchField({ value, onChange }: { value: string; onChange: (search: string | null) => void }) {
+  return (
+    <label className="flex h-8 flex-1 items-center gap-2 rounded-md border border-rule bg-paper px-2.5 focus-within:border-ink">
+      <SearchIcon className="size-3.5 shrink-0 text-ink-3" aria-hidden />
+      <input
+        autoFocus
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        onKeyDown={(event) => event.key === "Escape" && onChange(null)}
+        placeholder="Buscar pedido por número ou nome"
+        aria-label="Buscar pedido de hoje por número ou nome do cliente"
+        className="w-full bg-transparent text-[12px] outline-none placeholder:text-ink-3"
+      />
+      <button type="button" aria-label="Fechar a busca" onClick={() => onChange(null)} className="shrink-0 text-ink-3 hover:text-ink">
+        <XIcon className="size-3.5" aria-hidden />
+      </button>
+    </label>
+  );
+}
+
 /**
  * "Abrir conversa" no topo do modal do pedido: a conversa com o cliente pelo WhatsApp, se o cadastro tem telefone, ou
  * pelo chat do iFood do pedido (a mesma regra do botão da aba Pedidos). Sem os dois, o aviso no lugar do botão.
@@ -456,8 +483,9 @@ export function useProductionOrders() {
 /**
  * Pedidos de hoje ainda em produção, do mais antigo para o mais novo, com o alerta de atraso e o número de cada etapa no
  * topo. O clique abre o pedido num modal com os detalhes, as ações da aba Pedidos e o atalho para a conversa com o
- * cliente. Sem conversa aberta, é a barra da direita do início; com uma conversa, é a aba Pedidos do painel dela
- * (`embedded`), onde `search` (a busca da barra de abas) troca a lista pelos pedidos de hoje com o número ou o nome.
+ * cliente. Sem conversa aberta, é a barra da direita do início, com a própria lupa no cabeçalho; com uma conversa, é a
+ * aba Pedidos do painel dela (`embedded`), e a busca vem da barra de abas (`search`). Buscando, a lista mostra os pedidos
+ * de hoje com o número ou o nome.
  */
 export function TodayOrders({
   embedded,
@@ -472,8 +500,10 @@ export function TodayOrders({
   const master = session?.context?.mode === "master";
   const now = useNow(60_000);
   const [selected, setSelected] = useState<OrderListItem | null>(null);
+  // Busca da barra do início (null = fechada); na aba da conversa, a busca vem de fora.
+  const [ownSearch, setOwnSearch] = useState<string | null>(null);
   const production = useProductionOrders();
-  const term = useDebounced(search.trim(), 300);
+  const term = useDebounced((embedded ? search : (ownSearch ?? "")).trim(), 300);
   const found = useQuery({
     queryKey: ["orders", "search", term],
     queryFn: () => request<OrderPage>(`/orders?${new URLSearchParams({ period: "today", q: term, page: "1" })}`),
@@ -623,18 +653,39 @@ export function TodayOrders({
 
   if (embedded) return <div className="flex min-h-0 flex-1 flex-col">{body}</div>;  return (
     <aside aria-labelledby="inbox-pedidos-hoje" className="flex w-[clamp(288px,26vw,344px)] shrink-0 flex-col bg-surface">
-      <div className="flex shrink-0 items-start justify-between gap-3 border-b border-rule px-4 pt-4 pb-3.5">
-        <div>
-          <h2 id="inbox-pedidos-hoje" className="font-heading text-[16px] font-bold tracking-[-0.3px]">
-            Em produção
+      {ownSearch !== null ? (
+        <div className="flex min-h-[68px] shrink-0 items-center border-b border-rule px-4">
+          <h2 id="inbox-pedidos-hoje" className="sr-only">
+            Buscar pedido
           </h2>
-          <p className="mt-0.5 text-xs text-ink-3 tabular-nums">
-            {data ? `${count(data.total)} ${data.total === 1 ? "pedido" : "pedidos"}` : " "}
-            {late > 0 && <span className="font-medium text-tomate"> · {late === 1 ? "1 atrasado" : `${count(late)} atrasados`}</span>}
-          </p>
+          <OrderSearchField value={ownSearch} onChange={setOwnSearch} />
         </div>
-        {openOrders}
-      </div>
+      ) : (
+        <div className="flex min-h-[68px] shrink-0 items-start justify-between gap-3 border-b border-rule px-4 pt-4 pb-3.5">
+          <div>
+            <h2 id="inbox-pedidos-hoje" className="font-heading text-[16px] font-bold tracking-[-0.3px]">
+              Em produção
+            </h2>
+            <p className="mt-0.5 text-xs text-ink-3 tabular-nums">
+              {production.data ? `${count(production.data.total)} ${production.data.total === 1 ? "pedido" : "pedidos"}` : " "}
+              {late > 0 && <span className="font-medium text-tomate"> · {late === 1 ? "1 atrasado" : `${count(late)} atrasados`}</span>}
+            </p>
+          </div>
+          <span className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              aria-label="Buscar pedido"
+              title="Buscar pedido por número ou nome"
+              className="text-ink-3"
+              onClick={() => setOwnSearch("")}
+            >
+              <SearchIcon aria-hidden />
+            </Button>
+            {openOrders}
+          </span>
+        </div>
+      )}
       {body}
     </aside>
   );

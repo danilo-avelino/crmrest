@@ -1,4 +1,5 @@
 import type { Contact, TenantTx } from "@dishdesk/database";
+import type { OrderStatus } from "@dishdesk/database/enums";
 import { type AutomationMessages, automationMessagesOf, COURIER_MENU_OPTIONS, fillMessage, menuMessage } from "@dishdesk/shared";
 import { Inject, Injectable } from "@nestjs/common";
 import { ENV, type Env } from "../config/env.js";
@@ -10,6 +11,7 @@ import {
   automationMessage,
   firstName,
   type InboundEvent,
+  localDate,
   setAutomationState,
   startOfYesterday,
   systemEvent,
@@ -36,6 +38,19 @@ const FRONT_DESK = /portaria|recep[cç][aã]o|deixei|entreguei|seguran[cç]a|gua
 const ARRIVAL = /cheguei|chegando|t[oô]\s*(?:aqui|aq|na\s+porta|no\s+local|em\s+frente|l[aá])|estou\s+(?:aqui|aq|na\s+porta|no\s+local)|na\s+frente|na\s+porta|aguard|esperando|avis[ae]/i;
 const PICKUP = /buscar|pegar|coletar|retirar/i;
 const PROBLEM = /m[aá]quina|maquininha|defeito|endere[cç]o\s+errado|cancel|ningu[eé]m|n[aã]o\s+(?:atende|responde|recebe|passa|desce|aceita)/i;
+
+/**
+ * O número do iFood se repete entre as lojas do grupo e de um dia para o outro (13/11: o #4020 e o #7719 de ontem
+ * escondiam os de hoje, e o entregador ouvia "não encontramos"). Com mais de um, vale o único ainda em andamento ou,
+ * senão, o único de hoje. null = nenhum, ou não dá para saber qual.
+ */
+export function onlyOrder<T extends { status: OrderStatus; placedAt: Date }>(orders: T[], now: Date): T | null {
+  if (orders.length <= 1) return orders[0] ?? null;
+  const open = orders.filter((order) => order.status !== "DELIVERED" && order.status !== "CANCELED");
+  if (open.length === 1) return open[0]!;
+  const today = orders.filter((order) => localDate(order.placedAt) === localDate(now));
+  return today.length === 1 ? today[0]! : null;
+}
 
 /** O que o entregador pediu numa frase, sem passar pelo menu. */
 export type CourierShortcut =
@@ -118,6 +133,11 @@ export class CourierMenuService {
     text: string | undefined,
   ): Promise<Step | null> {
     const asked = courierShortcut(text);
+    // O número já veio antes ("5130", e depois "Estou aq no endereço", 13/11/2026): o aviso por extenso usa esse número.
+    if (!asked && state.courierOrder && text && !PROBLEM.test(text)) {
+      const kind = FRONT_DESK.test(text) ? "front_desk" : ARRIVAL.test(text) ? "arrival" : null;
+      if (kind) return this.notifyCustomer(tx, conversation, state, messages, state.courierOrder, kind);
+    }
     if (!asked) return null;
     if (asked.kind === "arrival" || asked.kind === "front_desk") return this.notifyCustomer(tx, conversation, state, messages, asked.code, asked.kind);
     if (asked.kind === "problem") {
@@ -248,21 +268,23 @@ export class CourierMenuService {
    * null = não digitou número; `order: null` = o número não bate com um pedido só (nenhum, ou mais de um).
    */
   private async findOrder(tx: TenantTx, conversation: Conversation, text: string | undefined, ifoodOnly: boolean) {
-    const digits = text?.match(/\d+/)?.[0];
+    // "Já deu os 10 mim" é tempo de espera, não o pedido #10 (13/11/2026).
+    const digits = text?.match(/(?<!\d)\d+(?!\d|\s*(?:mi[nm]|minutos?|reais|r\$))/i)?.[0];
     if (!digits) return null;
     const code = digits.replace(/^0+(?=\d)/, "");
+    const now = new Date();
     const orders = await withOrderTenants(this.db, tx, conversation.channelId, (scoped) =>
       scoped.order.findMany({
         where: {
           displayCode: { in: [...new Set([digits, code])] },
-          placedAt: { gte: startOfYesterday(new Date()) },
+          placedAt: { gte: startOfYesterday(now) },
           ...(ifoodOnly && { channel: { type: "IFOOD" as const } }),
         },
-        select: { id: true, tenantId: true, contactId: true, channelId: true, conversationId: true },
-        take: 2,
+        select: { id: true, tenantId: true, contactId: true, channelId: true, conversationId: true, status: true, placedAt: true },
+        take: 10,
       }),
     );
-    return { code, order: orders.length === 1 ? orders[0]! : null };
+    return { code, order: onlyOrder(orders, now) };
   }
 
   /** Número que não bate com nenhum pedido (um dígito trocado, por exemplo): o entregador confere e manda de novo, uma vez. */

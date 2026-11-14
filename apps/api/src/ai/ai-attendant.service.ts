@@ -5,6 +5,7 @@ import {
   businessHoursOf,
   CHANNEL_CAPABILITIES,
   CHANNEL_LABEL,
+  COURIER_TAG,
   fillMessage,
   type MessageContent,
   orderLinksOf,
@@ -30,7 +31,7 @@ import { JevClient } from "../defense/jev.client.js";
 import { orderUpdateMessage } from "../orders/forecast.js";
 import { latestOrderOf } from "../orders/latest-order.js";
 import { withOrderTenants } from "../orders/order-scope.js";
-import { type OutboundJob, QUEUES } from "../queues/queues.module.js";
+import { type AiJob, type OutboundJob, QUEUES } from "../queues/queues.module.js";
 import { RealtimeEmitter } from "../realtime/realtime.emitter.js";
 import { PresenceService } from "../realtime/presence.service.js";
 import { type Attendance, attendanceOf } from "./ai-forward.service.js";
@@ -42,12 +43,27 @@ export const MAX_AI_REPLIES = 8;
 /** Mensagens da conversa (das últimas 12 horas) que a IA lê antes de responder. */
 const HISTORY_LIMIT = 30;
 const HISTORY_MS = 12 * 60 * 60 * 1000;
+/** A mensagem pronta do Cardápio Web ("...sobre meu pedido de número *0058* feito hoje às 12:19"). */
+const CARDAPIO_WEB_ASK = /pedido\s+de\s+n[uú]mero\s*\*?#?\s*\d{1,6}/i;
+/** Quanto a IA espera o pedido citado nessa mensagem chegar pela integração. */
+export const ORDER_ARRIVAL_WAIT_MS = 20_000;
+/** Resposta da equipe na conversa há menos que isto: ela ainda está atendendo, mesmo depois do horário. */
+const TEAM_ACTIVE_MS = 15 * 60_000;
+
+/** Alguém da equipe (pelo painel ou pelo celular da loja) respondeu na conversa depois de `since`. */
+export function teamRepliedSince(history: { direction: string; content: unknown; sentByUserId: string | null; createdAt: Date }[], since: number): boolean {
+  return history.some(
+    (message) => message.direction === "OUTBOUND" && (!!message.sentByUserId || !!(message.content as MessageContent).fromPhone) && message.createdAt.getTime() >= since,
+  );
+}
 
 const BRL = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 const BRASILIA_TIME = new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 
 export const AttendantReply = z.object({
-  reply: z.string().trim().min(1).max(1000).describe("A mensagem para o cliente."),
+  // Sem .min(1): com skip = true a LLM às vezes manda reply vazio, e a resposta inteira era recusada (13/11/2026: o
+  // robô de dedetização recebeu o aviso de fora do horário do menu). Vazio sem skip é conferido depois.
+  reply: z.string().trim().max(1000).describe("A mensagem para o cliente."),
   handoff: z.boolean().describe("true = passar o atendimento para a equipe."),
   // Sem .max(): o SDK do Claude tira o limite do schema e o confere depois, e um motivo comprido derrubava a resposta
   // inteira (o cliente recebia o menu). O texto é cortado onde é usado.
@@ -59,6 +75,8 @@ export const AttendantReply = z.object({
     ),
   // Sem ela, a IA respondia a cada "obrigado" de um robô de vendas até chamar a equipe (12/11/2026).
   skip: z.boolean().default(false).describe('true = não mandar nenhuma mensagem (só nos casos de "Não responda").'),
+  // A equipe confirma no modal da conversa e, se for, o cadastro ganha a tag Entregador (pedido do usuário, 14/11/2026).
+  courier: z.boolean().default(false).describe("true = quem escreve parece ser um entregador, e não um cliente."),
 });
 type AttendantReply = z.infer<typeof AttendantReply>;
 
@@ -95,21 +113,22 @@ Os passos valem só para o andamento. Problema, mudança ou cancelamento vão di
 Passe para a equipe (handoff = true) só quando o cliente:
 - pedir para falar com uma pessoa ou atendente, ou responder que sim quando você perguntar se ele quer;
 - contar um problema com o pedido (item errado ou faltando, qualidade, entrega) ou pedir cancelamento, reembolso ou troca;
-- pedir uma mudança no pedido (observação, item, endereço, trocar retirada por entrega) ou um recado para o entregador ou para a cozinha (buzinar, interfonar, deixar na portaria, esperar ele descer);
+- pedir uma mudança no pedido (observação, item, endereço, trocar retirada por entrega) ou um recado para o entregador ou para a cozinha (buzinar, interfonar, deixar na portaria, esperar ele descer, uma referência para achar o endereço, como a cor da casa ou do portão);
 - disser que está no local e não encontra o entregador, ou que ninguém apareceu, depois do aviso de que o entregador chegou;
 - continuar reclamando do atraso depois que você disse o andamento do pedido;
-- perguntar sobre pagamento (chave Pix, formas de pagamento, comprovante);
+- perguntar ou falar sobre pagamento (Pix, chave Pix, se o pagamento foi confirmado, comprovante, formas de pagamento, vale-refeição, maquininha, troco, cobrança): passe direto, sem perguntar se ele quer um atendente. Diga só que está chamando alguém da equipe para cuidar disso (ex.: "Vou chamar alguém da equipe para cuidar do seu pagamento."). Não diga se você vê ou não o pagamento, se tem ou não a informação, nem o que você consegue ou não consegue fazer;
 - perguntar sobre o restaurante algo que não está nos DADOS nem no cardápio (entrega, taxa, endereço, promoção);
 - disser que não consegue abrir o link ou terminar o pedido por ele;
 - responder a uma pergunta que a equipe fez (a última mensagem do restaurante na CONVERSA é de atendente ou da loja e pergunta algo): a resposta é para a equipe. Diga só que a equipe já vai ver, sem dizer que não entendeu;
-- parecer ser um entregador, e não um cliente (pede para avisar o cliente de um pedido, diz que chegou ou que está na porta com o pedido): diga que alguém da equipe já vai falar com ele e escreva no reason que parece ser um entregador sem a tag Entregador;
+- parecer ser um entregador, e não um cliente (pede para avisar o cliente de um pedido, diz que chegou ou que está na porta com o pedido): diga que alguém da equipe já vai falar com ele e escreva no reason que parece ser um entregador sem a tag Entregador e responda com courier = true;
 - mandar imagem, vídeo ou documento: pode ser a foto de um problema ou um comprovante de pagamento, que só a equipe consegue ver. Diga só que alguém da equipe vai ver; não peça para ele descrever.
 
 Não passe para a equipe (handoff = false):
 - Reclamação de atraso: siga os passos do pedido (mostre o pedido, diga o andamento ou peça o número). A equipe só entra no passo 4 ou se o cliente continuar reclamando depois do andamento.
-- Pedido de acompanhamento (quer acompanhar, ver a localização do entregador, ser avisado quando ele chegar ou quando o pedido sair): diga que você não sabe a localização do entregador nem quando ele chega, e que o próprio entregador consegue avisar quando chegar. Não diga que o cliente consegue falar com o entregador nem peça que ele avise o entregador: você não sabe se há esse contato. Se o pedido ainda não foi entregue nem cancelado (veja o status e o andamento nos DADOS), diga que vai enviar aqui as atualizações do pedido: quando ficar pronto, quando sair para entrega e quando for entregue.
-- Depois do aviso de que o entregador chegou ou deixou o pedido na portaria, o cliente só responde ("ok", "certo", "descendo", "já recebi"): uma frase curta, sem repetir o andamento. O aviso vale mais que o status dos DADOS: não diga que o entregador está a caminho nem que deve chegar.
+- Pedido de acompanhamento (quer acompanhar, ver a localização do entregador, ser avisado quando ele chegar ou quando o pedido sair): diga que você não sabe a localização do entregador nem quando ele chega, e que o próprio entregador consegue avisar quando chegar. Não diga que o cliente consegue falar com o entregador nem peça que ele avise o entregador: você não sabe se há esse contato. Se o pedido ainda não foi entregue nem cancelado (veja o status e o andamento nos DADOS), diga que vai enviar aqui as atualizações que ainda faltam: quando ficar pronto, quando sair para entrega e quando for entregue (o pedido que já saiu, só quando for entregue). Esses avisos saem sozinhos: não diga que não consegue avisar quando o pedido ficar pronto ou sair.
+- Depois do aviso de que o entregador chegou ou deixou o pedido na portaria, o cliente só responde ("ok", "certo", "descendo", "indo pegar", "avisei a portaria", "já recebi"): uma frase curta, sem repetir o andamento e sem passar para a equipe. O aviso vale mais que o status dos DADOS: não diga que o entregador está a caminho nem que deve chegar.
 - O pedido está cancelado nos DADOS e o cliente só avisa que não vai receber ou que cancelou: diga que o pedido já consta como cancelado e que ele não precisa fazer mais nada, sem pedir o telefone. Se ele pedir reembolso ou reclamar, aí sim passe para a equipe.
+- O pedido está cancelado nos DADOS e o cliente pergunta por ele (não sabia do cancelamento): diga que ele consta como cancelado e, se os DADOS trazem o motivo, qual foi, com as palavras da loja. Sem o motivo nos DADOS, ou se ele diz que não cancelou, passe para a equipe. Não comente se a notícia é boa ou ruim.
 - O cliente diz que já resolveu ou que já recebeu: despeça-se em poucas palavras.
 - Cardápio, sabores, opções (vegana, sem glúten...) ou preço, mesmo de um item ou combo específico: você não sabe nenhum preço. Escreva na mensagem os links para fazer pedido, com o endereço completo como está nos DADOS, diga que lá estão o cardápio e os preços e pergunte se ele quer que você chame um atendente, com handoff = false. Se os links já estão na CONVERSA, não mande de novo: diga que os preços estão nos links que você mandou e faça a mesma pergunta. Sem links, passe para a equipe.
 - Áudio: diga que não consegue ouvir áudios e peça para ele escrever. Se ele mandar outro áudio, passe para a equipe. Só fale de um áudio ou de uma imagem se for a mensagem mais recente do cliente: se ele já escreveu outra coisa depois, responda ao que ele escreveu.
@@ -195,6 +214,8 @@ export type OrderFacts = {
   byNumber: boolean;
   /** O pedido do próprio chat (iFood): o cliente já está identificado por ele, sem confirmação. */
   chatOrder?: boolean;
+  /** O motivo que a loja deu ao cancelar ("Pedido fora da área de entrega"). */
+  cancellationReason?: string | null;
 };
 
 /** O que a LLM recebe para responder: as regras e, na mensagem do usuário, os DADOS e a CONVERSA. */
@@ -285,7 +306,7 @@ export function orderFactsOf(order: OrderFacts | null, noPhone: boolean): string
       : order.confirmed
         ? "Pedido do cliente (ele confirmou que é dele):"
         : `Pedido que pode ser do cliente (${source}; ainda não confirmado por ele):`,
-    `#${order.displayCode ?? order.externalOrderId} (${CHANNEL_LABEL[order.channelType]}), feito em ${BRASILIA_TIME.format(order.placedAt)}, ${ORDER_STATUS_TEXT[order.status]}.`,
+    `#${order.displayCode ?? order.externalOrderId} (${CHANNEL_LABEL[order.channelType]}), feito em ${BRASILIA_TIME.format(order.placedAt)}, ${ORDER_STATUS_TEXT[order.status]}.${order.status === "CANCELED" && order.cancellationReason ? ` Motivo do cancelamento, dado pela loja: ${order.cancellationReason}.` : ""}`,
     `Itens: ${order.items.map((item) => `${item.quantity}x ${item.name}`).join("; ")}. Total: ${BRL.format(Number(order.total))}.`,
     ...(order.chatOrder
       ? [
@@ -309,6 +330,7 @@ export class AiAttendantService {
     private readonly db: DatabaseService,
     private readonly realtime: RealtimeEmitter,
     @InjectQueue(QUEUES.outbound) private readonly outbound: Queue<OutboundJob>,
+    @InjectQueue(QUEUES.ai) private readonly ai: Queue<AiJob>,
     private readonly llm: LlmClient,
     private readonly presence: PresenceService,
     private readonly triage: TriageService,
@@ -371,13 +393,26 @@ export class AiAttendantService {
         const update = await orderUpdateMessage(orders, found.id, now, settings, this.jev);
         return { ...found, confirmed: !!confirmed, byNumber: !linked, channelType: channel.type, update, chatOrder: false };
       });
-      return { conversation, settings, history, lastId: last.id, order };
+      return { conversation, settings, history, lastId: last.id, last, order };
     });
     if (!context) return;
+    // A mensagem pronta do Cardápio Web sai logo depois do pedido, e o pedido chega pela integração alguns segundos
+    // depois (13/11/2026: o #58 entrou 7 s depois da resposta, e a IA chamou a equipe). Ela espera e procura de novo, uma vez.
+    const lastText = (context.last.content as MessageContent).text ?? "";
+    if (!context.order && CARDAPIO_WEB_ASK.test(lastText) && now.getTime() - context.last.createdAt.getTime() < ORDER_ARRIVAL_WAIT_MS) {
+      await this.ai.add("reply", { tenantId, conversationId }, { delay: ORDER_ARRIVAL_WAIT_MS });
+      return;
+    }
 
     const { conversation, settings } = context;
     const state = conversation.automationState as AutomationState;
-    const attendance = await attendanceOf(this.presence, tenantId, settings, now);
+    let attendance = await attendanceOf(this.presence, tenantId, settings, now);
+    // Depois do horário, a equipe que ainda responde nesta conversa é atendente (13/11/2026: a IA disse "estamos sem
+    // atendentes, o restaurante está fechado" no meio da conversa com a atendente). O painel aberto sozinho não basta:
+    // ele fica aberto de noite no computador da loja.
+    if (!attendance.available && attendance.reason === "closed" && teamRepliedSince(context.history, now.getTime() - TEAM_ACTIVE_MS)) {
+      if (await this.presence.online(tenantId, now.getTime())) attendance = { available: true };
+    }
     let answer: AttendantReply | null = null;
     let failed = false;
     // A causa da falha vai para o evento (só a equipe vê): a análise do dia não depende dos logs da Railway.
@@ -403,6 +438,11 @@ export class AiAttendantService {
         failure = (error instanceof Error ? error.message : String(error)).slice(0, 300);
         this.logger.warn(`IA sem resposta na conversa ${conversationId}: ${failure}`);
       }
+    }
+    if (answer && !answer.reply && !(answer.skip && !answer.handoff)) {
+      failed = true;
+      failure = "a resposta veio vazia";
+      answer = null;
     }
     // Trava do chat do iFood: a resposta que cita outro número de pedido não sai, e a equipe é chamada.
     const chatCode = context.order?.chatOrder ? (context.order.displayCode ?? context.order.externalOrderId) : null;
@@ -522,6 +562,8 @@ export class AiAttendantService {
       const offers = !!pending && !confirmed && !deniedId && !!answer && new RegExp(`(?<!\\d)${code}(?!\\d)`).test(answer.reply);
       const notify = confirmed ? await this.confirmOrder(tx, conversationId, confirmed, pending!.byNumber) : [];
       const reason = answer?.reason.trim().slice(0, 200) || undefined;
+      // Parece entregador e o cadastro não tem a tag: a conversa abre com a pergunta à equipe, uma vez por atendimento.
+      const asksCourier = !!answer?.courier && !conversation.contact.tags.includes(COURIER_TAG) && !current.courierCheck && !current.courierChecked;
       await setAutomationState(tx, conversationId, {
         ...current,
         ai: handoff ? "off" : "on",
@@ -532,7 +574,11 @@ export class AiAttendantService {
         ...(confirmed && { linkedOrder: { id: confirmed, at: now.toISOString() } }),
         ...(deniedId && { aiDeniedOrderIds: [...(current.aiDeniedOrderIds ?? []), deniedId] }),
         ...(offers && pending && { aiOfferedOrderId: pending.id }),
+        ...(asksCourier && { courierCheck: { reason: reason ?? "A IA acha que quem escreve é um entregador." } }),
       });
+      if (asksCourier) {
+        await systemEvent(tx, conversation, { event: "courier_check", text: "A IA acha que quem escreve é um entregador: a equipe confirma" });
+      }
       if (handoff) {
         await systemEvent(tx, conversation, { event: "handoff", text: `IA passou o atendimento para a equipe${reason ? `: ${reason}` : ""}` });
         await tx.conversation.update({ where: { id: conversationId }, data: { awaitingAgentSince: new Date(), awaitingAgentQuiet: false } });

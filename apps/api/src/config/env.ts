@@ -44,6 +44,9 @@ const EnvSchema = z.object({
   // Trava do chat do iFood na Inbox: ligada, o painel copia o chat do widget (pela extensão do Chrome) e responde por ele.
   // Desligada, o Dish Desk só mostra o widget oficial, sem ler nem escrever nele.
   IFOOD_CHAT_BRIDGE: z.stringbool().default(false),
+  // Pesquisa de satisfação (nota de 1 a 5 no fim do atendimento): suspensa a pedido do usuário em 14/11/2026, até segunda
+  // ordem. Ligar com SURVEY_ENABLED=true; a nota de quem já recebeu a pergunta continua sendo gravada.
+  SURVEY_ENABLED: z.stringbool().default(false),
   // Ações do pedido do iFood (confirmar, pronto, despachar, cancelar, responder ao cancelamento do cliente). Desligada,
   // o Dish Desk só acompanha os pedidos: quem opera é o sistema de pedidos da loja. Ligar para a homologação do iFood.
   IFOOD_ORDER_ACTIONS: z.stringbool().default(false),

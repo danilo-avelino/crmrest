@@ -53,6 +53,10 @@ export type AutomationState = {
    */
   aiWaiting?: boolean;
   aiWaitingReason?: string;
+  /** A IA acha que quem escreve é um entregador sem a tag: o modal da conversa pergunta à equipe. `reason`: o porquê. */
+  courierCheck?: { reason: string };
+  /** A equipe já respondeu se é entregador neste atendimento: a IA não pergunta de novo. */
+  courierChecked?: boolean;
   /** Pedido que a IA mostrou ao cliente, esperando ele confirmar que é dele. */
   aiOfferedOrderId?: string;
   /** Pedidos que a IA mostrou e o cliente disse não serem dele: ela procura outro (pelo número que ele informar). */
@@ -216,7 +220,10 @@ export async function dispatch(
  * e todo em maiúsculas ou minúsculas ("PATRICIA", "carlos") ganha só a inicial maiúscula.
  */
 export function firstName(name: string | null): string | undefined {
-  const first = name?.trim().split(/\s+/)[0]?.replace(/[^\p{L}'-]/gu, "") ?? "";
+  const word = name?.trim().split(/\s+/)[0] ?? "";
+  // Nome de usuário ("rafaelsilvasilva9400"), não de pessoa: o cumprimento sai sem o nome (13/11/2026).
+  if (/\d/.test(word)) return undefined;
+  const first = word.replace(/[^\p{L}'-]/gu, "");
   if (first.length < 2) return undefined;
   const plain = first === first.toUpperCase() || first === first.toLowerCase();
   return plain ? first[0]!.toUpperCase() + first.slice(1).toLowerCase() : first;

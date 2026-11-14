@@ -11,6 +11,7 @@ import type {
   ServiceIssue,
   TeamReason,
 } from "@dishdesk/shared";
+import { COURIER_TAG } from "@dishdesk/shared";
 import type { RequestAuth } from "../auth/auth.decorators.js";
 import { type AutomationState, RATING_ANSWER } from "../automations/automation.js";
 import { isTenantAdmin } from "../settings/tenant-admin.js";
@@ -116,6 +117,7 @@ export function toListItem(conversation: ConversationWithList, auth: RequestAuth
       ? { direction: last.direction, preview: hidesRating(conversation, auth) ? RATING_HIDDEN : preview(last.type, last.content as MessageContent) }
       : null,
     orderCode: conversation.orders[0]?.displayCode ?? null,
+    courierCheck: conversation.contact.tags.includes(COURIER_TAG) ? null : ((conversation.automationState as AutomationState).courierCheck ?? null),
   };
 }
 
