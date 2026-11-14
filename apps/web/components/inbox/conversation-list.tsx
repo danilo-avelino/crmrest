@@ -15,6 +15,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useAgentAlarm } from "@/hooks/use-agent-alarm";
+import { askNotificationPermission, useCallNotifications, useNotificationPermission } from "@/hooks/use-call-notifications";
 import { useNow } from "@/hooks/use-now";
 import { usePendingAction } from "@/hooks/use-pending-action";
 import { ago } from "@/lib/format";
@@ -96,6 +97,7 @@ export function ConversationList({
   const calling = (allCounts.data?.awaitingAgent ?? 0) - quiet;
   const alarm = useAgentAlarm(calling > 0, "urgent", allCounts.data?.urgentSince ?? null);
   const quietAlarm = useAgentAlarm(quiet > 0, "quiet");
+  useCallNotifications(allCounts.data ? { calling, quiet } : null, alarm.blocked);
 
   const items = conversations.data?.pages.flatMap((page) => page.items) ?? [];
   useUnreadSignals(items, calling + quiet);
@@ -158,6 +160,7 @@ export function ConversationList({
           </span>
         </div>
       )}
+      <NotificationPrompt />
 
       <div className="shrink-0 px-3 pt-2.5 pb-1.5">
         <label className="flex h-8 items-center gap-2 rounded-md border border-rule bg-paper px-2.5 focus-within:border-ink">
@@ -406,6 +409,21 @@ export function useOpenCalling(onSelect: (id: string) => void) {
     if (longest) onSelect(longest.id);
   });
   return open;
+}
+
+/** Enquanto o navegador não decidiu sobre as notificações, oferece ativá-las (o pedido só sai de um clique). */
+function NotificationPrompt() {
+  const permission = useNotificationPermission();
+  if (permission !== "default") return null;
+  return (
+    <div className="flex shrink-0 items-center gap-2 border-b border-rule bg-surface-2 px-4 py-2 text-[12px] text-ink-2">
+      <BellIcon className="size-4 shrink-0" aria-hidden />
+      <span className="flex-1">Ative as notificações para ouvir os chamados mesmo sem clicar na página.</span>
+      <Button size="xs" variant="outline" onClick={askNotificationPermission}>
+        Ativar
+      </Button>
+    </div>
+  );
 }
 
 export function useDebounced<T>(value: T, delayMs: number): T {
