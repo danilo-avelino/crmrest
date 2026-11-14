@@ -135,6 +135,17 @@ describe("motor do chat do iFood", () => {
     expect(calls.synced[1]!.messages.map((message) => message.text)).toEqual(["Olá", "Tem alguém aí?"]);
   });
 
+  it("conversa encerrada de ontem ainda é copiada; de anteontem, não", async () => {
+    const day = (daysAgo: number) => new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit" }).format(Date.now() - daysAgo * 24 * 60 * 60_000);
+    const widget = fakeWidget([
+      order([{ side: "customer", text: "Faltou a cajuína", time: "21:33:00" }], { code: "3888", open: false, stamp: `21:33 • ${day(1)}` }),
+      order([{ side: "customer", text: "Antiga", time: "20:00:00" }], { code: "1111", open: false, stamp: `20:00 • ${day(2)}` }),
+    ]);
+    const { api, calls } = fakeApi();
+    await steps(new IfoodChatDriver(widget.bridge, api, instant), 6);
+    expect(calls.synced.map((sync) => sync.orderCode)).toEqual(["3888"]);
+  });
+
   it("conversa encerrada de outro dia fica de fora; pedido que o Dish Desk ainda não tem é tentado de novo depois", async () => {
     const widget = fakeWidget([
       order([{ side: "customer", text: "Antiga", time: "20:00:00" }], { code: "1111", open: false, stamp: "20:00 • 01/01" }),

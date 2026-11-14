@@ -33,6 +33,7 @@ const DAY = new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit" 
 /** A hora do item na lista traz o dia ("21:33 • 13/11"). */
 const DATED = /\d{2}\/\d{2}/;
 const TIME = /\d{2}:\d{2}/;
+const DAY_MS = 24 * 60 * 60_000;
 
 /**
  * Copia o chat do widget do iFood para a Inbox e digita nele as respostas escritas na Inbox. Trabalha em passos curtos
@@ -97,8 +98,10 @@ export class IfoodChatDriver {
   private changed(chat: WidgetChat): boolean {
     if (this.copied.get(chat.orderCode) === shownAs(chat)) return false;
     if ((this.retryAt.get(chat.orderCode) ?? 0) > this.now()) return false;
-    // Conversas encerradas ficam dias na lista: delas, só as de hoje são copiadas. Hora sem dia na lista é de hoje.
-    if (chat.open || chat.stamp.includes(DAY.format(this.now()))) return true;
+    // Conversas encerradas ficam dias na lista: delas, só as de hoje e de ontem são copiadas (ontem: a conversa da noite
+    // que não deu para copiar ainda entra quando o painel abre no dia seguinte). Hora sem dia na lista é de hoje.
+    const days = [this.now(), this.now() - DAY_MS].map((time) => DAY.format(time));
+    if (chat.open || days.some((day) => chat.stamp.includes(day))) return true;
     if (DATED.test(chat.stamp)) return false;
     this.report(chat.orderCode, `hora da lista sem o dia: "${chat.stamp}"`, false);
     return TIME.test(chat.stamp);
