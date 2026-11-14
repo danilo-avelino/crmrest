@@ -61,8 +61,10 @@ describe("Conversas do dia (início da Inbox)", () => {
       // Avaliação antiga (nota de 1 a 5): fica de fora da média.
       chat(a.id, waA.id, "RESOLVED", [inbound, { direction: "OUTBOUND", content: { text: "ok", fromPhone: true } }], false, 2, true),
       chat(a.id, waA.id, "RESOLVED", [inbound, handoff]),
-      // Ainda aberta.
+      // Ainda aberta, só com a IA até agora: sem a equipe.
       chat(a.id, waA.id, "OPEN", [inbound]),
+      // Precisou da equipe com o restaurante fechado: esperando, conta com a equipe.
+      chat(a.id, waA.id, "OPEN", [inbound, { direction: "INTERNAL", type: "SYSTEM", content: { event: "awaiting_agent", text: "Cliente precisa da equipe" } }]),
       // Cliente escreveu ontem e a equipe respondeu ontem; hoje só a IA: conta como hoje, sem a equipe.
       chat(a.id, waA.id, "RESOLVED", [
         { direction: "OUTBOUND", byUser: true, at: secondsAgo(26 * 3600) },
@@ -87,12 +89,12 @@ describe("Conversas do dia (início da Inbox)", () => {
 
   const get = (path: string, token: string) => request(app.getHttpServer()).get(`/api${path}`).set("Authorization", `Bearer ${token}`);
 
-  it("conta as conversas em que o cliente escreveu hoje e as resolvidas sem a equipe", async () => {
+  it("conta as conversas em que o cliente escreveu hoje e divide entre com e sem a equipe", async () => {
     expect((await get("/conversations/today", tenantToken).expect(200)).body).toEqual({
-      opened: 6,
+      opened: 7,
       resolved: 5,
-      resolvedWithoutTeam: 2,
-      calledTeam: 2,
+      withTeam: 4,
+      withoutTeam: 3,
       averageResponseSeconds: expect.closeTo(60, 0), // a passagem sem resposta não entra na média
       evaluations: 2,
       aiScore: 80,
@@ -100,12 +102,12 @@ describe("Conversas do dia (início da Inbox)", () => {
   });
 
   it("no painel master junta os restaurantes e filtra por um deles", async () => {
-    expect((await get("/conversations/today", masterToken).expect(200)).body).toMatchObject({ opened: 7, resolved: 6, resolvedWithoutTeam: 3 });
+    expect((await get("/conversations/today", masterToken).expect(200)).body).toMatchObject({ opened: 8, resolved: 6, withTeam: 4, withoutTeam: 4 });
     expect((await get(`/conversations/today?tenantId=${fx.b.id}`, masterToken).expect(200)).body).toEqual({
       opened: 1,
       resolved: 1,
-      resolvedWithoutTeam: 1,
-      calledTeam: 0,
+      withTeam: 0,
+      withoutTeam: 1,
       averageResponseSeconds: null,
       evaluations: 0,
       aiScore: null,

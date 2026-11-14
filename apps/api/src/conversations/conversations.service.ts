@@ -122,29 +122,29 @@ export class ConversationsService {
   }
 
   /**
-   * Conversas do dia, desde a meia-noite de Brasília (a RLS limita aos restaurantes do escopo). Equipe = mensagem de uma
-   * pessoa (pelo painel ou pelo WhatsApp do celular) ou o atendimento passado para ela, hoje. A conversa só da equipe
-   * (alerta de fraude) não entra: o cliente nem está nela. O tempo de resposta e a nota da IA seguem a aba Avaliações.
+   * Conversas do dia, desde a meia-noite de Brasília (a RLS limita aos restaurantes do escopo). Com a equipe = hoje uma
+   * pessoa respondeu (pelo painel ou pelo WhatsApp do celular), o atendimento foi passado para ela ou ficou esperando por
+   * ela; as demais são sem a equipe, e as duas somam as conversas do dia. A conversa só da equipe (alerta de fraude) não
+   * entra: o cliente nem está nela. O tempo de resposta e a nota da IA seguem a aba Avaliações.
    */
   async today(auth: RequestAuth, tenantId?: string, now = new Date()): Promise<ConversationDayStats> {
     const from = new Date(`${localDate(now)}T00:00:00-03:00`);
     return this.db.withTenants(scopeFor(auth, tenantId), async (tx) => {
-      const [conversations] = await tx.$queryRaw<Pick<ConversationDayStats, "opened" | "resolved" | "resolvedWithoutTeam">[]>`
+      const [conversations] = await tx.$queryRaw<Pick<ConversationDayStats, "opened" | "resolved" | "withTeam">[]>`
         SELECT count(*)::int AS opened,
                count(*) FILTER (WHERE c.status = 'RESOLVED')::int AS resolved,
-               count(*) FILTER (WHERE c.status = 'RESOLVED' AND NOT EXISTS (
+               count(*) FILTER (WHERE EXISTS (
                  SELECT 1 FROM messages m
                  WHERE m.conversation_id = c.id AND m.created_at >= ${from}
                    AND ((m.direction = 'OUTBOUND' AND (m.sent_by_user_id IS NOT NULL OR m.content->>'fromPhone' = 'true'))
                      OR (m.type = 'SYSTEM' AND m.content->>'event' IN ('handoff', 'awaiting_agent')))
-               ))::int AS "resolvedWithoutTeam"
+               ))::int AS "withTeam"
         FROM conversations c
         WHERE NOT c.team_only
           AND EXISTS (SELECT 1 FROM messages m WHERE m.conversation_id = c.id AND m.direction = 'INBOUND' AND m.created_at >= ${from})`;
       // Cada passagem à equipe e a primeira resposta de uma pessoa depois dela, antes da próxima passagem.
-      const [team] = await tx.$queryRaw<Pick<ConversationDayStats, "calledTeam" | "averageResponseSeconds">[]>`
-        SELECT count(DISTINCT h.conversation_id)::int AS "calledTeam",
-               avg(EXTRACT(EPOCH FROM r.created_at - h.created_at))::float8 AS "averageResponseSeconds"
+      const [team] = await tx.$queryRaw<Pick<ConversationDayStats, "averageResponseSeconds">[]>`
+        SELECT avg(EXTRACT(EPOCH FROM r.created_at - h.created_at))::float8 AS "averageResponseSeconds"
         FROM messages h
         LEFT JOIN LATERAL (
           SELECT m.created_at
@@ -165,11 +165,13 @@ export class ConversationsService {
         _count: { _all: true },
         _avg: { score: true },
       });
+      const opened = conversations?.opened ?? 0;
+      const withTeam = conversations?.withTeam ?? 0;
       return {
-        opened: conversations?.opened ?? 0,
+        opened,
         resolved: conversations?.resolved ?? 0,
-        resolvedWithoutTeam: conversations?.resolvedWithoutTeam ?? 0,
-        calledTeam: team?.calledTeam ?? 0,
+        withTeam,
+        withoutTeam: opened - withTeam,
         averageResponseSeconds: team?.averageResponseSeconds ?? null,
         evaluations: evaluations._count._all,
         aiScore: evaluations._avg.score,

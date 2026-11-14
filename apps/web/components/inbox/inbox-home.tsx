@@ -96,8 +96,8 @@ function Tile({ label, value, suffix, tone, children }: { label: string; value: 
 }
 
 /**
- * Conversas do dia até agora: abertas (o cliente escreveu hoje), resolvidas, resolvidas sem a equipe, quantas chamaram a
- * equipe (com quem espera agora: o clique abre quem espera há mais tempo), o tempo de resposta da equipe e a nota que a
+ * Conversas do dia até agora: abertas (o cliente escreveu hoje), resolvidas, sem a equipe e com a equipe (as duas somam as
+ * abertas; com quem espera agora: o clique abre quem espera há mais tempo), o tempo de resposta da equipe e a nota que a
  * IA deu aos atendimentos. As chaves em "counts" fazem o realtime atualizar os números.
  */
 function Today({ onOpenCalling }: { onOpenCalling: () => void }) {
@@ -111,7 +111,7 @@ function Today({ onOpenCalling }: { onOpenCalling: () => void }) {
   const data = today.data;
   const waiting = counts.data ? counts.data.awaitingAgent - counts.data.awaitingQuiet : 0;
   const whole = (amount: number | undefined) => (amount === undefined ? undefined : count(amount));
-  const share = data && data.resolved > 0 ? Math.round((data.resolvedWithoutTeam / data.resolved) * 100) : null;
+  const share = data && data.opened > 0 ? Math.round((data.withoutTeam / data.opened) * 100) : null;
 
   return (
     <section aria-labelledby="inbox-hoje" className="mb-[30px]">
@@ -131,8 +131,8 @@ function Today({ onOpenCalling }: { onOpenCalling: () => void }) {
           </Tile>
         </div>
         <div className={TILE}>
-          <Tile label="Resolvidas sem a equipe" value={whole(data?.resolvedWithoutTeam)} tone="text-success">
-            {share === null ? "só com a IA e as automações" : `${share}% das resolvidas, só com a IA e as automações`}
+          <Tile label="Sem a equipe" value={whole(data?.withoutTeam)} tone="text-success">
+            {share === null ? "só com a IA e as automações" : `${share}% das conversas, só com a IA e as automações`}
           </Tile>
         </div>
         <button
@@ -141,7 +141,7 @@ function Today({ onOpenCalling }: { onOpenCalling: () => void }) {
           disabled={waiting === 0}
           className={cn(TILE, "disabled:cursor-default", waiting > 0 && "border-tomate-line bg-tomate-lt hover:border-tomate")}
         >
-          <Tile label="Chamaram a equipe" value={whole(data?.calledTeam)}>
+          <Tile label="Com a equipe" value={whole(data?.withTeam)}>
             {waiting > 0 ? (
               <span className="font-medium text-tomate">
                 {waiting === 1 ? "1 esperando agora" : `${count(waiting)} esperando agora`}

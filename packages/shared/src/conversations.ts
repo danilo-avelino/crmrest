@@ -219,16 +219,16 @@ export type ConversationCounts = Record<ConversationStatus, number> & {
 };
 /**
  * Conversas do dia (desde a meia-noite de Brasília), no início da Inbox. `opened` = conversas em que o cliente escreveu
- * hoje; `resolved` = quantas delas estão resolvidas; `resolvedWithoutTeam` = resolvidas sem a equipe: ninguém respondeu
- * (nem pelo celular) e o atendimento não foi passado para a equipe. `calledTeam` = conversas passadas para a equipe hoje;
- * `averageResponseSeconds` = da passagem à primeira resposta de uma pessoa (como na aba Avaliações); `evaluations` e
+ * hoje; `resolved` = quantas delas estão resolvidas. Cada conversa de `opened` cai em `withTeam` ou em `withoutTeam`:
+ * com a equipe = hoje uma pessoa respondeu (pelo painel ou pelo celular), a conversa foi passada para a equipe ou ficou
+ * esperando a equipe; sem a equipe = só a IA e as automações. `averageResponseSeconds` = da passagem à primeira resposta de uma pessoa (como na aba Avaliações); `evaluations` e
  * `aiScore` = avaliações do atendimento feitas pela IA hoje e a nota média delas (em porcentagem, 1 a 100).
  */
 export type ConversationDayStats = {
   opened: number;
   resolved: number;
-  resolvedWithoutTeam: number;
-  calledTeam: number;
+  withTeam: number;
+  withoutTeam: number;
   averageResponseSeconds: number | null;
   evaluations: number;
   aiScore: number | null;
