@@ -108,11 +108,11 @@ describe("API de Clientes", () => {
     });
     await order(a.id, joao.id, ifoodA.id, "441089", "45.80", daysAgo(10));
 
-    // Restaurante B (o usuário é admin): possíveis duplicados
+    // Restaurante B (o usuário é admin): possíveis duplicados (nome longo: o nome sozinho faz par)
     carlos = await admin.contact.create({
       data: {
         tenantId: b.id,
-        name: "Carlos Mendes",
+        name: "Carlos Eduardo Mendes Lima",
         phone: "+5511900000001",
         cpfEncrypted: encrypt("12345678909", key),
         cpfHash: blindIndex("12345678909", key),
@@ -136,7 +136,7 @@ describe("API de Clientes", () => {
     carlosIg = await admin.contact.create({
       data: {
         tenantId: b.id,
-        name: "carlos  mendes",
+        name: "carlos  eduardo mendes  lima",
         tags: ["sem glúten"],
         firstSeenAt: daysAgo(20),
         identities: { create: { tenantId: b.id, channelType: "INSTAGRAM", externalId: "ig-carlos" } },
@@ -144,7 +144,7 @@ describe("API de Clientes", () => {
     });
     await admin.conversation.create({ data: { tenantId: b.id, contactId: carlosIg.id, channelId: igB.id, status: "OPEN" } });
     carlosOutro = await admin.contact.create({
-      data: { tenantId: b.id, name: "Carlos Mendes", phone: "+5511900000002", firstSeenAt: daysAgo(10) },
+      data: { tenantId: b.id, name: "Carlos Eduardo Mendes Lima", phone: "+5511900000002", firstSeenAt: daysAgo(10) },
     });
     beatriz = await admin.contact.create({
       data: {
@@ -338,7 +338,7 @@ describe("API de Clientes", () => {
     expect(await admin.contact.findUnique({ where: { id: carlosIg.id } })).toBeNull();
     const detail = await get(`/contacts/${carlos.id}`, adminToken).expect(200);
     // "sem glúten" (do outro cadastro) não é do sistema; Carlos fez o primeiro pedido há 5 dias.
-    expect(detail.body).toMatchObject({ name: "Carlos Mendes", tags: ["Novo"], conversationsCount: 2 });
+    expect(detail.body).toMatchObject({ name: "Carlos Eduardo Mendes Lima", tags: ["Novo"], conversationsCount: 2 });
     expect(detail.body.identities.map((i: { channelType: string }) => i.channelType).sort()).toEqual(["INSTAGRAM", "WHATSAPP"]);
     expect(await admin.auditLog.findFirst({ where: { entityId: carlos.id, action: "contact.merged" } })).toMatchObject({ userId: fx.user.id });
 
@@ -349,7 +349,7 @@ describe("API de Clientes", () => {
   it("exporta os dados do cliente para o titular, com auditoria", async () => {
     await get(`/contacts/${maria.id}/export`).expect(403);
     const { body } = await get(`/contacts/${carlos.id}/export`, adminToken).expect(200);
-    expect(body.cadastro).toMatchObject({ nome: "Carlos Mendes", telefone: "+5511900000001", cpf: "12345678909" });
+    expect(body.cadastro).toMatchObject({ nome: "Carlos Eduardo Mendes Lima", telefone: "+5511900000001", cpf: "12345678909" });
     expect(body.canais).toHaveLength(2);
     expect(body.pedidos).toEqual([expect.objectContaining({ displayCode: "900001", enderecoDeEntrega: { street: "Rua das Acácias", number: "847" } })]);
     const messages = body.conversas.flatMap((c: { mensagens: { conteudo: { text?: string } }[] }) => c.mensagens);

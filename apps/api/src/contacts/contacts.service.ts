@@ -36,7 +36,7 @@ import { customerHistory, linkedOrdersWhere } from "../orders/customer-history.j
 import { customerCancellations } from "../orders/fraud-alert.js";
 import { RealtimeEmitter } from "../realtime/realtime.emitter.js";
 import { isTenantAdmin } from "../settings/tenant-admin.js";
-import { duplicateAddressKey, findDuplicatePairs } from "./contact-duplicates.js";
+import { findDuplicatePairs, sameDeliveryAddress } from "./contact-duplicates.js";
 import { mergeContacts } from "./contact-merge.js";
 import { contactSearch } from "./contact-search.js";
 import { refreshContactTags } from "./contact-tags.service.js";
@@ -324,7 +324,6 @@ export class ContactsService {
       const byId = new Map(contacts.map((contact) => [contact.id, contact]));
       // Um cadastro pode estar em mais de um par: o endereço que bate depende do outro lado.
       const side = (contact: (typeof contacts)[number], other: (typeof contacts)[number]): DuplicateSide => {
-        const otherKeys = new Set(other.addresses.map(duplicateAddressKey).filter(Boolean));
         return {
           id: contact.id,
           name: contact.name,
@@ -341,7 +340,7 @@ export class ContactsService {
             ]
               .filter(Boolean)
               .join(" · "),
-            matches: otherKeys.has(duplicateAddressKey(address)),
+            matches: other.addresses.some((otherAddress) => sameDeliveryAddress(address, otherAddress)),
           })),
           // Mesma chave que a união usa para não repetir endereços.
           addressKeys: contact.addresses.map((address) => `${address.street}|${address.number ?? ""}`),

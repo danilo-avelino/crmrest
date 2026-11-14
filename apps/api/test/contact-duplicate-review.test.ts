@@ -4,7 +4,7 @@ import type { Queue } from "bullmq";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { ContactDuplicateReviewService } from "../src/contacts/contact-duplicate-review.service.js";
-import { findDuplicatePairs } from "../src/contacts/contact-duplicates.js";
+import { findDuplicatePairs, isLongName, sameDeliveryAddress } from "../src/contacts/contact-duplicates.js";
 import { DatabaseService } from "../src/core/database.service.js";
 import { QUEUES } from "../src/queues/queues.module.js";
 import { accessTokenFor, admin, createChannelFixture, createTestApp, startMockGraph } from "./helpers.js";
@@ -13,7 +13,32 @@ type Side = { nome: string | null };
 type JevBody = { state: { cadastro_1: Side; cadastro_2: Side; mesmo_telefone: string; motivos: string[] } };
 
 /** O que o Jev falso responde, pelo nome de um dos cadastros. Outro nome (de outro restaurante do banco): HTTP 500. */
-const CHANCE: Record<string, number> = { "Joana Prado": 0.95, "Pedro Lima": 0.1, "Rafael Costa": 0.6, "Lucas Dias": 0.95 };
+const CHANCE: Record<string, number> = {
+  "Joana Prado": 0.95,
+  "Pedro Lima": 0.1,
+  "Rafael Costa": 0.6,
+  "Lucas Dias": 0.95,
+  "Gislanny Mikaelly Da Silva Santos": 0.95,
+  "João Pedro Caldas": 0.92,
+};
+
+describe("o que conta como igual nos duplicados", () => {
+  const place = { city: "Teresina" };
+  it("o mesmo endereço escrito de outro jeito bate; vizinhos e casa com apartamento, não", () => {
+    const abdias = { ...place, street: "Av. Abdias Neves", number: "2260", complement: "Bloco Buenos Aires 302" };
+    expect(sameDeliveryAddress(abdias, { ...place, street: "Avenida Abdias Neves", number: "2260", complement: "Solaris Master Bloco Buenos Aires Apt 302" })).toBe(true);
+    expect(sameDeliveryAddress(abdias, { ...abdias, complement: "Bloco Buenos Aires 303" })).toBe(false);
+    expect(sameDeliveryAddress(abdias, { ...abdias, complement: null })).toBe(false);
+    expect(sameDeliveryAddress({ ...abdias, complement: null }, { ...abdias, street: "Abdias Neves", complement: "" })).toBe(true);
+    expect(sameDeliveryAddress({ ...abdias, number: null }, { ...abdias, number: null })).toBe(false);
+  });
+
+  it("nome longo é o de quatro nomes ou mais, sem contar da, de, do", () => {
+    expect(isLongName("Gislanny Mikaelly Da Silva Santos")).toBe(true);
+    expect(isLongName("Maria da Silva Santos")).toBe(false);
+    expect(isLongName("Felipe Pereira")).toBe(false);
+  });
+});
 
 describe("possíveis duplicados revisados pelo Jev", () => {
   let app: INestApplication;
@@ -61,9 +86,15 @@ describe("possíveis duplicados revisados pelo Jev", () => {
     // Só o endereço, e o Jev na dúvida: vai para o admin.
     await contact("rafael", { name: "Rafael Costa", firstSeenAt: old }, { street: "Rua Harmonia", number: "88", complement: "apto 12" });
     await contact("rafa", { name: "Rafa" }, { street: "rua harmonia ", number: "88", complement: "Apto. 12" });
-    // Só o nome: mesmo com certeza do Jev, não é unido sem o admin.
+    // Só o nome, e curto: nem chega a ser par.
     await contact("lucas", { name: "Lucas Dias", firstSeenAt: old });
     await contact("lucas2", { name: "Lucas Dias" });
+    // Só o nome, mas longo: o Jev une sozinho.
+    await contact("gislanny", { name: "Gislanny Mikaelly Da Silva Santos", firstSeenAt: old });
+    await contact("gislanny2", { name: "Gislanny Mikaelly da Silva Santos", phone: "+5586999907470" });
+    // Mesmo nome e o mesmo endereço escrito de outro jeito: o Jev une sozinho.
+    await contact("joao", { name: "João Pedro Caldas", firstSeenAt: old }, { street: "Av. Abdias Neves", number: "2260", complement: "Bloco Buenos Aires 302" });
+    await contact("joao2", { name: "João Pedro Caldas" }, { street: "Avenida Abdias Neves", number: "2260", complement: "Solaris Master Bloco Buenos Aires Apt 302" });
     // Vizinhos (mesmo prédio, apartamentos diferentes): nem chegam a ser par.
     await contact("vizinho1", { name: "Bruno Alves" }, { street: "Rua Fradique Coutinho", number: "300", complement: "apto 21" });
     await contact("vizinho2", { name: "Carla Mendes" }, { street: "Rua Fradique Coutinho", number: "300", complement: "apto 22" });
@@ -75,24 +106,28 @@ describe("possíveis duplicados revisados pelo Jev", () => {
     await jev?.close();
   });
 
-  it("antes da revisão do Jev, nada chega ao admin; vizinhos do mesmo prédio nem são par", async () => {
+  it("antes da revisão do Jev, nada chega ao admin; vizinhos do mesmo prédio e nome curto nem são par", async () => {
     expect(await queue()).toEqual([]);
     const pairs = await unreviewed();
-    expect(pairs).toHaveLength(4);
+    expect(pairs).toHaveLength(5);
     expect(pairs.some((pair) => [pair.a, pair.b].includes(ids.vizinho1!))).toBe(false);
+    expect(pairs.some((pair) => [pair.a, pair.b].includes(ids.lucas!))).toBe(false);
+    expect(pairs.find((pair) => [pair.a, pair.b].includes(ids.joao!))?.reasons).toEqual(["address", "name"]);
   });
 
-  it("o Jev une os de mesmo telefone em que tem certeza, descarta os diferentes e manda o resto ao admin", async () => {
+  it("o Jev une os de motivo forte em que tem certeza, descarta os diferentes e manda o resto ao admin", async () => {
     await service.enqueue(fx.tenant.id);
     await vi.waitFor(
       async () => {
         expect(await admin.contact.findUnique({ where: { id: ids.joanaIfood! } })).toBeNull();
-        expect(await admin.contactDuplicateReview.count({ where: { tenantId: fx.tenant.id } })).toBe(3);
+        // Três pares unidos (a revisão sai junto com o cadastro unido) e dois que ficam: o descartado e o do admin.
+        expect(await admin.contact.count({ where: { id: { in: [ids.gislanny2!, ids.joao2!] } } })).toBe(0);
+        expect(await admin.contactDuplicateReview.count({ where: { tenantId: fx.tenant.id } })).toBe(2);
       },
       { timeout: 15_000, interval: 200 },
     );
 
-    expect(jev.requests).toHaveLength(4);
+    expect(jev.requests).toHaveLength(5);
     // Vão os nomes e se o telefone é o mesmo, nunca o número.
     const sent = jev.requests.map((req) => (req.body as JevBody).state).find((state) => state.cadastro_1.nome?.startsWith("Joana"))!;
     expect(sent).toMatchObject({ mesmo_telefone: "sim", motivos: ["mesmo telefone"] });
@@ -104,15 +139,12 @@ describe("possíveis duplicados revisados pelo Jev", () => {
       data: { mergedContactId: ids.joanaIfood, by: "jev", sameChance: 0.95 },
     });
     expect(await admin.contact.findUnique({ where: { id: ids.marta! } })).not.toBeNull(); // descartado, não unido
-    expect(await admin.aiUsage.count({ where: { tenantId: fx.tenant.id, provider: "JEV" } })).toBe(4);
+    expect(await admin.contact.findUnique({ where: { id: ids.gislanny2! } })).toBeNull();
+    expect(await admin.contact.findUnique({ where: { id: ids.joao2! } })).toBeNull();
+    expect(await admin.aiUsage.count({ where: { tenantId: fx.tenant.id, provider: "JEV" } })).toBe(5);
 
-    expect(await queue()).toEqual(
-      expect.arrayContaining([
-        ["Rafael Costa", "Rafa", ["address"]],
-        ["Lucas Dias", "Lucas Dias", ["name"]],
-      ]),
-    );
-    expect(await queue()).toHaveLength(2);
+    // Só o endereço, mesmo com o Jev em dúvida: vai ao admin.
+    expect(await queue()).toEqual([["Rafael Costa", "Rafa", ["address"]]]);
     expect(await unreviewed()).toEqual([]);
 
     // A tela recebe a chance do Jev e o endereço que bateu, com o complemento.

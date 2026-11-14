@@ -7,14 +7,23 @@ import { DatabaseService } from "../core/database.service.js";
 import { JevClient, type JevQuestion } from "../defense/jev.client.js";
 import { type DuplicateReviewJob, QUEUES } from "../queues/queues.module.js";
 import { RealtimeEmitter } from "../realtime/realtime.emitter.js";
-import { findDuplicatePairs } from "./contact-duplicates.js";
+import { findDuplicatePairs, isLongName } from "./contact-duplicates.js";
 import { mergeContacts } from "./contact-merge.js";
 import { refreshContactTags } from "./contact-tags.service.js";
 
-/** Chance a partir da qual o Jev une sozinho um par com o mesmo telefone ou o mesmo CPF. */
+/** Chance a partir da qual o Jev une sozinho um par com motivo forte (canMerge). */
 export const SAME_PERSON_FROM = 0.9;
-/** Só estes motivos deixam o Jev unir sem o admin: são dados do próprio cliente, não da casa ou do prédio. */
+/** Estes motivos deixam o Jev unir sem o admin: são dados do próprio cliente, não da casa ou do prédio. */
 const STRONG_REASONS: DuplicateReason[] = ["phone", "cpf"];
+
+/**
+ * Se o Jev pode unir o par sem o admin: mesmo telefone ou CPF; o mesmo nome completo junto de outro dado (endereço,
+ * e-mail); ou o mesmo nome longo. Só o endereço ou só o e-mail, não: a família divide.
+ */
+function canMerge(reasons: DuplicateReason[], name: string | null): boolean {
+  if (reasons.some((reason) => STRONG_REASONS.includes(reason))) return true;
+  return reasons.includes("name") && (reasons.length > 1 || isLongName(name));
+}
 /** Abaixo das respostas aos clientes na fila ai (jobs sem prioridade passam na frente). */
 const PRIORITY = 10;
 
@@ -23,20 +32,20 @@ const REASON_TEXT: Record<DuplicateReason, string> = {
   cpf: "mesmo CPF",
   email: "mesmo e-mail",
   name: "mesmo nome completo",
-  address: "mesmo endereço de entrega (rua, número, complemento e cidade)",
+  address: "mesmo endereço de entrega (rua, número, complemento e cidade, mesmo escritos de outro jeito)",
 };
 
 const SAME_PERSON: Record<"same", JevQuestion> = {
   same: {
     type: "noul",
     instructions:
-      "Os dois cadastros são da mesma pessoa? Nomes diferentes que não sejam apelido, abreviação, nome incompleto ou o mesmo nome escrito de outro jeito indicam pessoas diferentes. Pessoas da mesma casa dividem o endereço, e parentes às vezes dividem o telefone ou o e-mail. Um cadastro sem nome não prova nada sozinho.",
+      "Os dois cadastros são da mesma pessoa? Nomes diferentes que não sejam apelido, abreviação, nome incompleto ou o mesmo nome escrito de outro jeito indicam pessoas diferentes. Pessoas da mesma casa dividem o endereço, e parentes às vezes dividem o telefone ou o e-mail. Um cadastro sem nome não prova nada sozinho. O mesmo nome completo longo (quatro nomes ou mais, sem contar da, de, do) nos dois cadastros é quase certeza de ser a mesma pessoa, a não ser que seja um nome muito comum. O mesmo nome completo com o mesmo endereço também, mesmo que o endereço esteja escrito de outro jeito (Av. ou Avenida, o nome do condomínio a mais).",
   },
 };
 
 /**
  * O Jev revisa os possíveis duplicados antes de o admin vê-los: os que ele diz serem pessoas diferentes saem da fila;
- * os com o mesmo telefone ou CPF em que ele tem certeza são unidos sem o admin; o resto vai para a fila. Todo dia às 8h
+ * os de motivo forte (canMerge) em que ele tem certeza são unidos sem o admin; o resto vai para a fila. Todo dia às 8h
  * a varredura põe na fila ai um job por par ainda não revisado. Sem JEV_API_KEY, nada roda e a fila mostra todos os pares.
  * Vão ao Jev os nomes, os canais e os endereços; telefone, CPF e e-mail não vão, só se são iguais.
  */
@@ -138,7 +147,7 @@ export class ContactDuplicateReviewService implements OnModuleInit {
     if (answers.same.type !== "noul") throw new Error("O Jev recusou revisar o possível duplicado.");
     const sameChance = answers.same.noul;
 
-    const merge = sameChance >= SAME_PERSON_FROM && reasons.some((reason) => STRONG_REASONS.includes(reason));
+    const merge = sameChance >= SAME_PERSON_FROM && canMerge(reasons, a.name);
     const changed = await this.db.withTenants(scope, async (tx) => {
       const data = { reasons, sameChance, model };
       await tx.contactDuplicateReview.upsert({
