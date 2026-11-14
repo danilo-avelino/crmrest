@@ -1,6 +1,6 @@
 # Pendências para produção — Dish Desk
 
-Atualizado em 12 de novembro de 2026.
+Atualizado em 13 de novembro de 2026.
 
 Esta é a lista do que falta para o Dish Desk atender restaurantes de verdade. Quando um item for concluído, marque `[x]` e troque a data acima.
 
@@ -147,6 +147,7 @@ Pagamento pendente (Claude, 11/10): a renovação do mensal tem 1 dia de folga; 
 
 - [ ] Versões mobile e tablet das telas.
 - [ ] Envio de mídia pelo atendente.
+- [ ] **Foto do chat do iFood na Inbox.** Hoje a foto que o cliente manda no chat do iFood entra só como o aviso "📷 Foto enviada no chat do iFood (abra o pedido no iFood para ver)" ([ifood-chat-dom.ts](../apps/web/lib/ifood-chat-dom.ts)). Primeiro, ver o endereço da imagem no widget (botão direito na foto → "Copiar endereço da imagem"): se for um link https que abre sem login, o painel manda o link e a API busca a foto ao abrir a conversa, como no WhatsApp; se for `blob:` ou exigir login, a extensão tem de ler a imagem e mandar o arquivo, o que depende do armazenamento de mídia (ainda sem decisão) e de uma versão nova da extensão — você e Claude, levantado em 13/11.
 - [ ] Integração com o Anota AI (depende do token de parceiro e da documentação).
 - [ ] Cardápio Web por OAuth, no lugar da chave por loja.
 - [ ] Domínio `api.dishdesk.com.br` (depende do plano pago da Railway).

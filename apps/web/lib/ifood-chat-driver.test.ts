@@ -149,16 +149,30 @@ describe("motor do chat do iFood", () => {
     expect(calls.synced.map((sync) => sync.orderCode)).toEqual(["2222", "2222"]);
   });
 
-  it("sem saber o lado dos balões (extensão antiga, balão centralizado), não copia a conversa", async () => {
-    for (const widget of [
-      fakeWidget([order([{ side: "customer", text: "Olá", time: "10:00:00" }])], { geometry: false }),
-      fakeWidget([order([{ side: "center", text: "Olá", time: "10:00:00" }])]),
-    ]) {
-      const { api, calls } = fakeApi();
-      await steps(new IfoodChatDriver(widget.bridge, api, instant), 4);
-      expect(calls.synced).toEqual([]);
-      expect(widget.state.drawer).toBeNull();
-    }
+  it("sem as posições dos balões (extensão antiga), não copia a conversa", async () => {
+    const widget = fakeWidget([order([{ side: "customer", text: "Olá", time: "10:00:00" }])], { geometry: false });
+    const { api, calls } = fakeApi();
+    await steps(new IfoodChatDriver(widget.bridge, api, instant), 4);
+    expect(calls.synced).toEqual([]);
+    expect(widget.state.drawer).toBeNull();
+  });
+
+  it("balão centralizado fica fora da cópia, e foto entra como aviso: o resto da conversa é copiado", async () => {
+    const widget = fakeWidget([
+      order([
+        { side: "center", text: "Pedido concluído", time: "21:18:00" },
+        { side: "customer", text: '<img src="foto.jpg">', time: "21:25:00" },
+        { side: "customer", text: "Faltou um item", time: "21:25:30" },
+        { side: "store", text: "Você deseja receber o item faltante?", time: "21:28:00" },
+      ]),
+    ]);
+    const { api, calls } = fakeApi();
+    await steps(new IfoodChatDriver(widget.bridge, api, instant), 3);
+    expect(calls.synced[0]!.messages).toEqual([
+      { direction: "INBOUND", text: "📷 Foto enviada no chat do iFood (abra o pedido no iFood para ver)", time: "21:25:00" },
+      { direction: "INBOUND", text: "Faltou um item", time: "21:25:30" },
+      { direction: "OUTBOUND", text: "Você deseja receber o item faltante?", time: "21:28:00" },
+    ]);
   });
 
   it("resposta da Inbox: digita na conversa do pedido, confirma que apareceu e avisa a API", async () => {

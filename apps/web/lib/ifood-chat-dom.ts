@@ -16,8 +16,11 @@ const CLOCK = /^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/;
 const FIELD = 'textarea, input:not([type="hidden"]), [contenteditable="true"]';
 /** Diferença mínima entre as margens do balão para dizer de que lado ele está. */
 const SIDE_GAP_PX = 6;
+/** Foto no balão: a Inbox não recebe o arquivo, só o aviso de que ela chegou. */
+const MEDIA = "img, video";
+const PHOTO = "📷 Foto enviada no chat do iFood (abra o pedido no iFood para ver)";
 
-/** Mensagem da conversa aberta. `direction` null = o balão não mostra de que lado está (sem posições, ou centralizado). */
+/** Mensagem da conversa aberta. `direction` null = o balão não mostra de que lado está (o painel não recebeu as posições). */
 export type WidgetBubble = { direction: IfoodChatSync["messages"][number]["direction"] | null; text: string; time: string };
 
 /** Conversa na lista da aba Chat. `index` é a posição entre os CHAT_ITEM, para o clique. */
@@ -96,24 +99,38 @@ function readDrawer(region: Element): WidgetDrawer | null {
   };
 }
 
-/** Cada mensagem é um balão com o texto e a hora. O lado do balão diz quem enviou: à direita, a loja; à esquerda, o cliente. */
+/**
+ * Cada mensagem é um balão com o texto e a hora. O lado do balão diz quem enviou: à direita, a loja; à esquerda, o cliente.
+ * Balão centralizado (aviso do iFood) não é de nenhum dos dois e fica de fora; sem as posições (extensão antiga), o
+ * lado fica null e a conversa não é copiada.
+ */
 function readBubbles(region: Element): WidgetBubble[] {
   const frame = rect(region);
+  const clocks = [...region.querySelectorAll("span")].filter((span) => CLOCK.test(text(span)));
   const bubbles: WidgetBubble[] = [];
-  for (const clock of [...region.querySelectorAll("span")].filter((span) => CLOCK.test(text(span)))) {
-    // O balão é o menor elemento que tem a hora e mais algum texto.
-    let bubble = clock.parentElement;
-    while (bubble && bubble !== region && text(bubble) === text(clock)) bubble = bubble.parentElement;
+  for (const clock of clocks) {
+    // O balão é o menor elemento que tem a hora e mais algum texto, ou uma foto. Sem nenhum dos dois antes de chegar
+    // à hora de outra mensagem, o balão não tem o que copiar: subir mais pegaria a lista inteira, que fica no meio e
+    // impedia a cópia da conversa toda (#3888, 13/11).
+    let bubble: Element | null = clock.parentElement;
+    while (bubble && bubble !== region && text(bubble) === text(clock) && !bubble.querySelector(MEDIA)) {
+      const parent: Element | null = bubble.parentElement;
+      bubble = parent && clocks.some((other) => other !== clock && parent.contains(other)) ? null : parent;
+    }
     if (!bubble || bubble === region) continue;
     // A hora fecha o balão; o resto é a mensagem, com as quebras de linha como estão.
     const whole = (bubble.textContent ?? "").trim();
-    const body = whole.endsWith(text(clock)) ? whole.slice(0, -text(clock).length).trim() : whole;
+    const body = (whole.endsWith(text(clock)) ? whole.slice(0, -text(clock).length).trim() : whole) || (bubble.querySelector(MEDIA) ? PHOTO : "");
     const box = rect(bubble);
     if (!body || fromIfood(bubble, body)) continue;
-    const left = frame && box ? box.x - frame.x : 0;
-    const right = frame && box ? frame.x + frame.width - (box.x + box.width) : 0;
-    const direction = Math.abs(left - right) < SIDE_GAP_PX ? null : left > right ? "OUTBOUND" : "INBOUND";
-    bubbles.push({ direction, text: body, time: text(clock) });
+    if (!frame || !box) {
+      bubbles.push({ direction: null, text: body, time: text(clock) });
+      continue;
+    }
+    const left = box.x - frame.x;
+    const right = frame.x + frame.width - (box.x + box.width);
+    if (Math.abs(left - right) < SIDE_GAP_PX) continue;
+    bubbles.push({ direction: left > right ? "OUTBOUND" : "INBOUND", text: body, time: text(clock) });
   }
   return bubbles;
 }
