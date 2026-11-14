@@ -23,8 +23,10 @@ export function IfoodHistoryNote() {
 }
 
 /**
- * Importação do histórico da loja. Cardápio Web: só os cancelamentos, que é o que o alerta de fraude precisa. Neemo: todos
- * os pedidos, que classificam os clientes (pedidos, total gasto, VIP, Recorrente...) e ficam fora da aba Pedidos. Roda em segundo plano, então a tela só acompanha.
+ * Importação do histórico da loja: os pedidos antigos, que classificam os clientes (pedidos, total gasto, VIP, Recorrente...),
+ * trazem o endereço de entrega (no Cardápio Web) e ficam fora da aba Pedidos. Roda em segundo plano, então a tela só
+ * acompanha. Pode rodar de novo depois de pronta: traz o que entrou desde então (e, no Cardápio Web, os pedidos
+ * concluídos de quem importou quando só vinham os cancelamentos).
  */
 export function OrderHistorySection({ tenantId, item, canEdit, queryKey }: { tenantId: string; item: IntegrationDto; canEdit: boolean; queryKey: readonly unknown[] }) {
   const { request } = useAuth();
@@ -61,8 +63,7 @@ export function OrderHistorySection({ tenantId, item, canEdit, queryKey }: { ten
     }
   };
 
-  const cancellations = (value: number) =>
-    `${count(value)} ${neemo ? (value === 1 ? "pedido" : "pedidos") : value === 1 ? "cancelamento" : "cancelamentos"}`;
+  const orders = (value: number) => `${count(value)} ${value === 1 ? "pedido" : "pedidos"}`;
   const period = state?.from ? `, de ${monthYear(state.from)} a ${monthYear(state.to)}` : "";
 
   return (
@@ -70,32 +71,33 @@ export function OrderHistorySection({ tenantId, item, canEdit, queryKey }: { ten
       <div className={TITLE}>Histórico de pedidos</div>
       {!state && (
         <p className="m-0 text-[12px] leading-normal text-ink-2">
-          {neemo
-            ? "Traga os pedidos antigos desta loja para o cadastro de cada cliente: quantos pedidos fez, quanto gastou e as tags VIP, Recorrente e Sumido. Eles também entram no alerta de fraude e não aparecem na aba Pedidos."
-            : "Traga os cancelamentos antigos desta loja para o alerta de fraude considerar o histórico dos clientes."}{" "}
+          Traga os pedidos antigos desta loja para o cadastro de cada cliente: quantos pedidos fez, quanto gastou
+          {neemo ? "" : ", o endereço de entrega"} e as tags VIP, Recorrente e Sumido. Eles também entram no alerta de fraude e não aparecem na aba Pedidos.{" "}
           Importamos até onde {system} guardar.
         </p>
       )}
       {running && (
         <>
           <div className="text-[12px] text-ink-2 tabular-nums">
-            {cancellations(state.imported)} até agora{period}
+            {orders(state.imported)} até agora{period}
           </div>
           <div className="h-1.5 overflow-hidden rounded-[3px] bg-surface-2" role="progressbar" aria-valuenow={state.progress} aria-valuemin={0} aria-valuemax={100} aria-label="Andamento da importação">
             <span className="block h-full bg-ink" style={{ width: `${state.progress}%` }} />
           </div>
-          <p className="m-0 text-[12px] leading-normal text-ink-3">Pode levar alguns minutos. Você pode sair desta tela: a importação continua.</p>
+          <p className="m-0 text-[12px] leading-normal text-ink-3">
+            {neemo ? "Pode levar alguns minutos." : "Pode levar algumas horas: o Cardápio Web entrega um pedido por vez."} Você pode sair desta tela: a importação continua.
+          </p>
         </>
       )}
       {state?.status === "done" && (
         <p className="m-0 flex-1 rounded-md border border-success-line bg-success-lt px-3 py-2 text-[12px] leading-normal text-success-ink">
-          Importado em {fullDate(state.updatedAt)} às {clock(state.updatedAt)}: <strong className="font-semibold">{cancellations(state.imported)}</strong>
+          Importado em {fullDate(state.updatedAt)} às {clock(state.updatedAt)}: <strong className="font-semibold">{orders(state.imported)}</strong>
           {period}.
         </p>
       )}
       {state?.status === "partial" && (
         <p className="m-0 rounded-md border border-dashed border-tag-line bg-warning-lt px-3 py-2 text-[12px] leading-normal text-warning-ink">
-          Importamos <strong className="font-semibold">{cancellations(state.imported)}</strong>
+          Importamos <strong className="font-semibold">{orders(state.imported)}</strong>
           {period}, mas {system} parou de responder antes do fim.
         </p>
       )}
@@ -109,10 +111,10 @@ export function OrderHistorySection({ tenantId, item, canEdit, queryKey }: { ten
           {error}
         </p>
       )}
-      {canEdit && !running && state?.status !== "done" && (
+      {canEdit && !running && (
         <div>
           <Button variant="outline" size="sm" onClick={start}>
-            {!state ? "Importar histórico" : state.status === "partial" ? "Importar o que falta" : "Tentar de novo"}
+            {!state ? "Importar histórico" : state.status === "done" ? "Importar de novo" : state.status === "partial" ? "Importar o que falta" : "Tentar de novo"}
           </Button>
         </div>
       )}

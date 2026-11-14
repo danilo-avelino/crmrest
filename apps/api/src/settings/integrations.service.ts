@@ -435,7 +435,7 @@ export class IntegrationsService {
   }
 
   /** Troca o nome que a integração mostra no painel e na Inbox. */
-  /** "Importar histórico": traz os cancelamentos antigos da loja, em segundo plano. */
+  /** "Importar histórico": traz os pedidos antigos da loja, em segundo plano. Pode rodar de novo: os já importados ficam como estão. */
   async importOrderHistory(auth: RequestAuth, tenantId: string, channelId: string, now = new Date()): Promise<IntegrationDto> {
     requireTenantAdmin(auth, tenantId);
     const saved = await this.db.withTenants({ tenantIds: [tenantId], userId: auth.userId }, async (tx) => {

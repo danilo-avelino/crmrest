@@ -32,7 +32,7 @@ export type AiForwardJob = { tenantId: string };
 export type AdminMessageJob = { tenantId: string; phone: string; text: string };
 /** Uma página da base de clientes do Cardápio Web; `imported` soma o que as páginas anteriores trouxeram. */
 export type CardapioWebImportJob = { tenantId: string; channelId: string; page: number; imported: number };
-/** Uma página dos cancelamentos antigos do Cardápio Web: `window` é o período de 6 meses, contado para trás desde `until`. */
+/** Uma página dos pedidos antigos (concluídos e cancelados) do Cardápio Web: `window` é o período de 6 meses, contado para trás desde `until`. */
 export type CardapioWebHistoryJob = { tenantId: string; channelId: string; until: string; window: number; page: number; imported: number };
 /** Uma página da base de clientes da Neemo (500 por página); `imported` soma o que as páginas anteriores trouxeram. */
 export type NeemoImportJob = { tenantId: string; channelId: string; page: number; imported: number };

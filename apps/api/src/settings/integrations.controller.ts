@@ -120,7 +120,7 @@ export class IntegrationsController {
   }
 
   /** WhatsApp ou Instagram: restaurantes, além deste, cujos pedidos o atendimento da conta também procura. */
-  /** Cardápio Web: importa em segundo plano os cancelamentos antigos da loja, para o alerta de fraude. */
+  /** Cardápio Web e Neemo: importa em segundo plano os pedidos antigos da loja (clientes, endereços, tags e alerta de fraude). */
   @Post(":tenantId/:channelId/order-history")
   @HttpCode(200)
   importOrderHistory(

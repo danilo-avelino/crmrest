@@ -427,7 +427,7 @@ describe("prevenção de fraude", () => {
     expect(await admin.order.findUniqueOrThrow({ where: { id: order.id } })).toMatchObject({ fraudAddressKey: null, cancellationReason: null });
   });
 
-  it("importar histórico: só os cancelados, para quando a API recusa o período e não mexe no último contato", async () => {
+  it("importar histórico: concluídos e cancelados com o endereço, para quando a API recusa o período e não mexe no último contato", async () => {
     // O teste chama cada etapa direto: a fila fica parada, sem o worker rodar a importação junto.
     await app.get<Queue>(getQueueToken(QUEUES.cardapioWeb)).pause();
     const contact = await admin.contact.create({
@@ -437,6 +437,7 @@ describe("prevenção de fraude", () => {
     const historical = (id: number) => cwOrder(id, "11911110005", "Patrícia", { status: "canceled", created_at: old, updated_at: old, cancellation_reason: "Não veio retirar o pedido" });
     cardapioWeb.state.orders["1301"] = historical(1301);
     cardapioWeb.state.orders["1302"] = historical(1302);
+    cardapioWeb.state.orders["1304"] = cwOrder(1304, "11911110005", "Patrícia", { status: "closed", created_at: old, updated_at: old });
 
     const started = await api().post(`/api/integrations/${fx.tenant.id}/${channelId}/order-history`).set(auth()).expect(200);
     expect(started.body.orderHistory).toMatchObject({ status: "running", imported: 0 });
@@ -446,22 +447,28 @@ describe("prevenção de fraude", () => {
       date.setUTCMonth(date.getUTCMonth() - back);
       return date.toISOString().slice(0, 7);
     };
-    // Dois períodos com pedidos; o terceiro a API recusa, como quem só guarda um ano.
-    cardapioWeb.state.history.set(month(6), [{ id: 1301, status: "canceled", sales_channel: "catalog", updated_at: old }]);
+    // Dois períodos com pedidos; o terceiro a API recusa, como quem só guarda um ano. O de hoje fica para o polling.
+    cardapioWeb.state.history.set(month(6), [
+      { id: 1301, status: "canceled", sales_channel: "catalog", created_at: old, updated_at: old },
+      { id: 1304, status: "closed", sales_channel: "catalog", created_at: old, updated_at: old },
+      { id: 1305, status: "closed", sales_channel: "catalog", created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+    ]);
     cardapioWeb.state.history.set(month(12), [{ id: 1302, status: "canceled", sales_channel: "catalog", updated_at: old }]);
 
     const job = { tenantId: fx.tenant.id, channelId, until, imported: 0 };
     await service.importOrderHistory({ ...job, window: 0, page: 1 });
-    await service.importOrderHistory({ ...job, window: 1, page: 1, imported: 1 });
-    await service.importOrderHistory({ ...job, window: 2, page: 1, imported: 2 });
+    await service.importOrderHistory({ ...job, window: 1, page: 1, imported: 2 });
+    await service.importOrderHistory({ ...job, window: 2, page: 1, imported: 3 });
 
-    expect(cardapioWeb.state.historyRequests.every((search) => search.includes("status%5B%5D=canceled"))).toBe(true);
+    expect(cardapioWeb.state.historyRequests.every((search) => search.includes("status%5B%5D=closed&status%5B%5D=canceled"))).toBe(true);
     const channel = await admin.channel.findUniqueOrThrow({ where: { id: channelId } });
-    expect(channel.orderHistoryImport).toMatchObject({ status: "done", progress: 100, imported: 2 });
+    expect(channel.orderHistoryImport).toMatchObject({ status: "done", progress: 100, imported: 3 });
 
-    const imported = await admin.order.findMany({ where: { channelId, externalOrderId: { in: ["1301", "1302"] } } });
-    expect(imported.map((order) => order.contactId)).toEqual([contact.id, contact.id]);
-    expect(imported.every((order) => order.importedAt !== null && order.status === "CANCELED" && order.alertAt === null)).toBe(true);
+    const imported = await admin.order.findMany({ where: { channelId, externalOrderId: { in: ["1301", "1302", "1304", "1305"] } }, orderBy: { externalOrderId: "asc" } });
+    expect(imported.map((order) => [order.externalOrderId, order.status])).toEqual([["1301", "CANCELED"], ["1302", "CANCELED"], ["1304", "DELIVERED"]]);
+    expect(imported.every((order) => order.contactId === contact.id && order.importedAt !== null && order.alertAt === null)).toBe(true);
+    // O endereço de entrega dos pedidos entra no cadastro: a base de clientes da API vem sem ele.
+    expect(await admin.contactAddress.findMany({ where: { contactId: contact.id }, select: { street: true, number: true } })).toEqual([{ street: "Rua das Acácias", number: "120" }]);
     const seen = await admin.contact.findUniqueOrThrow({ where: { id: contact.id } });
     expect(Date.now() - seen.lastSeenAt!.getTime()).toBeLessThan(60_000);
 

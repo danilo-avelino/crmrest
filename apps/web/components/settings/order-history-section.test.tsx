@@ -38,7 +38,7 @@ describe("importação do histórico de pedidos", () => {
 
   it("mostra o que já foi importado e o período percorrido, sem total inventado", () => {
     show(history({}));
-    expect(screen.getByText(/3 cancelamentos até agora, de/)).toBeTruthy();
+    expect(screen.getByText(/3 pedidos até agora, de/)).toBeTruthy();
     expect(screen.queryByText(/%/)).toBeNull();
     expect(screen.getByRole("progressbar").getAttribute("aria-valuenow")).toBe("40");
   });
@@ -55,6 +55,8 @@ describe("importação do histórico de pedidos", () => {
   it("não avisa ao abrir a tela com a importação já concluída, nem quando termina em parte", () => {
     show(history({ status: "done", progress: 100 }));
     expect(toast).not.toHaveBeenCalled();
+    // Pronta, pode rodar de novo: traz o que entrou desde então.
+    expect(screen.getByRole("button", { name: "Importar de novo" })).toBeTruthy();
     cleanup();
     const { update } = show(history({}));
     update(history({ status: "partial" }));

@@ -12,6 +12,7 @@ export const CardapioWebOrderSummary = z.looseObject({
   id: Id,
   status: z.string(),
   sales_channel: z.string().optional(),
+  created_at: z.string().optional(),
   updated_at: z.string(),
 });
 export type CardapioWebOrderSummary = z.infer<typeof CardapioWebOrderSummary>;
@@ -131,9 +132,14 @@ export class CardapioWebClient {
     return CardapioWebCustomersPage.parse(await response.json());
   }
 
-  /** Pedidos cancelados criados no período (uma página, 100 no máximo; a API aceita 5 consultas por minuto). */
-  async canceledHistory(apiKey: string, start: Date, end: Date, page: number): Promise<CardapioWebHistoryPage> {
-    const query = new URLSearchParams({ start_date: start.toISOString(), end_date: end.toISOString(), "status[]": "canceled", page: String(page), per_page: "100" });
+  /**
+   * Pedidos concluídos e cancelados criados no período (uma página, 100 no máximo; a API aceita 5 consultas por minuto).
+   * Vêm sem cliente, endereço nem valores: isso só no detalhe de cada pedido.
+   */
+  async orderHistory(apiKey: string, start: Date, end: Date, page: number): Promise<CardapioWebHistoryPage> {
+    const query = new URLSearchParams({ start_date: start.toISOString(), end_date: end.toISOString(), page: String(page), per_page: "100" });
+    query.append("status[]", "closed");
+    query.append("status[]", "canceled");
     const response = await this.call(apiKey, `/api/partner/v1/orders/history?${query.toString()}`, undefined, () => new CardapioWebPeriodError());
     return CardapioWebHistoryPage.parse(await response.json());
   }

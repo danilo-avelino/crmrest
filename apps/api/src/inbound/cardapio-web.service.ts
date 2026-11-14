@@ -14,6 +14,7 @@ import {
   type CardapioWebOrder,
   CardapioWebPeriodError,
 } from "../connectors/cardapio-web.client.js";
+import { refreshContactTags } from "../contacts/contact-tags.service.js";
 import { ConnectorsService } from "../connectors/connectors.service.js";
 import { DatabaseService } from "../core/database.service.js";
 import { FraudService } from "../orders/fraud.service.js";
@@ -34,8 +35,13 @@ const HISTORY_PAGE_INTERVAL_MS = 12_500;
 const HISTORY_WINDOW_MONTHS = 6;
 /** A documentação diz ora 1 ano, ora 3 anos: tenta até 3 anos e para quando a API recusar o período. */
 const HISTORY_WINDOWS = 6;
-/** Os detalhes de cada pedido contam no limite geral (300 a cada 3 minutos). */
-const ORDER_DETAIL_INTERVAL_MS = 600;
+/**
+ * Os detalhes de cada pedido contam no limite geral (300 a cada 3 minutos), o mesmo do polling: um por segundo usa 180
+ * e deixa folga para os pedidos novos continuarem chegando durante a importação.
+ */
+const ORDER_DETAIL_INTERVAL_MS = 1000;
+/** O histórico deixa de fora as últimas 24 h, que o polling já lê. */
+const HISTORY_RECENT_MS = 24 * 60 * 60 * 1000;
 
 /**
  * Pedidos do Cardápio Web (cardápio digital do restaurante). Eles trazem o telefone, então entram no cadastro
@@ -125,9 +131,11 @@ export class CardapioWebService implements OnModuleInit {
   }
 
   /**
-   * Importa uma página dos cancelamentos antigos da loja, para o alerta de fraude considerar o histórico, e agenda a
-   * próxima. Só os cancelados: os relatórios e as tags não contam cancelados, então o passado da loja não muda os
-   * números de hoje. Cada pedido exige uma consulta (a lista vem sem cliente, motivo nem endereço), daí o ritmo lento.
+   * Importa uma página do histórico da loja (pedidos concluídos e cancelados) e agenda a próxima. Os pedidos entram no
+   * cadastro de cada cliente, marcados como importados: contam nos pedidos e no total gasto do cliente, nas tags (VIP,
+   * Recorrente, Sumido...) e no alerta de fraude, mas ficam fora da aba Pedidos; o endereço de entrega entra no cadastro
+   * (a base de clientes da API vem sem endereço). Cada pedido exige uma consulta (a lista vem sem cliente, endereço nem
+   * valores), daí o ritmo lento. Ao terminar, as tags são recalculadas.
    */
   async importOrderHistory(data: CardapioWebHistoryJob): Promise<void> {
     if (!this.client.configured) return;
@@ -142,6 +150,11 @@ export class CardapioWebService implements OnModuleInit {
         const state = { ...(orderHistoryImport as OrderHistoryImport), ...patch, imported: patch.imported ?? data.imported, updatedAt: new Date().toISOString() };
         await tx.channel.update({ where: { id: data.channelId }, data: { orderHistoryImport: state } });
       });
+    // O fim (também o parcial) recalcula as tags com os pedidos que entraram.
+    const finish = async (patch: Partial<OrderHistoryImport>) => {
+      await save(patch);
+      if (patch.imported) await this.db.withTenants(scope, (tx) => refreshContactTags(tx));
+    };
     const failed = () => save({ status: data.imported > 0 || data.window > 0 ? "partial" : "error" });
     if (!channel.row) return failed(); // desconectada no meio da importação
 
@@ -152,7 +165,9 @@ export class CardapioWebService implements OnModuleInit {
     const resolved: ResolvedChannel = { id: data.channelId, tenantId: data.tenantId, type: "CARDAPIO_WEB" };
     let imported = data.imported;
     try {
-      const { orders, pagination } = await this.client.canceledHistory(apiKey, start, end, data.page);
+      const { orders: page, pagination } = await this.client.orderHistory(apiKey, start, end, data.page);
+      const recent = until.getTime() - HISTORY_RECENT_MS;
+      const orders = page.filter((order) => !order.created_at || Date.parse(order.created_at) < recent);
       const known = new Set(
         (
           await this.db.withTenants(scope, (tx) =>
@@ -168,15 +183,15 @@ export class CardapioWebService implements OnModuleInit {
       const lastPage = data.page >= pagination.total_pages;
       const lastWindow = data.window + 1 >= HISTORY_WINDOWS;
       const done = (data.window + (lastPage ? 1 : data.page / pagination.total_pages)) / HISTORY_WINDOWS;
-      if (lastPage && lastWindow) return await save({ status: "done", progress: 100, imported, from: start.toISOString() });
+      if (lastPage && lastWindow) return await finish({ status: "done", progress: 100, imported, from: start.toISOString() });
       await save({ progress: Math.round(done * 100), imported, from: start.toISOString() });
       const next: CardapioWebHistoryJob = { ...data, imported, ...(lastPage ? { window: data.window + 1, page: 1 } : { page: data.page + 1 }) };
       await this.queue.add("import-orders", next, { delay: HISTORY_PAGE_INTERVAL_MS });
     } catch (error) {
       // Passou do que a API guarda: terminou. Na primeira consulta, é erro de verdade.
-      if (error instanceof CardapioWebPeriodError && data.window > 0) return await save({ status: "done", progress: 100, imported });
+      if (error instanceof CardapioWebPeriodError && data.window > 0) return await finish({ status: "done", progress: 100, imported });
       this.logger.warn({ tenantId: data.tenantId, channelId: data.channelId, err: error }, "Histórico de pedidos do Cardápio Web não importado");
-      await save({ status: imported > 0 || data.window > 0 ? "partial" : "error", imported });
+      await finish({ status: imported > 0 || data.window > 0 ? "partial" : "error", imported });
     }
   }
 
