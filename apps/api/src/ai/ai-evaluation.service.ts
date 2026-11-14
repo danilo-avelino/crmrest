@@ -28,11 +28,15 @@ const READING_GUIDE =
  */
 const SCORE_LEVELS = [
   "Atendimento rude ou grosseiro: o restaurante ofendeu, debochou ou tratou o cliente com desrespeito.",
-  "Cliente mal atendido: ficou sem resposta, recebeu informação errada ou foi tratado com descaso.",
-  "Atendimento educado, mas o restaurante não resolveu nem encaminhou o que o cliente pediu.",
-  "Atendimento educado que resolveu, mas com alguma falha: demora para responder ou resposta incompleta.",
-  "Tudo resolvido com um bom atendimento: educado, correto e sem demora.",
+  "Cliente mal atendido: o restaurante ignorou o que ele pediu, passou informação errada ou tratou com descaso.",
+  "Atendimento educado, mas uma solicitação do cliente ficou sem resposta e sem providência.",
+  "Atendeu o que o cliente pediu, mas com uma falha clara: ele esperou mais de 10 minutos por uma resposta, teve de cobrar ou de repetir a pergunta, ou a resposta veio incompleta.",
+  "Bom atendimento: educado e atendeu o que o cliente pediu, ou a conversa não tinha pedido (só cumprimento, agradecimento ou aviso).",
 ];
+
+/** O que conta como solicitação do cliente atendida (a pergunta de "não resolvido" e a nota usam o mesmo critério). */
+const REQUEST_RULES =
+  'Solicitação é uma pergunta, um pedido, uma reclamação ou um recado do cliente. Cumprimento ("bom dia"), agradecimento, confirmação ("ok", "sim") e mensagem sem pedido não são solicitação. Conta como atendida quando o restaurante respondeu ou tomou uma providência: informar a situação do pedido, confirmar um recado ("ok", "certo", "avisamos"), pedir um dado para verificar ou dizer o que vai fazer. Resposta curta e direta é normal em restaurante e conta como atendimento. O problema da cozinha ou da entrega (atraso, item errado) não deixa a solicitação sem atendimento se o restaurante respondeu e encaminhou.';
 
 /** A posição na escala (0 até o último nível) em porcentagem, de 1 a 100. */
 export function scorePercent(position: number): number {
@@ -68,11 +72,11 @@ const SUBJECT_CRITERIA: Record<ContactSubject, string> = {
 
 /** `nada` e `nenhuma` não são gravados: a avaliação fica sem problema e sem falha. */
 const ISSUE_CRITERIA: Record<ServiceIssue | "nada", string> = {
-  demora: "O cliente esperou muito por uma resposta.",
+  demora: "O cliente esperou mais de 10 minutos pela resposta a uma solicitação, ou teve de cobrar a resposta. Demora para responder a um cumprimento não conta.",
   informacao_errada: "O restaurante passou uma informação errada ou contraditória.",
-  sem_solucao: "O cliente ficou sem resposta ou sem solução para o que pediu.",
-  tom: "Resposta grosseira, fria ou impaciente.",
-  nada: "Nada deu errado na conversa.",
+  sem_solucao: "Uma solicitação do cliente ficou sem resposta e sem providência.",
+  tom: "Resposta grosseira, irônica ou impaciente. Resposta curta e direta não conta.",
+  nada: "Nada deu errado no atendimento (atraso ou erro da cozinha e da entrega não contam aqui).",
 };
 
 const FAULT_CRITERIA: Record<ServiceFault | "nenhuma", string> = {
@@ -83,12 +87,15 @@ const FAULT_CRITERIA: Record<ServiceFault | "nenhuma", string> = {
 
 /** As perguntas da avaliação ao Jev. */
 export const EVALUATION_QUESTIONS = {
-  resolved: { type: "noul", instructions: "O pedido ou o problema do cliente foi resolvido ou respondido?" },
+  // A pergunta é pela falha (e não "foi resolvido?"): conversa sem pedido não pode sair como não resolvida.
+  unmet: {
+    type: "noul",
+    instructions: `O cliente fez alguma solicitação que o restaurante deixou sem resposta e sem providência? ${REQUEST_RULES} Se o cliente não fez solicitação, a resposta é não.`,
+  },
   satisfaction: { type: "choice", instructions: "Como o cliente reagiu ao atendimento?", criteria: SATISFACTION },
   score: {
     type: "score",
-    instructions:
-      "Que nota o atendimento do restaurante merece? Julgue só como o restaurante atendeu: a educação, se respondeu certo e se resolveu o que o cliente pediu. Atraso ou erro da cozinha e da entrega não baixam a nota se o atendimento cuidou bem do cliente, e o cliente parar de responder depois de atendido também não.",
+    instructions: `Que nota o atendimento do restaurante merece? Julgue só como o restaurante atendeu: a educação, se respondeu certo e se atendeu o que o cliente pediu. ${REQUEST_RULES} Atraso ou erro da cozinha e da entrega não baixam a nota se o atendimento cuidou bem do cliente, e o cliente parar de responder depois de atendido também não. Comece pelo nível mais alto e só desça por uma falha concreta que dê para apontar na conversa; na dúvida entre dois níveis, fique com o mais alto.`,
     criteria: SCORE_LEVELS,
   },
   teamReason: { type: "choice", instructions: "Qual o principal motivo de o atendimento precisar da equipe?", criteria: TEAM_REASON_CRITERIA },
@@ -162,8 +169,8 @@ export class AiEvaluationService {
       EVALUATION_QUESTIONS,
       { privateData: true },
     );
-    const { resolved, satisfaction, score, teamReason, subject, issue, fault, churnRisk } = answers;
-    if (resolved.type !== "noul" || score.type !== "score") throw new Error("O Jev recusou avaliar o atendimento.");
+    const { unmet, satisfaction, score, teamReason, subject, issue, fault, churnRisk } = answers;
+    if (unmet.type !== "noul" || score.type !== "score") throw new Error("O Jev recusou avaliar o atendimento.");
     // Recusa na reação ou no motivo: sem reação e outro motivo, em vez de perder a avaliação.
     const reaction = satisfaction.type === "choice" ? satisfaction.choice : "sem_reacao";
     const reason = teamReason.type === "choice" && teamReason.choice in TEAM_REASON_CRITERIA ? (teamReason.choice as TeamReason) : "outro";
@@ -171,7 +178,7 @@ export class AiEvaluationService {
     const choice = <K extends string>(answer: typeof subject, criteria: Record<K, string>, none?: string): K | null =>
       answer.type === "choice" && answer.choice in criteria && answer.choice !== none ? (answer.choice as K) : null;
     const data = {
-      resolved: resolved.noul >= 0.5,
+      resolved: unmet.noul < 0.5,
       satisfied: reaction === "satisfeito" ? true : reaction === "insatisfeito" ? false : null,
       score: scorePercent(score.score),
       teamReason: reason,

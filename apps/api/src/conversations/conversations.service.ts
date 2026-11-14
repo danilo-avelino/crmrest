@@ -489,7 +489,8 @@ export class ConversationsService {
           ...(body.status && { status: body.status }),
           ...(body.status === "RESOLVED" && { awaitingAgentSince: null }), // resolvida sem resposta: o alarme para
           ...(body.assignedUserId !== undefined && { assignedUserId: body.assignedUserId }),
-          // Resolvida: o próximo atendimento começa sem a equipe. Reaberta, deixada pendente ou atribuída: é da equipe.
+          // Resolvida: só arquiva (o atendimento termina 1 h depois da última mensagem, ATTENDANCE_END_MS) e sai da aba
+          // Ativos; se o cliente voltar antes, quem o atendia continua. Reaberta, deixada pendente ou atribuída: é da equipe.
           ...(body.status === "RESOLVED"
             ? { teamInvolved: false }
             : (body.status || body.assignedUserId) && { teamInvolved: true }),

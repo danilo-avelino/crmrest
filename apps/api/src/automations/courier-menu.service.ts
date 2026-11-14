@@ -93,7 +93,9 @@ export class CourierMenuService {
   async step(tx: TenantTx, conversation: Conversation, event: InboundEvent): Promise<Step> {
     const messages = automationMessagesOf(await tenantSettings(tx, conversation.tenantId));
     const state = conversation.automationState as AutomationState;
-    if (event.newAttendance) {
+    // Entregador: cada aviso é uma entrega, e a conversa encerrada (pelo próprio menu, depois do aviso) acabou de vez; a
+    // próxima mensagem abre o menu, sem esperar a 1 hora que encerra os outros atendimentos.
+    if (event.newAttendance || event.previousStatus === "RESOLVED") {
       // Quem já sabe o menu manda a opção ou o aviso inteiro logo na primeira mensagem ("1", "1024 tá na portaria").
       const fresh: AutomationState = { triage: "awaiting_option" };
       return (

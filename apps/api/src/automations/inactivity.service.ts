@@ -2,7 +2,7 @@ import { automationMessagesOf, CHANNEL_CAPABILITIES, STAFF_TAG } from "@dishdesk
 import { InjectQueue } from "@nestjs/bullmq";
 import { Inject, Injectable, Logger, type OnModuleInit } from "@nestjs/common";
 import type { Queue } from "bullmq";
-import { scheduleEvaluation } from "../ai/ai-evaluation.service.js";
+import { EVALUATION_DELAY_MS, scheduleEvaluation } from "../ai/ai-evaluation.service.js";
 import { ENV, type Env } from "../config/env.js";
 import { DatabaseService } from "../core/database.service.js";
 import { type AiJob, type OutboundJob, QUEUES } from "../queues/queues.module.js";
@@ -18,8 +18,14 @@ import {
 } from "./automation.js";
 import { SurveyService } from "./survey.service.js";
 
-/** Tempo sem resposta do cliente, depois da última mensagem do restaurante, até encerrar o atendimento. */
+/** Tempo sem resposta do cliente, depois da última mensagem do restaurante, até encerrar a conversa (arquivar). */
 export const INACTIVITY_CLOSE_MS = 20 * 60_000;
+/**
+ * Fim do atendimento: tanto tempo sem mensagem, a hora em que o Jev o avalia. Só depois disso a próxima mensagem do
+ * cliente começa um atendimento do zero. Encerrar (Resolver, inatividade) só arquiva: o cliente que volta a escrever
+ * antes continua o mesmo atendimento (14/11/2026).
+ */
+export const ATTENDANCE_END_MS = EVALUATION_DELAY_MS;
 /**
  * Conversa só com automação, sem mensagem há este tempo, é resolvida sem aviso ao cliente. Fica acima do encerramento por
  * inatividade, que chega antes (com a mensagem de encerramento e a pesquisa) quando o restaurante falou por último.

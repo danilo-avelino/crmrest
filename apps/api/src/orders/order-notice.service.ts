@@ -10,6 +10,7 @@ import { DatabaseService } from "../core/database.service.js";
 import type { TenantTx } from "@dishdesk/database";
 import { type OutboundJob, QUEUES } from "../queues/queues.module.js";
 import { RealtimeEmitter } from "../realtime/realtime.emitter.js";
+import { ifoodChatKey } from "../conversations/ifood-conversation.js";
 import { provenPhone, provenPhoneWhere } from "./customer-history.js";
 import { deliveredNoticeMessage, dispatchNoticeMessage, promisedAt, readyNoticeMessage } from "./forecast.js";
 
@@ -45,8 +46,8 @@ export class OrderNoticeService {
    * achada pelo cadastro como no painel do pedido (o próprio, ou outro com o mesmo telefone, CPF ou e-mail), aberta,
    * pendente ou encerrada com mensagem do cliente nas últimas 24h. O aviso não reabre a conversa encerrada. Sem
    * conversa assim, com a janela de 24h do canal fechada, ou com o pedido feito antes de a loja ser conectada, não
-   * avisa; nem passadas 2 h do pedido (NOTICE_LIMIT_MS). Pedido do iFood em que o cliente escreveu no chat (conversa
-   * ainda em andamento): o aviso vai também para o chat dele.
+   * avisa; nem passadas 2 h do pedido (NOTICE_LIMIT_MS). Pedido do iFood em que o cliente escreveu no chat do pedido:
+   * o aviso vai também para esse chat, mesmo com a conversa já encerrada.
    */
   async statusChanged(tenantId: string, orderId: string, status: NoticeStatus, now = new Date()): Promise<void> {
     const sent = await this.db.withTenants({ tenantIds: [tenantId] }, async (tx) => {
@@ -187,7 +188,7 @@ export class OrderNoticeService {
   /** Conversas que recebem os avisos do pedido. A conversa só da equipe nunca recebe: o cliente não está nela. */
   private async targetsOf(
     tx: TenantTx,
-    order: { channelId: string; channel: { type: ChannelType }; contact: { id: string; phone: string | null; phoneSource: string | null; cpfHash: string | null; email: string | null } },
+    order: { externalOrderId: string; channelId: string; channel: { type: ChannelType }; contact: { id: string; phone: string | null; phoneSource: string | null; cpfHash: string | null; email: string | null } },
     now: Date,
   ) {
     const { id, cpfHash, email } = order.contact;
@@ -213,10 +214,10 @@ export class OrderNoticeService {
         id: true,
         tenantId: true,
         channelId: true,
-        status: true,
         windowExpiresAt: true,
         channel: { select: { type: true } },
-        _count: { select: { messages: { where: { direction: "INBOUND" } } } },
+        // Mensagens do cliente no chat do iFood deste pedido (a conversa do iFood junta os chats de todos os pedidos dele na loja).
+        _count: { select: { messages: { where: { direction: "INBOUND", externalMessageId: { startsWith: ifoodChatKey(order.externalOrderId) } } } } },
       },
       orderBy: { lastMessageAt: { sort: "desc", nulls: "last" } },
     });
@@ -224,10 +225,12 @@ export class OrderNoticeService {
       const capabilities = CHANNEL_CAPABILITIES[c.channel.type];
       return capabilities.send && (!capabilities.window24h || (c.windowExpiresAt && c.windowExpiresAt > now));
     });
-    // O chat do iFood é por pedido: só o da loja do pedido, e só com a trava do chat ligada (quem envia é o painel).
+    // O chat do iFood é por pedido: só o da loja do pedido em que o cliente escreveu, e só com a trava do chat ligada (quem
+    // envia é o painel). Conversa encerrada também recebe: o cliente segue vendo o chat do pedido no app do iFood, e a IA
+    // promete os avisos ("vou enviar aqui quando sair"); o encerramento antes da saída o deixava sem eles (#4520, 14/11/2026).
     const ifoodChat =
       this.env.IFOOD_CHAT_BRIDGE && order.channel.type === "IFOOD"
-        ? conversations.find((c) => c.channelId === order.channelId && c.status !== "RESOLVED" && c._count.messages > 0)
+        ? conversations.find((c) => c.channelId === order.channelId && c._count.messages > 0)
         : undefined;
     return [conversation, ifoodChat].filter((target) => target !== undefined);
   }

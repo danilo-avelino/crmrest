@@ -13,7 +13,7 @@ import { Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import type { Queue } from "bullmq";
 import type { RequestAuth } from "../auth/auth.decorators.js";
 import { type AutomationState, setAutomationState, teamRepliedUpdate } from "../automations/automation.js";
-import { INACTIVITY_CLOSE_MS } from "../automations/inactivity.service.js";
+import { ATTENDANCE_END_MS, INACTIVITY_CLOSE_MS } from "../automations/inactivity.service.js";
 import { extractPhone, registerPhone } from "../automations/phone-collection.service.js";
 import { claimReviewInvites, settleReviewInvite } from "../automations/review-invite.service.js";
 import { ENV, type Env } from "../config/env.js";
@@ -118,14 +118,20 @@ export class IfoodChatService {
           ],
         },
         orderBy: { createdAt: "desc" },
-        select: { createdAt: true, sentByUserId: true, content: true },
+        select: { createdAt: true, sentByUserId: true, content: true, externalMessageId: true },
       });
       let unread = 0;
       /** Saídas escritas no próprio widget (as da Inbox, inclusive as automáticas, só são confirmadas). */
       const typed = new Set<Entry>();
       let storeReplied = false;
+      /** A última mensagem do cliente desta leitura já tem resposta que saiu da Inbox (da IA, de automação ou da equipe). */
+      let answeredFromInbox = false;
       for (const entry of fresh) {
-        if (entry.direction === "OUTBOUND" && (await this.confirmSent(tx, conversation.id, entry))) continue;
+        if (entry.direction === "OUTBOUND" && (await this.confirmSent(tx, conversation.id, entry))) {
+          answeredFromInbox = true;
+          continue;
+        }
+        answeredFromInbox = false;
         if (entry.direction === "OUTBOUND") typed.add(entry);
         const storeReply = entry.direction === "OUTBOUND" && (await this.isStoreReply(tx, order.channelId, entries, entry, now));
         storeReplied ||= storeReply;
@@ -170,27 +176,33 @@ export class IfoodChatService {
         data: {
           ...((!conversation.lastMessageAt || conversation.lastMessageAt < last) && { lastMessageAt: last }),
           // Mensagem do cliente que nenhuma automação vai atender é da equipe (aba Ativos). As outras ficam com o
-          // IfoodAttendanceService: a IA atende com a conversa na aba Automáticos; sem a IA, a equipe é chamada.
-          ...(unread && { status: "OPEN", unreadCount: { increment: unread }, ...(!waiting && { teamInvolved: true }) }),
+          // IfoodAttendanceService: a IA atende com a conversa na aba Automáticos; sem a IA, a equipe é chamada. Resposta
+          // da IA digitada no widget logo depois de uma mensagem do cliente chega na mesma leitura: a mensagem já foi
+          // atendida e a conversa não vai para a equipe por isso (14/11/2026).
+          ...(unread && { status: "OPEN", unreadCount: { increment: unread }, ...(!waiting && !answeredFromInbox && { teamInvolved: true }) }),
         },
       });
       const result = { tenantId: order.tenantId, conversationId: conversation.id };
       if (!waiting) return result;
       const inbound = fresh.filter((entry) => entry.direction === "INBOUND");
       const first = inbound[0]!;
-      const recent = !!touch && first.at.getTime() - touch.createdAt.getTime() < INACTIVITY_CLOSE_MS;
+      // A conversa junta os chats de todos os pedidos do cliente na loja: o chat de outro pedido é outro atendimento.
+      const touchChat = ifoodChatOrderOf(touch?.externalMessageId);
+      const recent =
+        !!touch && first.at.getTime() - touch.createdAt.getTime() < ATTENDANCE_END_MS && (!touchChat || touchChat === order.externalOrderId);
       // Cliente respondendo à loja não começa atendimento: a equipe já está na conversa. A loja falou pela Inbox, ou no
       // widget logo antes, na mesma leitura (só o lado do balão não basta: o iFood manda mensagens automáticas desse lado).
       const before = fresh[fresh.indexOf(first) - 1];
       const byTeam = !!touch?.sentByUserId || !!(touch?.content as MessageContent | undefined)?.storeReply;
       const answering =
         (recent && byTeam) || (!!before && typed.has(before) && first.at.getTime() - before.at.getTime() < STORE_REPLY_MS);
-      // Como nos outros canais: conversa nova, resolvida ou sem interação há INACTIVITY_CLOSE_MS começa um atendimento.
+      // Como nos outros canais: conversa nova ou sem interação há ATTENDANCE_END_MS começa um atendimento. Resolvida antes
+      // disso só foi arquivada: o atendimento continua (14/11/2026).
       const event = {
         channel: { id: order.channelId, tenantId: order.tenantId, type: "IFOOD" as const },
         conversationId: conversation.id,
         previousStatus: conversation.previousStatus,
-        newAttendance: !answering && (conversation.previousStatus === null || conversation.previousStatus === "RESOLVED" || !recent),
+        newAttendance: !answering && (conversation.previousStatus === null || !recent),
         text: inbound.map((entry) => entry.text).join("\n"),
       };
       return { ...result, ifood: { event, orderId: order.id } };

@@ -106,6 +106,9 @@ export class IfoodAttendanceService {
           ...(event.previousStatus === "RESOLVED" && { aiReopened: true }),
           ...(state.aiWaiting && { aiWaiting: true, aiWaitingReason: state.aiWaitingReason }),
         });
+      } else if (event.previousStatus === "RESOLVED") {
+        // Arquivada pelo Resolver com o atendimento em andamento: um "obrigado" não a traz de volta (a IA não responde).
+        await setAutomationState(tx, event.conversationId, { ...state, aiReopened: true });
       }
       const phone = !conversation.contact.phone && event.text ? extractPhone(event.text) : null;
       if (phone) await this.phoneCollection.register(tx, conversation, phone);

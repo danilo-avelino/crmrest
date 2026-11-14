@@ -184,6 +184,9 @@ export class TriageService {
           ...(event.previousStatus === "RESOLVED" && { aiReopened: true }),
           ...(state.aiWaiting && { aiWaiting: true, aiWaitingReason: state.aiWaitingReason }),
         });
+      } else if (event.previousStatus === "RESOLVED") {
+        // Arquivada pelo Resolver com o atendimento em andamento: um "obrigado" não a traz de volta (a IA não responde).
+        await setAutomationState(tx, event.conversationId, { ...state, aiReopened: true });
       }
       const phone =
         !conversation.contact.phone && !CHANNEL_CAPABILITIES[event.channel.type].providesPhone && event.text ? extractPhone(event.text) : null;

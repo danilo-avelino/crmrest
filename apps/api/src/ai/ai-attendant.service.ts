@@ -249,13 +249,13 @@ export function periodGreeting(now: Date): string {
  * (sem ela, a IA abria uma conversa nova mostrando o pedido de ontem); a instrução vai no dado, que o modelo segue melhor.
  */
 function greetingFacts(greeting: { first: boolean; name?: string; reopened?: boolean }, now: Date): string {
-  if (!greeting.first) return "Cumprimento: você já cumprimentou o cliente neste atendimento; não cumprimente de novo.";
-  const hello = `${periodGreeting(now)}${greeting.name ? `, ${greeting.name}` : ""}!`;
   // Cliente respondendo ao último recado da equipe numa conversa já resolvida (13/11: "Boa noite" depois do "Ok" do
-  // atendente reabria a conversa e a IA cumprimentava de novo).
+  // atendente reabria a conversa e a IA cumprimentava de novo). Vale também no meio do atendimento: resolver só arquiva.
   const reopened = greeting.reopened
     ? 'Retomada: a conversa já tinha sido atendida e resolvida, e o cliente voltou a escrever. Se ele só cumprimentou, agradeceu, confirmou ("ok", "boa noite", "obrigado") ou repetiu o que já tinha dito e a equipe ou você já respondeu, não responda (skip = true): a conversa continua resolvida. Se ele pediu algo novo, responda normalmente.\n'
     : "";
+  if (!greeting.first) return `${reopened}Cumprimento: você já cumprimentou o cliente neste atendimento; não cumprimente de novo.`;
+  const hello = `${periodGreeting(now)}${greeting.name ? `, ${greeting.name}` : ""}!`;
   return `${reopened}Cumprimento: esta é a sua primeira resposta neste atendimento. Comece com "${hello}" (pode ajustar ao tom do restaurante, mantendo o período do dia${greeting.name ? " e o nome; o nome vem do perfil do cliente e, se não for nome de pessoa (empresa, frase, apelido de grupo), cumprimente sem ele" : ""}). Se o cliente ainda não disse o que precisa (só cumprimentou, mandou um teste ou algo solto), pergunte em que pode ajudar e não fale de pedido nenhum. Se ele já disse, responda logo depois do cumprimento.`;
 }
 
@@ -429,7 +429,7 @@ export class AiAttendantService {
           attendantMessages(conversation.tenant.name, conversation.channel.type, settings, now, orderFacts, transcript(context.history), attendance, {
             first: !state.aiReplies,
             name: firstName(conversation.contact.name),
-            reopened: state.aiReopened && !state.aiReplies,
+            reopened: state.aiReopened,
           }),
         );
       } catch (error) {
@@ -497,7 +497,7 @@ export class AiAttendantService {
       // A IA escolheu não responder (despedida repetida, divulgação, robô): nada sai e o atendimento segue com ela.
       if (answer?.skip && !answer.handoff) {
         // Só um "ok" ou "boa noite" na conversa resolvida: ela continua resolvida, sem chamar ninguém.
-        if (!current.aiReopened || current.aiReplies) return { ids: [], notify: [], startsWaiting: false };
+        if (!current.aiReopened) return { ids: [], notify: [], startsWaiting: false };
         await systemEvent(tx, conversation, { event: "ai_skip", text: "O cliente só respondeu ao fim do atendimento: a conversa continua resolvida" });
         await tx.conversation.update({ where: { id: conversationId }, data: { status: "RESOLVED", unreadCount: 0, teamInvolved: false, awaitingAgentSince: null } });
         return { ids: [], notify: [conversationId], startsWaiting: false };
@@ -570,6 +570,8 @@ export class AiAttendantService {
         // A resposta do cliente com o telefone é cadastrada pela coleta de telefone, sem repetir o pedido.
         ...(handoff && asksPhone && !current.phoneCollection && { phoneCollection: "awaiting_phone" as const }),
         aiReplies: (current.aiReplies ?? 0) + 1,
+        // A IA respondeu: a conversa voltou de vez, e o próximo "ok" não a arquiva de novo.
+        aiReopened: undefined,
         ...(startsWaiting && { aiWaiting: true, aiWaitingReason: reason }),
         ...(confirmed && { linkedOrder: { id: confirmed, at: now.toISOString() } }),
         ...(deniedId && { aiDeniedOrderIds: [...(current.aiDeniedOrderIds ?? []), deniedId] }),

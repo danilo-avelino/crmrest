@@ -12,7 +12,7 @@ import { InjectQueue } from "@nestjs/bullmq";
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import type { Queue } from "bullmq";
 import { type AutomationState, teamRepliedUpdate } from "../automations/automation.js";
-import { INACTIVITY_CLOSE_MS } from "../automations/inactivity.service.js";
+import { ATTENDANCE_END_MS, INACTIVITY_CLOSE_MS } from "../automations/inactivity.service.js";
 import { TriageService } from "../automations/triage.service.js";
 import { ENV, type Env } from "../config/env.js";
 import { ConnectorsService } from "../connectors/connectors.service.js";
@@ -34,7 +34,7 @@ export type ContactSource = Pick<NormalizedMessage, "channelType" | "externalCon
 
 /**
  * Conversa que recebeu a mensagem e o status que ela tinha antes (null = conversa nova).
- * `newAttendance`: a mensagem começa um atendimento (conversa nova, resolvida ou parada há INACTIVITY_CLOSE_MS).
+ * `newAttendance`: a mensagem começa um atendimento (conversa nova ou parada há ATTENDANCE_END_MS, resolvida ou não).
  */
 export type OpenedConversation = { id: string; previousStatus: ConversationStatus | null; newAttendance: boolean };
 
@@ -392,18 +392,14 @@ export class InboundService {
       select: { id: true, status: true },
     });
     if (latest) {
-      // Conversa aberta, mas sem interação há INACTIVITY_CLOSE_MS: o atendimento anterior acabou, mesmo sem ter sido resolvido.
+      // Sem interação há ATTENDANCE_END_MS, o atendimento anterior acabou. Resolvida antes disso só foi arquivada: o cliente
+      // continua o mesmo atendimento, com quem o atendia (14/11/2026).
       const last = await tx.message.findFirst({
         where: { conversationId: latest.id, direction: { in: ["INBOUND", "OUTBOUND"] } },
         orderBy: { createdAt: "desc" },
-        select: { createdAt: true, sentByUserId: true, content: true },
+        select: { createdAt: true },
       });
-      const recent = !!last && at.getTime() - last.createdAt.getTime() < INACTIVITY_CLOSE_MS;
-      // Resolvida também começa um atendimento, a não ser que a equipe tenha escrito depois: o cliente está respondendo a ela.
-      // Vale também a resposta pelo WhatsApp do celular (fromPhone): sem isso, a equipe respondia, resolvia e a IA voltava
-      // na mensagem seguinte do cliente (12/11/2026).
-      const byTeam = !!last?.sentByUserId || !!(last?.content as MessageContent | undefined)?.fromPhone;
-      const newAttendance = !recent || (latest.status === "RESOLVED" && !byTeam);
+      const newAttendance = !last || at.getTime() - last.createdAt.getTime() >= ATTENDANCE_END_MS;
       return { id: latest.id, previousStatus: latest.status, newAttendance };
     }
 

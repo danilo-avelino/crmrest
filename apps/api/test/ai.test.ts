@@ -113,7 +113,7 @@ describe("atendimento com IA: resposta, revisão e avaliação", () => {
   /** A hora em que a avaliação roda: passado o tempo de espera desde a última mensagem. */
   const later = () => new Date(Date.now() + EVALUATION_DELAY_MS);
   type JevBody = { state: { conversa: string }; questions: Record<string, unknown>; provider?: unknown };
-  const evaluationCalls = () => jev.requests.filter((req) => "resolved" in (req.body as JevBody).questions);
+  const evaluationCalls = () => jev.requests.filter((req) => "unmet" in (req.body as JevBody).questions);
   const llmCalls = (name: string) => llm.requests.filter((req) => (req.body as LlmBody).response_format.json_schema.name === name);
   const sentText = () => (graph.requests.at(-1)!.body as { text: { body: string } }).text.body;
   const reply = (conversationId: string, text: string) =>
@@ -281,11 +281,14 @@ describe("atendimento com IA: resposta, revisão e avaliação", () => {
     await say("5511980000014", "wamid.AI-RE-2", "Ok, boa noite");
     await settle();
 
-    // A IA soube que a conversa estava resolvida.
-    expect((llmCalls("atendimento").at(-1)!.body as LlmBody).messages[1]!.content).toContain("Retomada: a conversa já tinha sido atendida e resolvida");
+    // A IA soube que a conversa estava resolvida, e o atendimento é o mesmo (resolver só arquiva): sem cumprimentar de novo.
+    const prompt = (llmCalls("atendimento").at(-1)!.body as LlmBody).messages[1]!.content;
+    expect(prompt).toContain("Retomada: a conversa já tinha sido atendida e resolvida");
+    expect(prompt).toContain("não cumprimente de novo");
     expect(graph.requests.length).toBe(sent);
     const conversation = await conversationOf("5511980000014");
     expect(conversation).toMatchObject({ status: "RESOLVED", unreadCount: 0, teamInvolved: false, awaitingAgentSince: null });
+    expect(conversation.automationState).toMatchObject({ ai: "on", aiReplies: 1 });
     expect(conversation.messages.at(-1)!.content).toEqual({
       event: "ai_skip",
       text: "O cliente só respondeu ao fim do atendimento: a conversa continua resolvida",
@@ -561,7 +564,7 @@ describe("atendimento com IA: resposta, revisão e avaliação", () => {
 
     // A nota vem como a posição na escala (0 a 4, fracionada) e vira porcentagem: 3,6 é 90%.
     jevAnswers = {
-      resolved: { type: "noul", noul: 0.93 },
+      unmet: { type: "noul", noul: 0.07 }, // nada ficou sem atendimento: resolvida
       satisfaction: { type: "choice", choice: "satisfeito", confidence: 0.9, probabilities: {} },
       score: { type: "score", score: 3.6, legend: {}, probabilities: {} },
       teamReason: { type: "choice", choice: "atraso" },
@@ -637,7 +640,7 @@ describe("atendimento com IA: resposta, revisão e avaliação", () => {
     answers.revisao = { misconduct: false, reason: "", text: "Já estou vendo, um instante." };
     // Recusa na reação, no motivo e no assunto: fica sem reação, com outro motivo e sem assunto.
     jevAnswers = {
-      resolved: { type: "noul", noul: 0.2 },
+      unmet: { type: "noul", noul: 0.8 }, // um pedido do cliente ficou sem atendimento: não resolvida
       satisfaction: { type: "refusal" },
       score: { type: "score", score: 2 },
       teamReason: { type: "refusal" },

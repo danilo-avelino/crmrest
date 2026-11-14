@@ -5,7 +5,7 @@ import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { getQueueToken } from "@nestjs/bullmq";
 import type { Queue } from "bullmq";
-import { INACTIVITY_CLOSE_MS, InactivityService } from "../src/automations/inactivity.service.js";
+import { ATTENDANCE_END_MS, INACTIVITY_CLOSE_MS, InactivityService } from "../src/automations/inactivity.service.js";
 import { SurveyService } from "../src/automations/survey.service.js";
 import { QUEUES } from "../src/queues/queues.module.js";
 import { accessTokenFor, admin, createChannelFixture, createTestApp, drainQueues, metaPayload, postMetaWebhook, startMockGraph } from "./helpers.js";
@@ -50,6 +50,12 @@ describe("menu de atendimento, busca do pedido e pesquisa de satisfação", () =
   type Content = { text?: string; automation?: string; event?: string; orderId?: string };
   const contents = async (waId: string) => (await conversationOf(waId)).messages.map((m) => m.content as Content);
   const automations = async (waId: string) => (await contents(waId)).flatMap((c) => (c.automation ? [c.automation] : []));
+  /** Simula o fim do atendimento: as mensagens da conversa passam a ter mais de 1 hora (ATTENDANCE_END_MS). */
+  const ended = async (conversationId: string) => {
+    for (const { id, createdAt } of await admin.message.findMany({ where: { conversationId } })) {
+      await admin.message.update({ where: { id }, data: { createdAt: new Date(createdAt.getTime() - ATTENDANCE_END_MS - 60_000) } });
+    }
+  };
 
   /**
    * Pedido do iFood (o cliente só tem CPF e endereço no cadastro, como o iFood informa). O pedido pelo número só é
@@ -185,8 +191,16 @@ describe("menu de atendimento, busca do pedido e pesquisa de satisfação", () =
     expect(asAdmin).toEqual(expect.arrayContaining(["5", "Avaliação do atendimento: 5/5"]));
   });
 
-  it("depois de resolvida, uma mensagem nova começa outro atendimento com o menu", async () => {
-    await say("5511970000001", "wamid.T5", "Oi de novo");
+  it("resolvida só arquiva: a mensagem nova continua o atendimento com a equipe; passada 1 hora, começa outro com o menu", async () => {
+    await say("5511970000001", "wamid.T5", "Esqueci de falar do troco");
+    const archived = await conversationOf("5511970000001");
+    // Volta para a equipe (alarme), sem menu: o atendimento é o mesmo.
+    expect(archived).toMatchObject({ status: "OPEN", automationState: { triage: "done", linkedOrder: { id: expect.any(String) } } });
+    expect(archived.awaitingAgentSince).not.toBeNull();
+    expect((await automations("5511970000001")).at(-1)).toBe("survey_thanks");
+
+    await ended(archived.id);
+    await say("5511970000001", "wamid.T5b", "Oi de novo");
     const conversation = await conversationOf("5511970000001");
     expect(conversation).toMatchObject({ status: "OPEN", automationState: { triage: "awaiting_option" } });
     expect((await automations("5511970000001")).at(-1)).toBe("menu");
@@ -709,6 +723,7 @@ describe("menu de atendimento, busca do pedido e pesquisa de satisfação", () =
       .set("Authorization", `Bearer ${token}`)
       .send({ status: "RESOLVED" })
       .expect(200);
+    await ended(id);
     await say("5511970000022", "wamid.CANC3", "Oi de novo");
     expect(await alerts()).toHaveLength(2);
     expect(JSON.stringify(graph.requests.map((sent) => sent.body)).toLowerCase()).not.toContain("cancelamento recorrente");
@@ -737,7 +752,7 @@ describe("menu de atendimento, busca do pedido e pesquisa de satisfação", () =
     expect(await automations("5511970000010")).toEqual(["menu", "inactivity_close"]);
   });
 
-  it("conversa aberta parada há 20 minutos: a mensagem seguinte começa outro atendimento, com o menu", async () => {
+  it("conversa aberta parada há 1 hora: a mensagem seguinte começa outro atendimento, com o menu", async () => {
     await say("5511970000011", "wamid.M1", "Oi");
     await say("5511970000011", "wamid.M2", "3");
     await say("5511970000011", "wamid.M3", "Vocês abrem no feriado?");
@@ -747,6 +762,7 @@ describe("menu de atendimento, busca do pedido e pesquisa de satisfação", () =
     await app.get(InactivityService).close(fx.tenant.id, id);
     expect((await conversationOf("5511970000011")).status).toBe("OPEN");
 
+    await ended(id);
     await say("5511970000011", "wamid.M4", "Oi, outra dúvida");
     const conversation = await conversationOf("5511970000011");
     expect(conversation.automationState).toEqual({ triage: "awaiting_option" });
