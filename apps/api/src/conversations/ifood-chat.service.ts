@@ -2,13 +2,14 @@ import { createHash, randomUUID } from "node:crypto";
 import type { TenantTx } from "@dishdesk/database";
 import {
   type IfoodChatOutboxItem,
+  type IfoodChatReport,
   type IfoodChatSendResult,
   type IfoodChatSync,
   type IfoodChatSyncResult,
   type MessageContent,
 } from "@dishdesk/shared";
 import { InjectQueue } from "@nestjs/bullmq";
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import type { Queue } from "bullmq";
 import type { RequestAuth } from "../auth/auth.decorators.js";
 import { type AutomationState, setAutomationState, teamRepliedUpdate } from "../automations/automation.js";
@@ -59,6 +60,8 @@ type Synced = { tenantId: string; conversationId: string; ifood?: NonNullable<Au
  */
 @Injectable()
 export class IfoodChatService {
+  private readonly logger = new Logger(IfoodChatService.name);
+
   constructor(
     private readonly db: DatabaseService,
     private readonly realtime: RealtimeEmitter,
@@ -306,6 +309,12 @@ export class IfoodChatService {
       const { tenantId, conversationId } = message;
       await this.automations.add("inactivity", { tenantId, conversationId }, { delay: INACTIVITY_CLOSE_MS });
     }
+  }
+
+  /** Chat que o painel não conseguiu copiar: vai para o log, para achar o motivo sem acesso ao widget da loja. */
+  report(auth: RequestAuth, body: IfoodChatReport): void {
+    this.requireEnabled();
+    this.logger.warn(`Chat do iFood #${body.orderCode} não copiado (usuário ${auth.userId}): ${body.reason}${body.detail ? `\n${body.detail}` : ""}`);
   }
 
   private requireEnabled(): void {

@@ -335,3 +335,11 @@ export const IfoodChatSendResult = z.object({
   error: z.string().trim().min(1).max(300).optional(),
 });
 export type IfoodChatSendResult = z.infer<typeof IfoodChatSendResult>;
+
+/** Chat do widget que o painel não conseguiu copiar: o motivo e, quando ajuda, o HTML da conversa. Vai só para o log da API. */
+export const IfoodChatReport = z.object({
+  orderCode: z.string().regex(/^\d{1,10}$/),
+  reason: z.string().trim().min(1).max(300),
+  detail: z.string().max(20_000).optional(),
+});
+export type IfoodChatReport = z.infer<typeof IfoodChatReport>;

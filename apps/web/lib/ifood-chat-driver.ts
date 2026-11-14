@@ -1,5 +1,5 @@
-import type { IfoodChatOutboxItem, IfoodChatSendResult, IfoodChatSync, IfoodChatSyncResult } from "@dishdesk/shared";
-import { CHAT_ITEM, CHAT_TAB, LAUNCHER, readWidget, type WidgetChat, type WidgetDrawer, type WidgetState } from "./ifood-chat-dom";
+import type { IfoodChatOutboxItem, IfoodChatReport, IfoodChatSendResult, IfoodChatSync, IfoodChatSyncResult } from "@dishdesk/shared";
+import { CHAT_ITEM, CHAT_TAB, chatHtml, LAUNCHER, readWidget, type WidgetChat, type WidgetDrawer, type WidgetState } from "./ifood-chat-dom";
 
 /** Pedido à extensão do Chrome que roda dentro do widget (apps/extension); rejeita se ela não responder ou recusar. */
 export type Bridge = (op: string, params?: Record<string, unknown>) => Promise<{ html?: string[]; version?: string }>;
@@ -8,6 +8,8 @@ export type IfoodChatApi = {
   sync(body: IfoodChatSync): Promise<IfoodChatSyncResult>;
   claim(): Promise<IfoodChatOutboxItem[]>;
   result(messageId: string, body: IfoodChatSendResult): Promise<void>;
+  /** Chat que não deu para copiar, com o motivo: vai para o log da API. */
+  report(body: IfoodChatReport): Promise<void>;
 };
 
 /**
@@ -28,6 +30,9 @@ const MAX_TRIES = 10;
 const MAX_MESSAGES = 200;
 
 const DAY = new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit" });
+/** A hora do item na lista traz o dia ("21:33 • 13/11"). */
+const DATED = /\d{2}\/\d{2}/;
+const TIME = /\d{2}:\d{2}/;
 
 /**
  * Copia o chat do widget do iFood para a Inbox e digita nele as respostas escritas na Inbox. Trabalha em passos curtos
@@ -39,6 +44,10 @@ export class IfoodChatDriver {
   private readonly retryAt = new Map<string, number>();
   private readonly tries = new Map<string, number>();
   private readonly outbox: IfoodChatOutboxItem[] = [];
+  /** Problemas já contados à API nesta página (pedido e motivo): cada um vai uma vez só. */
+  private readonly reported = new Set<string>();
+  /** HTML do widget na última leitura, para mandar junto com o problema. */
+  private html = "";
   /** O widget na última leitura (null: ainda não leu). */
   seen: WidgetState | null = null;
 
@@ -75,7 +84,8 @@ export class IfoodChatDriver {
 
   private async read(): Promise<WidgetState> {
     const { html } = await this.bridge("html", { selector: "body", geometry: true });
-    this.seen = readWidget(html?.[0] ?? "");
+    this.html = html?.[0] ?? "";
+    this.seen = readWidget(this.html);
     return this.seen;
   }
 
@@ -87,8 +97,11 @@ export class IfoodChatDriver {
   private changed(chat: WidgetChat): boolean {
     if (this.copied.get(chat.orderCode) === shownAs(chat)) return false;
     if ((this.retryAt.get(chat.orderCode) ?? 0) > this.now()) return false;
-    // Conversas encerradas ficam dias na lista: delas, só as de hoje são copiadas.
-    return chat.open || chat.stamp.includes(DAY.format(this.now()));
+    // Conversas encerradas ficam dias na lista: delas, só as de hoje são copiadas. Hora sem dia na lista é de hoje.
+    if (chat.open || chat.stamp.includes(DAY.format(this.now()))) return true;
+    if (DATED.test(chat.stamp)) return false;
+    this.report(chat.orderCode, `hora da lista sem o dia: "${chat.stamp}"`, false);
+    return TIME.test(chat.stamp);
   }
 
   private async copy(chat: WidgetChat): Promise<void> {
@@ -96,20 +109,33 @@ export class IfoodChatDriver {
     try {
       const messages = drawer && transcript(drawer);
       if (!drawer || !messages?.length) {
-        if (drawer && !messages) console.warn(`Chat do iFood #${chat.orderCode}: não deu para saber quem enviou as mensagens; a conversa não foi copiada.`);
+        this.report(chat.orderCode, !drawer ? "a conversa não abriu no widget" : !messages ? "balão sem o lado (sem as posições)" : "nenhuma mensagem lida");
         this.postpone(chat);
         return;
       }
       const { found } = await this.api.sync({ orderCode: chat.orderCode, messages: messages.slice(-MAX_MESSAGES) });
-      if (!found) return this.postpone(chat);
+      if (!found) {
+        this.report(chat.orderCode, "o pedido não está no Dish Desk", false);
+        return this.postpone(chat);
+      }
       this.copied.set(chat.orderCode, shownAs(chat));
       this.tries.delete(chat.orderCode);
     } catch (error) {
+      this.report(chat.orderCode, `erro: ${error instanceof Error ? error.message : String(error)}`);
       this.postpone(chat);
       throw error;
     } finally {
       if (drawer) await this.bridge("click", { selector: drawer.close }).catch(() => undefined);
     }
+  }
+
+  /** Conta à API, uma vez por página, por que a conversa não foi copiada; `withHtml`: junto vai o HTML dela no widget. */
+  private report(orderCode: string, reason: string, withHtml = true): void {
+    const key = `${orderCode}|${reason}`;
+    if (this.reported.has(key)) return;
+    this.reported.add(key);
+    const detail = withHtml ? chatHtml(this.html, orderCode) : undefined;
+    this.api.report({ orderCode, reason: reason.slice(0, 300), ...(detail && { detail }) }).catch(() => undefined);
   }
 
   /** Tenta de novo mais tarde; depois de MAX_TRIES, só quando a conversa mudar na lista. */

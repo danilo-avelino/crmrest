@@ -142,6 +142,7 @@ export function useIfoodChat(enabled: boolean): IfoodChatMode {
       sync: (body) => post<IfoodChatSyncResult>("/sync", body),
       claim: () => post<IfoodChatOutboxItem[]>("/outbox/claim"),
       result: (messageId, body) => post<void>(`/outbox/${messageId}`, body),
+      report: (body) => post<void>("/report", body),
     });
 
     void (async () => {

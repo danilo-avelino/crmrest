@@ -1,4 +1,4 @@
-import type { IfoodChatOutboxItem, IfoodChatSendResult, IfoodChatSync } from "@dishdesk/shared";
+import type { IfoodChatOutboxItem, IfoodChatReport, IfoodChatSendResult, IfoodChatSync } from "@dishdesk/shared";
 import { describe, expect, it } from "vitest";
 import { CHAT_ITEM, CHAT_TAB, LAUNCHER, readWidget } from "./ifood-chat-dom";
 import { type Bridge, IfoodChatDriver } from "./ifood-chat-driver";
@@ -64,7 +64,7 @@ function fakeWidget(chats: FakeChat[], options: { authorized?: boolean; geometry
 }
 
 function fakeApi(found = true) {
-  const calls = { synced: [] as IfoodChatSync[], results: [] as [string, IfoodChatSendResult][] };
+  const calls = { synced: [] as IfoodChatSync[], results: [] as [string, IfoodChatSendResult][], reports: [] as IfoodChatReport[] };
   const outbox: IfoodChatOutboxItem[] = [];
   return {
     calls,
@@ -73,6 +73,7 @@ function fakeApi(found = true) {
       sync: async (body: IfoodChatSync) => (calls.synced.push(body), { found }),
       claim: async () => outbox.splice(0),
       result: async (messageId: string, body: IfoodChatSendResult) => void calls.results.push([messageId, body]),
+      report: async (body: IfoodChatReport) => void calls.reports.push(body),
     },
   };
 }
@@ -155,6 +156,19 @@ describe("motor do chat do iFood", () => {
     await steps(new IfoodChatDriver(widget.bridge, api, instant), 4);
     expect(calls.synced).toEqual([]);
     expect(widget.state.drawer).toBeNull();
+    // O motivo vai uma vez para a API, com o HTML da conversa sem classes.
+    expect(calls.reports).toHaveLength(1);
+    expect(calls.reports[0]).toMatchObject({ orderCode: "6530", reason: "balão sem o lado (sem as posições)" });
+    expect(calls.reports[0]!.detail).toContain("#6530 - CARLOS MENDES");
+    expect(calls.reports[0]!.detail).not.toContain("class=");
+  });
+
+  it("conversa concluída com a hora sem o dia na lista é de hoje: é copiada, e o formato vai para a API", async () => {
+    const widget = fakeWidget([order([{ side: "customer", text: "Faltou um item", time: "21:33:00" }], { open: false, stamp: "21:33" })]);
+    const { api, calls } = fakeApi();
+    await steps(new IfoodChatDriver(widget.bridge, api, instant), 3);
+    expect(calls.synced.map((sync) => sync.orderCode)).toEqual(["6530"]);
+    expect(calls.reports).toEqual([{ orderCode: "6530", reason: 'hora da lista sem o dia: "21:33"' }]);
   });
 
   it("balão centralizado fica fora da cópia, e foto entra como aviso: o resto da conversa é copiado", async () => {

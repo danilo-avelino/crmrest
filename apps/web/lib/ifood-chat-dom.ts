@@ -82,6 +82,31 @@ export function readWidget(html: string): WidgetState {
   return { panel, chatTab, authorization, invite, chats, drawers };
 }
 
+/** Atributos que ficam no HTML mandado com um problema: a posição (o lado do balão), a estrutura e a foto. */
+const KEPT = new Set(["data-dd-rect", "id", "role", "src", "data-column-index", "data-hit-region"]);
+const MAX_HTML = 20_000;
+
+/**
+ * HTML da conversa do pedido no widget (aberta), ou dos itens dela na lista, para o log da API quando a cópia falha.
+ * Sai sem classes nem estilos, que só pesam.
+ */
+export function chatHtml(html: string, orderCode: string): string | undefined {
+  const document = new DOMParser().parseFromString(html, "text/html");
+  const header = (element: Element) => [...element.querySelectorAll("span")].some((span) => HEADER.exec(text(span))?.[1] === orderCode);
+  const regions = [...document.querySelectorAll("[data-column-index] > [data-hit-region]")].filter((region) => !region.querySelector(CHAT_TAB) && header(region));
+  const parts = regions.length ? regions : [...document.querySelectorAll(CHAT_ITEM)].filter(header);
+  if (!parts.length) return undefined;
+  for (const element of parts.flatMap((part) => [part, ...part.querySelectorAll("*")])) {
+    for (const name of element.getAttributeNames()) if (!KEPT.has(name)) element.removeAttribute(name);
+    const src = element.getAttribute("src");
+    if (src) element.setAttribute("src", src.slice(0, 120));
+  }
+  return parts
+    .map((part) => part.outerHTML)
+    .join("\n")
+    .slice(0, MAX_HTML);
+}
+
 function readDrawer(region: Element): WidgetDrawer | null {
   if (region.querySelector(CHAT_TAB)) return null; // é o próprio widget, não uma conversa
   const header = [...region.querySelectorAll("span")].map(text).find((value) => HEADER.test(value));

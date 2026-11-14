@@ -87,6 +87,11 @@ describe("Chat do iFood na Inbox (trava IFOOD_CHAT_BRIDGE ligada)", () => {
     expect(body).toEqual({ widgetId: "widget-teste", merchantIds: [fx.ifood.externalId], chat: true, extensionUrl: EXTENSION_URL });
   });
 
+  it("chat que o painel não conseguiu copiar: o motivo só vai para o log", async () => {
+    await post("/ifood-chat/report", { orderCode: "3888", reason: "nenhuma mensagem lida", detail: "<div>#3888 - Cliente</div>" }).expect(204);
+    await post("/ifood-chat/report", { orderCode: "#3888", reason: "" }).expect(400);
+  });
+
   const automatic = shown("OUTBOUND", "Recebemos o seu pedido!", minutesAgo(19));
   const question = shown("INBOUND", "Oi, pode mandar sem cebola?", minutesAgo(10));
   const second = shown("INBOUND", "E sem picles", minutesAgo(9));
