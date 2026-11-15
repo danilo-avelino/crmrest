@@ -14,8 +14,8 @@ import { useInboxRealtime } from "@/hooks/use-inbox-realtime";
 const NOTICE_CLASS = "flex items-center gap-2 rounded-[7px] px-3.5 py-2 text-xs font-medium shadow-sm";
 
 /**
- * A Inbox continua avisando fora dela (Configurações, Avaliações, Clientes...): mantém o realtime, toca o alarme
- * de chamado e o bipe de nova mensagem e mostra um aviso no topo com o atalho para a Inbox.
+ * A Inbox continua avisando fora dela (Configurações, Avaliações, Clientes...): mantém o realtime, toca o aviso
+ * de chamado (bipe e contagem falada) e o bipe de nova mensagem e mostra um aviso no topo com o atalho para a Inbox.
  */
 export function InboxWatcher() {
   const { request } = useAuth();
@@ -26,8 +26,7 @@ export function InboxWatcher() {
   });
   const quiet = counts.data?.awaitingQuiet ?? 0;
   const calling = (counts.data?.awaitingAgent ?? 0) - quiet;
-  const alarm = useAgentAlarm(calling > 0, "urgent", counts.data?.urgentSince ?? null);
-  const quietAlarm = useAgentAlarm(quiet > 0, "quiet");
+  const alarm = useAgentAlarm(calling + quiet);
   useCallNotifications(counts.data ? { calling, quiet } : null, alarm.blocked);
   const unread = counts.data?.unread ?? 0;
 
@@ -61,7 +60,7 @@ export function InboxWatcher() {
           <BellIcon className="size-3.5" aria-hidden />
           {quiet === 1 ? "1 conversa aguardando um atendente" : `${quiet} conversas aguardando um atendente`}
           <span className="font-normal underline">Abrir Inbox</span>
-          {quietAlarm.blocked && <span className="font-normal opacity-90">· clique para ativar o som</span>}
+          {alarm.blocked && <span className="font-normal opacity-90">· clique para ativar o som</span>}
         </Link>
       )}
       {fresh && calling + quiet === 0 && (

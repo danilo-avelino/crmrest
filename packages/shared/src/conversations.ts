@@ -207,7 +207,7 @@ export type ConversationListItem = {
 export type ConversationPage = { items: ConversationListItem[]; nextCursor: string | null };
 /**
  * Conversas por status e quantas estão chamando um atendente (alarme da Inbox); `awaitingQuiet` = quantas delas chamam sem urgência.
- * `urgentSince` = desde quando espera o chamado urgente mais antigo (o alarme só fica forte depois de alguns minutos).
+ * `urgentSince` = desde quando espera o chamado urgente mais antigo (mostrado na tela inicial da Inbox).
  * `unread` = mensagens não lidas nas conversas abertas e pendentes (aviso de nova mensagem fora da Inbox).
  * `OPEN` conta só as abertas com a equipe (as da aba Automáticos ficam de fora).
  */

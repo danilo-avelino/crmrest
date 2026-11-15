@@ -92,11 +92,10 @@ export function ConversationList({
     queryKey: ["counts", null],
     queryFn: () => request<ConversationCounts>("/conversations/counts"),
   });
-  // Chamado sem urgência (entregador com outro assunto) tem o próprio som, discreto, sem o alarme.
+  // Chamado sem urgência (entregador com outro assunto) tem a própria faixa, mas entra na mesma contagem falada.
   const quiet = allCounts.data?.awaitingQuiet ?? 0;
   const calling = (allCounts.data?.awaitingAgent ?? 0) - quiet;
-  const alarm = useAgentAlarm(calling > 0, "urgent", allCounts.data?.urgentSince ?? null);
-  const quietAlarm = useAgentAlarm(quiet > 0, "quiet");
+  const alarm = useAgentAlarm(calling + quiet);
   useCallNotifications(allCounts.data ? { calling, quiet } : null, alarm.blocked);
 
   const items = conversations.data?.pages.flatMap((page) => page.items) ?? [];
@@ -156,7 +155,7 @@ export function ConversationList({
           <BellIcon className="size-4 shrink-0" aria-hidden />
           <span className="flex-1">
             {quiet === 1 ? "1 conversa aguardando um atendente" : `${quiet} conversas aguardando um atendente`}
-            {quietAlarm.blocked && <span className="block text-[10.5px] font-normal opacity-90">Clique na página para ativar o som.</span>}
+            {alarm.blocked && <span className="block text-[10.5px] font-normal opacity-90">Clique na página para ativar o som.</span>}
           </span>
         </div>
       )}
