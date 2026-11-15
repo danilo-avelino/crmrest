@@ -949,6 +949,8 @@ describe("atendimento com IA: número do pedido informado pelo cliente", () => {
     expect(orderNumbersIn(["é o 5557", "o 88", "nº 12"])).toEqual(["5557", "88", "12"]);
     expect(orderNumbersIn(["o pedido 5150 já saiu?", "meu pedido 31, cadê"])).toEqual(["5150", "31"]);
     expect(orderNumbersIn(["pedido 2 pizzas", "fiz o pedido 30 minutos atrás"])).toEqual([]);
+    expect(orderNumbersIn(["Fiz um pedido no Ifood 3560"])).toEqual(["3560"]);
+    expect(orderNumbersIn(["fiz um pedido no ifood 2 pizzas"])).toEqual([]);
     expect(orderNumbersIn(["Pedido Nº 1\nFeito às 13:44"])).toEqual(["1"]);
     expect(orderNumbersIn(["o número do pedido é 5150", "pedido: 77"])).toEqual(["5150", "77"]);
     expect(orderNumbersIn(["quero 2 pizzas", "fiz o pedido há 30 minutos", "86999731647", "(86) 99973-1647"])).toEqual([]);
@@ -964,6 +966,12 @@ describe("atendimento com IA: número do pedido informado pelo cliente", () => {
     expect(courierShortcut("pedido 41867")).toEqual({ kind: "number", code: "41867" });
     expect(courierShortcut("Vim buscar")).toEqual({ kind: "pickup" });
     expect(courierShortcut("Máquina que tou tá com defeito")).toEqual({ kind: "problem" });
+    expect(courierShortcut("6601 avisa o cliente que eu estou na portaria")).toEqual({ kind: "arrival", code: "6601" });
+    expect(courierShortcut("6601 tô aqui na portaria")).toEqual({ kind: "arrival", code: "6601" });
+    expect(courierShortcut("6601 estou na portaria, deixei com o porteiro")).toEqual({ kind: "front_desk", code: "6601" });
+    expect(courierShortcut("[imagem] 4639 Avisa que vai demorar")).toBeNull();
+    expect(courierShortcut("3022 ver si ele mandou o lote e a casa ou manda mensagem de novo pq Aki na portaria não sabe quem e pelo nome")).toBeNull();
+    expect(courierShortcut("5516 tá na portaria?")).toBeNull();
     expect(courierShortcut("Ja tô aqui a 10 minutos")).toBeNull();
     expect(courierShortcut("Oi")).toBeNull();
     expect(courierShortcut("Pedido 089p")).toBeNull();

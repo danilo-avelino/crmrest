@@ -53,7 +53,7 @@ export class PhoneCollectionService {
         return { send: [messageId], remind: true };
       }
 
-      if (state.phoneCollection === "awaiting_phone" && event.text) {
+      if (askedPhone(state) && event.text) {
         const phone = extractPhone(event.text);
         if (!phone) return null;
         await this.register(tx, conversation, phone);
@@ -126,6 +126,14 @@ export class PhoneCollectionService {
 }
 
 type PhoneConversation = { id: string; tenantId: string; channelId: string; contact: { id: string } };
+
+/**
+ * A coleta pediu o telefone e ainda aceita a resposta. Depois da desistência também: o número mandado na hora em que ela
+ * rodou chegava logo depois (o chat do iFood copia com alguns segundos de atraso) e se perdia (14/11/2026).
+ */
+export function askedPhone(state: AutomationState): boolean {
+  return state.phoneCollection === "awaiting_phone" || state.phoneCollection === "phone_skipped";
+}
 
 /** O corpo de PhoneCollectionService.register, para quem não tem o serviço (a leitura do chat do iFood). */
 export async function registerPhone(tx: TenantTx, conversation: PhoneConversation, phone: string): Promise<void> {

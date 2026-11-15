@@ -38,6 +38,19 @@ const FRONT_DESK = /portaria|recep[cç][aã]o|deixei|entreguei|seguran[cç]a|gua
 const ARRIVAL = /cheguei|chegando|t[oô]\s*(?:aqui|aq|na\s+porta|no\s+local|em\s+frente|l[aá])|estou\s+(?:aqui|aq|na\s+porta|no\s+local)|na\s+frente|na\s+porta|aguard|esperando|avis[ae]/i;
 const PICKUP = /buscar|pegar|coletar|retirar/i;
 const PROBLEM = /m[aá]quina|maquininha|defeito|endere[cç]o\s+errado|cancel|ningu[eé]m|n[aã]o\s+(?:atende|responde|recebe|passa|desce|aceita)/i;
+// O entregador na portaria ainda espera o cliente: "eu estou na portaria" é chegada, não pedido deixado (14/11/2026).
+const AT_FRONT_DESK = /(?:estou|\bt[oô]u?)\s+(?:aqui\s+|aq\s+)?n[ao]\s+(?:portaria|recep[cç][aã]o|guarita)/i;
+const LEFT_THERE = /deixei|entreguei|ficou|larguei/i;
+// Pergunta, pedido à equipe ou atraso não é aviso ao cliente: "4639 Avisa que vai demorar" e "3022 ver se ele mandou o
+// lote... aqui na portaria não sabe quem é" diziam ao cliente que o entregador chegou ou deixou o pedido (14/11/2026).
+const NOT_NOTICE = /\?|demor|atras|\bver\s+s[ei]\b|\bmand[ae]\s+(?:mensagem|msg)|n[aã]o\s+sabe/i;
+
+/** O aviso que a frase do entregador pede, se pede um. */
+function noticeOf(text: string): Notice | null {
+  if (NOT_NOTICE.test(text)) return null;
+  if (FRONT_DESK.test(text)) return AT_FRONT_DESK.test(text) && !LEFT_THERE.test(text) ? "arrival" : "front_desk";
+  return ARRIVAL.test(text) ? "arrival" : null;
+}
 
 /**
  * O número do iFood se repete entre as lojas do grupo e de um dia para o outro (13/11: o #4020 e o #7719 de ontem
@@ -61,7 +74,8 @@ export type CourierShortcut =
 
 /**
  * Lê o pedido do entregador escrito numa frase ("1024 tá na portaria", "Avisa pro pedido 3289", "6552", "vim buscar"),
- * sem LLM. Portaria vence chegada ("8240 avisa q tá na portaria"); problema vence os dois. null = não deu para entender.
+ * sem LLM. Portaria vence chegada ("8240 avisa q tá na portaria"), menos com ele ainda lá ("estou na portaria"); problema
+ * vence os dois; pergunta ou atraso não é aviso. null = não deu para entender.
  */
 export function courierShortcut(text: string | undefined): CourierShortcut | null {
   if (!text) return null;
@@ -69,8 +83,8 @@ export function courierShortcut(text: string | undefined): CourierShortcut | nul
   if (PROBLEM.test(text)) return { kind: "problem" };
   if (PICKUP.test(text)) return code ? { kind: "pickup", code } : { kind: "pickup" };
   if (!code) return null;
-  if (FRONT_DESK.test(text)) return { kind: "front_desk", code };
-  if (ARRIVAL.test(text)) return { kind: "arrival", code };
+  const notice = noticeOf(text);
+  if (notice) return { kind: notice, code };
   // Só o número (com "pedido", "#" ou pontuação em volta): o menu pergunta o que fazer com ele.
   if (/^\s*(?:o\s+)?(?:pedido\s*)?(?:n[º°]\.?\s*)?#?\s*\d{2,6}\s*[.!?]*\s*$/i.test(text)) return { kind: "number", code };
   return null;
@@ -137,7 +151,7 @@ export class CourierMenuService {
     const asked = courierShortcut(text);
     // O número já veio antes ("5130", e depois "Estou aq no endereço", 13/11/2026): o aviso por extenso usa esse número.
     if (!asked && state.courierOrder && text && !PROBLEM.test(text)) {
-      const kind = FRONT_DESK.test(text) ? "front_desk" : ARRIVAL.test(text) ? "arrival" : null;
+      const kind = noticeOf(text);
       if (kind) return this.notifyCustomer(tx, conversation, state, messages, state.courierOrder, kind);
     }
     if (!asked) return null;

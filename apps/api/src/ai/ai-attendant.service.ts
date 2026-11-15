@@ -150,7 +150,7 @@ Mensagem de quando você passa para a equipe (handoff = true):
 - Reclamação ou problema (não uma simples pergunta): comece reconhecendo o problema que o cliente contou, com as palavras do caso (ex.: "Sinto muito pela demora do seu pedido"), e não com uma frase genérica ("Lamentamos o transtorno"). Não prometa solução, reembolso nem desconto.
 - Há atendente online (veja "Atendentes" nos DADOS): diga que alguém da equipe vai continuar o atendimento, sem fazer nenhuma pergunta (quem continua é a equipe). Não diga "um momento" nem que você vai verificar: quem verifica é a equipe.
 - A equipe já respondeu ao cliente neste atendimento (há "Restaurante (atendente)" ou "Restaurante (loja)" na CONVERSA depois da primeira mensagem dele): não anuncie de novo que alguém vai continuar. Diga só, numa frase, que a equipe já vai ver o que ele acabou de mandar.
-- Exceção, só quando os DADOS dizem que o telefone do cliente não está no cadastro: no fim da mensagem, aproveite a espera e pergunte se ele quer deixar o telefone com DDD: ${phoneAsk}. Essa é a única pergunta permitida.
+- Exceção, só quando os DADOS dizem que o telefone do cliente não está no cadastro: no fim da mensagem, aproveite a espera e pergunte se ele quer deixar o telefone com DDD: ${phoneAsk}. Fale com ele ("seu telefone"), e não dele, e não diga que o telefone não está no cadastro. Essa é a única pergunta permitida.
 - Não há atendente: siga o que "Atendentes" diz nos DADOS e continue respondendo as outras dúvidas do cliente.`;
 }
 
@@ -164,7 +164,12 @@ const ORDER_NUMBER = [
   /n[uú]mero\s+do\s+pedido\s*(?:é|e|:)?\s*#?\s*(\d{1,6})(?!\d)/gi,
   // "pedido 1234 já saiu?": o número seguido do fim da frase ou de um verbo, não de uma medida ("pedido 30 minutos atrás").
   /pedido\s+#?\s*(\d{1,6})(?=\s*$|\s*[?!.,;]|\s+(?:j[áa]|que|foi|est[áa]|t[áa]|ainda|n[ãa]o|saiu|chegou|vai|vem|e)(?![a-zà-ú]))/gi,
+  // "Fiz um pedido no Ifood 3560" (14/11/2026: a IA pediu de novo o número que a cliente já tinha mandado).
+  /pedido\s+(?:n[oa]|pel[oa])\s+(?:i-?food|app|aplicativo|site|whats(?:app)?|card[áa]pio\s+web)\s*#?\s*(\d{3,6})(?=\s*$|\s*[?!.,;]|\s+(?:j[áa]|que|e)(?![a-zà-ú]))/gi,
 ];
+
+/** A resposta promete que alguém da equipe vem ("vou chamar alguém da equipe", "já vou passar para a equipe"). */
+const TEAM_PROMISE = /\b(?:vou|vamos)\s+(?:chamar|passar|acionar|encaminhar)\b/i;
 
 /** Números de pedido que o cliente informou nas mensagens (com e sem os zeros à esquerda). */
 export function orderNumbersIn(texts: string[]): string[] {
@@ -510,7 +515,10 @@ export class AiAttendantService {
       // Sem atendente, a resposta que diz "estamos sem atendentes" promete encaminhar a conversa: ela espera alguém mesmo
       // que a LLM tenha respondido handoff = false.
       const promised = !!answer && !attendance.available && /sem atendentes?/i.test(answer.reply);
-      const needsTeam = !answer || (answer.handoff && !sentLinks) || promised;
+      // A resposta que diz "vou chamar alguém da equipe" chama mesmo com os links nela (14/11/2026: a cliente perguntou o
+      // endereço, ouviu que viria alguém, e a conversa foi encerrada por falta de interação).
+      const callsTeam = !!answer && TEAM_PROMISE.test(answer.reply);
+      const needsTeam = !answer || (answer.handoff && (!sentLinks || callsTeam)) || promised;
       const handoff = needsTeam && attendance.available;
       const waits = needsTeam && !attendance.available;
       const startsWaiting = waits && !current.aiWaiting;

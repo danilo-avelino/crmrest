@@ -14,7 +14,7 @@ import type { Queue } from "bullmq";
 import type { RequestAuth } from "../auth/auth.decorators.js";
 import { type AutomationState, setAutomationState, teamRepliedUpdate } from "../automations/automation.js";
 import { ATTENDANCE_END_MS, INACTIVITY_CLOSE_MS } from "../automations/inactivity.service.js";
-import { extractPhone, registerPhone } from "../automations/phone-collection.service.js";
+import { askedPhone, extractPhone, registerPhone } from "../automations/phone-collection.service.js";
 import { claimReviewInvites, settleReviewInvite } from "../automations/review-invite.service.js";
 import { ENV, type Env } from "../config/env.js";
 import { DatabaseService } from "../core/database.service.js";
@@ -43,6 +43,18 @@ const STORE_REPLY_MS = 5 * 60_000;
  * entregue..."), mesmo logo depois de uma mensagem do cliente: não conta como resposta da equipe.
  */
 const STORE_TEMPLATE_MS = 3 * 24 * HOUR_MS;
+
+/** Balões da loja até este tempo um do outro são uma pessoa digitando. */
+const TYPED_BURST_MS = 60_000;
+
+/** O balão da loja `index` é curto, sem emoji, e tem um vizinho igual a ele, da loja, colado: a equipe digitando no Gestor. */
+function typedBurst(entries: Entry[], index: number): boolean {
+  const typed = (item: Entry | undefined) =>
+    !!item && item.direction === "OUTBOUND" && item.text.trim().length <= 60 && !/\p{Extended_Pictographic}/u.test(item.text);
+  const entry = entries[index];
+  if (!typed(entry)) return false;
+  return [entries[index - 1], entries[index + 1]].some((near) => typed(near) && Math.abs(near!.at.getTime() - entry!.at.getTime()) <= TYPED_BURST_MS);
+}
 /** O widget mostra assim a mensagem que não saiu: ela não chegou ao cliente e não entra na Inbox. */
 const NOT_SENT = /Mensagem não enviada\s*$/;
 const BRASILIA_DAY = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" });
@@ -222,7 +234,7 @@ export class IfoodChatService {
       select: { id: true, tenantId: true, channelId: true, automationState: true, contact: { select: { id: true, phone: true } } },
     });
     const state = conversation.automationState as AutomationState;
-    if (state.phoneCollection !== "awaiting_phone" || conversation.contact.phone) return;
+    if (!askedPhone(state) || conversation.contact.phone) return;
     const phone = fresh.flatMap((entry) => (entry.direction === "INBOUND" ? [extractPhone(entry.text)] : [])).find((found) => !!found);
     if (!phone) return;
     await registerPhone(tx, conversation, phone);
@@ -335,11 +347,14 @@ export class IfoodChatService {
 
   /**
    * Mensagem escrita no Gestor é resposta da loja ao cliente quando vem até STORE_REPLY_MS depois de uma mensagem dele
-   * e não é uma mensagem automática da loja (o mesmo texto em outros chats).
+   * e não é uma mensagem automática da loja (o mesmo texto em outros chats). Antes de o cliente escrever, só os balões
+   * curtos em sequência, como a equipe digita ("entregador esta no endereço", "pode receber ?"): a IA respondia por cima
+   * da loja à resposta do cliente (14/11/2026). As automáticas vêm num balão só, e as da loja são longas ou têm emoji.
    */
   private async isStoreReply(tx: TenantTx, channelId: string, entries: Entry[], entry: Entry, now: Date): Promise<boolean> {
-    const asked = entries.slice(0, entries.indexOf(entry)).reverse().find((item) => item.direction === "INBOUND");
-    if (!asked || entry.at.getTime() - asked.at.getTime() >= STORE_REPLY_MS) return false;
+    const index = entries.indexOf(entry);
+    const asked = entries.slice(0, index).reverse().find((item) => item.direction === "INBOUND");
+    if (asked ? entry.at.getTime() - asked.at.getTime() >= STORE_REPLY_MS : !typedBurst(entries, index)) return false;
     const same = await tx.message.findFirst({
       where: {
         channelId,

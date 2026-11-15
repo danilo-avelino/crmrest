@@ -218,6 +218,20 @@ describe("Chat do iFood na Inbox (trava IFOOD_CHAT_BRIDGE ligada)", () => {
     await typeOutbox();
   });
 
+  it("loja abre o chat digitando no Gestor (balões curtos em sequência) e o cliente responde depois: a resposta é para a equipe", async () => {
+    const called = await ifoodOrder("6599", "Gi Albano");
+    const typed = [shown("OUTBOUND", "entregador esta no endereço", minutesAgo(2)), shown("OUTBOUND", "pode receber ?", minutesAgo(2))];
+    await post("/ifood-chat/sync", { orderCode: "6599", messages: typed }).expect(200);
+    const chat = await admin.conversation.findFirstOrThrow({ where: { contactId: called.contactId, channelId: fx.ifood.id } });
+    expect((await timeline(chat.id)).map((m) => m.content)).toContainEqual({ text: "pode receber ?", storeReply: true });
+    await post("/ifood-chat/sync", { orderCode: "6599", messages: [...typed, shown("INBOUND", "Não tocou a campainha", minutesAgo(1))] }).expect(200);
+    await settle();
+    // Como na resposta à loja: sem o chamado automático, só o alarme e o pedido do telefone.
+    expect((await timeline(chat.id)).flatMap((m) => (m.content as { automation?: string }).automation ?? [])).toEqual(["phone_collection"]);
+    expect(await admin.conversation.findUniqueOrThrow({ where: { id: chat.id } })).toMatchObject({ awaitingAgentSince: expect.any(Date) });
+    await typeOutbox();
+  });
+
   it("pedido que ainda não chegou pelo polling, ou de outro restaurante: nada é gravado", async () => {
     expect((await post("/ifood-chat/sync", { orderCode: "9999", messages: [shown("INBOUND", "Olá", new Date())] }).expect(200)).body).toEqual({ found: false });
     const outsider = await accessTokenFor(app, other.user.email, other.a.id);
