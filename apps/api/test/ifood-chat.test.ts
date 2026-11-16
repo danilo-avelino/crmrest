@@ -726,7 +726,9 @@ describe("Chat do iFood na Inbox (trava IFOOD_CHAT_BRIDGE ligada)", () => {
 
     await admin.message.updateMany({ where: { conversationId: (await courier()).id }, data: { createdAt: minutesAgo(60) } });
     await say("wamid.DUP3", "1", { automation: "order_number_request" });
-    await say("wamid.DUP4", "Já deu os 10 mim", { event: "handoff", text: "Entregador avisou que chegou" });
+    // Sem número na resposta, a automação pergunta de novo em vez de chamar a equipe.
+    await say("wamid.DUP4", "Já deu os 10 mim", { automation: "order_number_request" });
+    expect((await courier()).awaitingAgentSince).toBeNull();
     expect((await courier()).messages.some((m) => /#10\b/.test((m.content as { text?: string }).text ?? ""))).toBe(false);
     await typeOutbox();
   });
