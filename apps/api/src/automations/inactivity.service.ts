@@ -1,3 +1,4 @@
+import type { TenantTx } from "@dishdesk/database";
 import { automationMessagesOf, CHANNEL_CAPABILITIES, STAFF_TAG } from "@dishdesk/shared";
 import { InjectQueue } from "@nestjs/bullmq";
 import { Inject, Injectable, Logger, type OnModuleInit } from "@nestjs/common";
@@ -5,6 +6,8 @@ import type { Queue } from "bullmq";
 import { EVALUATION_DELAY_MS, scheduleEvaluation } from "../ai/ai-evaluation.service.js";
 import { ENV, type Env } from "../config/env.js";
 import { DatabaseService } from "../core/database.service.js";
+import { NOTICE_LIMIT_MS } from "../orders/order-notice.service.js";
+import { withOrderTenants } from "../orders/order-scope.js";
 import { type AiJob, type OutboundJob, QUEUES } from "../queues/queues.module.js";
 import { RealtimeEmitter } from "../realtime/realtime.emitter.js";
 import {
@@ -131,14 +134,29 @@ export class InactivityService implements OnModuleInit {
       });
       if (last?.direction !== "OUTBOUND" || now.getTime() - last.createdAt.getTime() < INACTIVITY_CLOSE_MS) return null;
 
-      const { inactivityClose } = automationMessagesOf(await tenantSettings(tx, tenantId));
-      const id = await automationMessage(tx, conversation, "inactivity_close", inactivityClose);
       await tx.conversation.update({ where: { id: conversationId }, data: { status: "RESOLVED", teamInvolved: false } });
-      return id;
+      // Pedido do atendimento ainda a caminho: os avisos de saída e de entrega continuam vindo, e o "encerramos por falta
+      // de interação" no meio deles soa como abandono (15/11/2026). A conversa é arquivada sem mensagem.
+      const linked = (conversation.automationState as AutomationState).linkedOrder;
+      if (linked && (await this.underway(tx, conversation.channelId, linked.id, now))) return "silent" as const;
+      const { inactivityClose } = automationMessagesOf(await tenantSettings(tx, tenantId));
+      return automationMessage(tx, conversation, "inactivity_close", inactivityClose);
     });
     if (!messageId) return;
-    await dispatch(this.outbound, this.realtime, tenantId, conversationId, [messageId]);
-    await this.survey.request(tenantId, conversationId, now);
+    if (messageId !== "silent") {
+      await dispatch(this.outbound, this.realtime, tenantId, conversationId, [messageId]);
+      await this.survey.request(tenantId, conversationId, now);
+    } else this.realtime.inboxChanged(tenantId, conversationId);
+    // O telefone que ficou de fora porque a equipe estava na conversa é pedido agora.
+    await this.automations.add("phone-at-end", { tenantId, conversationId });
     await scheduleEvaluation(this.ai, tenantId, conversationId);
+  }
+
+  /** O pedido (deste restaurante ou de um que o canal atende) ainda não foi entregue nem cancelado, e ainda gera avisos. */
+  private underway(tx: TenantTx, channelId: string, orderId: string, now: Date): Promise<boolean> {
+    return withOrderTenants(this.db, tx, channelId, async (orders) => {
+      const order = await orders.order.findUnique({ where: { id: orderId }, select: { status: true, placedAt: true } });
+      return !!order && order.status !== "DELIVERED" && order.status !== "CANCELED" && now.getTime() - order.placedAt.getTime() < NOTICE_LIMIT_MS;
+    });
   }
 }

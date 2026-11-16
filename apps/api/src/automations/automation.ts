@@ -124,6 +124,31 @@ export function teamRepliedUpdate(status: ConversationStatus, state: AutomationS
 /** Resposta à pesquisa de satisfação: só a nota, de 1 a 5. */
 export const RATING_ANSWER = /^\s*([1-5])\s*$/;
 
+/** Letras repetidas viram uma ("Mt obrigadaa", "okkk", "vlww"). */
+const squeeze = (text: string) => text.replace(/(.)\1+/g, "$1");
+
+/** Palavras de quem só agradece, confirma ou se despede, sem acento. */
+const ACKNOWLEDGMENT_WORDS = new Set(
+  [
+    ...["ok", "okay", "okey", "blz", "beleza", "certo", "certinho", "ta", "bom", "tudo", "bem", "joia", "show", "top", "legal", "massa"],
+    ...["perfeito", "otimo", "combinado", "entendi", "entendido", "fico", "no", "aguardo", "aguardando"],
+    ...["obrigado", "obrigada", "obrigadao", "brigado", "brigada", "obg", "obgd", "obgda", "vlw", "valeu", "grato", "grata", "agradeco"],
+    ...["mt", "mto", "muito", "muita", "muitissimo", "muitissima", "por", "pela", "pelo", "ajuda", "atencao", "de", "nada", "tmj"],
+    ...["boa", "noite", "dia", "tarde", "tchau", "ate", "mais", "logo", "abraco", "abracos", "deus", "abencoe", "amem"],
+    ...["k", "rs", "ha", "he", "ah", "oh", "a"],
+  ].map(squeeze),
+);
+
+/**
+ * O cliente só agradeceu, confirmou ou se despediu ("ok", "Mt obrigadaa", "valeu, boa noite", 👍): numa conversa que a
+ * equipe já respondeu, não chama o atendente de novo. Número ou pergunta sempre chama.
+ */
+export function isAcknowledgment(text: string | undefined): boolean {
+  if (!text?.trim() || /[\d?]/.test(text)) return false;
+  const words = squeeze(text.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase()).split(/[^a-z]+/).filter(Boolean);
+  return words.length <= 6 && words.every((word) => ACKNOWLEDGMENT_WORDS.has(word));
+}
+
 /** Mensagem recebida, como as automações a veem. */
 export type InboundEvent = {
   channel: { id: string; tenantId: string; type: ChannelType };
@@ -239,4 +264,9 @@ export function localDate(at: Date): string {
 /** 00h de ontem em Brasília (sem horário de verão desde 2019): a busca vale para pedidos de hoje e de ontem. */
 export function startOfYesterday(now: Date): Date {
   return new Date(Date.parse(`${localDate(now)}T00:00:00-03:00`) - 24 * 60 * 60 * 1000);
+}
+
+/** Início do "hoje" dos pedidos: até as 6h de Brasília ainda vale o dia anterior (pedidos da noite em rota). */
+export function startOfOrderDay(now: Date): Date {
+  return new Date(`${localDate(new Date(now.getTime() - 6 * 60 * 60 * 1000))}T00:00:00-03:00`);
 }

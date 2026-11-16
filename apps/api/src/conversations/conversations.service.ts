@@ -501,10 +501,12 @@ export class ConversationsService {
       });
       return { conversation: updated, resolved: body.status === "RESOLVED" && current.status !== "RESOLVED" };
     });
-    // Fim do atendimento: a pesquisa de satisfação decide no worker se pergunta a nota; a IA avalia o atendimento.
+    // Fim do atendimento: a pesquisa de satisfação decide no worker se pergunta a nota; o telefone que ficou de fora
+    // (a equipe estava na conversa) é pedido agora; a IA avalia o atendimento.
     // A conversa só da equipe não teve atendimento: o cliente nem está nela.
     if (resolved && !conversation.teamOnly) {
       await this.automations.add("survey", { tenantId: conversation.tenantId, conversationId });
+      await this.automations.add("phone-at-end", { tenantId: conversation.tenantId, conversationId });
       await scheduleEvaluation(this.ai, conversation.tenantId, conversationId);
     }
     this.realtime.inboxChanged(conversation.tenantId, conversationId);

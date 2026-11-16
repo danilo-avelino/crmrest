@@ -3,7 +3,7 @@ import type { INestApplication } from "@nestjs/common";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { DatabaseService } from "../src/core/database.service.js";
-import { forecastOrder } from "../src/orders/forecast.js";
+import { forecastOrder, skipsDispatch } from "../src/orders/forecast.js";
 import { accessTokenFor, admin, createChannelFixture, createTestApp, startMockGraph } from "./helpers.js";
 
 const MINUTE = 60_000;
@@ -320,5 +320,39 @@ describe("previsão de saída do pedido (E26)", () => {
     const deliveryList = await get("/orders?period=7d&production=true");
     expect((deliveryList.body.items as { id: string; late: boolean }[]).find((item) => item.id === takeout.id)?.late).toBe(true);
     await admin.order.delete({ where: { id: takeout.id } });
+  });
+  it("loja que não marca a saída: entregas da semana concluídas sem passar por \"saiu\"", async () => {
+    const db = app.get(DatabaseService);
+    // Um canal só destes pedidos: os outros testes deixam entregas com saída no do iFood.
+    const store = fx.instagram.id;
+    const skips = () => db.withTenants({ tenantIds: [fx.tenant.id] }, (tx) => skipsDispatch(tx, store));
+    const delivered = async (dispatched: boolean, raw: object = {}) => {
+      sequence += 1;
+      return admin.order.create({
+        data: {
+          tenantId: fx.tenant.id,
+          contactId,
+          channelId: store,
+          externalOrderId: `sem-saida-${sequence}-${Date.now()}`,
+          displayCode: String(5000 + sequence),
+          status: "DELIVERED",
+          subtotal: "30.00",
+          deliveryFee: "0.00",
+          total: "30.00",
+          placedAt: new Date(Date.now() - 60 * MINUTE),
+          dispatchedAt: dispatched ? new Date(Date.now() - 30 * MINUTE) : null,
+          raw,
+        },
+      });
+    };
+    const created = [];
+    for (let i = 0; i < 4; i++) created.push(await delivered(false));
+    created.push(await delivered(false, { orderType: "TAKEOUT" })); // retirada não conta
+    expect(await skips()).toBe(false); // poucas entregas: vale que marca
+    created.push(await delivered(false));
+    expect(await skips()).toBe(true);
+    created.push(await delivered(true));
+    expect(await skips()).toBe(false);
+    await admin.order.deleteMany({ where: { id: { in: created.map((order) => order.id) } } });
   });
 });

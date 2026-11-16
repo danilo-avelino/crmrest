@@ -15,7 +15,7 @@ import {
 } from "@dishdesk/shared";
 import { Inject, Injectable, Logger, NotFoundException, UnprocessableEntityException } from "@nestjs/common";
 import type { RequestAuth } from "../auth/auth.decorators.js";
-import { tenantSettings } from "../automations/automation.js";
+import { startOfOrderDay, tenantSettings } from "../automations/automation.js";
 import { ENV, type Env } from "../config/env.js";
 import { CardapioWebClient } from "../connectors/cardapio-web.client.js";
 import { ConnectorsService } from "../connectors/connectors.service.js";
@@ -81,7 +81,7 @@ export class OrdersService {
 
   async list(auth: RequestAuth, query: OrderListQuery, now = new Date()): Promise<OrderPage> {
     const where: Prisma.OrderWhereInput = {
-      placedAt: { gte: periodStart(query.period, now) },
+      placedAt: { gte: query.period === "today" ? startOfOrderDay(now) : periodStart(query.period, now) },
       // O histórico importado da loja (de antes da conexão) fica no cadastro do cliente, fora desta aba.
       importedAt: null,
       ...(query.status && { status: query.status }),
@@ -181,7 +181,7 @@ export class OrdersService {
   /** Pedidos de hoje por etapa: em produção, prontos, em rota (já saíram do restaurante) e entregues. */
   async stages(auth: RequestAuth, now = new Date()): Promise<OrderStageCounts> {
     const rows = await this.db.withTenants(auth.scope, (tx) =>
-      tx.order.findMany({ where: { placedAt: { gte: periodStart("today", now) } }, select: { status: true, dispatchedAt: true } }),
+      tx.order.findMany({ where: { placedAt: { gte: startOfOrderDay(now) } }, select: { status: true, dispatchedAt: true } }),
     );
     const counts: OrderStageCounts = { production: 0, ready: 0, dispatched: 0, delivered: 0 };
     for (const { status, dispatchedAt } of rows) {

@@ -252,6 +252,27 @@ export function isTakeout(raw: unknown): boolean {
   return (order?.orderType ?? order?.order_type)?.toUpperCase() === "TAKEOUT";
 }
 
+/** Entregas recentes da loja consultadas para saber se ela marca a saída. */
+const DISPATCH_SAMPLE = 20;
+const DISPATCH_SAMPLE_MIN = 5;
+
+/**
+ * A loja não marca "saiu para entrega": das entregas concluídas na última semana, nenhuma passou por essa etapa (o
+ * Terra Querida, no Cardápio Web, vai de confirmado direto a concluído). O aviso de saída nunca sai, e a IA não deve
+ * prometê-lo (15/11/2026). Com poucas entregas, vale que marca.
+ */
+export async function skipsDispatch(tx: TenantTx, channelId: string, now = new Date()): Promise<boolean> {
+  const delivered = (
+    await tx.order.findMany({
+      where: { channelId, status: "DELIVERED", placedAt: { gte: new Date(now.getTime() - 7 * 24 * 60 * 60_000) } },
+      orderBy: { placedAt: "desc" },
+      take: DISPATCH_SAMPLE,
+      select: { dispatchedAt: true, raw: true },
+    })
+  ).filter((order) => !isTakeout(order.raw));
+  return delivered.length >= DISPATCH_SAMPLE_MIN && delivered.every((order) => !order.dispatchedAt);
+}
+
 const CLOCK = new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo" });
 const FIVE_MINUTES = 5 * 60_000;
 

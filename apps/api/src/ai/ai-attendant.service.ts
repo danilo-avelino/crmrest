@@ -28,7 +28,7 @@ import { linkOrderContact, ORDER_STATUS_TEXT, TriageService } from "../automatio
 import { ifoodChatOrderOf } from "../conversations/ifood-conversation.js";
 import { DatabaseService } from "../core/database.service.js";
 import { JevClient } from "../defense/jev.client.js";
-import { orderUpdateMessage } from "../orders/forecast.js";
+import { isTakeout, orderUpdateMessage, skipsDispatch } from "../orders/forecast.js";
 import { latestOrderOf } from "../orders/latest-order.js";
 import { withOrderTenants } from "../orders/order-scope.js";
 import { type AiJob, type OutboundJob, QUEUES } from "../queues/queues.module.js";
@@ -48,7 +48,7 @@ const CARDAPIO_WEB_ASK = /pedido\s+de\s+n[uú]mero\s*\*?#?\s*\d{1,6}/i;
 /** Quanto a IA espera o pedido citado nessa mensagem chegar pela integração. */
 export const ORDER_ARRIVAL_WAIT_MS = 20_000;
 /** Resposta da equipe na conversa há menos que isto: ela ainda está atendendo, mesmo depois do horário. */
-const TEAM_ACTIVE_MS = 15 * 60_000;
+export const TEAM_ACTIVE_MS = 15 * 60_000;
 
 /** Alguém da equipe (pelo painel ou pelo celular da loja) respondeu na conversa depois de `since`. */
 export function teamRepliedSince(history: { direction: string; content: unknown; sentByUserId: string | null; createdAt: Date }[], since: number): boolean {
@@ -71,7 +71,7 @@ export const AttendantReply = z.object({
   order: z
     .enum(["confirmed", "denied", "none"])
     .describe(
-      'Resposta do cliente à sua pergunta "é esse o seu pedido?": "confirmed" = ele respondeu que sim; "denied" = respondeu que não; "none" = você ainda não perguntou ou ele não respondeu a isso. Informar o número do pedido não é confirmar.',
+      'Resposta do cliente à sua pergunta "é esse o seu pedido?": "confirmed" = ele respondeu que sim, ou já falou do pedido como sendo dele; "denied" = respondeu que não; "none" = você ainda não perguntou ou ele não respondeu a isso. Informar o número do pedido não é confirmar.',
     ),
   // Sem ela, a IA respondia a cada "obrigado" de um robô de vendas até chamar a equipe (12/11/2026).
   skip: z.boolean().default(false).describe('true = não mandar nenhuma mensagem (só nos casos de "Não responda").'),
@@ -104,9 +104,9 @@ Regras obrigatórias:
 - Cumprimente só na sua primeira resposta do atendimento, como diz "Cumprimento" nos DADOS; depois, vá direto ao ponto.
 
 Quando o cliente quiser saber do andamento de um pedido (se saiu, se chegou, onde está, atraso), siga estes passos:
-1. Há nos DADOS um pedido ainda não confirmado: mostre o número, os itens e o total e pergunte se é esse o pedido dele. Não diga o andamento antes de ele confirmar.
+1. Há nos DADOS um pedido ainda não confirmado: mostre o número, os itens e o total e pergunte se é esse o pedido dele. Não diga o andamento antes de ele confirmar. Se, em vez de responder, ele já fala desse pedido como sendo dele (pede para ser avisado quando sair, pergunta quando chega, manda um recado para a entrega), isso confirma: order = "confirmed", e siga sem perguntar de novo.
 2. Ele confirmou (order = "confirmed") ou os DADOS dizem que o pedido é o deste chat: diga o andamento que está nos DADOS, sem perguntar se o pedido é dele e sem repetir os itens e o total.
-3. Ele disse que não é (order = "denied") ou não há pedido nos DADOS: peça o número do pedido (e o telefone usado no pedido, se os DADOS disserem que o telefone não está no cadastro), sem passar para a equipe. Não diga que não achou o pedido nem fale em cadastro: só peça o número.
+3. Ele disse que não é (order = "denied") ou não há pedido nos DADOS: peça o número do pedido (e o telefone usado no pedido, se os DADOS disserem que o telefone não está no cadastro), sem passar para a equipe. Não diga que não achou o pedido nem fale em cadastro: só peça o número. Se ele diz que pediu pelo iFood (ou outro app) sem dar o número, peça o número que aparece no pedido dentro do app (no iFood, os 4 dígitos); não diga que não consegue ver pedidos de lá.
 4. Ele informou o número (e o telefone, se você pediu) e o pedido continua fora dos DADOS: passe para a equipe.
 Os passos valem só para o andamento. Problema, mudança ou cancelamento vão direto para a equipe, sem você pedir antes que ele confirme o pedido.
 
@@ -143,7 +143,7 @@ Não passe para a equipe (handoff = false):
 Não responda (skip = true, com "-" em reply e handoff = false) só nestes casos. Na dúvida, responda.
 - O cliente só agradeceu, confirmou ("ok", "certo", "obrigada") ou se despediu, e você já se despediu ou já respondeu a isso neste atendimento.
 - A equipe já respondeu ao cliente neste atendimento e ele só agradeceu ou confirmou para ela.
-- O cliente só cumprimentou de novo, logo depois de você perguntar em que pode ajudar.
+- O cliente só cumprimentou de novo, logo depois de você perguntar em que pode ajudar. Se a sua última mensagem pediu outra coisa (o número do pedido, uma confirmação) e ele só chama ("olá", "oi?", "??"), ele está esperando você: responda, pedindo de novo numa frase curta.
 - Divulgação, corrente, lista de transmissão, oferta de serviço ou robô de outra empresa: depois da sua única resposta, ou já na primeira mensagem quando é claramente um envio em massa que não pede nada.
 
 Mensagem de quando você passa para a equipe (handoff = true):
@@ -221,6 +221,10 @@ export type OrderFacts = {
   chatOrder?: boolean;
   /** O motivo que a loja deu ao cancelar ("Pedido fora da área de entrega"). */
   cancellationReason?: string | null;
+  /** Retirada: o cliente busca na loja, sem saída para entrega. */
+  takeout?: boolean;
+  /** A loja não marca a saída para entrega (skipsDispatch): o aviso de saída não vai sair. */
+  skipsDispatch?: boolean;
 };
 
 /** O que a LLM recebe para responder: as regras e, na mensagem do usuário, os DADOS e a CONVERSA. */
@@ -319,6 +323,12 @@ export function orderFactsOf(order: OrderFacts | null, noPhone: boolean): string
         ]
       : []),
     ...(order.update ? [`Andamento agora${order.confirmed ? "" : " (só diga depois que ele confirmar que o pedido é dele)"}: ${order.update.text}`, ANDAMENTO_RULE] : []),
+    // 15/11/2026: o Erick ia buscar e ouviu "aguarde a saída para entrega"; a Yris esperou o aviso de saída que nunca veio.
+    ...(order.takeout
+      ? ["É retirada: o cliente busca o pedido no restaurante. Não há saída para entrega nem entregador: não fale de saída nem de entrega. Quando ficar pronto, ele pode vir buscar."]
+      : order.skipsDispatch
+        ? ["Esta loja não marca no sistema quando o pedido sai para entrega: o aviso de saída não vai chegar. Não prometa avisar quando o pedido sair (as outras atualizações, como a entrega, podem chegar)."]
+        : []),
   ].join("\n");
 }
 
@@ -388,7 +398,7 @@ export class AiAttendantService {
           });
           if (!found) return null;
           const update = await orderUpdateMessage(orders, found.id, now, settings, this.jev);
-          return { ...found, confirmed: true, byNumber: false, channelType: "IFOOD" as const, update, chatOrder: true };
+          return { ...found, confirmed: true, byNumber: false, channelType: "IFOOD" as const, update, chatOrder: true, takeout: isTakeout(found.raw) };
         }
         const confirmed = state.linkedOrder ? await orders.order.findUnique({ where: { id: state.linkedOrder.id }, include: { items: true } }) : null;
         const linked = confirmed ?? (await latestOrderOf(orders, conversation.contact, now, denied));
@@ -396,7 +406,10 @@ export class AiAttendantService {
         if (!found) return null;
         const channel = await orders.channel.findUniqueOrThrow({ where: { id: found.channelId }, select: { type: true } });
         const update = await orderUpdateMessage(orders, found.id, now, settings, this.jev);
-        return { ...found, confirmed: !!confirmed, byNumber: !linked, channelType: channel.type, update, chatOrder: false };
+        const takeout = isTakeout(found.raw);
+        const waiting = !found.dispatchedAt && !["DELIVERED", "CANCELED"].includes(found.status);
+        const skips = !takeout && waiting && (await skipsDispatch(orders, found.channelId, now));
+        return { ...found, confirmed: !!confirmed, byNumber: !linked, channelType: channel.type, update, chatOrder: false, takeout, skipsDispatch: skips };
       });
       return { conversation, settings, history, lastId: last.id, last, order };
     });

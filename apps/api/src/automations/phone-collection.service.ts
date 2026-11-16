@@ -1,5 +1,5 @@
 import type { TenantTx } from "@dishdesk/database";
-import { automationMessagesOf, CHANNEL_CAPABILITIES, toE164 } from "@dishdesk/shared";
+import { automationMessagesOf, CHANNEL_CAPABILITIES, type MessageContent, toE164 } from "@dishdesk/shared";
 import { InjectQueue } from "@nestjs/bullmq";
 import { Inject, Injectable } from "@nestjs/common";
 import type { Queue } from "bullmq";
@@ -17,6 +17,7 @@ import {
   systemEvent,
   tenantSettings,
 } from "./automation.js";
+import { ATTENDANCE_END_MS } from "./inactivity.service.js";
 
 /** Espera até o lembrete e, depois dele, até desistir. */
 export const PHONE_REMINDER_DELAY_MS = 10 * 60_000;
@@ -48,6 +49,9 @@ export class PhoneCollectionService {
       // Textos da personalidade do restaurante.
       const texts = automationMessagesOf(await tenantSettings(tx, tenantId));
       if (!state.phoneCollection && !conversation.contact.phone) {
+        // No meio da conversa com a equipe, o pedido atrapalha: o cliente respondia o atendente e recebia a pergunta (e
+        // mandava o apartamento no lugar do telefone, 15/11/2026). Fica para o fim do atendimento (askAtEnd).
+        if (await teamSpoke(tx, conversation.id)) return null;
         const messageId = await automationMessage(tx, conversation, "phone_collection", texts.phoneRequest);
         await setAutomationState(tx, conversation.id, { ...state, phoneCollection: "awaiting_phone" });
         return { send: [messageId], remind: true };
@@ -77,6 +81,25 @@ export class PhoneCollectionService {
    */
   register(tx: TenantTx, conversation: PhoneConversation, phone: string): Promise<void> {
     return registerPhone(tx, conversation, phone);
+  }
+
+  /**
+   * Fim do atendimento (a equipe resolveu, ou encerrou por inatividade): o telefone que ficou de fora por a equipe estar
+   * na conversa é pedido agora, uma vez, sem lembrete. A resposta é cadastrada como no começo (askedPhone).
+   */
+  async askAtEnd(tenantId: string, conversationId: string): Promise<void> {
+    const messageId = await this.db.withTenants({ tenantIds: [tenantId] }, async (tx) => {
+      const conversation = await this.load(tx, conversationId);
+      const { type } = conversation.channel;
+      if (!channelSends(type, this.env) || CHANNEL_CAPABILITIES[type].providesPhone) return null;
+      const state = conversation.automationState as AutomationState;
+      if (state.phoneCollection || conversation.contact.phone || !(await teamSpoke(tx, conversationId))) return null;
+      const texts = automationMessagesOf(await tenantSettings(tx, tenantId));
+      const id = await automationMessage(tx, conversation, "phone_collection", texts.phoneRequest);
+      await setAutomationState(tx, conversationId, { ...state, phoneCollection: "awaiting_phone", phoneReminderSentAt: new Date().toISOString() });
+      return id;
+    });
+    if (messageId) await dispatch(this.outbound, this.realtime, tenantId, conversationId, [messageId]);
   }
 
   /** Um único lembrete, se o cliente ainda não informou o telefone. */
@@ -119,10 +142,26 @@ export class PhoneCollectionService {
         tenantId: true,
         channelId: true,
         automationState: true,
+        channel: { select: { type: true } },
         contact: { select: { id: true, phone: true } },
       },
     });
   }
+}
+
+/**
+ * Alguém da equipe falou neste atendimento (a última hora, ATTENDANCE_END_MS): pelo Dish Desk, pelo celular da loja ou
+ * pelo portal do canal (a mensagem sem a marca da automação nem da IA).
+ */
+async function teamSpoke(tx: TenantTx, conversationId: string, now = new Date()): Promise<boolean> {
+  const sent = await tx.message.findMany({
+    where: { conversationId, direction: "OUTBOUND", createdAt: { gte: new Date(now.getTime() - ATTENDANCE_END_MS) } },
+    select: { sentByUserId: true, content: true },
+  });
+  return sent.some(({ sentByUserId, content }) => {
+    const { fromPhone, automation, aiReply } = content as MessageContent;
+    return !!sentByUserId || !!fromPhone || (!automation && !aiReply);
+  });
 }
 
 type PhoneConversation = { id: string; tenantId: string; channelId: string; contact: { id: string } };

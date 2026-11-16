@@ -403,6 +403,76 @@ describe("atendimento com IA: resposta, revisão e avaliação", () => {
     expect(forwarded.messages.at(-1)!.content).toMatchObject({ event: "handoff", text: "IA passou o atendimento para a equipe: Cliente pediu um atendente" });
   });
 
+  it("o restaurante fecha com o cliente esperando a equipe: ele é avisado e a IA volta a atender até abrir", async () => {
+    // 15/11/2026: a IA passou o Mozart para a equipe às 23:55, o Moby Dick fechou às 23:59 e ninguém avisou o cliente.
+    answers.atendimento = { reply: "Sinto muito pela demora! Alguém da equipe já vai falar com você.", handoff: true, reason: "Atraso", order: "none" };
+    await say("5511980000093", "wamid.AI-CL1", "Saiu pra entrega tem uma hora");
+    await settle();
+    await say("5511980000093", "wamid.AI-CL2", "Por favor");
+    await settle();
+    expect((await conversationOf("5511980000093")).automationState).toMatchObject({ ai: "off" });
+
+    const days = [{ open: "03:00", close: "03:01" }, null, null, null, null, null, null];
+    const forward = app.get(AiForwardService);
+    // Aberto (sem horário): nada sai.
+    await forward.closedNotices(fx.tenant.id);
+    expect((await conversationOf("5511980000093")).messages.at(-1)!.content).toMatchObject({ text: "Por favor" });
+
+    await admin.tenant.update({ where: { id: fx.tenant.id }, data: { settings: { businessHours: { enabled: true, days, closedMessage: "Fechado." } } } });
+    try {
+      await forward.closedNotices(fx.tenant.id);
+      await forward.closedNotices(fx.tenant.id); // uma vez só
+      let conversation = await conversationOf("5511980000093");
+      expect(conversation.messages.map((m) => m.content as Content).slice(-2)).toEqual([
+        { text: expect.stringMatching(/^Nosso horário de atendimento já terminou\. .+ responde .+ às 03:00, assim que abrirmos\.$/), automation: "after_hours" },
+        expect.objectContaining({ event: "awaiting_agent", waitingReason: "closed" }),
+      ]);
+      expect(conversation).toMatchObject({ status: "PENDING", awaitingAgentSince: null, automationState: { ai: "on", aiWaiting: true } });
+
+      // A IA atende a mensagem seguinte, sabendo que o restaurante está fechado.
+      answers.atendimento = { reply: "A equipe responde quando abrirmos.", handoff: true, reason: "Atraso", order: "none" };
+      const calls = llmCalls("atendimento").length;
+      await say("5511980000093", "wamid.AI-CL3", "Alguém?");
+      await settle();
+      expect(llmCalls("atendimento").length).toBe(calls + 1);
+      expect((llmCalls("atendimento").at(-1)!.body as LlmBody).messages[1]!.content).toContain("porque o restaurante está fechado");
+      conversation = await conversationOf("5511980000093");
+      expect(conversation.messages.some((m) => (m.content as Content).text === "A equipe responde quando abrirmos.")).toBe(true);
+      expect(conversation).toMatchObject({ awaitingAgentSince: null, automationState: { ai: "on", aiWaiting: true } });
+    } finally {
+      await admin.tenant.update({ where: { id: fx.tenant.id }, data: { settings: {} } });
+    }
+
+    // Abriu, com alguém online: a conversa volta para a equipe, com o alarme.
+    await forward.forward(fx.tenant.id);
+    const forwarded = await conversationOf("5511980000093");
+    expect(forwarded).toMatchObject({ status: "OPEN", automationState: { ai: "off" } });
+    expect(forwarded.awaitingAgentSince).not.toBeNull();
+  });
+
+  it("o restaurante fecha com a equipe ainda respondendo: a conversa não recebe o aviso", async () => {
+    await app.get(PresenceService).join("painel-de-teste", [fx.tenant.id]); // o painel aberto
+    answers.atendimento = { reply: "Alguém da equipe já vai falar com você.", handoff: true, reason: "Atraso", order: "none" };
+    await say("5511980000094", "wamid.AI-CT1", "Meu pedido atrasou");
+    await settle();
+    answers.revisao = { misconduct: false, reason: "", text: "Já saiu, chega em 10 min" };
+    await reply((await conversationOf("5511980000094")).id, "Já saiu, chega em 10 min");
+    await drainQueues(app);
+    await say("5511980000094", "wamid.AI-CT2", "Vem com talher?");
+    expect((await conversationOf("5511980000094")).awaitingAgentSince).not.toBeNull();
+
+    const days = [{ open: "03:00", close: "03:01" }, null, null, null, null, null, null];
+    await admin.tenant.update({ where: { id: fx.tenant.id }, data: { settings: { businessHours: { enabled: true, days, closedMessage: "Fechado." } } } });
+    try {
+      await app.get(AiForwardService).closedNotices(fx.tenant.id);
+    } finally {
+      await admin.tenant.update({ where: { id: fx.tenant.id }, data: { settings: {} } });
+    }
+    const after = await conversationOf("5511980000094");
+    expect(after.messages.at(-1)!.content).toMatchObject({ text: "Vem com talher?" });
+    expect(after.awaitingAgentSince).not.toBeNull();
+  });
+
   it("ninguém online: a IA continua atendendo e a conversa vai para quem chegar", async () => {
     await app.get(PresenceService).leave("painel-de-teste", [fx.tenant.id]);
     const notice = "No momento estamos sem atendentes online. Assim que um chegar, sua conversa será encaminhada.";
@@ -1076,6 +1146,24 @@ describe("atendimento com IA: o que a IA lê", () => {
     };
     expect(orderFactsOf(order, false)).toContain("Motivo do cancelamento, dado pela loja: Pedido fora da área de entrega.");
     expect(orderFactsOf({ ...order, status: "DELIVERED" as const }, false)).not.toContain("Motivo do cancelamento");
+  });
+
+  it("retirada e loja que não marca a saída: a IA não fala de saída para entrega nem promete o aviso dela", () => {
+    const order = {
+      displayCode: "67",
+      externalOrderId: "x",
+      channelType: "CARDAPIO_WEB" as const,
+      placedAt: new Date("2026-11-15T18:10:00-03:00"),
+      status: "CONFIRMED" as const,
+      items: [{ quantity: 2, name: "Sopa de Carne Moída" }],
+      total: "50.33",
+      update: null,
+      confirmed: true,
+      byNumber: false,
+    };
+    expect(orderFactsOf({ ...order, takeout: true }, false)).toContain("É retirada");
+    expect(orderFactsOf({ ...order, skipsDispatch: true }, false)).toContain("não marca no sistema quando o pedido sai");
+    expect(orderFactsOf(order, false)).not.toMatch(/É retirada|não marca no sistema/);
   });
 
   it("trava do chat do iFood: acha na resposta outro número de pedido, com ou sem os zeros à esquerda", () => {

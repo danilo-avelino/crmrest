@@ -203,18 +203,26 @@ describe("Chat do iFood na Inbox (trava IFOOD_CHAT_BRIDGE ligada)", () => {
     const reply = shown("OUTBOUND", "Esquecemos o refrigerante, já vai!", new Date());
     await post("/ifood-chat/sync", { orderCode: "6534", messages: [old, reply] }).expect(200);
     const before = (await timeline(chat.id)).length;
-    await post("/ifood-chat/sync", { orderCode: "6534", messages: [old, reply, shown("INBOUND", "Beleza", new Date(Date.now() + 2000))] }).expect(200);
+    await post("/ifood-chat/sync", { orderCode: "6534", messages: [old, reply, shown("INBOUND", "Pode mandar sem gelo", new Date(Date.now() + 2000))] }).expect(200);
     await settle();
 
     const knocked = await admin.conversation.findFirstOrThrow({ where: { contactId: called.contactId, channelId: fx.ifood.id } });
     expect(knocked).toMatchObject({ status: "OPEN", unreadCount: 1, awaitingAgentSince: expect.any(Date) });
-    // Só o pedido do telefone, como em qualquer atendimento em andamento: sem mensagem de chamado nem aviso do pedido.
-    expect((await timeline(knocked.id)).flatMap((m) => (m.content as { automation?: string }).automation ?? [])).toEqual(["phone_collection"]);
+    // Sem mensagem de chamado nem aviso do pedido; nem o pedido do telefone, com a equipe na conversa: ele fica para o
+    // fim do atendimento (15/11/2026).
+    expect((await timeline(knocked.id)).flatMap((m) => (m.content as { automation?: string }).automation ?? [])).toEqual([]);
     expect(await admin.conversation.findUniqueOrThrow({ where: { id: chat.id } })).toMatchObject({ status: "OPEN", awaitingAgentSince: expect.any(Date) });
-    expect((await timeline(chat.id)).slice(before).map((m) => m.content)).toEqual(
-      expect.arrayContaining([{ text: "Beleza" }, { automation: "phone_collection", text: expect.any(String) }]),
-    );
-    expect(await timeline(chat.id)).toHaveLength(before + 2);
+    expect((await timeline(chat.id)).slice(before).map((m) => m.content)).toEqual([{ text: "Pode mandar sem gelo" }]);
+
+    // A equipe resolve: agora o telefone é pedido, e a resposta com ele é cadastrada sem chamar a equipe.
+    await request(app.getHttpServer()).patch(`/api/conversations/${chat.id}`).set("Authorization", `Bearer ${token}`).send({ status: "RESOLVED" }).expect(200);
+    await settle();
+    expect((await timeline(chat.id)).map((m) => m.content)).toContainEqual({ automation: "phone_collection", text: expect.any(String) });
+    const answer = shown("INBOUND", "86999887766", new Date(Date.now() + 4000));
+    await post("/ifood-chat/sync", { orderCode: "6534", messages: [old, reply, shown("INBOUND", "Pode mandar sem gelo", new Date(Date.now() + 2000)), answer] }).expect(200);
+    await settle();
+    expect(await admin.contact.findUniqueOrThrow({ where: { id: resolved.contactId } })).toMatchObject({ phone: "+5586999887766" });
+    expect(await admin.conversation.findUniqueOrThrow({ where: { id: chat.id } })).toMatchObject({ awaitingAgentSince: null });
     await typeOutbox();
   });
 
@@ -226,8 +234,8 @@ describe("Chat do iFood na Inbox (trava IFOOD_CHAT_BRIDGE ligada)", () => {
     expect((await timeline(chat.id)).map((m) => m.content)).toContainEqual({ text: "pode receber ?", storeReply: true });
     await post("/ifood-chat/sync", { orderCode: "6599", messages: [...typed, shown("INBOUND", "Não tocou a campainha", minutesAgo(1))] }).expect(200);
     await settle();
-    // Como na resposta à loja: sem o chamado automático, só o alarme e o pedido do telefone.
-    expect((await timeline(chat.id)).flatMap((m) => (m.content as { automation?: string }).automation ?? [])).toEqual(["phone_collection"]);
+    // Como na resposta à loja: sem o chamado automático, só o alarme (o telefone fica para o fim do atendimento).
+    expect((await timeline(chat.id)).flatMap((m) => (m.content as { automation?: string }).automation ?? [])).toEqual([]);
     expect(await admin.conversation.findUniqueOrThrow({ where: { id: chat.id } })).toMatchObject({ awaitingAgentSince: expect.any(Date) });
     await typeOutbox();
   });
@@ -322,7 +330,11 @@ describe("Chat do iFood na Inbox (trava IFOOD_CHAT_BRIDGE ligada)", () => {
     for (const { id, createdAt } of await admin.message.findMany({ where: { conversationId: chat.id } })) {
       await admin.message.update({ where: { id }, data: { createdAt: new Date(createdAt.getTime() - INACTIVITY_CLOSE_MS - 60_000) } });
     }
+    // Entregue: com o pedido ainda a caminho, a conversa seria arquivada sem a mensagem de encerramento.
+    const { status } = await admin.order.findUniqueOrThrow({ where: { id: order.id } });
+    await admin.order.update({ where: { id: order.id }, data: { status: "DELIVERED" } });
     await app.get(InactivityService).close(fx.tenant.id, chat.id);
+    await admin.order.update({ where: { id: order.id }, data: { status } });
     const closed = await conversation();
     expect(closed.status).toBe("RESOLVED");
     expect(closed.automationState).not.toHaveProperty("survey");
@@ -735,6 +747,16 @@ describe("Chat do iFood na Inbox (trava IFOOD_CHAT_BRIDGE ligada)", () => {
     const replied = await admin.conversation.findUniqueOrThrow({ where: { id: chat.id } });
     expect(replied).toMatchObject({ awaitingAgentSince: null, teamInvolved: true });
     expect((await timeline(chat.id)).map((m) => m.content)).toContainEqual({ text: "já saiu, chega em 10 min", storeReply: true });
+
+    // O cliente só agradece: o alarme não volta. Uma pergunta volta.
+    const thanked = [shown("INBOUND", "Cadê meu pedido?", minutesAgo(3)), shown("OUTBOUND", "já saiu, chega em 10 min", minutesAgo(2))];
+    thanked.push(shown("INBOUND", "Ok, obrigada!", minutesAgo(1)));
+    await post("/ifood-chat/sync", { orderCode: "6544", messages: thanked }).expect(200);
+    await settle();
+    expect((await admin.conversation.findUniqueOrThrow({ where: { id: chat.id } })).awaitingAgentSince).toBeNull();
+    await post("/ifood-chat/sync", { orderCode: "6544", messages: [...thanked, shown("INBOUND", "Vem com talher?", minutesAgo(0))] }).expect(200);
+    await settle();
+    expect((await admin.conversation.findUniqueOrThrow({ where: { id: chat.id } })).awaitingAgentSince).not.toBeNull();
 
     // A mensagem automática da loja (o mesmo texto já foi a outros chats) não é resposta da equipe.
     const template = "Seu pedido acaba de ser entregue 🥳";

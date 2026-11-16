@@ -35,6 +35,7 @@ import {
   dispatch,
   firstName,
   type InboundEvent,
+  isAcknowledgment,
   leaveToTeam,
   setAutomationState,
   startOfYesterday,
@@ -229,7 +230,8 @@ export class TriageService {
       return this.sendMenu(tx, conversation, { ...state, triage: "awaiting_option", selfServed: undefined, menuRepeated: true }, messages);
     }
     // Escreveu numa conversa da equipe, ou retomou a resolvida respondendo ao atendente: chama até alguém responder.
-    if (conversation.teamInvolved || event.previousStatus === "RESOLVED") await callTeam(tx, conversation.id);
+    // Um "ok" ou "obrigado" não chama.
+    if ((conversation.teamInvolved || event.previousStatus === "RESOLVED") && !isAcknowledgment(event.text)) await callTeam(tx, conversation.id);
     return { send: [], done: true };
   }
 

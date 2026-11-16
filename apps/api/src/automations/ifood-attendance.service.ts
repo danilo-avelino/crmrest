@@ -14,12 +14,13 @@ import {
   callTeam,
   dispatch,
   type InboundEvent,
+  isAcknowledgment,
   leaveToTeam,
   setAutomationState,
   systemEvent,
   tenantSettings,
 } from "./automation.js";
-import { extractPhone, PhoneCollectionService } from "./phone-collection.service.js";
+import { askedPhone, extractPhone, PhoneCollectionService } from "./phone-collection.service.js";
 import { SurveyService } from "./survey.service.js";
 import { AI_REPLY_DELAY_MS } from "./triage.service.js";
 
@@ -49,9 +50,15 @@ export class IfoodAttendanceService {
     // Sem a IA, quem atende o cliente é a equipe: a conversa vai para a aba Ativos.
     await leaveToTeam(this.db, event.channel.tenantId, event.conversationId);
     const { tenantId } = event.channel;
-    // Atendimento em andamento: chama a equipe até alguém responder e anota o telefone, se o cliente o mandar.
+    // Atendimento em andamento: chama a equipe até alguém responder (um "ok" ou "obrigado" não chama) e anota o
+    // telefone, se o cliente o mandar.
     if (!event.newAttendance) {
-      await this.db.withTenants({ tenantIds: [tenantId] }, (tx) => callTeam(tx, event.conversationId));
+      await this.db.withTenants({ tenantIds: [tenantId] }, async (tx) => {
+        // O telefone pedido no fim do atendimento (a conversa já resolvida) também não chama: a coleta o cadastra.
+        const { automationState } = await tx.conversation.findUniqueOrThrow({ where: { id: event.conversationId }, select: { automationState: true } });
+        const phoneAnswer = askedPhone(automationState as AutomationState) && !!event.text && !!extractPhone(event.text);
+        if (!isAcknowledgment(event.text) && !phoneAnswer) await callTeam(tx, event.conversationId);
+      });
       this.realtime.inboxChanged(tenantId, event.conversationId);
       return this.phoneCollection.afterInbound(event);
     }

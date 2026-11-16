@@ -1,15 +1,31 @@
-import { aiFullAutoOf, businessHoursOf, isOpenAt, reopeningAt } from "@dishdesk/shared";
+import {
+  aiFullAutoOf,
+  automationMessagesOf,
+  businessHoursOf,
+  CHANNEL_CAPABILITIES,
+  COURIER_TAG,
+  fillMessage,
+  isOpenAt,
+  pausedOf,
+  reopeningAt,
+  STAFF_TAG,
+} from "@dishdesk/shared";
 import { InjectQueue } from "@nestjs/bullmq";
-import { Injectable, type OnModuleInit } from "@nestjs/common";
+import { Inject, Injectable, Logger, type OnModuleInit } from "@nestjs/common";
 import type { Queue } from "bullmq";
-import { type AutomationState, setAutomationState, systemEvent } from "../automations/automation.js";
+import { type AutomationState, automationMessage, channelSends, dispatch, setAutomationState, systemEvent } from "../automations/automation.js";
+import { ENV, type Env } from "../config/env.js";
 import { DatabaseService } from "../core/database.service.js";
-import { type AiForwardJob, QUEUES } from "../queues/queues.module.js";
+import { type AiForwardJob, type OutboundJob, QUEUES } from "../queues/queues.module.js";
 import { PresenceService } from "../realtime/presence.service.js";
 import { RealtimeEmitter } from "../realtime/realtime.emitter.js";
+import { TEAM_ACTIVE_MS, teamRepliedSince } from "./ai-attendant.service.js";
+import { LlmClient } from "./llm.client.js";
 
 /** Varredura das conversas que esperam um atendente: pega a abertura do restaurante, que não tem outro aviso. */
 const SWEEP_MS = 30_000;
+/** Mensagem do cliente sem resposta há mais que isto não recebe o aviso de que o restaurante fechou. */
+const CLOSED_NOTICE_MAX_MS = 12 * 60 * 60_000;
 
 /** Há atendente para a IA passar a conversa? Sem: o motivo (e, fechado, quando o restaurante volta). */
 export type Attendance = { available: true } | { available: false; reason: "closed" | "full_auto" | "offline"; reopening?: string };
@@ -28,11 +44,16 @@ export async function attendanceOf(presence: PresenceService, tenantId: string, 
  */
 @Injectable()
 export class AiForwardService implements OnModuleInit {
+  private readonly logger = new Logger(AiForwardService.name);
+
   constructor(
     private readonly db: DatabaseService,
     private readonly presence: PresenceService,
     private readonly realtime: RealtimeEmitter,
     @InjectQueue(QUEUES.automations) private readonly automations: Queue<AiForwardJob>,
+    @InjectQueue(QUEUES.outbound) private readonly outbound: Queue<OutboundJob>,
+    private readonly llm: LlmClient,
+    @Inject(ENV) private readonly env: Env,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -41,6 +62,85 @@ export class AiForwardService implements OnModuleInit {
 
   async sweep(now = new Date()): Promise<void> {
     for (const tenantId of await this.presence.waitingTenants()) await this.forward(tenantId, now);
+    const tenants = await this.db.client.$queryRaw<{ id: string }[]>`SELECT id FROM app.active_tenants()`;
+    for (const { id: tenantId } of tenants) {
+      try {
+        await this.closedNotices(tenantId, now);
+      } catch (error) {
+        // Segue para os outros restaurantes; a próxima varredura tenta de novo.
+        this.logger.warn(`Aviso de fechado do restaurante ${tenantId}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+  }
+
+  /**
+   * O restaurante fechou (fim do dia ou intervalo) com cliente esperando a equipe, sem resposta: ele é avisado de que o
+   * horário terminou e de quando a equipe responde, e a IA volta a atender até lá (aiWaiting); na abertura, a conversa
+   * vai para a equipe pelo forward. 15/11/2026: a IA passou o Mozart para a equipe às 23:55, o Moby Dick fechou às 23:59,
+   * e ele seguiu escrevendo sem ninguém dizer nada. Só com a IA: sem ela, ninguém atenderia as mensagens seguintes.
+   */
+  async closedNotices(tenantId: string, now = new Date()): Promise<void> {
+    const sent = await this.db.withTenants({ tenantIds: [tenantId] }, async (tx) => {
+      const tenant = await tx.tenant.findUniqueOrThrow({ where: { id: tenantId }, select: { settings: true } });
+      const hours = businessHoursOf(tenant.settings);
+      if (!hours.enabled || isOpenAt(hours, now) || pausedOf(tenant.settings) || !(await this.llm.activeFor(tx, tenantId))) return [];
+      const waiting = await tx.conversation.findMany({
+        where: { tenantId, awaitingAgentSince: { not: null }, status: { not: "RESOLVED" }, teamOnly: false },
+        select: {
+          id: true,
+          tenantId: true,
+          channelId: true,
+          windowExpiresAt: true,
+          automationState: true,
+          channel: { select: { type: true } },
+          contact: { select: { tags: true } },
+        },
+      });
+      const text = fillMessage(automationMessagesOf(tenant.settings).closedWhileWaiting, { retorno: reopeningAt(hours, now) });
+      const sent: { conversationId: string; messageId: string }[] = [];
+      for (const conversation of waiting) {
+        const state = conversation.automationState as AutomationState;
+        // A IA já atende (e já avisa do horário); funcionário e entregador falam só com a equipe.
+        if (state.ai === "on" || conversation.contact.tags.some((tag) => tag === STAFF_TAG || tag === COURIER_TAG)) continue;
+        const { type } = conversation.channel;
+        if (!channelSends(type, this.env)) continue;
+        if (CHANNEL_CAPABILITIES[type].window24h && !(conversation.windowExpiresAt && conversation.windowExpiresAt > now)) continue;
+        // Só quando a última mensagem é do cliente, e recente: o aviso sai uma vez, e a conversa esquecida não o recebe.
+        const last = await tx.message.findFirst({
+          where: { conversationId: conversation.id, direction: { in: ["INBOUND", "OUTBOUND"] } },
+          orderBy: { createdAt: "desc" },
+          select: { direction: true, createdAt: true },
+        });
+        if (last?.direction !== "INBOUND" || now.getTime() - last.createdAt.getTime() > CLOSED_NOTICE_MAX_MS) continue;
+        // A equipe ainda responde nesta conversa depois do horário, com o painel aberto: ela continua atendendo.
+        const since = now.getTime() - TEAM_ACTIVE_MS;
+        const recent = await tx.message.findMany({
+          where: { conversationId: conversation.id, direction: "OUTBOUND", createdAt: { gte: new Date(since) } },
+          select: { direction: true, content: true, sentByUserId: true, createdAt: true },
+        });
+        if (teamRepliedSince(recent, since) && (await this.presence.online(tenantId, now.getTime()))) continue;
+
+        const messageId = await automationMessage(tx, conversation, "after_hours", text);
+        await setAutomationState(tx, conversation.id, {
+          ...state,
+          ai: "on",
+          aiWaiting: true,
+          aiWaitingReason: "O cliente esperava a equipe quando o restaurante fechou",
+        });
+        await systemEvent(tx, conversation, {
+          event: "awaiting_agent",
+          waitingReason: "closed",
+          text: "O restaurante fechou com o cliente esperando a equipe: ele foi avisado, e a conversa vai para a equipe quando abrir",
+        });
+        // Como a espera da IA com o restaurante fechado: pendente e sem o alarme, que volta na abertura.
+        await tx.conversation.update({ where: { id: conversation.id }, data: { status: "PENDING", awaitingAgentSince: null } });
+        sent.push({ conversationId: conversation.id, messageId });
+      }
+      return sent;
+    });
+    if (!sent.length) return;
+    await this.presence.markWaiting(tenantId);
+    for (const { conversationId, messageId } of sent) await dispatch(this.outbound, this.realtime, tenantId, conversationId, [messageId]);
   }
 
   /** Com atendente disponível, passa as conversas que esperavam; sem, o restaurante continua na lista da varredura. */

@@ -216,7 +216,7 @@ describe("menu de atendimento, busca do pedido e pesquisa de satisfação", () =
       .send({ text: "Esquecemos o refrigerante, já vai!" })
       .expect(201);
     await drainQueues(app);
-    await say("5511970000030", "wamid.RS2", "Beleza");
+    await say("5511970000030", "wamid.RS2", "Pode mandar junto um guaraná");
 
     const reopened = await conversationOf("5511970000030");
     expect(reopened).toMatchObject({ status: "OPEN" });
@@ -470,7 +470,16 @@ describe("menu de atendimento, busca do pedido e pesquisa de satisfação", () =
     await app.get(InactivityService).close(fx.tenant.id, id);
     expect((await conversationOf("5511970000008")).status).toBe("OPEN");
 
+    // Com o pedido ainda a caminho, a conversa é arquivada sem a mensagem de encerramento (os avisos ainda vêm).
     await idle(id);
+    await app.get(InactivityService).close(fx.tenant.id, id);
+    await drainQueues(app);
+    expect((await conversationOf("5511970000008")).status).toBe("RESOLVED");
+    expect((await contents("5511970000008")).some((c) => c.automation === "inactivity_close")).toBe(false);
+
+    // Entregue: o encerramento sai, com a pesquisa.
+    await admin.conversation.update({ where: { id }, data: { status: "OPEN" } });
+    await admin.order.updateMany({ where: { tenantId: fx.tenant.id, displayCode: "6060" }, data: { status: "DELIVERED" } });
     await app.get(InactivityService).close(fx.tenant.id, id);
     await drainQueues(app);
     const conversation = await conversationOf("5511970000008");
@@ -583,7 +592,7 @@ describe("menu de atendimento, busca do pedido e pesquisa de satisfação", () =
     await tagged("5511970000028", "Entregador");
     await say("5511970000028", "wamid.NU1", "Pedido 2650");
     await say("5511970000028", "wamid.NU2", "Pedir pra derce pega o pedido por favor");
-    const again = `Não consigo te entender dessa forma. Responda apenas com um número.\n${COURIER_MENU}`;
+    const again = `Não consigo te entender dessa forma. Responda apenas com um número. Se quiser falar com um atendente, responda 4.\n${COURIER_MENU}`;
     expect((await contents("5511970000028")).at(-1)).toEqual({ automation: "courier_menu", text: again });
     await say("5511970000028", "wamid.NU3", "Me ajuda aí");
     const conversation = await conversationOf("5511970000028");
@@ -798,7 +807,10 @@ describe("menu de atendimento, busca do pedido e pesquisa de satisfação", () =
       .send({ text: "Oi! Seu pedido já está no forno." })
       .expect(201);
     await drainQueues(app);
-    await say("5511970000018", "wamid.E5", "Obrigado!");
+    // Só agradecer não chama o atendente; um pedido novo chama.
+    await say("5511970000018", "wamid.E5", "Mt obrigadaa");
+    expect((await conversationOf("5511970000018")).awaitingAgentSince).toBeNull();
+    await say("5511970000018", "wamid.E6", "Vai demorar muito?");
     const conversation = await conversationOf("5511970000018");
     expect(conversation.awaitingAgentSince).not.toBeNull(); // o alarme toca até o atendente responder
     expect(conversation.messages.map((m) => m.content as Content)).not.toContainEqual(expect.objectContaining({ event: "handoff" }));

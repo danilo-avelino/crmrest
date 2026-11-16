@@ -14,7 +14,7 @@ import { tenantPaused } from "./automation.js";
 import { SurveyService } from "./survey.service.js";
 
 /**
- * Etapas das automações: lembrete e desistência da coleta de telefone; pesquisa ao resolver; encerramento por inatividade;
+ * Etapas das automações: lembrete e desistência da coleta de telefone, e o pedido dele no fim do atendimento; pesquisa ao resolver; encerramento por inatividade;
  * mensagem do cliente no chat do iFood; conversas que esperavam um atendente; conversas só com automação já paradas
  * (resolvidas sozinhas). E, de hora em hora, as tags automáticas dos clientes;
  * as notificações ao administrador pelo WhatsApp e, toda segunda, o relatório semanal.
@@ -49,6 +49,7 @@ export class AutomationsProcessor extends JobProcessor {
     if (await tenantPaused(this.db, tenantId)) return;
     if (job.name === "phone-reminder") await this.phoneCollection.remind(tenantId, conversationId);
     if (job.name === "phone-give-up") await this.phoneCollection.giveUp(tenantId, conversationId);
+    if (job.name === "phone-at-end") await this.phoneCollection.askAtEnd(tenantId, conversationId);
     if (job.name === "survey") await this.survey.request(tenantId, conversationId);
     if (job.name === "inactivity") await this.inactivity.close(tenantId, conversationId);
     if (job.name === "ifood-inbound" && data.ifood) await this.ifoodAttendance.afterInbound(data.ifood.event, data.ifood.orderId);

@@ -33,6 +33,7 @@ describe("personalidade do atendimento", () => {
   const REQUIRED: Partial<Record<keyof AutomationMessages, string[]>> = {
     greeting: ["nome"],
     closedMessage: ["retorno"],
+    closedWhileWaiting: ["retorno"],
     orderFound: ["pedido", "status"],
     orderNotFound: ["pedido"],
     forecast: ["hora"],
