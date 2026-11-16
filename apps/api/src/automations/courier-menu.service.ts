@@ -227,7 +227,13 @@ export class CourierMenuService {
     // plataforma (só o iFood recebe o aviso automático); achado, o card dele traz o botão para falar com o cliente.
     // Com a equipe já na conversa, sem o pedido no iFood quem cuida é ela: nada de pedir o número de novo.
     if (keepOpen && (!found?.order || !this.env.IFOOD_CHAT_BRIDGE)) return { send: [], done: false };
-    if (!found?.order || !this.env.IFOOD_CHAT_BRIDGE) {
+    // A resposta não trouxe número (foto, áudio, "ok"): pergunta de novo, sem chamar a equipe. 16/11/2026: uma foto no
+    // lugar do número chamou a equipe, e o "9009" que veio logo depois ficou sem aviso ao cliente.
+    if (!found) {
+      const id = await automationMessage(tx, conversation, "order_number_request", messages.courierOrderNumberRequest);
+      return { send: [id], done: false };
+    }
+    if (!found.order || !this.env.IFOOD_CHAT_BRIDGE) {
       const known = found && !found.order ? await this.findOrder(tx, conversation, text, false) : found;
       if (known && !known.order && !state.orderRetried) return this.askAgain(tx, conversation, state, messages, known.code);
       if (known?.order) await systemEvent(tx, conversation, { event: "order", orderId: known.order.id, customerChat: true });

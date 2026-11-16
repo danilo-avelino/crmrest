@@ -695,6 +695,25 @@ describe("menu de atendimento, busca do pedido e pesquisa de satisfação", () =
     expect(left).toMatchObject({ status: "OPEN", awaitingAgentQuiet: true });
   });
 
+  it("entregador manda foto ou texto sem número quando o aviso pede o pedido: pergunta de novo, sem chamar a equipe", async () => {
+    const order = await ifoodOrder("9009", new Date());
+    await tagged("5511970000035", "Entregador");
+    await say("5511970000035", "wamid.SN1", "Oi");
+    await say("5511970000035", "wamid.SN2", "2");
+    await say("5511970000035", "wamid.SN3", "Deixei lá");
+    const asked = await conversationOf("5511970000035");
+    expect(asked.messages.at(-1)!.content).toEqual({ automation: "order_number_request", text: "Qual é o número do pedido?" });
+    expect(asked.automationState).toMatchObject({ triage: "awaiting_front_desk_order" });
+    expect(asked.awaitingAgentSince).toBeNull();
+
+    // O número que vem depois segue o aviso escolhido (sem a ponte, a equipe avisa o cliente).
+    await say("5511970000035", "wamid.SN4", "9009");
+    const left = await conversationOf("5511970000035");
+    expect(await automations("5511970000035")).toEqual(["courier_menu", "order_number_request", "order_number_request", "handoff"]);
+    expect(left.messages.map((m) => m.content)).toContainEqual({ event: "handoff", text: "Entregador avisou que deixou o pedido #9009 na portaria" });
+    expect(left.messages.map((m) => m.content)).toContainEqual({ event: "order", orderId: order.id, customerChat: true });
+  });
+
   it("card do pedido informado pelo entregador: a equipe conversa com o cliente pelo WhatsApp quando o cadastro tem telefone", async () => {
     const post = (path: string) => request(app.getHttpServer()).post(`/api${path}`).set("Authorization", `Bearer ${token}`);
     // Sem telefone no cadastro (e sem o chat do iFood na Inbox), não há por onde conversar.
