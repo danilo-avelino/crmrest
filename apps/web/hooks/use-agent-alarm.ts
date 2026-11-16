@@ -66,7 +66,8 @@ export function useAgentAlarm(waiting: number): { blocked: boolean } {
     if (audio && waiting > previous.current) {
       if (play(audio, () => setBlocked(true))) {
         setBlocked(false);
-        for (const delay of [0, 0.3]) tone(audio, 880, audio.currentTime + delay, 0.18, 0.15);
+        // Bipes a cada 0,3 s durante 5 s (17 toques; o último termina em 4,98 s).
+        for (let delay = 0; delay < 5 - 0.18; delay += 0.3) tone(audio, 880, audio.currentTime + delay, 0.18, 0.3);
       } else pending.current = true;
     }
     previous.current = waiting;
@@ -88,7 +89,10 @@ async function say(audio: AudioContext, src: string) {
     const data = await (await fetch(src)).arrayBuffer();
     const source = audio.createBufferSource();
     source.buffer = await audio.decodeAudioData(data);
-    source.connect(audio.destination);
+    // Volume em dobro: as falas têm pico em −8,8 dB, então o ganho 2 (+6 dB) não distorce.
+    const gain = audio.createGain();
+    gain.gain.value = 2;
+    source.connect(gain).connect(audio.destination);
     source.start();
   } catch {
     // Sem o arquivo ou com o contexto já fechado: o bipe e o destaque na lista continuam.
