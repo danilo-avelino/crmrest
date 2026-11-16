@@ -19,8 +19,8 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  withTenants<T>(scope: TenantScope, fn: (tx: TenantTx) => Promise<T>): Promise<T> {
-    return withTenants(this.client, scope, fn);
+  withTenants<T>(scope: TenantScope, fn: (tx: TenantTx) => Promise<T>, options?: { timeout?: number }): Promise<T> {
+    return withTenants(this.client, scope, fn, options);
   }
 
   async onModuleDestroy(): Promise<void> {

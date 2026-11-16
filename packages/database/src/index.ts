@@ -22,11 +22,12 @@ export function withTenants<T>(
   prisma: PrismaClient,
   scope: TenantScope,
   fn: (tx: TenantTx) => Promise<T>,
+  options?: { timeout?: number },
 ): Promise<T> {
   return prisma.$transaction(async (tx) => {
     // Os casts validam os ids no banco: um valor malformado aborta a transação.
     await tx.$executeRaw`SELECT set_config('app.tenant_ids', ${scope.tenantIds}::uuid[]::text, true),
                                 set_config('app.user_id', coalesce(${scope.userId ?? null}::uuid::text, ''), true)`;
     return fn(tx);
-  });
+  }, options);
 }

@@ -40,6 +40,8 @@ import { latestOrderOf } from "./latest-order.js";
 import { withOrderTenants } from "./order-scope.js";
 
 const PAGE_SIZE = 50;
+/** Histórico, previsão e alerta saem pedido a pedido: num domingo à noite (~35 em produção) a lista passava dos 5 s padrão. */
+const LIST_TX = { timeout: 30_000 };
 /** Ainda no restaurante (filtro "em produção" e o alerta de atraso). */
 const IN_PRODUCTION: OrderStatus[] = ["PLACED", "CONFIRMED", "PREPARING", "READY"];
 
@@ -133,7 +135,7 @@ export class OrdersService {
         alerts.set(order.id, await orderAlert(tx, order, order.contact, true));
       }
       return [rows, total, histories, late, alerts, cancellations] as const;
-    });
+    }, LIST_TX);
     return {
       items: rows.map((order) => {
         const at = (code: string) => order.events.find((event) => event.code === code)?.occurredAt;
