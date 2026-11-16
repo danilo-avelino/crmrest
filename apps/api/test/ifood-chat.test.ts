@@ -15,6 +15,18 @@ const CLOCK = new Intl.DateTimeFormat("pt-BR", { timeStyle: "medium", timeZone: 
 const minutesAgo = (minutes: number) => new Date(Date.now() - minutes * 60_000);
 /** Mensagem como o widget mostra: só a hora. */
 const shown = (direction: "INBOUND" | "OUTBOUND", text: string, at: Date) => ({ direction, text, time: CLOCK.format(at) });
+/**
+ * As respostas do chat do iFood ficam um minuto na fila à espera de um painel: saem daqui para não segurar os testes
+ * seguintes. Antes, espera o worker soltar os envios em andamento, que senão voltam para a fila depois da limpeza.
+ */
+async function clearIfoodOutbox(app: INestApplication) {
+  const outbound = app.get<Queue>(getQueueToken(QUEUES.outbound));
+  await vi.waitFor(
+    async () => expect(Object.values(await outbound.getJobCounts("waiting", "active", "prioritized")).reduce((sum, n) => sum + n, 0)).toBe(0),
+    { timeout: 15_000, interval: 100 },
+  );
+  for (const job of await outbound.getDelayed()) await job.remove();
+}
 
 describe("Chat do iFood na Inbox (trava IFOOD_CHAT_BRIDGE ligada)", () => {
   let app: INestApplication;
@@ -75,8 +87,7 @@ describe("Chat do iFood na Inbox (trava IFOOD_CHAT_BRIDGE ligada)", () => {
   });
 
   afterAll(async () => {
-    // As respostas ficam um minuto na fila à espera de um painel: saem daqui para não segurar os testes seguintes.
-    for (const job of await app.get<Queue>(getQueueToken(QUEUES.outbound)).getDelayed()) await job.remove();
+    await clearIfoodOutbox(app);
     await fx?.cleanup();
     await other?.cleanup();
     await app?.close();
@@ -812,7 +823,7 @@ describe("Chat do iFood com o módulo Atendimento com IA", () => {
   });
 
   afterAll(async () => {
-    for (const job of await app.get<Queue>(getQueueToken(QUEUES.outbound)).getDelayed()) await job.remove();
+    await clearIfoodOutbox(app);
     await fx?.cleanup();
     await app?.close();
     await llm?.close();
