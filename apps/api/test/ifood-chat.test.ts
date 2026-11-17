@@ -783,8 +783,12 @@ describe("Chat do iFood na Inbox (trava IFOOD_CHAT_BRIDGE ligada)", () => {
   });
 
   it("a loja responde ao cliente pelo Gestor: conta como resposta da equipe, mas a mensagem automática dela não conta", async () => {
+    // As mensagens já copiadas voltam iguais em cada leitura: a hora fica fixa (recalculada, virava de segundo e a
+    // mensagem entrava de novo, chamando a equipe).
+    const asked = shown("INBOUND", "Cadê meu pedido?", minutesAgo(3));
+    const answer = shown("OUTBOUND", "já saiu, chega em 10 min", minutesAgo(2));
     const order = await ifoodOrder("6544", "Dora Melo");
-    await post("/ifood-chat/sync", { orderCode: "6544", messages: [shown("INBOUND", "Cadê meu pedido?", minutesAgo(3))] }).expect(200);
+    await post("/ifood-chat/sync", { orderCode: "6544", messages: [asked] }).expect(200);
     await settle();
     const chat = await admin.conversation.findFirstOrThrow({ where: { contactId: order.contactId, channelId: fx.ifood.id } });
     expect((await admin.conversation.findUniqueOrThrow({ where: { id: chat.id } })).awaitingAgentSince).not.toBeNull();
@@ -792,7 +796,7 @@ describe("Chat do iFood na Inbox (trava IFOOD_CHAT_BRIDGE ligada)", () => {
     // A loja digitou a resposta no Gestor logo depois: o alarme para e a mensagem fica marcada como da equipe.
     await post("/ifood-chat/sync", {
       orderCode: "6544",
-      messages: [shown("INBOUND", "Cadê meu pedido?", minutesAgo(3)), shown("OUTBOUND", "já saiu, chega em 10 min", minutesAgo(2))],
+      messages: [asked, answer],
     }).expect(200);
     await settle();
     const replied = await admin.conversation.findUniqueOrThrow({ where: { id: chat.id } });
@@ -800,7 +804,7 @@ describe("Chat do iFood na Inbox (trava IFOOD_CHAT_BRIDGE ligada)", () => {
     expect((await timeline(chat.id)).map((m) => m.content)).toContainEqual({ text: "já saiu, chega em 10 min", storeReply: true });
 
     // O cliente só agradece: o alarme não volta. Uma pergunta volta.
-    const thanked = [shown("INBOUND", "Cadê meu pedido?", minutesAgo(3)), shown("OUTBOUND", "já saiu, chega em 10 min", minutesAgo(2))];
+    const thanked = [asked, answer];
     thanked.push(shown("INBOUND", "Ok, obrigada!", minutesAgo(1)));
     await post("/ifood-chat/sync", { orderCode: "6544", messages: thanked }).expect(200);
     await settle();
@@ -827,8 +831,8 @@ describe("Chat do iFood na Inbox (trava IFOOD_CHAT_BRIDGE ligada)", () => {
     await post("/ifood-chat/sync", {
       orderCode: "6544",
       messages: [
-        shown("INBOUND", "Cadê meu pedido?", minutesAgo(3)),
-        shown("OUTBOUND", "já saiu, chega em 10 min", minutesAgo(2)),
+        asked,
+        answer,
         shown("OUTBOUND", "Pode deixar na portaria.Mensagem não enviada", minutesAgo(1)),
       ],
     }).expect(200);

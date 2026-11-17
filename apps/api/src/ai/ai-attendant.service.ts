@@ -50,7 +50,6 @@ export const ORDER_ARRIVAL_WAIT_MS = 20_000;
 /** Resposta da equipe na conversa há menos que isto: ela ainda está atendendo, mesmo depois do horário. */
 export const TEAM_ACTIVE_MS = 15 * 60_000;
 
-/** Alguém da equipe (pelo painel ou pelo celular da loja) respondeu na conversa depois de `since`. */
 /** Pedido parado há mais que isto sem entrega nem cancelamento é status que não veio, não pedido em andamento. */
 const ORDER_IN_PROGRESS_MAX_MS = 4 * 60 * 60_000;
 
@@ -59,6 +58,7 @@ export function orderInProgress(order: { status: OrderStatus; placedAt: Date }, 
   return order.status !== "DELIVERED" && order.status !== "CANCELED" && now.getTime() - order.placedAt.getTime() < ORDER_IN_PROGRESS_MAX_MS;
 }
 
+/** Alguém da equipe (pelo painel ou pelo celular da loja) respondeu na conversa depois de `since`. */
 export function teamRepliedSince(history: { direction: string; content: unknown; sentByUserId: string | null; createdAt: Date }[], since: number): boolean {
   return history.some(
     (message) => message.direction === "OUTBOUND" && (!!message.sentByUserId || !!(message.content as MessageContent).fromPhone) && message.createdAt.getTime() >= since,
