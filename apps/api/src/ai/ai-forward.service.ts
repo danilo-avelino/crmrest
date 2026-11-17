@@ -13,13 +13,21 @@ import {
 import { InjectQueue } from "@nestjs/bullmq";
 import { Inject, Injectable, Logger, type OnModuleInit } from "@nestjs/common";
 import type { Queue } from "bullmq";
-import { type AutomationState, automationMessage, channelSends, dispatch, setAutomationState, systemEvent } from "../automations/automation.js";
+import {
+  type AutomationState,
+  automationMessage,
+  channelSends,
+  dispatch,
+  setAutomationState,
+  systemEvent,
+  teamSpokeSince,
+} from "../automations/automation.js";
 import { ENV, type Env } from "../config/env.js";
 import { DatabaseService } from "../core/database.service.js";
 import { type AiForwardJob, type OutboundJob, QUEUES } from "../queues/queues.module.js";
 import { PresenceService } from "../realtime/presence.service.js";
 import { RealtimeEmitter } from "../realtime/realtime.emitter.js";
-import { TEAM_ACTIVE_MS, teamRepliedSince } from "./ai-attendant.service.js";
+import { orderInProgress, TEAM_ACTIVE_MS } from "./ai-attendant.service.js";
 import { LlmClient } from "./llm.client.js";
 
 /** Varredura das conversas que esperam um atendente: pega a abertura do restaurante, que não tem outro aviso. */
@@ -112,13 +120,28 @@ export class AiForwardService implements OnModuleInit {
           select: { direction: true, createdAt: true },
         });
         if (last?.direction !== "INBOUND" || now.getTime() - last.createdAt.getTime() > CLOSED_NOTICE_MAX_MS) continue;
-        // A equipe ainda responde nesta conversa depois do horário, com o painel aberto: ela continua atendendo.
-        const since = now.getTime() - TEAM_ACTIVE_MS;
-        const recent = await tx.message.findMany({
-          where: { conversationId: conversation.id, direction: "OUTBOUND", createdAt: { gte: new Date(since) } },
-          select: { direction: true, content: true, sentByUserId: true, createdAt: true },
+        // A equipe ainda responde nesta conversa depois do horário (pelo painel, pelo celular ou pelo portal do canal): ela
+        // continua atendendo. 16/11/2026: a loja respondia pelo portal do iFood e a Any ouviu "respondemos amanhã".
+        if (await teamSpokeSince(tx, conversation.id, new Date(now.getTime() - TEAM_ACTIVE_MS))) continue;
+        // O aviso sai uma vez: a Any o recebeu às 23:00 e de novo às 23:18.
+        const noticed = await tx.message.count({
+          where: {
+            conversationId: conversation.id,
+            createdAt: { gte: new Date(now.getTime() - CLOSED_NOTICE_MAX_MS) },
+            content: { path: ["automation"], equals: "after_hours" },
+          },
         });
-        if (teamRepliedSince(recent, since) && (await this.presence.online(tenantId, now.getTime()))) continue;
+        if (noticed) continue;
+        // O pedido do cliente ainda está em andamento: a loja segue entregando, e a equipe é quem responde (a Dandara, com o
+        // pedido a caminho, ouviu que a equipe responderia no dia seguinte).
+        const orders = await tx.order.findMany({
+          where: {
+            OR: [{ conversationId: conversation.id }, ...(state.linkedOrder ? [{ id: state.linkedOrder.id }] : [])],
+            placedAt: { gte: new Date(now.getTime() - CLOSED_NOTICE_MAX_MS) },
+          },
+          select: { status: true, placedAt: true },
+        });
+        if (orders.some((order) => orderInProgress(order, now))) continue;
 
         const messageId = await automationMessage(tx, conversation, "after_hours", text);
         await setAutomationState(tx, conversation.id, {

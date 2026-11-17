@@ -1,5 +1,5 @@
 import type { TenantTx } from "@dishdesk/database";
-import { automationMessagesOf, CHANNEL_CAPABILITIES, type MessageContent, toE164 } from "@dishdesk/shared";
+import { automationMessagesOf, CHANNEL_CAPABILITIES, toE164 } from "@dishdesk/shared";
 import { InjectQueue } from "@nestjs/bullmq";
 import { Inject, Injectable } from "@nestjs/common";
 import type { Queue } from "bullmq";
@@ -15,6 +15,7 @@ import {
   type InboundEvent,
   setAutomationState,
   systemEvent,
+  teamSpokeSince,
   tenantSettings,
 } from "./automation.js";
 import { ATTENDANCE_END_MS } from "./inactivity.service.js";
@@ -94,6 +95,8 @@ export class PhoneCollectionService {
       if (!channelSends(type, this.env) || CHANNEL_CAPABILITIES[type].providesPhone) return null;
       const state = conversation.automationState as AutomationState;
       if (state.phoneCollection || conversation.contact.phone || !(await teamSpoke(tx, conversationId))) return null;
+      // Sem mensagem do cliente (só a loja escreveu no chat do pedido), não há com quem falar: nada de pedir o telefone.
+      if (!(await customerWrote(tx, conversationId))) return null;
       const texts = automationMessagesOf(await tenantSettings(tx, tenantId));
       const id = await automationMessage(tx, conversation, "phone_collection", texts.phoneRequest);
       await setAutomationState(tx, conversationId, { ...state, phoneCollection: "awaiting_phone", phoneReminderSentAt: new Date().toISOString() });
@@ -153,15 +156,14 @@ export class PhoneCollectionService {
  * Alguém da equipe falou neste atendimento (a última hora, ATTENDANCE_END_MS): pelo Dish Desk, pelo celular da loja ou
  * pelo portal do canal (a mensagem sem a marca da automação nem da IA).
  */
-async function teamSpoke(tx: TenantTx, conversationId: string, now = new Date()): Promise<boolean> {
-  const sent = await tx.message.findMany({
-    where: { conversationId, direction: "OUTBOUND", createdAt: { gte: new Date(now.getTime() - ATTENDANCE_END_MS) } },
-    select: { sentByUserId: true, content: true },
-  });
-  return sent.some(({ sentByUserId, content }) => {
-    const { fromPhone, automation, aiReply } = content as MessageContent;
-    return !!sentByUserId || !!fromPhone || (!automation && !aiReply);
-  });
+function teamSpoke(tx: TenantTx, conversationId: string, now = new Date()): Promise<boolean> {
+  return teamSpokeSince(tx, conversationId, new Date(now.getTime() - ATTENDANCE_END_MS));
+}
+
+/** O cliente escreveu neste atendimento (a última hora). Quem só recebeu mensagens da loja não é perguntado (16/11/2026). */
+async function customerWrote(tx: TenantTx, conversationId: string, now = new Date()): Promise<boolean> {
+  const since = new Date(now.getTime() - ATTENDANCE_END_MS);
+  return (await tx.message.count({ where: { conversationId, direction: "INBOUND", createdAt: { gte: since } } })) > 0;
 }
 
 type PhoneConversation = { id: string; tenantId: string; channelId: string; contact: { id: string } };

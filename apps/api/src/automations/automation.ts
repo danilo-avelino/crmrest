@@ -25,6 +25,8 @@ export type AutomationState = {
   orderRetried?: boolean;
   /** Menu do entregador: número que ele mandou antes de escolher a opção; o aviso usa esse número, sem pedir de novo. */
   courierOrder?: string;
+  /** Menu do entregador: quando o último aviso foi ao cliente (a foto que vem logo depois é o comprovante). */
+  courierNoticeAt?: string;
   /** O cliente recebeu os links e pediu sozinho; se continuar escrevendo, o menu volta uma vez. */
   selfServed?: boolean;
   /** O atendimento começou com o restaurante fechado (aviso de fora do horário no lugar do menu). */
@@ -119,6 +121,21 @@ export function teamRepliedUpdate(status: ConversationStatus, state: AutomationS
     }),
     ...(afterHoursPending && { status: "OPEN" as const }),
   };
+}
+
+/**
+ * Alguém da equipe falou na conversa desde `since`: pelo Dish Desk, pelo celular da loja ou pelo portal do canal (a
+ * mensagem sem a marca da automação nem da IA).
+ */
+export async function teamSpokeSince(tx: TenantTx, conversationId: string, since: Date): Promise<boolean> {
+  const sent = await tx.message.findMany({
+    where: { conversationId, direction: "OUTBOUND", createdAt: { gte: since } },
+    select: { sentByUserId: true, content: true },
+  });
+  return sent.some(({ sentByUserId, content }) => {
+    const { fromPhone, automation, aiReply } = content as MessageContent;
+    return !!sentByUserId || !!fromPhone || (!automation && !aiReply);
+  });
 }
 
 /** Resposta à pesquisa de satisfação: só a nota, de 1 a 5. */

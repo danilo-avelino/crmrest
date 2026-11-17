@@ -15,9 +15,15 @@ import {
   setAutomationState,
   startOfYesterday,
   systemEvent,
+  teamSpokeSince,
   tenantSettings,
 } from "./automation.js";
 import type { Step } from "./triage.service.js";
+
+/** A loja falou com o entregador há menos que isso: o menu não se mete na conversa. */
+export const COURIER_TEAM_QUIET_MS = 15 * 60_000;
+/** Foto, vídeo ou áudio até esse tempo depois do aviso ao cliente: é o comprovante, sem menu. */
+export const COURIER_PROOF_MS = 10 * 60_000;
 
 type Conversation = { id: string; tenantId: string; channelId: string; automationState: unknown; contact: Contact };
 
@@ -110,6 +116,27 @@ export class CourierMenuService {
     // Entregador: cada aviso é uma entrega, e a conversa encerrada (pelo próprio menu, depois do aviso) acabou de vez; a
     // próxima mensagem abre o menu, sem esperar a 1 hora que encerra os outros atendimentos.
     if (event.newAttendance || event.previousStatus === "RESOLVED") {
+      const now = Date.now();
+      // A loja ainda conversa com ele (pelo celular ou pelo painel), mesmo com a conversa resolvida: o menu fica calado e
+      // a conversa vai para a equipe; só a opção do menu ou o aviso inteiro numa frase seguem. 16/11/2026: "Posso volta?"
+      // recebia "não consigo te entender" enquanto a loja respondia "volta" pelo celular.
+      if (await teamSpokeSince(tx, conversation.id, new Date(now - COURIER_TEAM_QUIET_MS))) {
+        const asked = courierShortcut(event.text);
+        if (asked?.kind === "arrival" || asked?.kind === "front_desk") {
+          return this.notifyCustomer(tx, conversation, state, messages, asked.code, asked.kind, { keepOpen: true });
+        }
+        if (/^\s*[1234]\s*$/.test(event.text ?? "")) return this.chooseOption(tx, conversation, { triage: "awaiting_option" }, messages, event.text);
+        await setAutomationState(tx, conversation.id, { ...state, triage: "done" });
+        await tx.conversation.updateMany({
+          where: { id: conversation.id, awaitingAgentSince: null },
+          data: { awaitingAgentSince: new Date(), awaitingAgentQuiet: true },
+        });
+        return { send: [], done: false };
+      }
+      // Foto, vídeo ou áudio logo depois do aviso é o comprovante da entrega: nada de menu (16/11/2026).
+      if (!event.text?.trim() && state.courierNoticeAt && now - Date.parse(state.courierNoticeAt) < COURIER_PROOF_MS) {
+        return { send: [], done: false };
+      }
       // Quem já sabe o menu manda a opção ou o aviso inteiro logo na primeira mensagem ("1", "1024 tá na portaria").
       const fresh: AutomationState = { triage: "awaiting_option" };
       return (
@@ -265,7 +292,7 @@ export class CourierMenuService {
           );
     const confirmation = fillMessage(kind === "arrival" ? messages.courierArrivalConfirmed : messages.courierFrontDeskConfirmed, { pedido: found.code });
     const id = await automationMessage(tx, conversation, kind === "arrival" ? "courier_arrival_confirmed" : "courier_front_desk_confirmed", confirmation);
-    await setAutomationState(tx, conversation.id, { ...state, triage: "done" });
+    await setAutomationState(tx, conversation.id, { ...state, triage: "done", courierNoticeAt: new Date().toISOString() });
     if (!keepOpen) await tx.conversation.update({ where: { id: conversation.id }, data: { status: "RESOLVED", unreadCount: 0 } });
     return { send: [id], done: false, alsoSend };
   }

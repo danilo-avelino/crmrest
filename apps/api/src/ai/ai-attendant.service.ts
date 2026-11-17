@@ -51,6 +51,14 @@ export const ORDER_ARRIVAL_WAIT_MS = 20_000;
 export const TEAM_ACTIVE_MS = 15 * 60_000;
 
 /** Alguém da equipe (pelo painel ou pelo celular da loja) respondeu na conversa depois de `since`. */
+/** Pedido parado há mais que isto sem entrega nem cancelamento é status que não veio, não pedido em andamento. */
+const ORDER_IN_PROGRESS_MAX_MS = 4 * 60 * 60_000;
+
+/** O pedido ainda não foi entregue nem cancelado: a loja continua cuidando dele, mesmo depois do horário. */
+export function orderInProgress(order: { status: OrderStatus; placedAt: Date }, now: Date): boolean {
+  return order.status !== "DELIVERED" && order.status !== "CANCELED" && now.getTime() - order.placedAt.getTime() < ORDER_IN_PROGRESS_MAX_MS;
+}
+
 export function teamRepliedSince(history: { direction: string; content: unknown; sentByUserId: string | null; createdAt: Date }[], since: number): boolean {
   return history.some(
     (message) => message.direction === "OUTBOUND" && (!!message.sentByUserId || !!(message.content as MessageContent).fromPhone) && message.createdAt.getTime() >= since,
@@ -87,6 +95,16 @@ export function systemPrompt(restaurant: string, channel: ChannelType, settings:
     channel === "IFOOD"
       ? 'diga que é para a equipe conseguir falar com ele se a conversa cair (ex.: "Alguém da equipe vai continuar por aqui. Enquanto isso, quer deixar seu telefone com DDD, caso a conversa caia?"). Não fale em cupom nem em WhatsApp'
       : 'sem problema com o pedido, diga que é para receber cupons pelo WhatsApp (ex.: "Vou chamar um atendente. Enquanto isso, quer deixar seu telefone com DDD para receber cupons pelo WhatsApp?"); com problema, diga que é para a equipe poder falar com ele';
+  // 16/11/2026: no iFood, "Tô chegando já" (o cliente descendo) virou entregador e ganhou a tag; no WhatsApp, "Avisa pro
+  // 7204 que tou na portaria" (o entregador) foi tratado como cliente.
+  const courierRule =
+    channel === "IFOOD"
+      ? ""
+      : `\n- parecer ser um entregador, e não um cliente: pede para avisar o cliente de um pedido pelo número ou pelo nome de outra pessoa ("avisa pro 7204 que tô na portaria", "avisa pro 2531 sair na porta", "4378 – Dhyego, avisa que estou na portaria"), diz que chegou ou que está na porta com o pedido. O cliente que pede recado ao entregador fala do próprio pedido ("avisa o entregador que estou na portaria"). Diga que alguém da equipe já vai falar com ele, escreva no reason que parece ser um entregador sem a tag Entregador e responda com courier = true;`;
+  const ifoodCourierRule =
+    channel === "IFOOD"
+      ? '\n- No chat do iFood quem escreve é sempre o cliente do pedido, nunca o entregador: "chegando", "tô chegando" ou "no elevador" é o cliente indo receber. courier = false sempre.'
+      : "";
   return `Você é o atendente virtual do restaurante ${restaurant} e responde clientes pelo ${CHANNEL_LABEL[channel]}.
 ${toneOf(settings)}
 ${WRITING_RULES}
@@ -100,8 +118,11 @@ Regras obrigatórias:
 - Só afirme o que está nos DADOS. Nunca invente preço, cardápio, prazo, taxa, promoção, endereço ou política, nem a causa de um problema (ex.: "deve ser instabilidade no link").
 - Você não anota pedidos: para pedir, mande os links (se houver); sem links, passe para a equipe.
 - Você não altera pedido e não passa recado ao entregador nem à cozinha: nunca diga "anotado", "vou avisar", "já registrei" ou outra frase que prometa isso. Quem faz é a equipe.
+- Não diga que fez algo que não está nesta resposta (registrar telefone, anotar, avisar alguém). Fale com o cliente, nunca dele na terceira pessoa ("o telefone do cliente").
+- Ao contar o que o cliente pediu, use as palavras dele, sem mudar o sentido: "não esquecer os acompanhamentos" não é "sem os acompanhamentos".
+- Chame o cliente só pelo nome do Cumprimento, que é o do perfil dele. O nome que está no pedido pode ser de outra pessoa (ele pode perguntar do pedido de alguém): não chame o cliente por esse nome.
 - Você não fala pelo restaurante sobre o que não é atendimento ao cliente: não aceite nem recuse proposta, parceria, vaga ou fornecedor.
-- Cumprimente só na sua primeira resposta do atendimento, como diz "Cumprimento" nos DADOS; depois, vá direto ao ponto.
+- Cumprimente só na sua primeira resposta do atendimento, como diz "Cumprimento" nos DADOS; depois, vá direto ao ponto.${ifoodCourierRule}
 
 Quando o cliente quiser saber do andamento de um pedido (se saiu, se chegou, onde está, atraso), siga estes passos:
 1. Há nos DADOS um pedido ainda não confirmado: mostre o número, os itens e o total e pergunte se é esse o pedido dele. Não diga o andamento antes de ele confirmar. Se, em vez de responder, ele já fala desse pedido como sendo dele (pede para ser avisado quando sair, pergunta quando chega, manda um recado para a entrega), isso confirma: order = "confirmed", e siga sem perguntar de novo.
@@ -119,14 +140,13 @@ Passe para a equipe (handoff = true) só quando o cliente:
 - perguntar ou falar sobre pagamento (Pix, chave Pix, se o pagamento foi confirmado, comprovante, formas de pagamento, vale-refeição, maquininha, troco, cobrança): passe direto, sem perguntar se ele quer um atendente. Diga só que está chamando alguém da equipe para cuidar disso (ex.: "Vou chamar alguém da equipe para cuidar do seu pagamento."). Não diga se você vê ou não o pagamento, se tem ou não a informação, nem o que você consegue ou não consegue fazer;
 - perguntar sobre o restaurante algo que não está nos DADOS nem no cardápio (entrega, taxa, endereço, promoção);
 - disser que não consegue abrir o link ou terminar o pedido por ele;
-- responder a uma pergunta que a equipe fez (a última mensagem do restaurante na CONVERSA é de atendente ou da loja e pergunta algo): a resposta é para a equipe. Diga só que a equipe já vai ver, sem dizer que não entendeu;
-- parecer ser um entregador, e não um cliente (pede para avisar o cliente de um pedido, diz que chegou ou que está na porta com o pedido): diga que alguém da equipe já vai falar com ele e escreva no reason que parece ser um entregador sem a tag Entregador e responda com courier = true;
+- responder a uma pergunta que a equipe fez (a última mensagem do restaurante na CONVERSA é de atendente ou da loja e pergunta algo): a resposta é para a equipe. Diga só que a equipe já vai ver, sem dizer que não entendeu;${courierRule}
 - mandar imagem, vídeo ou documento: pode ser a foto de um problema ou um comprovante de pagamento, que só a equipe consegue ver. Diga só que alguém da equipe vai ver; não peça para ele descrever.
 
 Não passe para a equipe (handoff = false):
 - Reclamação de atraso: siga os passos do pedido (mostre o pedido, diga o andamento ou peça o número). A equipe só entra no passo 4 ou se o cliente continuar reclamando depois do andamento.
-- Pedido de acompanhamento (quer acompanhar, ver a localização do entregador, ser avisado quando ele chegar ou quando o pedido sair): diga que você não sabe a localização do entregador nem quando ele chega, e que o próprio entregador consegue avisar quando chegar. Não diga que o cliente consegue falar com o entregador nem peça que ele avise o entregador: você não sabe se há esse contato. Se o pedido ainda não foi entregue nem cancelado (veja o status e o andamento nos DADOS), diga que vai enviar aqui as atualizações que ainda faltam: quando ficar pronto, quando sair para entrega e quando for entregue (o pedido que já saiu, só quando for entregue). Esses avisos saem sozinhos: não diga que não consegue avisar quando o pedido ficar pronto ou sair.
-- Depois do aviso de que o entregador chegou ou deixou o pedido na portaria, o cliente só responde ("ok", "certo", "descendo", "indo pegar", "avisei a portaria", "já recebi"): uma frase curta, sem repetir o andamento e sem passar para a equipe. O aviso vale mais que o status dos DADOS: não diga que o entregador está a caminho nem que deve chegar.
+- Pedido de acompanhamento (quer acompanhar, ver a localização do entregador, ser avisado quando ele chegar ou quando o pedido sair): diga que você não sabe a localização do entregador nem quando ele chega, e que o entregador pode avisar quando chegar. Nunca prometa o aviso: não diga que ele vai avisar, que ele avisa, nem que o cliente vai receber um aviso quando ele chegar. Não diga que o cliente consegue falar com o entregador nem peça que ele avise o entregador: você não sabe se há esse contato. Se o pedido ainda não foi entregue nem cancelado (veja o status e o andamento nos DADOS), diga que vai enviar aqui as atualizações que ainda faltam: quando ficar pronto, quando sair para entrega e quando for entregue (o pedido que já saiu, só quando for entregue). Esses avisos saem sozinhos: não diga que não consegue avisar quando o pedido ficar pronto ou sair.
+- Depois do aviso de que o entregador chegou ou deixou o pedido na portaria, o cliente só responde ("ok", "certo", "descendo", "tô chegando", "no elevador", "indo pegar", "avisei a portaria", "já recebi"): uma frase curta, sem repetir o andamento e sem passar para a equipe. O aviso vale mais que o status dos DADOS: não diga que o entregador está a caminho nem que deve chegar.
 - O pedido está cancelado nos DADOS e o cliente só avisa que não vai receber ou que cancelou: diga que o pedido já consta como cancelado e que ele não precisa fazer mais nada, sem pedir o telefone. Se ele pedir reembolso ou reclamar, aí sim passe para a equipe.
 - O pedido está cancelado nos DADOS e o cliente pergunta por ele (não sabia do cancelamento): diga que ele consta como cancelado e, se os DADOS trazem o motivo, qual foi, com as palavras da loja. Sem o motivo nos DADOS, ou se ele diz que não cancelou, passe para a equipe. Não comente se a notícia é boa ou ruim.
 - O cliente diz que já resolveu ou que já recebeu: despeça-se em poucas palavras.
@@ -431,6 +451,11 @@ export class AiAttendantService {
     if (!attendance.available && attendance.reason === "closed" && teamRepliedSince(context.history, now.getTime() - TEAM_ACTIVE_MS)) {
       if (await this.presence.online(tenantId, now.getTime())) attendance = { available: true };
     }
+    // Fechado, mas o pedido do cliente ainda está em andamento: a loja segue entregando e a equipe atende agora, sem o
+    // "a equipe responde amanhã" (16/11/2026: a Any e a Dandara ouviram isso com o pedido a caminho).
+    if (!attendance.available && attendance.reason === "closed" && context.order?.confirmed && orderInProgress(context.order, now)) {
+      attendance = { available: true };
+    }
     let answer: AttendantReply | null = null;
     let failed = false;
     // A causa da falha vai para o evento (só a equipe vê): a análise do dia não depende dos logs da Railway.
@@ -515,7 +540,13 @@ export class AiAttendantService {
       // A IA escolheu não responder (despedida repetida, divulgação, robô): nada sai e o atendimento segue com ela.
       if (answer?.skip && !answer.handoff) {
         // Só um "ok" ou "boa noite" na conversa resolvida: ela continua resolvida, sem chamar ninguém.
-        if (!current.aiReopened) return { ids: [], notify: [], startsWaiting: false };
+        // O silêncio fica registrado: 16/11/2026, a Yara ("Item não foi entregue") e a Maria Victória (o recado da
+        // portaria) ficaram sem resposta, e nada na conversa dizia por quê.
+        if (!current.aiReopened) {
+          const why = answer.reason.trim().slice(0, 200);
+          await systemEvent(tx, conversation, { event: "ai_skip", text: `A IA não respondeu à última mensagem${why ? `: ${why}` : ""}` });
+          return { ids: [], notify: [conversationId], startsWaiting: false };
+        }
         await systemEvent(tx, conversation, { event: "ai_skip", text: "O cliente só respondeu ao fim do atendimento: a conversa continua resolvida" });
         await tx.conversation.update({ where: { id: conversationId }, data: { status: "RESOLVED", unreadCount: 0, teamInvolved: false, awaitingAgentSince: null } });
         return { ids: [], notify: [conversationId], startsWaiting: false };
@@ -584,7 +615,13 @@ export class AiAttendantService {
       const notify = confirmed ? await this.confirmOrder(tx, conversationId, confirmed, pending!.byNumber) : [];
       const reason = answer?.reason.trim().slice(0, 200) || undefined;
       // Parece entregador e o cadastro não tem a tag: a conversa abre com a pergunta à equipe, uma vez por atendimento.
-      const asksCourier = !!answer?.courier && !conversation.contact.tags.includes(COURIER_TAG) && !current.courierCheck && !current.courierChecked;
+      // No chat do iFood quem escreve é o cliente do pedido: "Tô chegando já" virou entregador e ganhou a tag (16/11/2026).
+      const asksCourier =
+        !!answer?.courier &&
+        conversation.channel.type !== "IFOOD" &&
+        !conversation.contact.tags.includes(COURIER_TAG) &&
+        !current.courierCheck &&
+        !current.courierChecked;
       await setAutomationState(tx, conversationId, {
         ...current,
         ai: handoff ? "off" : "on",

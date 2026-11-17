@@ -589,6 +589,44 @@ describe("Chat do iFood na Inbox (trava IFOOD_CHAT_BRIDGE ligada)", () => {
     expect((await timeline(chat.id)).filter((m) => (m.content as { text?: string }).text === notice.text)).toHaveLength(1);
   });
 
+  it("entregador manda a foto logo depois do aviso: é o comprovante, sem o menu de novo", async () => {
+    // 16/11/2026: a foto e o vídeo mandados logo depois de "Pronto! Avisamos o cliente" reabriam o menu inteiro.
+    await ifoodOrder("6583", "Teresa Lima");
+    const waId = "5511970000044";
+    await admin.contact.create({
+      data: { tenantId: fx.tenant.id, name: "Rui Entregador", tags: ["Entregador"], identities: { create: { tenantId: fx.tenant.id, channelType: "WHATSAPP", externalId: waId } } },
+    });
+    const courier = () =>
+      admin.conversation.findFirstOrThrow({
+        where: { channelId: fx.whatsapp.id, contact: { identities: { some: { channelType: "WHATSAPP", externalId: waId } } } },
+        include: { messages: { orderBy: { createdAt: "asc" } } },
+      });
+    const send = (message: object) =>
+      postMetaWebhook(app, metaPayload(fx.whatsapp.externalId, { contacts: [{ profile: { name: "Rui" }, wa_id: waId }], messages: [message] })).expect(200);
+    const at = () => String(Math.floor(Date.now() / 1000));
+    await send({ from: waId, id: "wamid.PRF1", timestamp: at(), type: "text", text: { body: "6583 cheguei" } });
+    await until(async () => expect((await courier()).messages.at(-1)!.content).toMatchObject({ automation: "courier_arrival_confirmed" }));
+
+    await send({ from: waId, id: "wamid.PRF2", timestamp: at(), type: "image", image: { id: "MEDIA-PRF", mime_type: "image/jpeg" } });
+    await until(async () => expect((await courier()).messages.some((m) => m.externalMessageId === "wamid.PRF2")).toBe(true));
+    await settle();
+    const after = await courier();
+    expect(after.messages.flatMap((m) => (m.content as { automation?: string }).automation ?? [])).toEqual(["courier_arrival_confirmed"]);
+    expect(after.awaitingAgentSince).toBeNull();
+    await typeOutbox();
+  });
+
+  it("só a loja escreveu no chat do pedido: ao resolver, o telefone não é pedido", async () => {
+    // 16/11/2026: o Fabrício e a Erna só receberam recados da loja e, no fim, o pedido do telefone.
+    const quiet = await ifoodOrder("6584", "Fabio Rocha");
+    await post("/ifood-chat/sync", { orderCode: "6584", messages: [shown("OUTBOUND", "entregador esta no endereço", minutesAgo(2))] }).expect(200);
+    await settle();
+    const chat = await admin.conversation.findFirstOrThrow({ where: { contactId: quiet.contactId, channelId: fx.ifood.id } });
+    await request(app.getHttpServer()).patch(`/api/conversations/${chat.id}`).set("Authorization", `Bearer ${token}`).send({ status: "RESOLVED" }).expect(200);
+    await settle();
+    expect((await timeline(chat.id)).flatMap((m) => (m.content as { automation?: string }).automation ?? [])).toEqual([]);
+  });
+
   it("entregador avisa que chegou com um pedido que não é do iFood: a equipe é chamada, com o card do pedido", async () => {
     const cardapio = await admin.channel.create({
       data: { tenantId: fx.tenant.id, type: "CARDAPIO_WEB", name: "Cardápio Web", externalId: `cw-${randomUUID()}`, credentials: Buffer.from("-"), status: "CONNECTED" },

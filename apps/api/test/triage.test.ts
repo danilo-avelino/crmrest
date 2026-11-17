@@ -5,6 +5,7 @@ import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { getQueueToken } from "@nestjs/bullmq";
 import type { Queue } from "bullmq";
+import { COURIER_TEAM_QUIET_MS } from "../src/automations/courier-menu.service.js";
 import { ATTENDANCE_END_MS, INACTIVITY_CLOSE_MS, InactivityService } from "../src/automations/inactivity.service.js";
 import { SurveyService } from "../src/automations/survey.service.js";
 import { QUEUES } from "../src/queues/queues.module.js";
@@ -712,6 +713,31 @@ describe("menu de atendimento, busca do pedido e pesquisa de satisfação", () =
     expect(await automations("5511970000035")).toEqual(["courier_menu", "order_number_request", "order_number_request", "handoff"]);
     expect(left.messages.map((m) => m.content)).toContainEqual({ event: "handoff", text: "Entregador avisou que deixou o pedido #9009 na portaria" });
     expect(left.messages.map((m) => m.content)).toContainEqual({ event: "order", orderId: order.id, customerChat: true });
+  });
+
+  it("entregador escreve de novo com a loja ainda na conversa (resolvida): o menu fica calado e a equipe é chamada sem urgência", async () => {
+    // 16/11/2026: "Posso volta?" recebia "não consigo te entender" enquanto a loja respondia "volta" pelo celular.
+    await tagged("5511970000037", "Entregador");
+    await say("5511970000037", "wamid.LJ1", "4");
+    const { id } = await conversationOf("5511970000037");
+    await reply(id, "Pode voltar");
+    await request(app.getHttpServer()).patch(`/api/conversations/${id}`).set("Authorization", `Bearer ${token}`).send({ status: "RESOLVED" }).expect(200);
+    await drainQueues(app);
+
+    await say("5511970000037", "wamid.LJ2", "Posso volta?");
+    const quiet = await conversationOf("5511970000037");
+    expect(await automations("5511970000037")).toEqual(["handoff"]);
+    expect(quiet).toMatchObject({ awaitingAgentQuiet: true, automationState: { triage: "done" } });
+    expect(quiet.awaitingAgentSince).not.toBeNull();
+
+    // Passado o tempo da conversa com a loja, a mensagem seguinte abre o menu de novo.
+    for (const message of await admin.message.findMany({ where: { conversationId: id } })) {
+      await admin.message.update({ where: { id: message.id }, data: { createdAt: new Date(message.createdAt.getTime() - COURIER_TEAM_QUIET_MS) } });
+    }
+    await request(app.getHttpServer()).patch(`/api/conversations/${id}`).set("Authorization", `Bearer ${token}`).send({ status: "RESOLVED" }).expect(200);
+    await drainQueues(app);
+    await say("5511970000037", "wamid.LJ3", "Oi");
+    expect(await automations("5511970000037")).toEqual(["handoff", "courier_menu"]);
   });
 
   it("card do pedido informado pelo entregador: a equipe conversa com o cliente pelo WhatsApp quando o cadastro tem telefone", async () => {

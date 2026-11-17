@@ -473,6 +473,44 @@ describe("atendimento com IA: resposta, revisão e avaliação", () => {
     expect(after.awaitingAgentSince).not.toBeNull();
   });
 
+  it("o restaurante fecha com o pedido do cliente a caminho: sem o aviso de fora do horário, a equipe continua chamada", async () => {
+    // 16/11/2026: a Dandara, com o pedido saído às 22:10, ouviu às 23:00 que a equipe responderia no dia seguinte.
+    answers.atendimento = { reply: "Sinto muito! Alguém da equipe já vai falar com você.", handoff: true, reason: "Atraso", order: "none" };
+    await say("5511980000095", "wamid.AI-RT1", "Meu pedido não chegou");
+    await settle();
+    await say("5511980000095", "wamid.AI-RT2", "Alguém?");
+    const waiting = await conversationOf("5511980000095");
+    expect(waiting.awaitingAgentSince).not.toBeNull();
+    const placed = await admin.contact.create({ data: { tenantId: fx.tenant.id, name: "Cliente 8181" } });
+    await admin.order.create({
+      data: {
+        tenantId: fx.tenant.id,
+        contactId: placed.id,
+        channelId: fx.ifood.id,
+        conversationId: waiting.id,
+        externalOrderId: `pedido-ia-8181-${Date.now()}`,
+        displayCode: "8181",
+        status: "DISPATCHED",
+        subtotal: "40.00",
+        deliveryFee: "0.00",
+        total: "40.00",
+        placedAt: new Date(),
+        raw: {},
+      },
+    });
+
+    const days = [{ open: "03:00", close: "03:01" }, null, null, null, null, null, null];
+    await admin.tenant.update({ where: { id: fx.tenant.id }, data: { settings: { businessHours: { enabled: true, days, closedMessage: "Fechado." } } } });
+    try {
+      await app.get(AiForwardService).closedNotices(fx.tenant.id);
+    } finally {
+      await admin.tenant.update({ where: { id: fx.tenant.id }, data: { settings: {} } });
+    }
+    const after = await conversationOf("5511980000095");
+    expect(after.messages.at(-1)!.content).toMatchObject({ text: "Alguém?" });
+    expect(after.awaitingAgentSince).not.toBeNull();
+  });
+
   it("ninguém online: a IA continua atendendo e a conversa vai para quem chegar", async () => {
     await app.get(PresenceService).leave("painel-de-teste", [fx.tenant.id]);
     const notice = "No momento estamos sem atendentes online. Assim que um chegar, sua conversa será encaminhada.";
@@ -1128,6 +1166,22 @@ describe("atendimento com IA: o que a IA lê", () => {
     expect(systemPrompt("Aglio Nero", "WHATSAPP", {})).toContain("para receber cupons pelo WhatsApp");
     // Pagamento: a IA só diz que chama a equipe, sem falar do que vê ou não vê (pedido do usuário, 14/11/2026).
     expect(systemPrompt("Aglio Nero", "WHATSAPP", {})).toContain("Não diga se você vê ou não o pagamento");
+  });
+
+  it("entregador: no iFood quem escreve é sempre o cliente; no WhatsApp, o recado pelo número de outro pedido é de entregador; o aviso nunca é prometido", () => {
+    // 16/11/2026: "Tô chegando já" no iFood virou entregador; "Avisa pro 7204 que tou na portaria" no WhatsApp virou cliente.
+    const ifood = systemPrompt("Nippon", "IFOOD", {});
+    expect(ifood).toContain("No chat do iFood quem escreve é sempre o cliente do pedido, nunca o entregador");
+    expect(ifood).not.toContain("courier = true");
+    const whatsapp = systemPrompt("Nippon", "WHATSAPP", {});
+    expect(whatsapp).toContain('"avisa pro 7204 que tô na portaria"');
+    expect(whatsapp).toContain("courier = true");
+    expect(whatsapp).not.toContain("No chat do iFood quem escreve");
+    // A Samara ouviu "o entregador avisa quando chegar", e ele não avisou (pedido do usuário, 17/11/2026).
+    for (const prompt of [ifood, whatsapp]) {
+      expect(prompt).toContain("o entregador pode avisar quando chegar. Nunca prometa o aviso");
+      expect(prompt).not.toContain("consegue avisar quando chegar");
+    }
   });
 
   it("pedido cancelado: a IA recebe o motivo que a loja deu", () => {
