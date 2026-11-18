@@ -1,6 +1,6 @@
 import type { CurrentOrderDto } from "@dishdesk/shared";
 import { describe, expect, it, vi } from "vitest";
-import { orderStages } from "./current-order";
+import { orderStages, stageProgress } from "./current-order";
 
 vi.mock("@/components/auth/auth-provider", () => ({ useAuth: () => ({ request: vi.fn() }) }));
 
@@ -61,5 +61,23 @@ describe("etapas do pedido", () => {
     const stages = orderStages(current({ status: "READY" }, { takeout: true, readyAt: at(10) }), start + 14 * MINUTE);
     expect(stages.map((stage) => stage.label)).toEqual(["Preparo", "Aguardando retirada", "Retirado"]);
     expect(stages[1]).toMatchObject({ state: "current", durationMs: 4 * MINUTE });
+  });
+
+  it("anda na etapa atual até a saída prevista", () => {
+    const data = current({}, { forecast: { departAt: at(22), late: false, ahead: 0 } });
+    const now = start + 12 * MINUTE;
+    expect(stageProgress(data, orderStages(data, now)[0]!, now)).toBeCloseTo(0.5);
+  });
+
+  it("em rota, anda até a entrega prometida e não chega ao fim antes de entregar", () => {
+    const data = current({ status: "DISPATCHED", dispatchedAt: at(10) }, { promisedAt: at(20) });
+    const now = start + 40 * MINUTE;
+    expect(stageProgress(data, orderStages(data, now)[2]!, now)).toBe(0.96);
+  });
+
+  it("sem previsão nem promessa, fica no meio da etapa", () => {
+    const data = current({});
+    const now = start + 12 * MINUTE;
+    expect(stageProgress(data, orderStages(data, now)[0]!, now)).toBe(0.5);
   });
 });

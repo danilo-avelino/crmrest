@@ -146,7 +146,7 @@ export const NOTIFIABLE = new Set<OrderDto["status"]>(["PLACED", "CONFIRMED", "P
  * "Enviar previsão" (na cozinha) ou "Avisar saída" (já saiu): mostra a mensagem calculada (E26) e só envia depois que
  * o atendente confirma.
  */
-export function ForecastButton({ order, conversationId }: { order: OrderDto; conversationId: string }) {
+export function ForecastButton({ order, conversationId, size = "xs" }: { order: OrderDto; conversationId: string; size?: "xs" | "default" }) {
   const { request } = useAuth();
   const queryClient = useQueryClient();
   const toast = useToast();
@@ -178,7 +178,7 @@ export function ForecastButton({ order, conversationId }: { order: OrderDto; con
 
   return (
     <>
-      <Button variant="outline" size="xs" onClick={open}>
+      <Button variant="outline" size={size} onClick={open}>
         {dispatched ? "Avisar saída" : "Enviar previsão"}
       </Button>
       <Dialog open={preview !== undefined} onOpenChange={(next) => !next && setPreview(undefined)}>
