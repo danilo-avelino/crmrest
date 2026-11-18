@@ -5,7 +5,6 @@ import {
   type AutoTag,
   CANCELLATION_TAG,
   CHANNEL_LABEL,
-  type ChannelHealthDto,
   type ContactConversationItem,
   type ContactDetail,
   type ConversationListItem,
@@ -25,6 +24,7 @@ import { useAuth } from "@/components/auth/auth-provider";
 import { Avatar, CHANNEL_DOT } from "@/components/inbox/bits";
 import { CurrentOrder } from "@/components/inbox/current-order";
 import { ORDER_STATUS } from "@/components/inbox/order-card";
+import { useWhatsAppChat, WhatsAppPhone } from "@/components/inbox/whatsapp-phone";
 import { sourcesText } from "@/components/orders/customer-history";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -123,13 +123,17 @@ export function ClientPanel({
       ) : (
         <>
           {data.tags.includes(RECOVERY_TAG) && <LastTime contactId={data.id} />}
-          <CurrentOrder conversationId={conversationId} />
+          <CurrentOrder conversationId={conversationId} onOpenConversation={onOpenConversation} />
           <Section title="Contato">
             <Row icon={PhoneIcon}>
               {data.phone ? (
                 <>
                   <div className="min-w-0 flex-1">
-                    <div className="tabular-nums">{formatPhone(data.phone)}</div>
+                    {channelType === "WHATSAPP" ? (
+                      <div className="tabular-nums">{formatPhone(data.phone)}</div>
+                    ) : (
+                      <WhatsAppPhone contactId={data.id} tenantId={data.tenantId} phone={data.phone} onOpen={onOpenConversation} />
+                    )}
                     {data.phoneSource && (
                       <div className="mt-px flex items-center gap-1 text-[10.5px] text-success">
                         <CheckCircle2Icon className="size-3" aria-hidden />
@@ -229,22 +233,8 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
  * restaurante tem um WhatsApp conectado.
  */
 function WhatsAppButton({ contactId, tenantId, onOpen }: { contactId: string; tenantId: string; onOpen: (id: string) => void }) {
-  const { request } = useAuth();
-  const queryClient = useQueryClient();
-  const toast = useToast();
-  // Mesma consulta da faixa de canal desconectado (ChannelAlert).
-  const channels = useQuery({ queryKey: ["channels"], queryFn: () => request<ChannelHealthDto[]>("/channels"), refetchInterval: 60_000 });
-  const connected = channels.data?.some((channel) => channel.tenantId === tenantId && channel.type === "WHATSAPP" && channel.status === "CONNECTED");
+  const { connected, open } = useWhatsAppChat(contactId, tenantId, onOpen);
   if (!connected) return null;
-  const open = async () => {
-    try {
-      const { conversationId } = await request<{ conversationId: string }>(`/contacts/${contactId}/whatsapp-chat`, { method: "POST" });
-      void queryClient.invalidateQueries({ queryKey: ["conversations"] });
-      onOpen(conversationId);
-    } catch (failure) {
-      toast(failure instanceof ApiError ? failure.message : "Não foi possível abrir a conversa no WhatsApp.");
-    }
-  };
   return (
     <Button variant="outline" size="xs" className="shrink-0" onClick={open} title="Abre a conversa com o cliente no WhatsApp do restaurante">
       <MessageCircleIcon aria-hidden />

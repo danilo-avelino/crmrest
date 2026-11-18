@@ -3,6 +3,7 @@ import type { ChannelType, OrderStatus } from "@dishdesk/database/enums";
 import {
   type AnswerDisputeRequest,
   type CancelOrderRequest,
+  COURIER_TAG,
   type CurrentOrderDto,
   type CustomerCancellations,
   type CustomerHistory,
@@ -15,7 +16,7 @@ import {
 } from "@dishdesk/shared";
 import { Inject, Injectable, Logger, NotFoundException, UnprocessableEntityException } from "@nestjs/common";
 import type { RequestAuth } from "../auth/auth.decorators.js";
-import { startOfOrderDay, tenantSettings } from "../automations/automation.js";
+import { type AutomationState, startOfOrderDay, tenantSettings } from "../automations/automation.js";
 import { ENV, type Env } from "../config/env.js";
 import { CardapioWebClient } from "../connectors/cardapio-web.client.js";
 import { ConnectorsService } from "../connectors/connectors.service.js";
@@ -365,11 +366,14 @@ export class OrdersService {
     });
   }
 
-  /** Botão do card: abre a conversa com o cliente do pedido (a que já existe, ou uma nova) e devolve o id dela. */
-  async openCustomerChat(auth: RequestAuth, orderId: string): Promise<{ conversationId: string }> {
+  /**
+   * Botão do card: abre a conversa com o cliente do pedido (a que já existe, ou uma nova) e devolve o id dela.
+   * `preferIfood`: o chat do iFood do pedido vem antes do WhatsApp (painel da conversa do entregador).
+   */
+  async openCustomerChat(auth: RequestAuth, orderId: string, preferIfood = false): Promise<{ conversationId: string }> {
     const opened = await this.db.withTenants(auth.scope, async (tx) => {
       const { order, whatsapp, ifood } = await this.customerRoute(tx, orderId);
-      if (whatsapp) return { tenantId: order.tenantId, conversationId: await openWhatsAppConversation(tx, whatsapp.id, order.contact) };
+      if (whatsapp && !(preferIfood && ifood)) return { tenantId: order.tenantId, conversationId: await openWhatsAppConversation(tx, whatsapp.id, order.contact) };
       if (!ifood) throw new UnprocessableEntityException("Não há como conversar com este cliente pelo Dish Desk.");
       return { tenantId: order.tenantId, conversationId: (await openIfoodConversation(tx, order, new Date())).id };
     });
@@ -391,19 +395,25 @@ export class OrdersService {
   /**
    * Painel do cliente na Inbox: o pedido ligado ao cadastro da conversa, com o andamento e a previsão de saída. Procura
    * no restaurante da conversa e nos que o canal dela atende; no painel master, os outros restaurantes do atendente
-   * ficam de fora.
+   * ficam de fora. Na conversa de um entregador, vale o pedido a que ele se ligou pelo número, com os dados do cliente.
    */
   async currentForConversation(auth: RequestAuth, conversationId: string, now = new Date()): Promise<CurrentOrderDto | null> {
     return this.db.withTenants(auth.scope, async (scoped) => {
-      const conversation = await scoped.conversation.findUnique({ where: { id: conversationId }, select: { tenantId: true, channelId: true, contact: true } });
+      const conversation = await scoped.conversation.findUnique({
+        where: { id: conversationId },
+        select: { tenantId: true, channelId: true, automationState: true, contact: true },
+      });
       if (!conversation) throw new NotFoundException("Conversa não encontrada.");
+      const courierOrderId = conversation.contact.tags.includes(COURIER_TAG) ? (conversation.automationState as AutomationState).courierOrderId : undefined;
       return withOrderTenants(this.db, scoped, conversation.channelId, async (tx) => {
-        const found = await latestOrderOf(tx, conversation.contact, now);
+        const courierOrder = courierOrderId ? await tx.order.findUnique({ where: { id: courierOrderId }, select: { id: true } }) : null;
+        const found = courierOrder ?? (await latestOrderOf(tx, conversation.contact, now));
         if (!found) return null;
         const order = await tx.order.findUniqueOrThrow({
           where: { id: found.id },
           include: {
             items: true,
+            contact: true,
             channel: { select: { type: true } },
             tenant: { select: { name: true } },
             alertDecidedBy: { select: { name: true } },
@@ -417,6 +427,17 @@ export class OrdersService {
         const forecast = await forecastOrder(tx, order.id, now, this.jev);
         const platform = PlatformOrder.safeParse(order.raw).data;
         const at = (code: string) => order.events.find((event) => event.code === code)?.occurredAt;
+        const reachable = auth.scope.tenantIds.includes(order.tenantId);
+        const customer = courierOrder ? order.contact : conversation.contact;
+        const ifoodChat = order.channel.type === "IFOOD" && this.env.IFOOD_CHAT_BRIDGE;
+        const courier = courierOrder && {
+          customerId: order.contact.id,
+          customerName: order.contact.name,
+          customerPhone: reachable ? order.contact.phone : null,
+          tenantId: order.tenantId,
+          chat: !reachable ? null : ifoodChat ? ("IFOOD" as const) : order.contact.phone && (await connectedWhatsApp(tx, order.tenantId)) ? ("WHATSAPP" as const) : null,
+          reachable,
+        };
         return {
           order: { ...toOrderDto(order), ...(order.tenantId !== conversation.tenantId && { restaurantName: order.tenant.name }) },
           notes: [platform?.extraInfo, platform?.delivery?.observations].filter((note): note is string => Boolean(note?.trim())),
@@ -425,11 +446,13 @@ export class OrdersService {
           takeout: isTakeout(order.raw),
           promisedAt: promisedAt(order.raw)?.toISOString() ?? null,
           forecast: forecast && { departAt: forecast.departAt.toISOString(), late: forecast.late, ahead: forecast.ahead },
-          history: await customerHistory(tx, conversation.contact),
+          history: await customerHistory(tx, customer),
           stale: !order.dispatchedAt && ["PLACED", "CONFIRMED", "PREPARING", "READY"].includes(order.status) && now.getTime() - order.placedAt.getTime() > STALE_MS,
-          // De outra unidade em que quem vê não atende: mostra o alerta, mas a decisão é de quem atende lá.
-          alert: await orderAlert(tx, order, conversation.contact, auth.scope.tenantIds.includes(order.tenantId)),
+          // De outra unidade em que quem vê não atende: mostra o alerta, mas a decisão é de quem atende lá. O alerta de
+          // fraude é tratado na conversa do cliente, não na do entregador.
+          alert: courierOrder ? null : await orderAlert(tx, order, conversation.contact, reachable),
           cancelable: this.canCancel(order),
+          courier,
         };
       });
     });

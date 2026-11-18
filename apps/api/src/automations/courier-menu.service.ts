@@ -71,6 +71,11 @@ export function onlyOrder<T extends { status: OrderStatus; placedAt: Date }>(ord
   return today.length === 1 ? today[0]! : null;
 }
 
+/** Liga o atendimento ao pedido do número informado; um número sem pedido desfaz a ligação anterior. */
+function linkOrder(state: AutomationState, found: { order: { id: string } | null } | null): AutomationState {
+  return found ? { ...state, courierOrderId: found.order?.id } : state;
+}
+
 /** O que o entregador pediu numa frase, sem passar pelo menu. */
 export type CourierShortcut =
   | { kind: Notice; code: string }
@@ -194,8 +199,8 @@ export class CourierMenuService {
       return this.callTeam(tx, conversation, state, await automationMessage(tx, conversation, "handoff", messages.handoff), note);
     }
     // Só o número: o menu pergunta o aviso, e a opção escolhida usa este número. Com o pedido achado, o menu diz isso.
-    const next: AutomationState = { ...state, triage: "awaiting_option", courierOrder: asked.code };
     const found = await this.findOrder(tx, conversation, asked.code, false);
+    const next = linkOrder({ ...state, triage: "awaiting_option", courierOrder: asked.code }, found);
     if (found?.order) return this.sendMenu(tx, conversation, next, messages, fillMessage(messages.courierOrderFound, { pedido: found.code }));
     return this.sendMenu(tx, conversation, next, messages);
   }
@@ -272,7 +277,7 @@ export class CourierMenuService {
           : known
             ? `Entregador avisou que deixou o pedido #${known.code} na portaria`
             : "Entregador avisou que deixou um pedido na portaria";
-      return this.callTeam(tx, conversation, state, await this.passOn(tx, conversation, messages, known), note);
+      return this.callTeam(tx, conversation, linkOrder(state, known), await this.passOn(tx, conversation, messages, known), note);
     }
     const noticeOf = (texts: AutomationMessages) => (kind === "arrival" ? texts.courierArrivalNotice : texts.courierFrontDeskNotice);
     const order = found.order;
@@ -292,7 +297,7 @@ export class CourierMenuService {
           );
     const confirmation = fillMessage(kind === "arrival" ? messages.courierArrivalConfirmed : messages.courierFrontDeskConfirmed, { pedido: found.code });
     const id = await automationMessage(tx, conversation, kind === "arrival" ? "courier_arrival_confirmed" : "courier_front_desk_confirmed", confirmation);
-    await setAutomationState(tx, conversation.id, { ...state, triage: "done", courierNoticeAt: new Date().toISOString() });
+    await setAutomationState(tx, conversation.id, { ...linkOrder(state, found), triage: "done", courierNoticeAt: new Date().toISOString() });
     if (!keepOpen) await tx.conversation.update({ where: { id: conversation.id }, data: { status: "RESOLVED", unreadCount: 0 } });
     return { send: [id], done: false, alsoSend };
   }
@@ -303,12 +308,12 @@ export class CourierMenuService {
     if (found && !found.order && !state.orderRetried) return this.askAgain(tx, conversation, state, messages, found.code);
     if (!found?.order) {
       const note = found ? `Entregador com problema no pedido #${found.code}, que não foi encontrado` : "Entregador com problema em um pedido";
-      return this.callTeam(tx, conversation, state, await this.passOn(tx, conversation, messages, found), note);
+      return this.callTeam(tx, conversation, linkOrder(state, found), await this.passOn(tx, conversation, messages, found), note);
     }
     // O card traz o botão para a equipe conversar com o cliente do pedido.
     await systemEvent(tx, conversation, { event: "order", orderId: found.order.id, customerChat: true });
     const id = await automationMessage(tx, conversation, "courier_problem_request", fillMessage(messages.courierProblemRequest, { pedido: found.code }));
-    await setAutomationState(tx, conversation.id, { ...state, triage: "awaiting_problem" });
+    await setAutomationState(tx, conversation.id, { ...linkOrder(state, found), triage: "awaiting_problem" });
     return { send: [id], done: false };
   }
 

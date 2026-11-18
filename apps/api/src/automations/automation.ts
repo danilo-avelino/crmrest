@@ -25,6 +25,8 @@ export type AutomationState = {
   orderRetried?: boolean;
   /** Menu do entregador: número que ele mandou antes de escolher a opção; o aviso usa esse número, sem pedir de novo. */
   courierOrder?: string;
+  /** Menu do entregador: o pedido a que ele se ligou neste atendimento (o painel da Inbox mostra esse pedido). */
+  courierOrderId?: string;
   /** Menu do entregador: quando o último aviso foi ao cliente (a foto que vem logo depois é o comprovante). */
   courierNoticeAt?: string;
   /** O cliente recebeu os links e pediu sozinho; se continuar escrevendo, o menu volta uma vez. */

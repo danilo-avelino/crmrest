@@ -1,13 +1,17 @@
 "use client";
 
 import { CHANNEL_LABEL, type CurrentOrderDto, type OrderDto } from "@dishdesk/shared";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
 import { CHANNEL_DOT } from "@/components/inbox/bits";
 import { ForecastButton, NOTIFIABLE, ORDER_STATUS } from "@/components/inbox/order-card";
+import { WhatsAppPhone } from "@/components/inbox/whatsapp-phone";
 import { historyText } from "@/components/orders/customer-history";
+import { Button } from "@/components/ui/button";
+import { useToast } from "@/components/ui/toast";
 import { useNow } from "@/hooks/use-now";
+import { ApiError } from "@/lib/api";
 import { clock, currency, responseTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -19,9 +23,10 @@ const STATUS_TONE: Partial<Record<OrderDto["status"], string>> = {
 
 /**
  * Pedido ligado ao cliente da conversa (painel lateral; o design ainda não tem este bloco): achado sozinho pelo
- * cadastro ao abrir a conversa, com itens, observações e o andamento até a saída prevista e a entrega prometida.
+ * cadastro ao abrir a conversa, com itens, observações e o andamento até a saída prevista e a entrega prometida. Na
+ * conversa de um entregador, é o pedido que ele informou, com o atalho para falar com o cliente desse pedido.
  */
-export function CurrentOrder({ conversationId }: { conversationId: string }) {
+export function CurrentOrder({ conversationId, onOpenConversation }: { conversationId: string; onOpenConversation: (id: string) => void }) {
   const { request } = useAuth();
   const query = useQuery({
     queryKey: ["current-order", conversationId],
@@ -30,13 +35,15 @@ export function CurrentOrder({ conversationId }: { conversationId: string }) {
   });
   const current = query.data?.current;
   if (!current) return null;
-  const { order } = current;
+  const { order, courier } = current;
   const status = ORDER_STATUS[order.status];
+  // A previsão é para o cliente do pedido: não vai para a conversa do entregador.
+  const canNotify = !courier && NOTIFIABLE.has(order.status);
 
   return (
     <div className="flex flex-col gap-4 border-b border-rule px-4 py-4">
       <div className="flex items-center justify-between gap-2">
-        <div className="text-[11px] font-semibold tracking-[0.08em] text-ink-3 uppercase">Pedido do cliente</div>
+        <div className="text-[11px] font-semibold tracking-[0.08em] text-ink-3 uppercase">{courier ? "Pedido do entregador" : "Pedido do cliente"}</div>
         <span className={cn("text-[12px] font-semibold", STATUS_TONE[order.status] ?? status.className)}>{status.label}</span>
       </div>
       <div className="flex flex-col gap-1">
@@ -73,8 +80,51 @@ export function CurrentOrder({ conversationId }: { conversationId: string }) {
         </p>
       ) : (
         order.status !== "CANCELED" && (
-          <Progress current={current} action={NOTIFIABLE.has(order.status) && <ForecastButton order={order} conversationId={conversationId} size="default" />} />
+          <Progress current={current} action={canNotify && <ForecastButton order={order} conversationId={conversationId} size="default" />} />
         )
+      )}
+      {courier && <CourierCustomer order={order} courier={courier} onOpen={onOpenConversation} />}
+    </div>
+  );
+}
+
+/** Conversa do entregador: quem é o cliente do pedido e o botão para falar com ele, de preferência no chat do iFood. */
+function CourierCustomer({
+  order,
+  courier,
+  onOpen,
+}: {
+  order: OrderDto;
+  courier: NonNullable<CurrentOrderDto["courier"]>;
+  onOpen: (conversationId: string) => void;
+}) {
+  const { request } = useAuth();
+  const queryClient = useQueryClient();
+  const toast = useToast();
+  const { chat, customerId, customerName, customerPhone, reachable, tenantId } = courier;
+
+  const open = async () => {
+    try {
+      const { conversationId } = await request<{ conversationId: string }>(`/orders/${order.id}/customer-chat${chat === "IFOOD" ? "?via=ifood" : ""}`, { method: "POST" });
+      void queryClient.invalidateQueries({ queryKey: ["conversations"] });
+      onOpen(conversationId);
+    } catch (failure) {
+      toast(failure instanceof ApiError ? failure.message : "Não foi possível abrir a conversa.");
+    }
+  };
+
+  return (
+    <div className="flex items-center justify-between gap-2 border-t border-rule pt-3 text-[12px]">
+      <div className="flex min-w-0 flex-col gap-0.5 text-ink-2">
+        <span className="truncate">Cliente: {customerName ?? "sem nome"}</span>
+        {customerPhone && <WhatsAppPhone contactId={customerId} tenantId={tenantId} phone={customerPhone} onOpen={onOpen} />}
+      </div>
+      {chat ? (
+        <Button variant="outline" size="sm" className="shrink-0" onClick={open}>
+          {chat === "IFOOD" ? "Abrir chat do iFood" : `Conversar pelo ${CHANNEL_LABEL[chat]}`}
+        </Button>
+      ) : (
+        <span className="shrink-0 text-ink-3">{reachable ? "Sem contato pelo Dish Desk" : "Atendido em outra unidade"}</span>
       )}
     </div>
   );

@@ -589,6 +589,40 @@ describe("Chat do iFood na Inbox (trava IFOOD_CHAT_BRIDGE ligada)", () => {
     expect((await timeline(chat.id)).filter((m) => (m.content as { text?: string }).text === notice.text)).toHaveLength(1);
   });
 
+  it("entregador informa o pedido: o painel da conversa dele mostra esse pedido, com o atalho para o chat do iFood", async () => {
+    const delivery = await ifoodOrder("6597", "Marta Dias");
+    await admin.contact.update({ where: { id: delivery.contactId }, data: { phone: "+5511970000099" } });
+    const waId = "5511970000098";
+    await admin.contact.create({
+      data: { tenantId: fx.tenant.id, name: "Caio Entregador", tags: ["Entregador"], identities: { create: { tenantId: fx.tenant.id, channelType: "WHATSAPP", externalId: waId } } },
+    });
+    const courier = () =>
+      admin.conversation.findFirstOrThrow({
+        where: { channelId: fx.whatsapp.id, contact: { identities: { some: { channelType: "WHATSAPP", externalId: waId } } } },
+        include: { messages: { orderBy: { createdAt: "asc" } } },
+      });
+    const message = { from: waId, id: "wamid.PANEL1", timestamp: String(Math.floor(Date.now() / 1000)), type: "text", text: { body: "6597 cheguei" } };
+    await postMetaWebhook(app, metaPayload(fx.whatsapp.externalId, { contacts: [{ profile: { name: "Caio" }, wa_id: waId }], messages: [message] })).expect(200);
+    await until(async () => expect((await courier()).messages.at(-1)!.content).toMatchObject({ automation: "courier_arrival_confirmed" }));
+
+    const { id } = await courier();
+    const { body } = await request(app.getHttpServer()).get(`/api/orders/current?conversationId=${id}`).set("Authorization", `Bearer ${token}`).expect(200);
+    expect(body.current.order.id).toBe(delivery.id);
+    expect(body.current.alert).toBeNull();
+    expect(body.current.courier).toEqual({
+      customerId: delivery.contactId,
+      customerName: "Marta Dias",
+      customerPhone: "+5511970000099",
+      tenantId: fx.tenant.id,
+      chat: "IFOOD",
+      reachable: true,
+    });
+
+    // Mesmo com telefone no cadastro, o atalho do painel abre o chat do iFood do pedido.
+    const chat = await admin.conversation.findFirstOrThrow({ where: { contactId: delivery.contactId, channelId: fx.ifood.id } });
+    expect((await post(`/orders/${delivery.id}/customer-chat?via=ifood`).expect(200)).body).toEqual({ conversationId: chat.id });
+  });
+
   it("entregador manda a foto logo depois do aviso: é o comprovante, sem o menu de novo", async () => {
     // 16/11/2026: a foto e o vídeo mandados logo depois de "Pronto! Avisamos o cliente" reabriam o menu inteiro.
     await ifoodOrder("6583", "Teresa Lima");

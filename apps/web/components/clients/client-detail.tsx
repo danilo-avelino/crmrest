@@ -14,6 +14,7 @@ import {
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertCircleIcon, ChevronLeftIcon, ChevronRightIcon, LoaderCircleIcon, MoreHorizontalIcon, TriangleAlertIcon, XIcon } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { type ReactNode, useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
 import { ClientAvatar, lastListHref, SectionLabel, useDuplicates, useIsAdmin } from "@/components/clients/bits";
@@ -22,6 +23,7 @@ import { CustomerCancellationsCard } from "@/components/orders/fraud-alert";
 import { CHANNEL_DOT, StatusBadge } from "@/components/inbox/bits";
 import { Cpf, linkedChannels, Tags } from "@/components/inbox/client-panel";
 import { ORDER_STATUS } from "@/components/inbox/order-card";
+import { WhatsAppPhone } from "@/components/inbox/whatsapp-phone";
 import { ItemOptions } from "@/components/orders/item-options";
 import { AiScoreBadge, evaluationNotes, Pill } from "@/components/reports/report-ui";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -66,9 +68,19 @@ export const ORDER_TONE: Record<OrderDto["status"], "open" | "pending" | "resolv
 /**
  * Detalhe do cliente (board Clientes): cadastro à esquerda, métricas e abas Conversas/Pedidos à direita.
  * `onClose`: aberto num modal (pelo nome do cliente, na Inbox); o botão de fechar entra no lugar do link de voltar.
+ * `onOpenConversation`: no modal, troca a conversa da Inbox; sem ele, o telefone leva à Inbox.
  */
-export function ClientDetail({ id, onClose }: { id: string; onClose?: () => void }) {
+export function ClientDetail({
+  id,
+  onClose,
+  onOpenConversation,
+}: {
+  id: string;
+  onClose?: () => void;
+  onOpenConversation?: (conversationId: string) => void;
+}) {
   const { request } = useAuth();
+  const router = useRouter();
   const queryClient = useQueryClient();
   const toast = useToast();
   const now = useNow(60_000);
@@ -224,7 +236,11 @@ export function ClientDetail({ id, onClose }: { id: string; onClose?: () => void
               }}
             />
           ) : (
-            <Profile contact={data} onInformPhone={() => setEditing(true)} />
+            <Profile
+              contact={data}
+              onInformPhone={() => setEditing(true)}
+              onOpenConversation={onOpenConversation ?? ((conversationId) => router.push(`/inbox?conversa=${conversationId}`))}
+            />
           )}
         </aside>
 
@@ -266,7 +282,15 @@ export function ClientDetail({ id, onClose }: { id: string; onClose?: () => void
   );
 }
 
-function Profile({ contact, onInformPhone }: { contact: ContactDetail; onInformPhone: () => void }) {
+function Profile({
+  contact,
+  onInformPhone,
+  onOpenConversation,
+}: {
+  contact: ContactDetail;
+  onInformPhone: () => void;
+  onOpenConversation: (conversationId: string) => void;
+}) {
   const address = (parts: (string | null)[]) => parts.filter(Boolean).join(", ");
   return (
     <>
@@ -275,7 +299,9 @@ function Profile({ contact, onInformPhone }: { contact: ContactDetail; onInformP
         <div className="flex flex-col gap-2.5 text-[12.5px]">
           {contact.phone ? (
             <div>
-              <div className="mb-0.5 tabular-nums">{formatPhone(contact.phone)}</div>
+              <div className="mb-0.5">
+                <WhatsAppPhone contactId={contact.id} tenantId={contact.tenantId} phone={contact.phone} onOpen={onOpenConversation} />
+              </div>
               {contact.phoneSource && (
                 <div className="flex items-center gap-1 text-[11px] text-success">
                   <span className="size-1.5 rounded-full bg-success" />

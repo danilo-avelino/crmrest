@@ -163,7 +163,16 @@ export function ConversationPane({
       {/* Cadastro completo do cliente, como na aba Clientes. */}
       <Dialog open={profileOpen} onOpenChange={setProfileOpen}>
         <DialogContent aria-label="Cadastro do cliente" className="flex h-[min(820px,calc(100vh-4rem))] w-[1080px]">
-          {profileOpen && <ClientDetail id={conversation.data.contact.id} onClose={() => setProfileOpen(false)} />}
+          {profileOpen && (
+            <ClientDetail
+              id={conversation.data.contact.id}
+              onClose={() => setProfileOpen(false)}
+              onOpenConversation={(id) => {
+                setProfileOpen(false);
+                onOpenConversation(id);
+              }}
+            />
+          )}
         </DialogContent>
       </Dialog>
     </>

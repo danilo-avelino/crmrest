@@ -1,7 +1,7 @@
 import type { ChannelType } from "@dishdesk/database/enums";
 import { ChannelType as ChannelTypeEnum, OrderStatus as OrderStatusEnum } from "@dishdesk/database/enums";
 import { z } from "zod";
-import type { OrderDto } from "./conversations.js";
+import type { OrderCustomerChat, OrderDto } from "./conversations.js";
 import { REPORT_PERIODS } from "./reports.js";
 
 /** Aba Pedidos: período (como na aba Avaliações), status, origem e página. */
@@ -250,6 +250,19 @@ export type CurrentOrderDto = {
   stale: boolean;
   /** Alerta de fraude do pedido; null: sem motivo para alerta, ou o pedido já terminou sem decisão. */
   alert: OrderAlertDto | null;
+  /**
+   * Conversa de entregador ligada a este pedido: quem é o cliente e por onde falar com ele (o chat do iFood vem primeiro).
+   * `reachable`: false quando o pedido é de uma unidade em que o atendente não entra (o telefone do cliente não vem).
+   * null: é o pedido do próprio contato.
+   */
+  courier: {
+    customerId: string;
+    customerName: string | null;
+    customerPhone: string | null;
+    tenantId: string;
+    chat: OrderCustomerChat["channel"];
+    reachable: boolean;
+  } | null;
   /** Dá para cancelar pelo Dish Desk (false: o aviso manda cancelar no sistema de origem). */
   cancelable: boolean;
 };

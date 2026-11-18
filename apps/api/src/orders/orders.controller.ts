@@ -113,7 +113,11 @@ export class OrdersController {
 
   @Post(":id/customer-chat")
   @HttpCode(200)
-  openCustomerChat(@Param("id", ParseUUIDPipe) id: string, @CurrentAuth() auth: RequestAuth): Promise<{ conversationId: string }> {
-    return this.orders.openCustomerChat(auth, id);
+  openCustomerChat(
+    @Param("id", ParseUUIDPipe) id: string,
+    @CurrentAuth() auth: RequestAuth,
+    @Query("via") via?: string,
+  ): Promise<{ conversationId: string }> {
+    return this.orders.openCustomerChat(auth, id, via === "ifood");
   }
 }
