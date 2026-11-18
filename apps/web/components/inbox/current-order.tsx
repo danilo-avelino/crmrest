@@ -139,6 +139,21 @@ export function stageProgress(current: CurrentOrderDto, stage: OrderStage, now: 
   return Math.min(0.96, Math.max(0.04, (now - start) / (end - start)));
 }
 
+/** O que a dica de cada parte da trilha diz: quanto a etapa durou, ou por que não há esse tempo. */
+export function stageHint(stage: OrderStage): string {
+  if (stage.key === "delivered") return stage.startedAt ? `às ${clock(stage.startedAt)}` : stage.state === "done" ? "sem registro" : "ainda não aconteceu";
+  if (stage.state === "next") return "ainda não começou";
+  if (stage.durationMs === null) return "sem registro";
+  return `${responseTime(stage.durationMs / 1000)}${stage.state === "current" ? " até agora" : ""}`;
+}
+
+/** Quanto falta para a hora prevista ou, se ela já passou, há quanto tempo está atrasado. */
+export function promiseCountdown(promisedAt: string, now: number): { text: string; late: boolean } {
+  const difference = Date.parse(promisedAt) - now;
+  const time = responseTime(Math.max(60, Math.abs(difference) / 1000));
+  return difference < 0 ? { text: `atrasado há ${time}`, late: true } : { text: `faltam ${time}`, late: false };
+}
+
 const ICON_PROPS = { viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2.2, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true } as const;
 
 const STAGE_ICON: Record<StageKey, ReactNode> = {
@@ -196,6 +211,7 @@ function Progress({ current, action }: { current: CurrentOrderDto; action?: Reac
     since = stage.startedAt && `${STAGE_SINCE[stage.key as keyof typeof STAGE_SINCE]} ${clock(stage.startedAt)}`;
   }
   const showForecast = !departed && !finished && forecast;
+  const countdown = current.promisedAt && !finished ? promiseCountdown(current.promisedAt, now) : null;
 
   return (
     <div className="flex flex-col gap-3">
@@ -204,20 +220,45 @@ function Progress({ current, action }: { current: CurrentOrderDto; action?: Reac
           <span className="min-w-0 text-[15px] font-bold">{stage.label}</span>
           {elapsed && <span className={cn("shrink-0 text-[13px] font-semibold whitespace-nowrap tabular-nums", late ? "text-tomate" : "text-ink-2")}>{elapsed}</span>}
         </div>
-        <div className="relative h-8" role="img" aria-label={`${stage.label}, etapa ${index + 1} de ${stages.length}`}>
-          <div className="absolute inset-x-0 top-[13px] grid h-1.5 gap-1" style={{ gridTemplateColumns: `repeat(${stages.length}, minmax(0, 1fr))` }}>
-            {stages.map((item, itemIndex) => (
-              <div key={item.key} className="h-1.5 overflow-hidden rounded-[3px] bg-rule">
-                <div
-                  className={cn("h-1.5 rounded-[3px]", finished || itemIndex < index ? "bg-success" : fill)}
-                  style={{ width: `${finished || itemIndex < index ? 100 : itemIndex === index ? share * 100 : 0}%` }}
-                />
-              </div>
-            ))}
-          </div>
+        <div className="relative h-8">
+          <ol
+            className="absolute inset-0 grid gap-1"
+            style={{ gridTemplateColumns: `repeat(${stages.length}, minmax(0, 1fr))` }}
+            aria-label={`${stage.label}, etapa ${index + 1} de ${stages.length}`}
+          >
+            {stages.map((item, itemIndex) => {
+              const hint = stageHint(item);
+              return (
+                <li
+                  key={item.key}
+                  tabIndex={0}
+                  aria-label={`${item.label}: ${hint}`}
+                  className="group/stage relative flex h-8 items-center rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-ink/30"
+                >
+                  <div className="h-1.5 w-full overflow-hidden rounded-[3px] bg-rule">
+                    <div
+                      className={cn("h-1.5 rounded-[3px]", finished || itemIndex < index ? "bg-success" : fill)}
+                      style={{ width: `${finished || itemIndex < index ? 100 : itemIndex === index ? share * 100 : 0}%` }}
+                    />
+                  </div>
+                  <span
+                    role="tooltip"
+                    className={cn(
+                      "pointer-events-none invisible absolute bottom-full z-10 mb-1 rounded-md bg-ink px-2 py-1 text-[11.5px] leading-tight whitespace-nowrap text-surface tabular-nums shadow-md group-hover/stage:visible group-focus/stage:visible",
+                      itemIndex < stages.length / 2 ? "left-0" : "right-0",
+                    )}
+                  >
+                    <span className="block font-semibold">{item.label}</span>
+                    {hint}
+                  </span>
+                </li>
+              );
+            })}
+          </ol>
           <div
+            aria-hidden
             className={cn(
-              "absolute top-0 -ml-4 flex size-8 items-center justify-center rounded-full border-[3px] border-surface-2 transition-[left] duration-500 motion-reduce:transition-none",
+              "pointer-events-none absolute top-0 -ml-4 flex size-8 items-center justify-center rounded-full border-[3px] border-surface-2 transition-[left] duration-500 motion-reduce:transition-none",
               finished ? "bg-success text-white" : late ? "bg-tomate text-white" : "bg-ink text-surface",
             )}
             style={{ left: `clamp(16px, ${position.toFixed(2)}%, calc(100% - 16px))` }}
@@ -248,9 +289,12 @@ function Progress({ current, action }: { current: CurrentOrderDto; action?: Reac
             {current.promisedAt && (
               <div>
                 <dt className="text-[12px] text-ink-3">
-                  {current.takeout ? "Retirada" : "Entrega"} prometida ({CHANNEL_LABEL[order.channelType]})
+                  Previsão de {current.takeout ? "retirada" : "entrega"} ({CHANNEL_LABEL[order.channelType]})
                 </dt>
-                <dd className="text-[15px] font-bold">{clock(current.promisedAt)}</dd>
+                <dd className="text-[15px] font-bold">
+                  {clock(current.promisedAt)}
+                  {countdown && <span className={cn("text-[12px] font-medium", countdown.late ? "text-tomate" : "text-ink-2")}> · {countdown.text}</span>}
+                </dd>
               </div>
             )}
           </dl>

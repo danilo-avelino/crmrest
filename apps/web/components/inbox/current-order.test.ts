@@ -1,6 +1,6 @@
 import type { CurrentOrderDto } from "@dishdesk/shared";
 import { describe, expect, it, vi } from "vitest";
-import { orderStages, stageProgress } from "./current-order";
+import { orderStages, promiseCountdown, stageHint, stageProgress } from "./current-order";
 
 vi.mock("@/components/auth/auth-provider", () => ({ useAuth: () => ({ request: vi.fn() }) }));
 
@@ -73,6 +73,18 @@ describe("etapas do pedido", () => {
     const data = current({ status: "DISPATCHED", dispatchedAt: at(10) }, { promisedAt: at(20) });
     const now = start + 40 * MINUTE;
     expect(stageProgress(data, orderStages(data, now)[2]!, now)).toBe(0.96);
+  });
+
+  it("a dica diz quanto cada etapa durou", () => {
+    const data = current({ status: "DISPATCHED", dispatchedAt: at(30) });
+    expect(orderStages(data, start + 35 * MINUTE).map(stageHint)).toEqual(["28 min", "sem registro", "5 min até agora", "ainda não aconteceu"]);
+    expect(orderStages(current({}), start + 5 * MINUTE).map(stageHint).slice(0, 2)).toEqual(["3 min até agora", "ainda não começou"]);
+  });
+
+  it("conta o tempo até a previsão de entrega e o atraso depois dela", () => {
+    expect(promiseCountdown(at(30), start + 18 * MINUTE)).toEqual({ text: "faltam 12 min", late: false });
+    expect(promiseCountdown(at(30), start + 35 * MINUTE)).toEqual({ text: "atrasado há 5 min", late: true });
+    expect(promiseCountdown(at(30), start + 30 * MINUTE)).toEqual({ text: "faltam 1 min", late: false });
   });
 
   it("sem previsão nem promessa, fica no meio da etapa", () => {
