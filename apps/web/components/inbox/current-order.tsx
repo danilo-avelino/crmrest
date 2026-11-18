@@ -2,6 +2,8 @@
 
 import { CHANNEL_LABEL, type CurrentOrderDto, type OrderDto } from "@dishdesk/shared";
 import { useQuery } from "@tanstack/react-query";
+import { CheckIcon, MotorbikeIcon, ShoppingBagIcon } from "lucide-react";
+import type { ReactNode } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
 import { CHANNEL_DOT } from "@/components/inbox/bits";
 import { ForecastButton, NOTIFIABLE, ORDER_STATUS } from "@/components/inbox/order-card";
@@ -9,24 +11,6 @@ import { CustomerHistoryLine } from "@/components/orders/customer-history";
 import { useNow } from "@/hooks/use-now";
 import { clock, currency, responseTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
-
-const STEPS: OrderDto["status"][] = ["PLACED", "CONFIRMED", "PREPARING", "READY", "DISPATCHED", "DELIVERED"];
-
-/** Etapas do pedido em marcas: mostra de relance onde ele está; o nome da etapa fica no cabeçalho do bloco. */
-function OrderSteps({ status, takeout, late }: { status: OrderDto["status"]; takeout: boolean; late: boolean }) {
-  const steps = takeout ? STEPS.filter((step) => step !== "DISPATCHED") : STEPS;
-  const current = steps.indexOf(status);
-  return (
-    <div className="flex gap-[3px]" role="img" aria-label={`Etapa ${current + 1} de ${steps.length}: ${ORDER_STATUS[status].label}`}>
-      {steps.map((step, index) => (
-        <span
-          key={step}
-          className={cn("h-1.5 flex-1 rounded-[2px]", index > current ? "bg-surface-2" : status === "DELIVERED" ? "bg-success" : late ? "bg-tomate" : "bg-ink")}
-        />
-      ))}
-    </div>
-  );
-}
 
 /**
  * Pedido ligado ao cliente da conversa (painel lateral; o design ainda não tem este bloco): achado sozinho pelo
@@ -90,83 +74,143 @@ export function CurrentOrder({ conversationId }: { conversationId: string }) {
   );
 }
 
+type StageKey = "preparing" | "waiting" | "route" | "delivered";
+type StageState = "done" | "current" | "next";
+
+export type OrderStage = {
+  key: StageKey;
+  label: string;
+  /** Hora em que a etapa começou; null: ainda não começou ou a plataforma não informou. */
+  startedAt: string | null;
+  /** Quanto durou (ou, na etapa atual, quanto já passou); null: sem as duas pontas. */
+  durationMs: number | null;
+  state: StageState;
+};
+
+/** Etapa em que cada status do pedido está. A retirada não tem a etapa "Em rota". */
+const STATUS_STAGE: Partial<Record<OrderDto["status"], StageKey>> = {
+  PLACED: "preparing",
+  CONFIRMED: "preparing",
+  PREPARING: "preparing",
+  READY: "waiting",
+  DISPATCHED: "route",
+  DELIVERED: "delivered",
+};
+
 /**
- * Barra do pedido feito até o fim mais distante (saída prevista, entrega prometida ou agora): o preenchimento é o tempo
- * decorrido (até a saída, se já saiu; até o pronto, se é retirada); as marcas são o pronto, a saída prevista (previsão
- * real) e a entrega prometida.
+ * As etapas do pedido com o início e a duração de cada uma. Cada etapa termina quando começa a próxima que tem hora; se a
+ * plataforma já informou uma etapa à frente do status, vale a mais adiantada.
  */
+export function orderStages(current: CurrentOrderDto, now: number): OrderStage[] {
+  const { order, takeout, startedAt, readyAt } = current;
+  const stages: Pick<OrderStage, "key" | "label" | "startedAt">[] = [
+    { key: "preparing", label: "Preparo", startedAt },
+    { key: "waiting", label: takeout ? "Aguardando retirada" : "Aguardando entrega", startedAt: readyAt },
+    ...(takeout ? [] : [{ key: "route" as const, label: "Em rota", startedAt: order.dispatchedAt }]),
+    { key: "delivered", label: takeout ? "Retirado" : "Entregue", startedAt: order.deliveredAt },
+  ];
+  const statusStage = STATUS_STAGE[order.status];
+  const byStatus = stages.findIndex((stage) => stage.key === (takeout && statusStage === "route" ? "waiting" : statusStage));
+  const byTime = stages.reduce((latest, stage, index) => (stage.startedAt ? index : latest), 0);
+  const active = Math.max(byStatus, byTime);
+
+  return stages.map((stage, index) => {
+    const state: StageState = index < active || stage.key === "delivered" && index === active ? "done" : index === active ? "current" : "next";
+    const start = stage.startedAt ? Date.parse(stage.startedAt) : null;
+    const nextStart = stages.slice(index + 1).find((later) => later.startedAt)?.startedAt;
+    const end = state === "current" ? now : nextStart ? Date.parse(nextStart) : null;
+    const durationMs = stage.key !== "delivered" && state !== "next" && start !== null && end !== null ? Math.max(0, end - start) : null;
+    return { ...stage, state, durationMs };
+  });
+}
+
+/** Forno: a biblioteca de ícones não tem um. */
+function OvenIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden>
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+      <path d="M3 8h18M7 5.500h.01M11 5.500h.01" />
+      <rect x="7" y="11.500" width="10" height="6" rx="1" />
+    </svg>
+  );
+}
+
+const STAGE_ICON: Record<StageKey, (props: { className?: string }) => ReactNode> = {
+  preparing: OvenIcon,
+  waiting: ShoppingBagIcon,
+  route: MotorbikeIcon,
+  delivered: CheckIcon,
+};
+
+/** Uma linha por etapa: símbolo, hora em que começou, barra proporcional ao tempo e a duração. */
 function Progress({ current }: { current: CurrentOrderDto }) {
   const now = useNow(30_000);
   const { order, forecast } = current;
-  const start = Date.parse(order.placedAt);
-  const departed = order.dispatchedAt ? Date.parse(order.dispatchedAt) : null;
-  const ready = current.readyAt ? Date.parse(current.readyAt) : null;
-  // Retirada pronta: a parte do restaurante acabou, falta o cliente buscar (sem saída nem atraso).
-  const awaitingPickup = current.takeout && ready !== null && departed === null;
-  const departAt = forecast ? Date.parse(forecast.departAt) : null;
+  const stages = orderStages(current, now);
+  const departed = order.dispatchedAt !== null;
+  const awaitingPickup = current.takeout && current.readyAt !== null && order.deliveredAt === null;
   const promised = current.promisedAt ? Date.parse(current.promisedAt) : null;
-  const filledUntil = departed ?? (awaitingPickup && ready !== null ? ready : now);
-  const end = Math.max(filledUntil, departAt ?? 0, promised ?? 0, start + 60_000);
-  const at = (time: number) => `${Math.min(100, Math.max(0, ((time - start) / (end - start)) * 100))}%`;
-  const late = !awaitingPickup && (Boolean(forecast?.late) || (promised !== null && departed === null && now > promised));
+  const late = !awaitingPickup && !departed && order.status !== "DELIVERED" && (Boolean(forecast?.late) || (promised !== null && now > promised));
+  const longest = Math.max(1, ...stages.map((stage) => stage.durationMs ?? 0));
+  const delivered = order.deliveredAt ? Date.parse(order.deliveredAt) : null;
 
   return (
-    <div className="flex flex-col gap-1.5">
-      <OrderSteps status={order.status} takeout={current.takeout} late={late} />
-      <div className="relative h-2 rounded-full bg-surface-2" role="img" aria-label="Andamento do pedido">
-        <div className={cn("absolute inset-y-0 left-0 rounded-full", late ? "bg-tomate" : "bg-ink")} style={{ width: at(filledUntil) }} />
-        {ready !== null && <Marker left={at(ready)} className="bg-ink-3" />}
-        {departAt && <Marker left={at(departAt)} className="bg-warning" />}
-        {promised && <Marker left={at(promised)} className="bg-success" />}
-      </div>
+    <div className="flex flex-col gap-2.5">
+      <ol className="flex flex-col gap-2" aria-label="Andamento do pedido">
+        {stages.map((stage) => {
+          const Icon = STAGE_ICON[stage.key];
+          const final = stage.key === "delivered";
+          const running = stage.state === "current";
+          const tone = stage.state === "next" ? "text-ink-3" : running && late ? "text-tomate" : running ? "text-ink" : "text-success";
+          const width = final ? (stage.state === "done" ? 100 : 0) : stage.durationMs === null ? 0 : Math.max(3, (stage.durationMs / longest) * 100);
+          const duration = final
+            ? delivered !== null && `total ${responseTime((delivered - Date.parse(order.placedAt)) / 1000)}`
+            : stage.durationMs !== null
+              ? `${responseTime(stage.durationMs / 1000)}${running ? " até agora" : ""}`
+              : stage.state === "done" && "sem registro";
+          return (
+            <li key={stage.key} className="grid grid-cols-[24px_minmax(0,1fr)] items-center gap-2" aria-current={running ? "step" : undefined}>
+              <span className={cn("flex size-6 items-center justify-center rounded-md bg-surface-2", tone, stage.state === "next" && "opacity-60")}>
+                <Icon className="size-3.5" />
+              </span>
+              <div className="min-w-0">
+                <div className="flex items-baseline justify-between gap-2 text-[11.5px]">
+                  <span className={cn("truncate", stage.state === "next" ? "text-ink-3" : "font-medium")}>{stage.label}</span>
+                  {duration && <span className={cn("shrink-0 tabular-nums", running ? cn("font-semibold", tone) : "text-ink-2")}>{duration}</span>}
+                </div>
+                <div className="mt-0.5 flex items-center gap-1.5">
+                  <span className="w-[34px] shrink-0 text-[10.5px] text-ink-3 tabular-nums">{stage.startedAt ? clock(stage.startedAt) : "--:--"}</span>
+                  <span className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-surface-2">
+                    <span className={cn("block h-full rounded-full", running ? (late ? "bg-tomate" : "bg-ink") : "bg-success")} style={{ width: `${width}%` }} />
+                  </span>
+                </div>
+              </div>
+            </li>
+          );
+        })}
+      </ol>
       <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-[11.5px] tabular-nums">
-        <dt className="text-ink-3">{departed ? "Saiu em" : awaitingPickup ? "Pronto em" : "Decorrido"}</dt>
-        <dd className="text-right font-medium">{responseTime((filledUntil - start) / 1000)}</dd>
-        {ready !== null && (
+        {!departed && forecast && (
           <>
-            <dt className="flex items-center gap-1.5 text-ink-3">
-              <span className="size-2 rounded-full bg-ink-3" />
-              {current.takeout ? "Pronto para retirada" : "Pronto"}
-            </dt>
-            <dd className="text-right">{clock(current.readyAt!)}</dd>
+            <dt className="text-ink-3">Saída prevista</dt>
+            <dd className={cn("text-right", forecast.late && "font-medium text-tomate")}>
+              {clock(forecast.departAt)}
+              {forecast.late && " · atrasado"}
+            </dd>
           </>
         )}
-        {departed ? (
+        {current.promisedAt && (
           <>
-            <dt className="text-ink-3">Saída</dt>
-            <dd className="text-right">{clock(order.dispatchedAt!)}</dd>
-          </>
-        ) : (
-          departAt && (
-            <>
-              <dt className="flex items-center gap-1.5 text-ink-3">
-                <span className="size-2 rounded-full bg-warning" />
-                Saída prevista
-              </dt>
-              <dd className={cn("text-right", forecast!.late && "font-medium text-tomate")}>
-                {clock(forecast!.departAt)}
-                {forecast!.late && " · atrasado"}
-              </dd>
-            </>
-          )
-        )}
-        {promised && (
-          <>
-            <dt className="flex items-center gap-1.5 text-ink-3">
-              <span className="size-2 rounded-full bg-success" />
+            <dt className="text-ink-3">
               {current.takeout ? "Retirada" : "Entrega"} prometida ({CHANNEL_LABEL[order.channelType]})
             </dt>
-            <dd className="text-right">{clock(current.promisedAt!)}</dd>
+            <dd className="text-right">{clock(current.promisedAt)}</dd>
           </>
         )}
-        {!departed && !departAt && !awaitingPickup && (
+        {!departed && !forecast && !awaitingPickup && order.status !== "DELIVERED" && (
           <dd className="col-span-2 text-ink-3">Sem previsão de saída: ainda não há pedidos que saíram para servir de base.</dd>
         )}
       </dl>
     </div>
   );
-}
-
-function Marker({ left, className }: { left: string; className: string }) {
-  return <span className={cn("absolute -top-1 h-4 w-[3px] -translate-x-1/2 rounded-sm", className)} style={{ left }} aria-hidden />;
 }
