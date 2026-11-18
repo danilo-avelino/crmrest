@@ -11,10 +11,13 @@ import {
   withoutAi,
 } from "@dishdesk/shared";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangleIcon, ClockIcon, SendIcon, SparklesIcon, StickyNoteIcon, XIcon, ZapIcon } from "lucide-react";
+import { AlertTriangleIcon, SendIcon, SparklesIcon, StickyNoteIcon, UnplugIcon, XIcon, ZapIcon } from "lucide-react";
+import Link from "next/link";
 import { type KeyboardEvent, useLayoutEffect, useRef, useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
 import { useIfoodWidget } from "@/components/ifood-widget";
+import { TimeRing } from "@/components/inbox/bits";
+import { useBrokenChannels } from "@/components/inbox/channel-alert";
 import { TemplatePicker } from "@/components/inbox/template-picker";
 import { Button } from "@/components/ui/button";
 import { usePendingAction } from "@/hooks/use-pending-action";
@@ -24,6 +27,8 @@ import { remaining } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 type Mode = "reply" | "note";
+
+const WINDOW_MS = 24 * 60 * 60 * 1000;
 
 /** Intervalo entre as respostas do atendente na mesma conversa: 15 s, e 30 s depois da terceira, sem o cliente responder. */
 const COOLDOWN_MS = 15_000;
@@ -38,9 +43,10 @@ const SUGGESTION_HISTORY_MS = 12 * 60 * 60 * 1000;
 
 /** Área de resposta (board Inbox → "Input área"). */
 export function Composer({ conversation }: { conversation: ConversationListItem }) {
-  const { request } = useAuth();
+  const { request, session } = useAuth();
   const queryClient = useQueryClient();
   const now = useNow(1_000);
+  const brokenChannels = useBrokenChannels();
   const [, setSentTick] = useState(0);
   const [chosenMode, setMode] = useState<Mode>("reply");
   // O cliente não está na conversa aberta pelo alerta de fraude: só cabem notas.
@@ -74,6 +80,9 @@ export function Composer({ conversation }: { conversation: ConversationListItem 
       : !windowOpen
         ? "A janela de 24h terminou. Para retomar a conversa, envie um template aprovado (botão Template)."
         : null);
+
+  const channelDown = mode === "reply" && brokenChannels.has(conversation.channel.id);
+  const admin = session?.context?.tenants.some((tenant) => tenant.id === conversation.tenant.id && tenant.role === "ADMIN") === true;
 
   // O cliente respondeu depois da última resposta: a contagem recomeça.
   const lastSent = sentReplies.get(conversation.id);
@@ -257,6 +266,22 @@ export function Composer({ conversation }: { conversation: ConversationListItem 
           </div>
         )}
 
+        {channelDown && (
+          <p role="alert" className="flex items-center gap-2 rounded-md bg-tomate-lt px-3 py-2 text-[12px] text-tomate-ink">
+            <UnplugIcon className="size-3.5 shrink-0 text-tomate" aria-hidden />
+            <span className="min-w-0 flex-1">
+              <strong className="font-medium">{CHANNEL_LABEL[conversation.channel.type]} desconectado.</strong> Esta resposta não vai sair até o canal voltar.
+            </span>
+            {admin ? (
+              <Link href="/configuracoes/integracoes" className="shrink-0 font-medium underline underline-offset-2">
+                Reconectar
+              </Link>
+            ) : (
+              <span className="shrink-0">Avise um administrador do restaurante.</span>
+            )}
+          </p>
+        )}
+
         {blocked ? (
           <p className="min-h-16 rounded-lg border border-rule bg-surface-2 px-3 py-2.5 text-[12.5px] text-ink-3">{blocked}</p>
         ) : (
@@ -355,7 +380,7 @@ export function Composer({ conversation }: { conversation: ConversationListItem 
                 className={cn("ml-2 flex items-center gap-1 text-[11px]", windowOpen ? "text-ink-3" : "text-tomate")}
                 title="Resposta livre só até 24h depois da última mensagem do cliente"
               >
-                <ClockIcon className="size-3" aria-hidden />
+                <TimeRing share={windowOpen && conversation.windowExpiresAt ? (new Date(conversation.windowExpiresAt).getTime() - now) / WINDOW_MS : 0} />
                 {windowOpen && conversation.windowExpiresAt
                   ? `Janela de 24h: ${remaining(conversation.windowExpiresAt, now)} restantes`
                   : "Janela de 24h encerrada"}

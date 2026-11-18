@@ -18,8 +18,9 @@ import { useFraudRefresh } from "@/components/orders/fraud-alert";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/toast";
+import { useNow } from "@/hooks/use-now";
 import { ApiError } from "@/lib/api";
-import { clock } from "@/lib/format";
+import { clock, remaining } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 const ACTION_LABEL: Record<OrderAction, string> = {
@@ -78,6 +79,7 @@ export function OrderActions({ order, withChat = true }: { order: OrderListItem;
     queryFn: () => request<OrderCustomerChat>(`/orders/${order.id}/customer-chat`),
   });
   const canChat = withChat && Boolean(chat.data?.channel);
+  const now = useNow(30_000);
 
   // Com alerta de fraude em aberto, a decisão de cancelar é tomada no próprio alerta.
   const showCancel = order.cancelable && !order.alert;
@@ -141,7 +143,8 @@ export function OrderActions({ order, withChat = true }: { order: OrderListItem;
               {dispute.expiresAt && (
                 <>
                   {" "}
-                  · {dispute.answerable ? "Responda" : "Responda no sistema de pedidos da loja"} até {clock(dispute.expiresAt)}.
+                  · {dispute.answerable ? "Responda" : "Responda no sistema de pedidos da loja"} até {clock(dispute.expiresAt)}{" "}
+                  <strong className="font-medium text-warning-ink tabular-nums">(faltam {remaining(dispute.expiresAt, now)})</strong>.
                 </>
               )}
               {dispute.timeoutAction && TIMEOUT_TEXT[dispute.timeoutAction] && <> {TIMEOUT_TEXT[dispute.timeoutAction]}</>}

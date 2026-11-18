@@ -46,7 +46,7 @@ import { useToast } from "@/components/ui/toast";
 import { connectIfoodChat, type IfoodChatStatus, useIfoodChatState } from "@/hooks/use-ifood-chat";
 import { useNow } from "@/hooks/use-now";
 import { ApiError } from "@/lib/api";
-import { ago, clock, count, currency, responseTime } from "@/lib/format";
+import { ago, clock, count, currency, remaining, responseTime } from "@/lib/format";
 import { setIfoodWidgetChoice, useIfoodWidgetChoice } from "@/lib/ifood-widget-choice";
 import { cn } from "@/lib/utils";
 
@@ -119,6 +119,20 @@ function Today({ onOpenCalling }: { onOpenCalling: () => void }) {
         Hoje até agora
       </h2>
       <p className="mt-0.5 mb-4 text-ink-3">Conversas desde a meia-noite.</p>
+      {waiting > 0 && (
+        <div className="mb-2.5 flex flex-wrap items-center justify-between gap-x-6 gap-y-3 rounded-2xl border border-tomate-line bg-tomate-lt px-5 py-4">
+          <div className="flex items-center gap-4">
+            <b className="font-heading text-[44px] leading-none font-bold text-tomate tabular-nums">{count(waiting)}</b>
+            <div>
+              <div className="text-[13px] font-medium">{waiting === 1 ? "Cliente esperando atendente agora" : "Clientes esperando atendente agora"}</div>
+              {counts.data?.urgentSince && <div className="text-[12px] text-ink-2 tabular-nums">O mais antigo espera há {ago(counts.data.urgentSince, now)}</div>}
+            </div>
+          </div>
+          <Button variant="accent" onClick={onOpenCalling}>
+            Abrir quem espera há mais tempo
+          </Button>
+        </div>
+      )}
       <div className="grid grid-cols-1 gap-2.5 @xl:grid-cols-3">
         <div className={TILE}>
           <Tile label="Conversas abertas" value={whole(data?.opened)}>
@@ -139,7 +153,7 @@ function Today({ onOpenCalling }: { onOpenCalling: () => void }) {
           type="button"
           onClick={onOpenCalling}
           disabled={waiting === 0}
-          className={cn(TILE, "disabled:cursor-default", waiting > 0 && "border-tomate-line bg-tomate-lt hover:border-tomate")}
+          className={cn(TILE, "disabled:cursor-default", waiting > 0 && "hover:border-tomate")}
         >
           <Tile label="Com a equipe" value={whole(data?.withTeam)}>
             {waiting > 0 ? (
@@ -602,7 +616,11 @@ export function TodayOrders({
                       <StatusBadge tone={ORDER_TONE[order.status]}>{ORDER_STATUS[order.status].label}</StatusBadge>
                     </span>
                   </div>
-                  {order.dispute && <p className="mt-0.5 pl-4 text-[11px] text-warning">Cliente pediu cancelamento</p>}
+                  {order.dispute && (
+                    <p className="mt-0.5 pl-4 text-[11px] text-warning tabular-nums">
+                      Cliente pediu cancelamento{order.dispute.expiresAt && ` · ${remaining(order.dispute.expiresAt, now)} para responder`}
+                    </p>
+                  )}
                 </button>
               </li>
             ))}

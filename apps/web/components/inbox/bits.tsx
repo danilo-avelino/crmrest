@@ -23,6 +23,18 @@ export const CHANNEL_DOT: Record<ChannelType, string> = {
   NEEMO: "bg-neemo",
 };
 
+/** Anel de tempo: `share` (0 a 1) é a parte cheia. O tempo em texto fica sempre ao lado. */
+export function TimeRing({ share, className }: { share: number; className?: string }) {
+  const length = 2 * Math.PI * 5;
+  const filled = Math.min(1, Math.max(0, share)) * length;
+  return (
+    <svg viewBox="0 0 14 14" className={cn("size-3 shrink-0 -rotate-90", className)} fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden>
+      <circle cx="7" cy="7" r="5" strokeOpacity="0.2" />
+      <circle cx="7" cy="7" r="5" strokeDasharray={`${filled} ${length}`} />
+    </svg>
+  );
+}
+
 // Logo do canal no lugar das iniciais (lista de conversas); recorte quadrado e centralizado.
 const CHANNEL_LOGO: Partial<Record<ChannelType, string>> = {
   WHATSAPP: "/canais/whatsapp.webp",

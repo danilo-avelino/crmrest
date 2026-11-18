@@ -6,12 +6,15 @@ import {
   CANCELLATION_TAG,
   CHANNEL_LABEL,
   type ChannelHealthDto,
+  type ContactConversationItem,
   type ContactDetail,
   type ConversationListItem,
   formatPhone,
   MANUAL_TAGS,
   type ManualTag,
   phoneFromWhatsAppId,
+  RECOVERY_TAG,
+  SERVICE_ISSUES,
   toE164,
   type UpdateContactRequest,
 } from "@dishdesk/shared";
@@ -119,6 +122,7 @@ export function ClientPanel({
         />
       ) : (
         <>
+          {data.tags.includes(RECOVERY_TAG) && <LastTime contactId={data.id} />}
           <CurrentOrder conversationId={conversationId} />
           <Section title="Contato">
             <Row icon={PhoneIcon}>
@@ -417,16 +421,45 @@ function EditForm({ contact, onSave }: { contact: ContactDetail; onSave: (body: 
   );
 }
 
+/**
+ * Cliente em recuperação: o que deu errado no último atendimento avaliado pela IA, para quem atende não repetir. As
+ * avaliações só chegam a administradores; sem elas, o bloco não aparece.
+ */
+function LastTime({ contactId }: { contactId: string }) {
+  const { request } = useAuth();
+  const now = useNow(60_000);
+  const conversations = useQuery({
+    queryKey: ["contact-conversations", contactId],
+    queryFn: () => request<ContactConversationItem[]>(`/contacts/${contactId}/conversations`),
+  });
+  const last = (conversations.data ?? [])
+    .flatMap((conversation) => conversation.evaluations)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+  if (!last) return null;
+  return (
+    <div className="border-b border-rule bg-warning-lt px-4 py-2.5 text-[12px] text-warning-ink">
+      <strong className="font-semibold">Da última vez ({dayLabel(last.createdAt, now)}):</strong>{" "}
+      {last.issue ? SERVICE_ISSUES[last.issue] : (last.summary ?? "o cliente saiu insatisfeito")}.{" "}
+      <span className="tabular-nums">
+        Nota {Math.round(last.score)}%{last.churnRisk !== null && `, risco de perder o cliente ${Math.round(last.churnRisk * 100)}%`}.
+      </span>
+    </div>
+  );
+}
+
 function History({ contact }: { contact: ContactDetail }) {
   const now = useNow(60_000);
   return (
     <>
       <div className="border-b border-rule px-4 py-3">
         <div className="mb-2.5 text-[10px] font-semibold tracking-[0.08em] text-ink-3 uppercase">Histórico</div>
-        <div className="grid grid-cols-3 gap-2">
+        <div className="mb-2.5 flex flex-col gap-0.5">
+          <div className="font-heading text-[26px] leading-none font-bold tabular-nums">{currencyWhole(contact.metrics.ordersTotal)}</div>
+          <div className="text-[10.5px] text-ink-3">gastos</div>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
           {[
             [count(contact.metrics.ordersCount), contact.metrics.ordersCount === 1 ? "pedido" : "pedidos"],
-            [currencyWhole(contact.metrics.ordersTotal), "gastos"],
             [tenure(contact.firstSeenAt, now), "como cliente"],
           ].map(([value, label]) => (
             <div key={label} className="flex flex-col gap-0.5">
@@ -437,7 +470,14 @@ function History({ contact }: { contact: ContactDetail }) {
         </div>
         {/* Os pedidos somam todas as fontes ligadas ao cliente (iFood, Cardápio Web...). */}
         {contact.metrics.ordersBySource.length > 1 && (
-          <div className="mt-2 text-[11px] text-ink-3">{sourcesText({ bySource: contact.metrics.ordersBySource })}</div>
+          <div className="mt-2 flex flex-col gap-1">
+            <div className="flex h-1.5 gap-0.5 overflow-hidden rounded-full" aria-hidden>
+              {contact.metrics.ordersBySource.map((source) => (
+                <span key={source.channelType} className={CHANNEL_DOT[source.channelType]} style={{ flexGrow: source.orders }} />
+              ))}
+            </div>
+            <div className="text-[11px] text-ink-3">{sourcesText({ bySource: contact.metrics.ordersBySource })}</div>
+          </div>
         )}
         {contact.cancellations.canceledCount > 0 && (
           <div className="mt-2 text-[11.5px] font-medium text-tomate tabular-nums">

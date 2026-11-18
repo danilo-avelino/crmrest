@@ -6,6 +6,17 @@ import { TriangleAlertIcon } from "lucide-react";
 import Link from "next/link";
 import { useAuth } from "@/components/auth/auth-provider";
 
+/** Canais desconectados ou com erro (a mesma consulta da faixa): a linha da conversa e a área de resposta avisam. */
+export function useBrokenChannels(): ReadonlySet<string> {
+  const { request } = useAuth();
+  const channels = useQuery({
+    queryKey: ["channels"],
+    queryFn: () => request<ChannelHealthDto[]>("/channels"),
+    refetchInterval: 60_000,
+  });
+  return new Set(channels.data?.filter((channel) => channel.status !== "CONNECTED").map((channel) => channel.id));
+}
+
 /**
  * Faixa no topo da Inbox quando um canal precisa ser reconectado (token vencido ou revogado), em tomate, ou quando o
  * token está para vencer e a renovação automática falhou, em âmbar.

@@ -214,12 +214,21 @@ export function FraudAlert({
         </span>
       </div>
       <div className="flex flex-col gap-2.5 px-3.5 py-3">
+        <CancellationMarks canceled={cancellations.canceledCount} total={cancellations.ordersCount} />
         <AlertSummary alert={alert} />
         {alert.analysis && (
-          <p className="m-0 text-[12px] text-ink-2">
-            Análise da IA: <strong className="font-semibold text-ink">risco {VERDICT_LABEL[alert.analysis.verdict]}</strong>{" "}
-            <span className="tabular-nums">({Math.round(alert.analysis.risk * 100)}%)</span>. A decisão continua sendo sua.
-          </p>
+          <div className="flex flex-col gap-1">
+            <p className="m-0 text-[12px] text-ink-2">
+              Análise da IA: <strong className="font-semibold text-ink">risco {VERDICT_LABEL[alert.analysis.verdict]}</strong>{" "}
+              <span className="tabular-nums">({Math.round(alert.analysis.risk * 100)}%)</span>. A decisão continua sendo sua.
+            </p>
+            <div className="h-1.5 overflow-hidden rounded-full bg-surface-2" aria-hidden>
+              <div
+                className={cn("h-full rounded-full", alert.analysis.verdict === "high" ? "bg-tomate" : alert.analysis.verdict === "uncertain" ? "bg-warning" : "bg-ink-3")}
+                style={{ width: `${Math.round(alert.analysis.risk * 100)}%` }}
+              />
+            </div>
+          </div>
         )}
         <div className="flex items-center gap-2.5 rounded-md border border-rule bg-paper px-3 py-2 text-[12.5px]">
           <span className={cn("size-2 shrink-0 rounded-full", CHANNEL_DOT[order.channelType])} />
@@ -256,6 +265,18 @@ export function FraudAlert({
       )}
       {dialog}
     </section>
+  );
+}
+
+/** Uma marca por pedido, cheia nos cancelados. Com muitos pedidos as marcas não ajudam: fica só o texto do resumo. */
+function CancellationMarks({ canceled, total }: { canceled: number; total: number }) {
+  if (canceled === 0 || total > 20) return null;
+  return (
+    <div className="flex flex-wrap gap-[3px]" aria-hidden>
+      {Array.from({ length: total }, (_, index) => (
+        <span key={index} className={cn("size-2.5 rounded-[2px]", index < canceled ? "bg-tomate" : "border border-tag-line")} />
+      ))}
+    </div>
   );
 }
 

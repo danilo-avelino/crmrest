@@ -1,6 +1,6 @@
 "use client";
 
-import { CHANNEL_LABEL, type CurrentOrderDto } from "@dishdesk/shared";
+import { CHANNEL_LABEL, type CurrentOrderDto, type OrderDto } from "@dishdesk/shared";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/components/auth/auth-provider";
 import { CHANNEL_DOT } from "@/components/inbox/bits";
@@ -9,6 +9,24 @@ import { CustomerHistoryLine } from "@/components/orders/customer-history";
 import { useNow } from "@/hooks/use-now";
 import { clock, currency, responseTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
+
+const STEPS: OrderDto["status"][] = ["PLACED", "CONFIRMED", "PREPARING", "READY", "DISPATCHED", "DELIVERED"];
+
+/** Etapas do pedido em marcas: mostra de relance onde ele está; o nome da etapa fica no cabeçalho do bloco. */
+function OrderSteps({ status, takeout, late }: { status: OrderDto["status"]; takeout: boolean; late: boolean }) {
+  const steps = takeout ? STEPS.filter((step) => step !== "DISPATCHED") : STEPS;
+  const current = steps.indexOf(status);
+  return (
+    <div className="flex gap-[3px]" role="img" aria-label={`Etapa ${current + 1} de ${steps.length}: ${ORDER_STATUS[status].label}`}>
+      {steps.map((step, index) => (
+        <span
+          key={step}
+          className={cn("h-1.5 flex-1 rounded-[2px]", index > current ? "bg-surface-2" : status === "DELIVERED" ? "bg-success" : late ? "bg-tomate" : "bg-ink")}
+        />
+      ))}
+    </div>
+  );
+}
 
 /**
  * Pedido ligado ao cliente da conversa (painel lateral; o design ainda não tem este bloco): achado sozinho pelo
@@ -94,6 +112,7 @@ function Progress({ current }: { current: CurrentOrderDto }) {
 
   return (
     <div className="flex flex-col gap-1.5">
+      <OrderSteps status={order.status} takeout={current.takeout} late={late} />
       <div className="relative h-2 rounded-full bg-surface-2" role="img" aria-label="Andamento do pedido">
         <div className={cn("absolute inset-y-0 left-0 rounded-full", late ? "bg-tomate" : "bg-ink")} style={{ width: at(filledUntil) }} />
         {ready !== null && <Marker left={at(ready)} className="bg-ink-3" />}

@@ -2,10 +2,11 @@
 
 import { type ConversationCounts, type ConversationListItem, type ConversationPage, COURIER_TAG } from "@dishdesk/shared";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
-import { BellIcon, BellRingIcon, BikeIcon, CheckIcon, ChevronDownIcon, ClockIcon, CornerUpLeftIcon, SearchIcon, StoreIcon } from "lucide-react";
+import { BellIcon, BellRingIcon, BikeIcon, CheckIcon, ChevronDownIcon, CornerUpLeftIcon, SearchIcon, StoreIcon, UnplugIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
-import { Avatar, StatusBadge, TeamOnlyBadge } from "@/components/inbox/bits";
+import { Avatar, StatusBadge, TeamOnlyBadge, TimeRing } from "@/components/inbox/bits";
+import { useBrokenChannels } from "@/components/inbox/channel-alert";
 import { FraudBadge } from "@/components/orders/fraud-alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -39,6 +40,8 @@ const SUBS: { value: Sub; label: string }[] = [
 ];
 /** Cliente que já foi lido e espera resposta há este tempo: o tempo da linha fica em âmbar. */
 const WAITING_MS = 10 * 60_000;
+/** O anel de quem espera resposta fica cheio com este tempo. */
+const WAITING_FULL_MS = 30 * 60_000;
 
 /** Lista de conversas (coluna de 320px do board Inbox). */
 export function ConversationList({
@@ -58,6 +61,7 @@ export function ConversationList({
   const { request, session } = useAuth();
   const master = session?.context?.mode === "master";
   const { tab, sub } = view;
+  const brokenChannels = useBrokenChannels();
   const setTab = (next: Tab) => onView({ tab: next, sub });
   const setSub = (next: Sub) => onView({ tab, sub: next });
   const status = tab === "ACTIVE" ? (sub === "ALL" ? "ACTIVE" : sub) : tab;
@@ -246,6 +250,7 @@ export function ConversationList({
                 showTenant={master}
                 inResolvedTab={tab === "RESOLVED"}
                 watchWaiting={tab === "ACTIVE"}
+                channelDown={brokenChannels.has(conversation.channel.id)}
                 now={now}
                 onSelect={() => onSelect(conversation.id)}
               />
@@ -270,6 +275,7 @@ function ConversationRow({
   showTenant,
   inResolvedTab,
   watchWaiting,
+  channelDown,
   now,
   onSelect,
 }: {
@@ -280,6 +286,8 @@ function ConversationRow({
   inResolvedTab: boolean;
   /** Aba Ativos: cliente já lido e sem resposta há 10 min ou mais tem o tempo em âmbar. */
   watchWaiting: boolean;
+  /** O canal da conversa está desconectado: as respostas não saem. */
+  channelDown: boolean;
   now: number;
   onSelect: () => void;
 }) {
@@ -352,7 +360,7 @@ function ConversationRow({
                 unread ? "font-semibold text-tomate" : waiting ? "font-semibold text-warning" : "text-ink-3",
               )}
             >
-              {waiting && <ClockIcon className="size-[11px]" aria-hidden />}
+              {waiting && <TimeRing share={(now - new Date(time).getTime()) / WAITING_FULL_MS} />}
               {ago(time, now)}
             </span>
             {unread && (
@@ -369,10 +377,16 @@ function ConversationRow({
           )}
           <span className="truncate">{conversation.lastMessage?.preview ?? ""}</span>
         </div>
-        {(conversation.fraudAlert || conversation.teamOnly) && (
+        {(conversation.fraudAlert || conversation.teamOnly || (channelDown && !resolved)) && (
           <div className="mt-1 flex flex-wrap items-center gap-1">
             {conversation.fraudAlert && <FraudBadge />}
             {conversation.teamOnly && <TeamOnlyBadge />}
+            {channelDown && !resolved && (
+              <span className="inline-flex items-center gap-1 rounded-sm border border-rule bg-surface-2 px-[6px] text-[10.5px] leading-4 font-medium text-ink-2">
+                <UnplugIcon className="size-2.5" aria-hidden />
+                Canal desconectado
+              </span>
+            )}
           </div>
         )}
       </div>
