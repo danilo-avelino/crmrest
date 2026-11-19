@@ -279,12 +279,12 @@ export class ContactsService {
    */
   async openWhatsApp(auth: RequestAuth, id: string): Promise<{ conversationId: string }> {
     const opened = await this.db.withTenants(auth.scope, async (tx) => {
-      const contact = await tx.contact.findUnique({ where: { id }, select: { id: true, tenantId: true, phone: true } });
+      const contact = await tx.contact.findUnique({ where: { id }, select: { id: true, tenantId: true, name: true, phone: true } });
       if (!contact) throw new NotFoundException("Cliente não encontrado.");
       if (!contact.phone) throw new UnprocessableEntityException("O cadastro não tem telefone: informe o telefone para conversar pelo WhatsApp.");
       const channel = await connectedWhatsApp(tx, contact.tenantId);
       if (!channel) throw new UnprocessableEntityException("O restaurante não tem um WhatsApp conectado.");
-      return { tenantId: contact.tenantId, conversationId: await openWhatsAppConversation(tx, channel.id, contact) };
+      return { tenantId: channel.tenantId, conversationId: await openWhatsAppConversation(tx, channel, contact) };
     });
     this.realtime.inboxChanged(opened.tenantId, opened.conversationId);
     return { conversationId: opened.conversationId };

@@ -300,6 +300,8 @@ export type QuickReplyDto = { id: string; tenantId: string; shortcut: string; co
 export type ChannelHealthDto = {
   id: string;
   tenantId: string;
+  /** Outros restaurantes que o canal atende (o WhatsApp de um grupo). */
+  servedTenantIds: string[];
   type: ChannelType;
   name: string;
   status: ChannelStatus;

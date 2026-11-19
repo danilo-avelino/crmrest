@@ -22,11 +22,11 @@ describe("telefone do cliente", () => {
     request.mockReset();
   });
 
-  it("com WhatsApp conectado: o clique abre a conversa, uma vez só", async () => {
+  it("com WhatsApp conectado que atende a loja: o clique abre a conversa, uma vez só", async () => {
     let finish: (value: { conversationId: string }) => void = () => {};
     request.mockImplementation((path: string) =>
       path === "/channels"
-        ? Promise.resolve([{ tenantId: "loja-1", type: "WHATSAPP", status: "CONNECTED" }])
+        ? Promise.resolve([{ tenantId: "grupo", servedTenantIds: ["loja-1"], type: "WHATSAPP", status: "CONNECTED" }])
         : new Promise((resolve) => {
             finish = resolve;
           }),
@@ -42,7 +42,7 @@ describe("telefone do cliente", () => {
   });
 
   it("sem WhatsApp conectado na loja do cliente: só o número", async () => {
-    request.mockResolvedValue([{ tenantId: "outra-loja", type: "WHATSAPP", status: "CONNECTED" }]);
+    request.mockResolvedValue([{ tenantId: "outra-loja", servedTenantIds: [], type: "WHATSAPP", status: "CONNECTED" }]);
     show();
     await waitFor(() => expect(request).toHaveBeenCalledWith("/channels"));
     expect(screen.queryByRole("button")).toBeNull();

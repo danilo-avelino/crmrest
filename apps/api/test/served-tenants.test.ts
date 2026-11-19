@@ -211,6 +211,23 @@ describe("canal que atende outros restaurantes", () => {
     });
   });
 
+  it("telefone de cliente da unidade: abre a conversa no WhatsApp do grupo que a atende", async () => {
+    const phone = "+5511970000288";
+    const customer = await admin.contact.create({ data: { tenantId: unitB.id, name: "Bia Unidade", phone } });
+    const master = await accessTokenFor(app, fx.user.email, "master");
+    const open = () => api().post(`/api/contacts/${customer.id}/whatsapp-chat`).set("Authorization", `Bearer ${master}`).expect(200);
+
+    const { body } = await open();
+    const conversation = await admin.conversation.findUniqueOrThrow({ where: { id: body.conversationId }, include: { contact: { include: { identities: true } } } });
+    expect(conversation).toMatchObject({ tenantId: fx.tenant.id, channelId: fx.whatsapp.id, status: "OPEN", teamInvolved: true });
+    expect(conversation.contact).toMatchObject({ tenantId: fx.tenant.id, name: "Bia Unidade", phone });
+    expect(conversation.contact.identities.map((i) => [i.channelType, i.externalId])).toEqual([["WHATSAPP", phone.slice(1)]]);
+    expect((await open()).body).toEqual(body); // a mesma conversa, não outra
+
+    const channels = await api().get("/api/channels").set("Authorization", `Bearer ${master}`).expect(200);
+    expect(channels.body.find((channel: { id: string }) => channel.id === fx.whatsapp.id).servedTenantIds).toEqual([unitB.id]);
+  });
+
   it("painel master: o pedido de um restaurante que o canal não atende fica de fora", async () => {
     const served = await orderIn(unitB.id, ifoodB.id, "7003", "+5511970000203", new Date(Date.now() - 60_000));
     // Mais recente, mas na unidade C, que o WhatsApp não atende.

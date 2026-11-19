@@ -9,8 +9,8 @@ import { usePendingAction } from "@/hooks/use-pending-action";
 import { ApiError } from "@/lib/api";
 
 /**
- * Abre (ou acha) a conversa com o cliente no WhatsApp do restaurante, pelo telefone do cadastro. `connected`: o
- * restaurante do cliente tem um WhatsApp conectado.
+ * Abre (ou acha) a conversa com o cliente no WhatsApp do restaurante, pelo telefone do cadastro. `connected`: há um
+ * WhatsApp conectado do restaurante do cliente ou que o atende (o de um grupo).
  */
 export function useWhatsAppChat(contactId: string, tenantId: string, onOpen: (conversationId: string) => void) {
   const { request } = useAuth();
@@ -18,7 +18,11 @@ export function useWhatsAppChat(contactId: string, tenantId: string, onOpen: (co
   const toast = useToast();
   // Mesma consulta da faixa de canal desconectado (ChannelAlert).
   const channels = useQuery({ queryKey: ["channels"], queryFn: () => request<ChannelHealthDto[]>("/channels"), refetchInterval: 60_000 });
-  const connected = Boolean(channels.data?.some((channel) => channel.tenantId === tenantId && channel.type === "WHATSAPP" && channel.status === "CONNECTED"));
+  const connected = Boolean(
+    channels.data?.some(
+      (channel) => channel.type === "WHATSAPP" && channel.status === "CONNECTED" && (channel.tenantId === tenantId || channel.servedTenantIds.includes(tenantId)),
+    ),
+  );
   const open = async () => {
     try {
       const { conversationId } = await request<{ conversationId: string }>(`/contacts/${contactId}/whatsapp-chat`, { method: "POST" });

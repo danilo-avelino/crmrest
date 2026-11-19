@@ -48,7 +48,7 @@ export class TeamController {
     const channels = await this.db.withTenants(auth.scope, (tx) =>
       tx.channel.findMany({
         where: { deletedAt: null },
-        select: { id: true, tenantId: true, type: true, name: true, status: true, tokenExpiresAt: true },
+        select: { id: true, tenantId: true, servedTenantIds: true, type: true, name: true, status: true, tokenExpiresAt: true },
         orderBy: { name: "asc" },
       }),
     );

@@ -373,7 +373,7 @@ export class OrdersService {
   async openCustomerChat(auth: RequestAuth, orderId: string, preferIfood = false): Promise<{ conversationId: string }> {
     const opened = await this.db.withTenants(auth.scope, async (tx) => {
       const { order, whatsapp, ifood } = await this.customerRoute(tx, orderId);
-      if (whatsapp && !(preferIfood && ifood)) return { tenantId: order.tenantId, conversationId: await openWhatsAppConversation(tx, whatsapp.id, order.contact) };
+      if (whatsapp && !(preferIfood && ifood)) return { tenantId: whatsapp.tenantId, conversationId: await openWhatsAppConversation(tx, whatsapp, order.contact) };
       if (!ifood) throw new UnprocessableEntityException("Não há como conversar com este cliente pelo Dish Desk.");
       return { tenantId: order.tenantId, conversationId: (await openIfoodConversation(tx, order, new Date())).id };
     });
