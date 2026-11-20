@@ -2,6 +2,7 @@ import { InjectQueue, Processor } from "@nestjs/bullmq";
 import { Injectable, Logger, type OnModuleInit } from "@nestjs/common";
 import * as Sentry from "@sentry/nestjs";
 import type { Queue } from "bullmq";
+import { ChannelAuthError } from "../connectors/connector.js";
 import { type ChannelSecrets, ConnectorsService } from "../connectors/connectors.service.js";
 import { DatabaseService } from "../core/database.service.js";
 import { JobProcessor } from "../queues/job-processor.js";
@@ -62,7 +63,16 @@ export class ChannelTokensService implements OnModuleInit {
     const secrets = await this.secrets(tenantId, channelId);
     if (recent(secrets.tokenUpdatedAt)) return;
 
-    const accessToken = await this.connectors.instagram.refreshToken(secrets.accessToken);
+    let accessToken: string;
+    try {
+      accessToken = await this.connectors.instagram.refreshToken(secrets.accessToken);
+    } catch (error) {
+      if (!(error instanceof ChannelAuthError)) throw error;
+      // Token revogado pela Meta: canal "Com erro" (a Inbox pede para reconectar) e sai da fila diária, sem ir ao Sentry.
+      this.logger.warn({ tenantId, channelId }, "Token do Instagram recusado pela Meta: canal com erro");
+      await this.db.withTenants({ tenantIds: [tenantId] }, (tx) => tx.channel.update({ where: { id: channelId }, data: { status: "ERROR" } }));
+      return;
+    }
     await this.save(tenantId, channelId, { ...secrets, accessToken, tokenUpdatedAt: new Date().toISOString() }, new Date(Date.now() + TOKEN_LIFETIME_MS));
   }
 

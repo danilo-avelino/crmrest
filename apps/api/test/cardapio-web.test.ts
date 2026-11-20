@@ -4,12 +4,15 @@ import { encrypt, parseEncryptionKey } from "@dishdesk/database";
 import { getQueueToken } from "@nestjs/bullmq";
 import type { INestApplication } from "@nestjs/common";
 import type { Queue } from "bullmq";
+import * as Sentry from "@sentry/nestjs";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { CardapioWebService } from "../src/inbound/cardapio-web.service.js";
 import type { CardapioWebImportJob } from "../src/queues/queues.module.js";
 import { QUEUES } from "../src/queues/queues.module.js";
 import { accessTokenFor, admin, createChannelFixture, createTestApp, drainQueues, metaPayload, postMetaWebhook, startMockGraph } from "./helpers.js";
+
+vi.mock("@sentry/nestjs", async (original) => ({ ...(await original<typeof import("@sentry/nestjs")>()), captureException: vi.fn(() => "") }));
 
 /** API de parceiros falsa: pedidos alterados (polling), detalhes do pedido e base de clientes, com a chave da loja. */
 async function startMockCardapioWeb() {
@@ -441,5 +444,35 @@ describe("Cardápio Web (pedidos por polling)", () => {
     expect(preparation("53")).toEqual([null, false]); // lido já na saída: sem o confirmado
     const takeoutOf = (code: string) => body.items.find((o: { displayCode: string }) => o.displayCode === code).takeout;
     expect([takeoutOf("55"), takeoutOf("54")]).toEqual([true, false]);
+  });
+
+  it("falha de rede no polling só vai ao Sentry se persistir; erro HTTP vai de imediato", async () => {
+    const report = vi.mocked(Sentry.captureException);
+    report.mockClear();
+    // O polling lê todas as lojas conectadas do banco (outras suítes podem deixar canais): cada uma conta à parte.
+    const stores = await admin.channel.count({ where: { type: "CARDAPIO_WEB", status: "CONNECTED" } });
+    const updated = vi.spyOn(service.client, "updatedOrders");
+    try {
+      updated.mockRejectedValue(new TypeError("fetch failed", { cause: new Error("connect ETIMEDOUT 104.20.38.142:443") }));
+      for (let i = 0; i < 3; i++) await service.poll();
+      expect(report).not.toHaveBeenCalled();
+      await service.poll(); // 4ª seguida
+      expect(report).toHaveBeenCalledTimes(stores);
+
+      updated.mockRejectedValue(new Error("Cardápio Web /api/partner/v1/orders: HTTP 500"));
+      await service.poll();
+      expect(report).toHaveBeenCalledTimes(stores * 2);
+
+      // Uma leitura boa zera a contagem.
+      updated.mockRejectedValue(new TypeError("fetch failed"));
+      await service.poll();
+      updated.mockResolvedValue([]);
+      await service.poll();
+      updated.mockRejectedValue(new TypeError("fetch failed"));
+      for (let i = 0; i < 3; i++) await service.poll();
+      expect(report).toHaveBeenCalledTimes(stores * 2);
+    } finally {
+      updated.mockRestore();
+    }
   });
 });

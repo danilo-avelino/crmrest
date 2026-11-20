@@ -77,6 +77,15 @@ describe("renovação dos tokens dos canais", () => {
       expect((await secretsOf(fx.instagram.id)).accessToken).toBe("token-antigo");
       graph.resetReply();
     });
+
+    it("token revogado (código 190): o canal fica com erro, sem lançar para o Sentry", async () => {
+      await setSecrets(fx.instagram.id, { accessToken: "token-revogado", tokenUpdatedAt: "2026-01-01T00:00:00.000Z" });
+      graph.reply(() => ({ status: 400, body: { error: { message: "Error validating access token: The session has been invalidated", code: 190 } } }));
+
+      await tokens.refreshInstagram(fx.tenant.id, fx.instagram.id);
+      expect((await admin.channel.findUniqueOrThrow({ where: { id: fx.instagram.id } })).status).toBe("ERROR");
+      graph.resetReply();
+    });
   });
 
   describe("WhatsApp", () => {
@@ -144,6 +153,15 @@ describe("renovação dos tokens dos canais", () => {
       expect(channel.tokenExpiresAt?.getTime()).toBe(expiresAt * 1000);
       expect(channel.status).toBe("CONNECTED");
       expect((await secretsOf(fx.whatsapp.id)).accessToken).toBe("token-whatsapp");
+      graph.resetReply();
+    });
+
+    it("token de outro app da Meta (#100): não há como conferir, então não lança nem muda o canal", async () => {
+      await setSecrets(fx.whatsapp.id, { accessToken: "token-de-outro-app", wabaId: "waba-teste", tokenUpdatedAt: "2026-01-01T00:00:00.000Z" });
+      graph.reply(() => ({ status: 400, body: { error: { message: "(#100) The App_id in the input_token did not match the Viewing App", code: 100 } } }));
+
+      await tokens.refreshWhatsApp(fx.tenant.id, fx.whatsapp.id);
+      expect((await admin.channel.findUniqueOrThrow({ where: { id: fx.whatsapp.id } })).status).toBe("CONNECTED");
       graph.resetReply();
     });
 

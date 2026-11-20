@@ -51,14 +51,16 @@ export function useAgentAlarm(waiting: number, urgentSince: string | null = null
       void say(audio, voiceFile(waitingRef.current));
     };
     // Liberado o som pelo clique, fala logo o aviso que ficou para trás.
-    const unlock = () =>
-      void audio.resume().then(() => {
+    const unlock = () => {
+      if (audio.state === "closed") return;
+      audio.resume().then(() => {
         setBlocked(false);
         if (pending.current) {
           pending.current = false;
           speak();
         }
-      });
+      }, () => {}); // contexto fechado no meio do clique: sem som, sem rejeição solta
+    };
     const timer = setInterval(speak, VOICE_EVERY_MS);
     // Lembrete do chamado parado: nas rodadas ímpares, o bipe inicial de novo (as pares são a notificação).
     const reminder = setInterval(() => {
@@ -80,7 +82,7 @@ export function useAgentAlarm(waiting: number, urgentSince: string | null = null
       setBlocked(false);
       pending.current = false;
       audioRef.current = null;
-      void audio.close();
+      if (audio.state !== "closed") audio.close().catch(() => {});
     };
   }, [ringing]);
 
@@ -111,7 +113,7 @@ function ringBeeps(audio: AudioContext) {
 /** O som está liberado? Se não, tenta liberar e avisa a tela. */
 function play(audio: AudioContext, onBlocked: () => void): boolean {
   if (audio.state === "running") return true;
-  void audio.resume();
+  if (audio.state !== "closed") audio.resume().catch(() => {}); // autoplay bloqueado ou fechado: segue como bloqueado
   onBlocked();
   return false;
 }

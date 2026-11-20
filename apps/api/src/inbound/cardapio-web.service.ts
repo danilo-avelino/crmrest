@@ -43,6 +43,15 @@ const ORDER_DETAIL_INTERVAL_MS = 1000;
 /** O histórico deixa de fora as últimas 24 h, que o polling já lê. */
 const HISTORY_RECENT_MS = 24 * 60 * 60 * 1000;
 
+/** Pollings seguidos (30 s cada) com falha de rede antes de avisar o Sentry: ~2 minutos sem ler. */
+const NETWORK_FAILURES_TO_REPORT = 4;
+
+/** `fetch failed` (ETIMEDOUT, ENETUNREACH, ECONNRESET...) ou estouro do timeout de 15 s: erro de rede, não da API. */
+function isNetworkError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  return error.name === "TimeoutError" || error.name === "AbortError" || (error instanceof TypeError && error.message === "fetch failed");
+}
+
 /**
  * Pedidos do Cardápio Web (cardápio digital do restaurante). Eles trazem o telefone, então entram no cadastro
  * do cliente (o mesmo do WhatsApp) sem abrir conversa: o atendimento continua no WhatsApp.
@@ -53,6 +62,8 @@ export class CardapioWebService implements OnModuleInit {
   readonly client: CardapioWebClient;
   /** Até onde cada canal já foi lido. Em memória: depois de reiniciar, relê as últimas 24 h. */
   private readonly readUntil = new Map<string, Date>();
+  /** Pollings seguidos que falharam por rede, por canal. */
+  private readonly networkFailures = new Map<string, number>();
 
   constructor(
     private readonly db: DatabaseService,
@@ -82,8 +93,15 @@ export class CardapioWebService implements OnModuleInit {
       } catch (error) {
         // Segue para as outras lojas; esta relê o mesmo período na próxima rodada.
         this.logger.warn({ tenantId, channelId: id, err: error }, "Pedidos do Cardápio Web não lidos");
-        Sentry.captureException(error, { tags: { tenantId, channel: "cardapio_web" } });
+        // Falha de rede avulsa (conexão caiu, timeout) o próximo polling, 30 s depois, já refaz: só vai ao Sentry se persistir.
+        const failures = isNetworkError(error) ? (this.networkFailures.get(id) ?? 0) + 1 : 0;
+        this.networkFailures.set(id, failures);
+        if (failures === 0 || failures >= NETWORK_FAILURES_TO_REPORT) {
+          Sentry.captureException(error, { tags: { tenantId, channel: "cardapio_web" } });
+        }
+        continue;
       }
+      this.networkFailures.delete(id);
     }
   }
 

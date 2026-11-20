@@ -10,9 +10,9 @@ type ContactKeys = { id: string; phone: string | null; phoneSource: string | nul
  * Usado pelo menu de atendimento ("Falar sobre um pedido"), pela IA e pelo painel do cliente na Inbox.
  * `exclude`: pedidos que o cliente já disse não serem dele.
  */
-export function latestOrderOf(tx: TenantTx, contact: ContactKeys, now = new Date(), exclude: string[] = []) {
+export async function latestOrderOf(tx: TenantTx, contact: ContactKeys, now = new Date(), exclude: string[] = []) {
   return tx.order.findFirst({
-    where: { placedAt: { gte: startOfYesterday(now) }, id: { notIn: exclude }, ...linkedOrdersWhere(contact) },
+    where: { placedAt: { gte: startOfYesterday(now) }, id: { notIn: exclude }, ...(await linkedOrdersWhere(tx, contact)) },
     include: { items: true },
     orderBy: { placedAt: "desc" },
   });

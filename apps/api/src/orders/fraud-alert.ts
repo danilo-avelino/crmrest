@@ -4,7 +4,9 @@ import { type CanceledOrderRow, type CustomerCancellations, FRAUD_RULES, type Or
 import { z } from "zod";
 import { startOfYesterday } from "../automations/automation.js";
 import { addressBase, addressKey, addressText } from "./address-key.js";
-import { linkedOrdersWhere, provenPhone, provenPhoneWhere } from "./customer-history.js";
+import { linkedContactsWhere, linkedOrdersWhere } from "./customer-history.js";
+
+export { linkedContactsWhere };
 
 type ContactKeys = { id: string; phone: string | null; phoneSource: string | null; cpfHash: string | null; email: string | null };
 
@@ -62,7 +64,7 @@ export function toCanceledRow(order: RowOrder, showRestaurant = false): Canceled
 
 /** Os cancelamentos do cliente em todas as fontes ligadas a ele (mesmo telefone, CPF ou e-mail). */
 export async function customerCancellations(tx: TenantTx, contact: ContactKeys): Promise<CustomerCancellations> {
-  const linked = linkedOrdersWhere(contact);
+  const linked = await linkedOrdersWhere(tx, contact);
   const where: Prisma.OrderWhereInput = { AND: [linked, { status: "CANCELED" }] };
   const [ordersCount, canceledCount, rows] = await Promise.all([
     tx.order.count({ where: linked }),
@@ -72,7 +74,9 @@ export async function customerCancellations(tx: TenantTx, contact: ContactKeys):
   return summarize(ordersCount, canceledCount, rows);
 }
 
-function summarize(ordersCount: number, canceledCount: number, orders: RowOrder[]): CustomerCancellations {
+export function summarize(ordersCount: number, canceledCount: number, allOrders: RowOrder[]): CustomerCancellations {
+  // Canal ou restaurante que o contexto não enxerga (a RLS devolve null mesmo na relação obrigatória): a linha sai da lista.
+  const orders = allOrders.filter((order) => order.channel && order.tenant);
   const showRestaurant = new Set(orders.map((order) => order.tenantId)).size > 1;
   const bySource = new Map<ChannelType, number>();
   for (const order of orders) bySource.set(order.channel.type, (bySource.get(order.channel.type) ?? 0) + 1);
@@ -149,7 +153,7 @@ export async function assessOrder(
   actionable: boolean,
 ): Promise<{ alert: OrderAlertDto; hard: boolean } | null> {
   if (!order.alertDecision && !ACTIVE_ORDER.includes(order.status)) return null;
-  const linked = linkedOrdersWhere(contact);
+  const linked = await linkedOrdersWhere(tx, contact);
   const canceledWhere: Prisma.OrderWhereInput = { AND: [linked, { status: "CANCELED" }, { id: { not: order.id } }] };
   const [ordersCount, canceledCount, rows] = await Promise.all([
     tx.order.count({ where: { AND: [linked, { id: { not: order.id } }] } }),
@@ -238,19 +242,6 @@ export async function similarAddressCandidates(
     const address = addressText(match.deliveryAddress);
     return address ? [{ id: match.id, address }] : [];
   });
-}
-
-/** Cadastro do cliente e os ligados a ele por telefone, CPF ou e-mail (o par de `linkedOrdersWhere` para contatos). */
-export function linkedContactsWhere(contact: ContactKeys): Prisma.ContactWhereInput {
-  const phone = provenPhone(contact);
-  return {
-    OR: [
-      { id: contact.id },
-      ...(phone ? [provenPhoneWhere(phone)] : []),
-      ...(contact.cpfHash ? [{ cpfHash: contact.cpfHash }] : []),
-      ...(contact.email ? [{ email: { equals: contact.email, mode: "insensitive" as const } }] : []),
-    ],
-  };
 }
 
 /**

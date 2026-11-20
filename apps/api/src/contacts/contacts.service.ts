@@ -233,7 +233,7 @@ export class ContactsService {
       const contact = await tx.contact.findUniqueOrThrow({ where: { id }, select: { id: true, phone: true, phoneSource: true, cpfHash: true, email: true } });
       // Todas as fontes: também os pedidos de outros cadastros com o mesmo telefone, CPF ou e-mail.
       const rows = await tx.order.findMany({
-        where: linkedOrdersWhere(contact),
+        where: await linkedOrdersWhere(tx, contact),
         include: { items: true, channel: { select: { type: true } } },
         orderBy: { placedAt: "desc" },
         take: ORDERS_LIMIT,
@@ -526,7 +526,7 @@ export class ContactsService {
     if (!contact) throw new NotFoundException("Cliente não encontrado.");
     // Histórico em todas as fontes ligadas ao cliente (outros cadastros com o mesmo telefone, CPF ou e-mail).
     const history = await customerHistory(tx, contact);
-    const recent = await tx.order.findMany({ where: linkedOrdersWhere(contact), orderBy: { placedAt: "desc" }, take: 3 });
+    const recent = await tx.order.findMany({ where: await linkedOrdersWhere(tx, contact), orderBy: { placedAt: "desc" }, take: 3 });
     const conversationsCount = await tx.conversation.count({ where: { contactId: id } });
     const latest = await tx.conversation.findFirst({
       where: { contactId: id },

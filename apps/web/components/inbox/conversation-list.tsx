@@ -474,7 +474,9 @@ export function beep() {
     gain.gain.setValueAtTime(0.08, audio.currentTime);
     gain.gain.exponentialRampToValueAtTime(0.0001, audio.currentTime + 0.25);
     oscillator.connect(gain).connect(audio.destination);
-    oscillator.onended = () => void audio.close();
+    oscillator.onended = () => {
+      if (audio.state !== "closed") audio.close().catch(() => {});
+    };
     oscillator.start();
     oscillator.stop(audio.currentTime + 0.25);
   } catch {

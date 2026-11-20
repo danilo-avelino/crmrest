@@ -119,12 +119,22 @@ function messageBody(message: z.infer<typeof WaMessage>): { type: MessageType; t
   return { type: "TEXT", text: "Mensagem de um tipo que o Dish Desk ainda não exibe.", metadata: { unsupportedType: message.type } };
 }
 
+/** Erro da Graph API, com o código que ela devolveu (190 = token inválido, 100 = parâmetro inválido). */
+export class MetaGraphError extends Error {
+  constructor(
+    message: string,
+    readonly code?: number,
+  ) {
+    super(message);
+  }
+}
+
 /** Resposta da Graph API; um erro vira uma mensagem que o admin entende (ex.: token expirado). */
 export async function graph(request: Promise<Response>): Promise<unknown> {
   const response = await request;
   // O login do Instagram (api.instagram.com) responde erros como { error_message }.
-  const body = (await response.json().catch(() => null)) as { error?: { message?: string }; error_message?: string } | null;
-  if (!response.ok) throw new Error(`Meta: ${body?.error?.message ?? body?.error_message ?? `HTTP ${response.status}`}`);
+  const body = (await response.json().catch(() => null)) as { error?: { message?: string; code?: number }; error_message?: string } | null;
+  if (!response.ok) throw new MetaGraphError(`Meta: ${body?.error?.message ?? body?.error_message ?? `HTTP ${response.status}`}`, body?.error?.code);
   return body;
 }
 
@@ -233,7 +243,12 @@ export class WhatsAppConnector implements ChannelConnector {
     if (this.env.CHANNELS_DRY_RUN || !this.env.META_APP_ID || !this.env.META_APP_SECRET) return null;
     const url = new URL(`${this.env.META_GRAPH_URL}/debug_token`);
     url.search = new URLSearchParams({ input_token: accessToken, access_token: `${this.env.META_APP_ID}|${this.env.META_APP_SECRET}` }).toString();
-    const body = (await graph(fetch(url, { signal: AbortSignal.timeout(15_000) }))) as { data?: { is_valid?: boolean; expires_at?: number } };
+    const body = (await graph(fetch(url, { signal: AbortSignal.timeout(15_000) })).catch((error) => {
+      // Token emitido por outro app da Meta (ex.: o app antigo): este app não consegue conferi-lo, e repetir não muda nada.
+      if (error instanceof MetaGraphError && error.code === 100 && /App_id/i.test(error.message)) return null;
+      throw error;
+    })) as { data?: { is_valid?: boolean; expires_at?: number } } | null;
+    if (!body) return null;
     const expiresAt = body.data?.expires_at ? new Date(body.data.expires_at * 1000) : null;
     return { valid: body.data?.is_valid !== false, expiresAt };
   }

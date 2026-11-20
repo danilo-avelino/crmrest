@@ -21,22 +21,29 @@ export function provenPhoneWhere(phone: string): Prisma.ContactWhereInput {
  * cadastros com o mesmo telefone, CPF ou e-mail (ex.: o cadastro do iFood, sem telefone, e o do Cardápio Web).
  * O telefone digitado pelo cliente na conversa não liga pedidos de outros cadastros.
  */
-export function linkedOrdersWhere(contact: ContactKeys): Prisma.OrderWhereInput {
-  const { id, cpfHash, email } = contact;
+export async function linkedOrdersWhere(tx: TenantTx, contact: ContactKeys): Promise<Prisma.OrderWhereInput> {
+  // Os cadastros primeiro e os pedidos pela lista de ids: o filtro pela relação (`contact: {...}`) num OR com o
+  // `contactId` fazia o Postgres ler todos os pedidos do restaurante a cada consulta, em vez de usar o índice.
+  const contacts = await tx.contact.findMany({ where: linkedContactsWhere(contact), select: { id: true } });
+  return { contactId: { in: [...new Set([contact.id, ...contacts.map((linked) => linked.id)])] } };
+}
+
+/** Cadastro do cliente e os ligados a ele por telefone, CPF ou e-mail (o par de `linkedOrdersWhere` para contatos). */
+export function linkedContactsWhere(contact: ContactKeys): Prisma.ContactWhereInput {
   const phone = provenPhone(contact);
   return {
     OR: [
-      { contactId: id },
-      ...(phone ? [{ contact: provenPhoneWhere(phone) }] : []),
-      ...(cpfHash ? [{ contact: { cpfHash } }] : []),
-      ...(email ? [{ contact: { email: { equals: email, mode: "insensitive" as const } } }] : []),
+      { id: contact.id },
+      ...(phone ? [provenPhoneWhere(phone)] : []),
+      ...(contact.cpfHash ? [{ cpfHash: contact.cpfHash }] : []),
+      ...(contact.email ? [{ email: { equals: contact.email, mode: "insensitive" as const } }] : []),
     ],
   };
 }
 
 /** "Este cliente tem X pedidos": total e valor de todas as fontes, sem os cancelados, e quantos vieram de cada uma. */
 export async function customerHistory(tx: TenantTx, contact: ContactKeys): Promise<CustomerHistory> {
-  const where: Prisma.OrderWhereInput = { AND: [linkedOrdersWhere(contact), { status: { not: "CANCELED" } }] };
+  const where: Prisma.OrderWhereInput = { AND: [await linkedOrdersWhere(tx, contact), { status: { not: "CANCELED" } }] };
   const groups = await tx.order.groupBy({ by: ["channelId"], where, _count: { _all: true }, _sum: { total: true } });
   const channels = await tx.channel.findMany({
     where: { id: { in: groups.map((group) => group.channelId) } },

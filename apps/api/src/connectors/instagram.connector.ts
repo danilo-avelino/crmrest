@@ -3,7 +3,7 @@ import type { MessageType } from "@dishdesk/database/enums";
 import { NormalizedMessage, StatusUpdate } from "@dishdesk/shared";
 import { z } from "zod";
 import type { Env } from "../config/env.js";
-import { type ChannelConnector, type OutboundText, type SendTarget, sendFailure } from "./connector.js";
+import { ChannelAuthError, type ChannelConnector, type OutboundText, type SendTarget, sendFailure } from "./connector.js";
 import { graph, type ParsedWebhook } from "./whatsapp.connector.js";
 
 // Webhook do Instagram (API com login do Instagram): só os campos que o Dish Desk usa.
@@ -170,8 +170,12 @@ export class InstagramConnector implements ChannelConnector {
     const url = new URL("/refresh_access_token", this.env.INSTAGRAM_GRAPH_URL); // endpoint sem versão
     url.search = new URLSearchParams({ grant_type: "ig_refresh_token", access_token: accessToken }).toString();
     const response = await fetch(url, { signal: AbortSignal.timeout(15_000) });
-    const body = (await response.json().catch(() => null)) as { access_token?: string; error?: { message?: string } } | null;
-    if (!response.ok || !body?.access_token) throw new Error(`Instagram: ${body?.error?.message ?? `HTTP ${response.status}`}`);
+    const body = (await response.json().catch(() => null)) as { access_token?: string; error?: { message?: string; code?: number } } | null;
+    if (!response.ok || !body?.access_token) {
+      const reason = `Instagram: ${body?.error?.message ?? `HTTP ${response.status}`}`;
+      // Token revogado (senha trocada, sessão invalidada): não adianta tentar de novo, o canal precisa ser reconectado.
+      throw response.status === 401 || body?.error?.code === 190 ? new ChannelAuthError(reason) : new Error(reason);
+    }
     return body.access_token;
   }
 
