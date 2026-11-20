@@ -41,7 +41,8 @@ export type MessageContent = {
     | "courier_arrival_confirmed"
     | "courier_front_desk"
     | "courier_front_desk_confirmed"
-    | "courier_problem_request";
+    | "courier_problem_request"
+    | "ifood_observation_ask";
   /** Evento do sistema mostrado na conversa. */
   event?:
     | "conversation_opened"

@@ -948,6 +948,37 @@ describe("atendimento com IA: resposta, revisão e avaliação", () => {
     expect(promptOf()).toContain("Pedido do cliente (ele confirmou que é dele):\n#8765");
   });
 
+  it("a IA mostra o pedido pela data, itens e total, sem o número: o 'Sim' do cliente confirma e liga o pedido (#41962, 18/11)", async () => {
+    answers.atendimento = { reply: "Olá! Em que posso ajudar?", handoff: false, reason: "", order: "none" };
+    await say("5511980000051", "wamid.AI-S0", "Boa noite");
+    await settle();
+    // O pedido é do mesmo cadastro da conversa: com um cadastro novo de mesmo telefone, a mensagem seguinte nem entrava.
+    const order = await admin.order.create({
+      data: {
+        tenantId: fx.tenant.id,
+        contactId: (await conversationOf("5511980000051")).contactId,
+        channelId: fx.ifood.id,
+        externalOrderId: `pedido-ia-8771-${Date.now()}`,
+        displayCode: "8771",
+        status: "CONFIRMED",
+        subtotal: "40.00",
+        deliveryFee: "0.00",
+        total: "40.00",
+        placedAt: new Date(),
+        raw: {},
+        items: { create: { tenantId: fx.tenant.id, name: "Pizza Margherita", quantity: 1, unitPrice: "40.00" } },
+      },
+    });
+    answers.atendimento = { reply: "Encontrei aqui um pedido de hoje com 1x Pizza Margherita, total de R$ 40,00. É esse o seu pedido?", handoff: false, reason: "", order: "none" };
+    await say("5511980000051", "wamid.AI-S1", "Cadê meu pedido?");
+    await settle();
+    expect((await conversationOf("5511980000051")).automationState).toMatchObject({ aiOfferedOrderId: order.id });
+    answers.atendimento = { reply: "Obrigada pela confirmação!", handoff: false, reason: "", order: "confirmed" };
+    await say("5511980000051", "wamid.AI-S2", "Sim");
+    await settle();
+    expect((await conversationOf("5511980000051")).automationState).toMatchObject({ linkedOrder: { id: order.id } });
+  });
+
   it("pedido que o cliente diz não ser dele: a IA acha outro pelo número, e confirmá-lo não une os cadastros", async () => {
     const mine = await orderFor("5556", "+5511980000006");
     const other = await orderFor("5557");

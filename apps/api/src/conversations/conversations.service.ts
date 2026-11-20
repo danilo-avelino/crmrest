@@ -31,7 +31,8 @@ import type { Queue } from "bullmq";
 import { scheduleEvaluation } from "../ai/ai-evaluation.service.js";
 import { LlmClient } from "../ai/llm.client.js";
 import type { RequestAuth } from "../auth/auth.decorators.js";
-import { AUTOMATIC_ONLY, type AutomationState, channelSends, isPaused, localDate, setAutomationState, systemEvent, teamRepliedUpdate, WITH_TEAM } from "../automations/automation.js";
+import { AUTOMATIC_ONLY, type AutomationState, channelSends, closedNow, isPaused, localDate, setAutomationState, systemEvent, teamRepliedUpdate, WITH_TEAM } from "../automations/automation.js";
+import { PHONE_AT_END_DELAY_MS } from "../automations/phone-collection.service.js";
 import { contactsAwaitingDecision } from "../orders/fraud-alert.js";
 import { ENV, type Env } from "../config/env.js";
 import { ConnectorsService } from "../connectors/connectors.service.js";
@@ -99,9 +100,14 @@ export class ConversationsService {
   }
 
   async counts(auth: RequestAuth, tenantId?: string): Promise<ConversationCounts> {
-    const calling = { awaitingAgentSince: { not: null }, status: { not: "RESOLVED" } } satisfies Prisma.ConversationWhereInput;
-    const [groups, open, awaitingAgent, awaitingQuiet, oldestUrgent, unread] = await this.db.withTenants(scopeFor(auth, tenantId), (tx) =>
-      Promise.all([
+    const [groups, open, awaitingAgent, awaitingQuiet, oldestUrgent, unread] = await this.db.withTenants(scopeFor(auth, tenantId), async (tx) => {
+      // Restaurante fechado agora: os chamados dele ficam abertos na Inbox, mas fora do alarme (sem bipe nem voz) até a
+      // loja abrir. 19/11/2026: a Jardel Costa escreveu às 07:56, com a loja abrindo às 11:00.
+      const waiting = await tx.conversation.groupBy({ by: ["tenantId"], where: { awaitingAgentSince: { not: null }, status: { not: "RESOLVED" } } });
+      const closed: string[] = [];
+      for (const { tenantId: id } of waiting) if (await closedNow(tx, id)) closed.push(id);
+      const calling = { awaitingAgentSince: { not: null }, status: { not: "RESOLVED" }, tenantId: { notIn: closed } } satisfies Prisma.ConversationWhereInput;
+      return Promise.all([
         tx.conversation.groupBy({ by: ["status"], _count: { _all: true } }),
         tx.conversation.count({ where: { status: "OPEN", ...WITH_TEAM } }),
         tx.conversation.count({ where: calling }),
@@ -112,8 +118,8 @@ export class ConversationsService {
           select: { awaitingAgentSince: true },
         }),
         tx.conversation.aggregate({ where: { status: { not: "RESOLVED" } }, _sum: { unreadCount: true } }),
-      ]),
-    );
+      ]);
+    });
     const urgentSince = oldestUrgent?.awaitingAgentSince?.toISOString() ?? null;
     const counts: ConversationCounts = { OPEN: 0, PENDING: 0, RESOLVED: 0, awaitingAgent, awaitingQuiet, urgentSince, unread: unread._sum.unreadCount ?? 0 };
     for (const group of groups) counts[group.status] = group._count._all;
@@ -490,6 +496,11 @@ export class ConversationsService {
         data: {
           ...(body.status && { status: body.status }),
           ...(body.status === "RESOLVED" && { awaitingAgentSince: null }), // resolvida sem resposta: o alarme para
+          // Resolvida pela equipe: o entregador volta a ter o menu (só a resolução da automação mantém o silêncio, 19/11/2026).
+          ...(body.status === "RESOLVED" &&
+            (current.automationState as AutomationState).courierNoticeAt && {
+              automationState: { ...(current.automationState as AutomationState), courierNoticeAt: undefined },
+            }),
           ...(body.assignedUserId !== undefined && { assignedUserId: body.assignedUserId }),
           // Resolvida: só arquiva (o atendimento termina 1 h depois da última mensagem, ATTENDANCE_END_MS) e sai da aba
           // Ativos; se o cliente voltar antes, quem o atendia continua. Reaberta, deixada pendente ou atribuída: é da equipe.
@@ -506,7 +517,8 @@ export class ConversationsService {
     // A conversa só da equipe não teve atendimento: o cliente nem está nela.
     if (resolved && !conversation.teamOnly) {
       await this.automations.add("survey", { tenantId: conversation.tenantId, conversationId });
-      await this.automations.add("phone-at-end", { tenantId: conversation.tenantId, conversationId });
+      // Espera 5 min: colado na resposta do atendente, o pedido saía com a conversa ainda andando (18/11/2026).
+      await this.automations.add("phone-at-end", { tenantId: conversation.tenantId, conversationId }, { delay: PHONE_AT_END_DELAY_MS });
       await scheduleEvaluation(this.ai, conversation.tenantId, conversationId);
     }
     this.realtime.inboxChanged(conversation.tenantId, conversationId);

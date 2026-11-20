@@ -125,7 +125,11 @@ export class CourierMenuService {
       // A loja ainda conversa com ele (pelo celular ou pelo painel), mesmo com a conversa resolvida: o menu fica calado e
       // a conversa vai para a equipe; só a opção do menu ou o aviso inteiro numa frase seguem. 16/11/2026: "Posso volta?"
       // recebia "não consigo te entender" enquanto a loja respondia "volta" pelo celular.
-      if (await teamSpokeSince(tx, conversation.id, new Date(now - COURIER_TEAM_QUIET_MS))) {
+      // Texto até 10 min depois do aviso de chegada/portaria ou depois de chamar a equipe: também é conversa com a equipe,
+      // sem menu (19/11/2026: "4" e, no mesmo minuto, "6960 nada do cliente aparecer Aki" reabria o menu). Quem resolveu a
+      // conversa na mão (a equipe) limpa essa marca em ConversationsService.update, e então o menu abre normalmente.
+      const afterNotice = !!event.text?.trim() && !!state.courierNoticeAt && now - Date.parse(state.courierNoticeAt) < COURIER_PROOF_MS;
+      if (afterNotice || (await teamSpokeSince(tx, conversation.id, new Date(now - COURIER_TEAM_QUIET_MS)))) {
         const asked = courierShortcut(event.text);
         if (asked?.kind === "arrival" || asked?.kind === "front_desk") {
           return this.notifyCustomer(tx, conversation, state, messages, asked.code, asked.kind, { keepOpen: true });
@@ -153,12 +157,21 @@ export class CourierMenuService {
       if (/^\s*[1234](?!\d)/.test(event.text ?? "")) return this.chooseOption(tx, conversation, state, messages, event.text);
       return (await this.shortcut(tx, conversation, state, messages, event.text)) ?? this.chooseOption(tx, conversation, state, messages, event.text);
     }
+    // Só um dígito de 1 a 4 onde se espera o número do pedido é o entregador escolhendo a opção de novo, não o pedido #1
+    // (17/11/2026: "2", "1", "1" virou a nota "deixou o pedido #1 na portaria"): pede o número inteiro, sem gastar a tentativa.
+    if (
+      (state.triage === "awaiting_arrival_order" || state.triage === "awaiting_front_desk_order" || state.triage === "awaiting_problem_order") &&
+      /^\s*[1-4]\s*[.!]?\s*$/.test(event.text ?? "")
+    ) {
+      const id = await automationMessage(tx, conversation, "order_number_request", messages.courierOrderNumberRequest);
+      return { send: [id], done: false };
+    }
     if (state.triage === "awaiting_arrival_order") return this.notifyCustomer(tx, conversation, state, messages, event.text, "arrival");
     if (state.triage === "awaiting_front_desk_order") return this.notifyCustomer(tx, conversation, state, messages, event.text, "front_desk");
     if (state.triage === "awaiting_problem_order") return this.findProblemOrder(tx, conversation, state, messages, event.text);
     if (state.triage === "awaiting_problem") {
       const id = await automationMessage(tx, conversation, "handoff", messages.courierProblemForwarded);
-      await setAutomationState(tx, conversation.id, { ...state, triage: "done" });
+      await setAutomationState(tx, conversation.id, { ...state, triage: "done", courierNoticeAt: new Date().toISOString() });
       return { send: [id], done: false, handoff: true, handoffText: "Entregador relatou um problema com um pedido" };
     }
     // Atendimento já com a equipe: o aviso completo numa frase ainda vai para o cliente, sem encerrar a conversa
@@ -190,7 +203,7 @@ export class CourierMenuService {
     if (asked.kind === "arrival" || asked.kind === "front_desk") return this.notifyCustomer(tx, conversation, state, messages, asked.code, asked.kind);
     if (asked.kind === "problem") {
       const id = await automationMessage(tx, conversation, "handoff", messages.courierProblemForwarded);
-      await setAutomationState(tx, conversation.id, { ...state, triage: "done" });
+      await setAutomationState(tx, conversation.id, { ...state, triage: "done", courierNoticeAt: new Date().toISOString() });
       return { send: [id], done: false, handoff: true, handoffText: `Entregador relatou um problema: "${text!.trim().slice(0, 150)}"` };
     }
     if (asked.kind === "pickup") {
@@ -323,7 +336,8 @@ export class CourierMenuService {
    */
   private async findOrder(tx: TenantTx, conversation: Conversation, text: string | undefined, ifoodOnly: boolean) {
     // "Já deu os 10 mim" é tempo de espera, não o pedido #10 (13/11/2026).
-    const digits = text?.match(/(?<!\d)\d+(?!\d|\s*(?:mi[nm]|minutos?|reais|r\$))/i)?.[0];
+    // Um dígito só não é número de pedido (os da Inbox têm 2 a 6): era a opção do menu escolhida de novo (17/11/2026).
+    const digits = text?.match(/(?<!\d)\d{2,}(?!\d|\s*(?:mi[nm]|minutos?|reais|r\$))/i)?.[0];
     if (!digits) return null;
     const code = digits.replace(/^0+(?=\d)/, "");
     const now = new Date();
@@ -357,7 +371,7 @@ export class CourierMenuService {
 
   /** A equipe assume, sem urgência: o painel avisa com o som discreto, não com o alarme. */
   private async callTeam(tx: TenantTx, conversation: Conversation, state: AutomationState, messageId: string, note: string): Promise<Step> {
-    await setAutomationState(tx, conversation.id, { ...state, triage: "done" });
+    await setAutomationState(tx, conversation.id, { ...state, triage: "done", courierNoticeAt: new Date().toISOString() });
     return { send: [messageId], done: false, handoff: true, quiet: true, handoffText: note };
   }
 }

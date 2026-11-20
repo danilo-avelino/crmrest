@@ -145,8 +145,15 @@ describe("tags automáticas dos clientes", () => {
     // Avaliação de antes da nota em porcentagem (1 a 5): ignorada.
     const antiga = await contact("Avaliação antiga");
     await evaluate(antiga.id, { score: 2, satisfied: false, legacy: true }, daysAgo(3));
+    // Entregador e funcionário nunca entram (19/11/2026), nem os que já foram avaliados antes de receber a tag.
+    const entregador = await contact("Entregador avaliado", { tags: ["Entregador"] });
+    await evaluate(entregador.id, { score: 10, satisfied: false }, daysAgo(3));
+    const funcionario = await contact("Funcionário avaliado", { tags: ["Funcionário"] });
+    await evaluate(funcionario.id, { score: 75, churnRisk: 0.9 }, daysAgo(3));
 
     await refresh();
+    expect(await tagsOf(entregador.id)).toEqual(["Entregador"]);
+    expect(await tagsOf(funcionario.id)).toEqual(["Funcionário"]);
     expect(await tagsOf(notaBaixa.id)).toEqual(["Em recuperação"]);
     expect(await tagsOf(emRisco.id)).toEqual(["Em recuperação"]);
     expect(await tagsOf(reclamou.id)).toEqual(["Em recuperação"]);

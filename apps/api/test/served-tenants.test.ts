@@ -197,7 +197,13 @@ describe("canal que atende outros restaurantes", () => {
 
     it("problema com o pedido da outra unidade: o card fica na conversa com o nome dela", async () => {
       const order = await orderIn(unitB.id, ifoodB.id, "7102", "+5511970000211");
-      // Depois do aviso de chegada, a próxima mensagem começa um atendimento novo, com o menu do entregador.
+      // Depois do aviso de chegada, a próxima mensagem começa um atendimento novo, com o menu do entregador. Passados os
+      // 10 min do aviso: antes disso, o texto vai para a equipe sem o menu (19/11/2026).
+      const before = await conversationOf(courierWa);
+      await admin.conversation.update({
+        where: { id: before.id },
+        data: { automationState: { ...(before.automationState as object), courierNoticeAt: new Date(Date.now() - 60 * 60_000).toISOString() } },
+      });
       await courierSay("wamid.E4", "Oi");
       expect((await contents(courierWa)).at(-1)?.automation).toBe("courier_menu");
       expect((await conversationOf(courierWa)).status).toBe("OPEN");

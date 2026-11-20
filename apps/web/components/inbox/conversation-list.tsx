@@ -99,8 +99,8 @@ export function ConversationList({
   // Chamado sem urgência (entregador com outro assunto) tem a própria faixa, mas entra na mesma contagem falada.
   const quiet = allCounts.data?.awaitingQuiet ?? 0;
   const calling = (allCounts.data?.awaitingAgent ?? 0) - quiet;
-  const alarm = useAgentAlarm(calling + quiet);
-  useCallNotifications(allCounts.data ? { calling, quiet } : null, alarm.blocked);
+  const alarm = useAgentAlarm(calling + quiet, allCounts.data?.urgentSince ?? null);
+  useCallNotifications(allCounts.data ? { calling, quiet } : null, alarm.blocked, allCounts.data?.urgentSince ?? null);
 
   const items = conversations.data?.pages.flatMap((page) => page.items) ?? [];
   useUnreadSignals(items, calling + quiet);

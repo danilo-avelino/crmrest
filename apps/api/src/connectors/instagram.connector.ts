@@ -29,6 +29,9 @@ const ATTACHMENT_TEXT: Record<string, string> = {
   reel: "Compartilhou um reel.",
 };
 
+/** Anexos que são só curtida (coração do chat) ou compartilhamento de conteúdo, sem texto do cliente. */
+const SILENT_ATTACHMENTS = new Set(["like_heart", "share", "ig_post", "ig_reel", "reel", "story_mention"]);
+
 /** Converte os eventos de `entry.messaging` no formato interno (§6). */
 export function parseInstagram(channelId: string, events: unknown[]): ParsedWebhook {
   const result: ParsedWebhook = { messages: [], statuses: [], rejected: 0 };
@@ -52,7 +55,11 @@ export function parseInstagram(channelId: string, events: unknown[]): ParsedWebh
       continue;
     }
     // Eco: mensagem enviada pela própria conta (pelo Dish Desk ou pelo app). Não é do cliente.
+    // Curtida (evento `reaction`, sem `message`) cai aqui também e não vira mensagem.
     if (!message || message.is_echo) continue;
+    // Curtir ou compartilhar uma publicação, reel ou story sem escrever nada não é pedido de atendimento: não vira
+    // mensagem, então não abre conversa nem aciona a IA (19/11/2026: "Em que posso ajudar?" respondido a uma curtida).
+    if (!message.text?.trim() && message.attachments?.length && message.attachments.every((a) => SILENT_ATTACHMENTS.has(a.type))) continue;
 
     const normalized = NormalizedMessage.safeParse({
       channelId,
@@ -80,6 +87,8 @@ function messageBody(message: NonNullable<z.infer<typeof IgEvent>["message"]>) {
       media: { mimeType: `${attachment.type === "file" ? "application" : attachment.type}/*`, url: attachment.payload.url },
     };
   }
+  // Compartilhamento com texto do cliente: vale o que ele escreveu.
+  if (message.text?.trim()) return { type: "TEXT" as const, text: message.text };
   return { type: "TEXT" as const, text: ATTACHMENT_TEXT[attachment.type] ?? "Mensagem de um tipo que o Dish Desk ainda não exibe." };
 }
 

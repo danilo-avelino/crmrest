@@ -26,6 +26,9 @@ const RECENT_CONTACT_MS = 24 * 60 * 60 * 1000;
  */
 export const NOTICE_LIMIT_MS = 2 * 60 * 60 * 1000;
 
+/** Quanto antes o iFood avisou a entrega no chat para o nosso aviso não repetir. */
+const IFOOD_DELIVERED_WINDOW_MS = 2 * 60 * 1000;
+
 /**
  * Avisos ao cliente sobre o andamento do pedido, na conversa do cadastro dele (WhatsApp, Instagram) e, se ele
  * escreveu no chat do iFood do pedido, também lá.
@@ -75,6 +78,9 @@ export class OrderNoticeService {
       const messages = automationMessagesOf(await tenantSettings(tx, tenantId));
       const notices = [];
       for (const target of targets) {
+        // O iFood já avisou a entrega no chat com a mensagem padrão dele ("Seu pedido acaba de ser entregue", vem como saída da Loja):
+        // o nosso aviso saía junto e o cliente lia duas vezes (Nippon e Terra Querida, 17 e 18/11/2026; o dele chegou 3 a 30 s antes em todos).
+        if (status === "DELIVERED" && target.channel.type === "IFOOD" && (await ifoodSaidDelivered(tx, target.id, order.externalOrderId, now))) continue;
         const messageId =
           status === "READY"
             ? await automationMessage(tx, target, "order_ready", readyNoticeMessage(code, messages))
@@ -234,6 +240,21 @@ export class OrderNoticeService {
         : undefined;
     return [conversation, ifoodChat].filter((target) => target !== undefined);
   }
+}
+
+/** O iFood já mandou, neste chat do pedido e há pouco, o aviso padrão dele de pedido entregue. */
+async function ifoodSaidDelivered(tx: TenantTx, conversationId: string, externalOrderId: string, now: Date): Promise<boolean> {
+  const found = await tx.message.findFirst({
+    where: {
+      conversationId,
+      direction: "OUTBOUND",
+      externalMessageId: { startsWith: ifoodChatKey(externalOrderId) },
+      createdAt: { gt: new Date(now.getTime() - IFOOD_DELIVERED_WINDOW_MS) },
+      content: { path: ["text"], string_starts_with: "Seu pedido acaba de ser entregue" },
+    },
+    select: { id: true },
+  });
+  return found !== null;
 }
 
 function canceledText(order: { displayCode: string | null; externalOrderId: string; contact: { name: string | null } }, messages: AutomationMessages): string {

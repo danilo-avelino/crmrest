@@ -418,6 +418,29 @@ describe("menu de atendimento, busca do pedido e pesquisa de satisfação", () =
     }
   });
 
+  it("chamado com o restaurante fechado fica aberto na Inbox, mas fora do alarme até a loja abrir", async () => {
+    // 19/11/2026: item 13 da varredura de 17–18/11 (Jardel Costa, 07:56, loja abrindo às 11:00).
+    await say("5511970000099", "wamid.FQ1", "Oi");
+    await say("5511970000099", "wamid.FQ2", "Vocês entregam no Centro?");
+    const days = Array.from({ length: 7 }, () => null); // fechado todos os dias
+    await admin.tenant.update({ where: { id: fx.tenant.id }, data: { settings: { businessHours: { enabled: true, days, closedMessage: "Fechado." } } } });
+    try {
+      await say("5511970000099", "wamid.FQ3", "Entregam?"); // segunda resposta fora das opções: chama a equipe
+      const called = await conversationOf("5511970000099");
+      expect(called).toMatchObject({ status: "OPEN", awaitingAgentQuiet: false });
+      expect(called.awaitingAgentSince).not.toBeNull();
+      const counts = async () =>
+        (await request(app.getHttpServer()).get("/api/conversations/counts").set("Authorization", `Bearer ${token}`).expect(200)).body;
+      expect(await counts()).toMatchObject({ awaitingAgent: 0, awaitingQuiet: 0, urgentSince: null });
+      // A loja abriu: o mesmo chamado volta ao alarme.
+      await admin.tenant.update({ where: { id: fx.tenant.id }, data: { settings: {} } });
+      expect((await counts()).awaitingAgent).toBeGreaterThanOrEqual(1);
+      await admin.conversation.update({ where: { id: called.id }, data: { status: "RESOLVED", awaitingAgentSince: null } }); // não conta nos números dos testes seguintes
+    } finally {
+      await admin.tenant.update({ where: { id: fx.tenant.id }, data: { settings: {} } });
+    }
+  });
+
   it("personalidade escolhida: menu, pedido não encontrado e passagem à equipe no tom dela", async () => {
     await admin.tenant.update({ where: { id: fx.tenant.id }, data: { settings: { personality: "descontraido" } } });
     try {

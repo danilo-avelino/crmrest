@@ -24,6 +24,13 @@ import { ATTENDANCE_END_MS } from "./inactivity.service.js";
 export const PHONE_REMINDER_DELAY_MS = 10 * 60_000;
 
 /**
+ * Espera entre a equipe resolver a conversa e o pedido do telefone. Colado na resposta do atendente, o pedido saía com a
+ * conversa ainda andando (18/11/2026: a Marisa recebeu e escreveu de novo 12 min depois; 17/11: o Gladyson, logo depois de
+ * perguntar "Vai demorar muito ainda?"). Se o cliente escrever nesse intervalo, a conversa reabre e o pedido não sai.
+ */
+export const PHONE_AT_END_DELAY_MS = 5 * 60_000;
+
+/**
  * Pede o telefone a quem chega sem ele (Instagram, chat do iFood) e cadastra o número informado: é o que qualifica o
  * contato. Se o número já é de outro cadastro, pode ser a mesma pessoa em outro canal, mas nada prova que o número é
  * de quem digitou: a equipe decide se une os dois (Clientes → Duplicados).
@@ -94,6 +101,8 @@ export class PhoneCollectionService {
       const { type } = conversation.channel;
       if (!channelSends(type, this.env) || CHANNEL_CAPABILITIES[type].providesPhone) return null;
       const state = conversation.automationState as AutomationState;
+      // Conversa reaberta (o cliente escreveu depois de resolvida): o atendimento continua, e o pedido espera o próximo fim.
+      if (conversation.status !== "RESOLVED") return null;
       if (state.phoneCollection || conversation.contact.phone || !(await teamSpoke(tx, conversationId))) return null;
       // Sem mensagem do cliente (só a loja escreveu no chat do pedido), não há com quem falar: nada de pedir o telefone.
       if (!(await customerWrote(tx, conversationId))) return null;
@@ -144,6 +153,7 @@ export class PhoneCollectionService {
         id: true,
         tenantId: true,
         channelId: true,
+        status: true,
         automationState: true,
         channel: { select: { type: true } },
         contact: { select: { id: true, phone: true } },

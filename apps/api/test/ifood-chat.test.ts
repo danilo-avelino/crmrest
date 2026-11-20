@@ -5,6 +5,7 @@ import type { Job, Queue } from "bullmq";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it, onTestFinished, vi } from "vitest";
 import { ATTENDANCE_END_MS, INACTIVITY_CLOSE_MS, InactivityService } from "../src/automations/inactivity.service.js";
+import { PHONE_AT_END_DELAY_MS } from "../src/automations/phone-collection.service.js";
 import { OrderNoticeService } from "../src/orders/order-notice.service.js";
 import { IFOOD_CHAT_WAIT_MS, OutboundProcessor } from "../src/outbound/outbound.processor.js";
 import { type OutboundJob, QUEUES } from "../src/queues/queues.module.js";
@@ -228,6 +229,21 @@ describe("Chat do iFood na Inbox (trava IFOOD_CHAT_BRIDGE ligada)", () => {
     // A equipe resolve: agora o telefone é pedido, e a resposta com ele é cadastrada sem chamar a equipe.
     await request(app.getHttpServer()).patch(`/api/conversations/${chat.id}`).set("Authorization", `Bearer ${token}`).send({ status: "RESOLVED" }).expect(200);
     await settle();
+    // O pedido espera 5 min, e não sai colado na resposta do atendente (19/11/2026).
+    const atEnd = async () => (await app.get<Queue>(getQueueToken(QUEUES.automations)).getDelayed()).filter((job) => job.name === "phone-at-end" && job.data.conversationId === chat.id);
+    expect(await atEnd()).toHaveLength(1);
+    expect((await atEnd())[0]!.opts.delay).toBe(PHONE_AT_END_DELAY_MS);
+    expect((await timeline(chat.id)).map((m) => m.content)).not.toContainEqual({ automation: "phone_collection", text: expect.any(String) });
+    // O cliente escreve no intervalo: a conversa reabre e, passados os 5 min, o pedido não sai.
+    await admin.conversation.update({ where: { id: chat.id }, data: { status: "OPEN" } });
+    await (await atEnd())[0]!.promote();
+    await settle();
+    expect((await timeline(chat.id)).map((m) => m.content)).not.toContainEqual({ automation: "phone_collection", text: expect.any(String) });
+    // Resolvida de novo e sem o cliente escrever: passados os 5 min, o pedido sai.
+    await request(app.getHttpServer()).patch(`/api/conversations/${chat.id}`).set("Authorization", `Bearer ${token}`).send({ status: "RESOLVED" }).expect(200);
+    await settle();
+    await (await atEnd())[0]!.promote();
+    await settle();
     expect((await timeline(chat.id)).map((m) => m.content)).toContainEqual({ automation: "phone_collection", text: expect.any(String) });
     const answer = shown("INBOUND", "86999887766", new Date(Date.now() + 4000));
     await post("/ifood-chat/sync", { orderCode: "6534", messages: [old, reply, shown("INBOUND", "Pode mandar sem gelo", new Date(Date.now() + 2000)), answer] }).expect(200);
@@ -414,6 +430,25 @@ describe("Chat do iFood na Inbox (trava IFOOD_CHAT_BRIDGE ligada)", () => {
     await notices.statusChanged(fx.tenant.id, quiet.id, "READY");
     const silent = await admin.conversation.findFirstOrThrow({ where: { contactId: quiet.contactId, channelId: fx.ifood.id } });
     expect((await timeline(silent.id)).filter((m) => (m.content as { automation?: string }).automation)).toEqual([]);
+  });
+
+  it("o iFood já avisou a entrega no chat com a mensagem dele: o nosso aviso de entregue não repete (17 e 18/11)", async () => {
+    const notices = app.get(OrderNoticeService);
+    const done = await ifoodOrder("6589", "Yuri Santos");
+    await post("/ifood-chat/sync", { orderCode: "6589", messages: [shown("INBOUND", "Cadê meu pedido?", minutesAgo(1))] }).expect(200);
+    await settle();
+    await typeOutbox();
+    const chat = await admin.conversation.findFirstOrThrow({ where: { contactId: done.contactId, channelId: fx.ifood.id } });
+    const delivered = async () => (await timeline(chat.id)).filter((m) => (m.content as { automation?: string }).automation === "order_delivered");
+    const ifoodSays = shown("OUTBOUND", "Seu pedido acaba de ser entregue 🥳pode conferir na portaria/recepção!", new Date());
+    await post("/ifood-chat/sync", { orderCode: "6589", messages: [shown("INBOUND", "Cadê meu pedido?", minutesAgo(1)), ifoodSays] }).expect(200);
+    await notices.statusChanged(fx.tenant.id, done.id, "DELIVERED");
+    expect(await delivered()).toHaveLength(0);
+    // Sem o aviso do iFood (ou com ele de mais de 2 min atrás), o nosso sai.
+    await admin.message.updateMany({ where: { conversationId: chat.id, content: { path: ["text"], string_starts_with: "Seu pedido acaba de ser entregue" } }, data: { createdAt: minutesAgo(3) } });
+    await notices.statusChanged(fx.tenant.id, done.id, "DELIVERED");
+    expect(await delivered()).toHaveLength(1);
+    await typeOutbox();
   });
 
   it("pedido que já saiu quando o chat começa: o aviso da saída vai logo depois do chamado, uma vez só", async () => {
@@ -650,6 +685,67 @@ describe("Chat do iFood na Inbox (trava IFOOD_CHAT_BRIDGE ligada)", () => {
     await typeOutbox();
   });
 
+  it("entregador escreve texto logo depois do aviso: vai para a equipe sem o menu; se a equipe resolveu, o menu volta", async () => {
+    // 19/11/2026: "6960 nada do cliente aparecer Aki" depois do aviso reabria o menu "Olá, Ronald!".
+    await ifoodOrder("6585", "Vera Lima");
+    const waId = "5511970000045";
+    await admin.contact.create({
+      data: { tenantId: fx.tenant.id, name: "Ivo Entregador", tags: ["Entregador"], identities: { create: { tenantId: fx.tenant.id, channelType: "WHATSAPP", externalId: waId } } },
+    });
+    const courier = () =>
+      admin.conversation.findFirstOrThrow({
+        where: { channelId: fx.whatsapp.id, contact: { identities: { some: { channelType: "WHATSAPP", externalId: waId } } } },
+        include: { messages: { orderBy: { createdAt: "asc" } } },
+      });
+    const send = (message: object) =>
+      postMetaWebhook(app, metaPayload(fx.whatsapp.externalId, { contacts: [{ profile: { name: "Ivo" }, wa_id: waId }], messages: [message] })).expect(200);
+    const at = () => String(Math.floor(Date.now() / 1000));
+    const automations = async () => (await courier()).messages.flatMap((m) => (m.content as { automation?: string }).automation ?? []);
+    await send({ from: waId, id: "wamid.TXT1", timestamp: at(), type: "text", text: { body: "6585 cheguei" } });
+    await until(async () => expect(await automations()).toEqual(["courier_arrival_confirmed"]));
+
+    await send({ from: waId, id: "wamid.TXT2", timestamp: at(), type: "text", text: { body: "6585 nada do cliente aparecer aqui" } });
+    await until(async () => expect((await courier()).messages.some((m) => m.externalMessageId === "wamid.TXT2")).toBe(true));
+    await settle();
+    expect(await automations()).toEqual(["courier_arrival_confirmed"]);
+    expect((await courier()).awaitingAgentSince).not.toBeNull();
+
+    // A equipe resolveu a conversa na mão: o próximo texto abre o menu de novo.
+    const { id } = await courier();
+    await request(app.getHttpServer()).patch(`/api/conversations/${id}`).set("Authorization", `Bearer ${token}`).send({ status: "RESOLVED" }).expect(200);
+    await send({ from: waId, id: "wamid.TXT3", timestamp: at(), type: "text", text: { body: "Oi" } });
+    await until(async () => expect(await automations()).toEqual(["courier_arrival_confirmed", "courier_menu"]));
+    await typeOutbox();
+  });
+
+  it("entregador manda só um dígito onde o menu pede o número do pedido: pede o número inteiro, sem gastar a tentativa nem chamar a equipe", async () => {
+    // 17/11/2026: "2", "1", "1" virou a nota "deixou o pedido #1 na portaria".
+    const waId = "5511970000046";
+    await admin.contact.create({
+      data: { tenantId: fx.tenant.id, name: "Savio Entregador", tags: ["Entregador"], identities: { create: { tenantId: fx.tenant.id, channelType: "WHATSAPP", externalId: waId } } },
+    });
+    const courier = () =>
+      admin.conversation.findFirstOrThrow({
+        where: { channelId: fx.whatsapp.id, contact: { identities: { some: { channelType: "WHATSAPP", externalId: waId } } } },
+        include: { messages: { orderBy: { createdAt: "asc" } } },
+      });
+    const say = async (id: string, body: string, last: object) => {
+      const message = { from: waId, id, timestamp: String(Math.floor(Date.now() / 1000)), type: "text", text: { body } };
+      await postMetaWebhook(app, metaPayload(fx.whatsapp.externalId, { contacts: [{ profile: { name: "Savio" }, wa_id: waId }], messages: [message] })).expect(200);
+      await until(async () => expect((await courier()).messages.at(-1)!.content).toMatchObject(last));
+    };
+    await say("wamid.DGT1", "Oi", { automation: "courier_menu" });
+    await say("wamid.DGT2", "2", { automation: "order_number_request" });
+    await say("wamid.DGT3", "1", { automation: "order_number_request" });
+    await say("wamid.DGT4", "1", { automation: "order_number_request" });
+    const after = await courier();
+    expect(after.automationState).toMatchObject({ triage: "awaiting_front_desk_order" });
+    expect(after.automationState).not.toHaveProperty("orderRetried");
+    expect(after.awaitingAgentSince).toBeNull();
+    expect(after.messages.some((m) => (m.content as { event?: string }).event === "handoff")).toBe(false);
+    await typeOutbox();
+  });
+
   it("só a loja escreveu no chat do pedido: ao resolver, o telefone não é pedido", async () => {
     // 16/11/2026: o Fabrício e a Erna só receberam recados da loja e, no fim, o pedido do telefone.
     const quiet = await ifoodOrder("6584", "Fabio Rocha");
@@ -768,6 +864,8 @@ describe("Chat do iFood na Inbox (trava IFOOD_CHAT_BRIDGE ligada)", () => {
 
     // Atendimento novo começando pelo número: o menu pergunta o aviso, e a opção usa o número sem pedir de novo.
     await admin.message.updateMany({ where: { conversationId: (await courier()).id }, data: { createdAt: minutesAgo(60) } });
+    // Passou mais de 10 min do aviso (depois disso, texto sem o menu só vale dentro da janela, 19/11/2026).
+    await admin.conversation.update({ where: { id: (await courier()).id }, data: { automationState: { triage: "done", courierNoticeAt: minutesAgo(60).toISOString() } } });
     await say("wamid.FREE2", "6543", "courier_menu");
     expect((await courier()).automationState).toMatchObject({ triage: "awaiting_option", courierOrder: "6543" });
     await say("wamid.FREE3", "1", "courier_arrival_confirmed");
@@ -993,6 +1091,94 @@ describe("Chat do iFood com o módulo Atendimento com IA", () => {
       },
       { timeout: 15_000, interval: 100 },
     );
+  });
+
+  /** Pedido do iFood novo para um cliente novo; `sync` copia o chat do pedido e espera a IA e as automações. */
+  const chatOf = async (code: string, name: string) => {
+    const contact = await admin.contact.create({
+      data: { tenantId: fx.tenant.id, name, identities: { create: { tenantId: fx.tenant.id, channelType: "IFOOD", externalId: `cliente-${code}` } } },
+    });
+    await admin.order.create({
+      data: {
+        tenantId: fx.tenant.id, contactId: contact.id, channelId: fx.ifood.id, externalOrderId: randomUUID(), displayCode: code,
+        status: "CONFIRMED", subtotal: 40, deliveryFee: 5, total: 45, placedAt: minutesAgo(20), raw: {},
+      },
+    });
+    return {
+      sync: async (messages: object[]) => {
+        await request(app.getHttpServer()).post("/api/ifood-chat/sync").set("Authorization", `Bearer ${token}`).send({ orderCode: code, messages }).expect(200);
+        await new Promise((resolve) => setTimeout(resolve, 3500));
+      },
+      read: () => admin.conversation.findFirstOrThrow({ where: { tenantId: fx.tenant.id, contactId: contact.id }, include: { messages: { orderBy: { createdAt: "asc" } } } }),
+    };
+  };
+  const aiReplied = (chat: { messages: { content: unknown }[] }) => chat.messages.some((m) => (m.content as { aiReply?: boolean }).aiReply);
+
+  it("a mensagem padrão de entrega do iFood não cala a IA diante da queixa do cliente (Pablo, 18/11)", async () => {
+    const chat = await chatOf("7011", "Pablo Luca");
+    await chat.sync([
+      shown("OUTBOUND", "Seu pedido acaba de ser entregue 🥳pode conferir na portaria/recepção!", minutesAgo(2)),
+      shown("INBOUND", "Acredito que a carne não está boa!", minutesAgo(1)),
+    ]);
+    const read = await chat.read();
+    expect(aiReplied(read)).toBe(true);
+    expect(read.automationState).toMatchObject({ ai: "on" });
+  });
+
+  it("a loja fala no meio da leitura (cliente, loja, cliente): a IA não responde por cima (Ana Paula, 18/11)", async () => {
+    const chat = await chatOf("7012", "Ana Paula Lopes");
+    await chat.sync([
+      shown("INBOUND", "Até a portaria?", minutesAgo(2)),
+      shown("OUTBOUND", "ele esta na portaria", new Date(Date.now() - 50_000)),
+      shown("INBOUND", "Paguei delivery", new Date(Date.now() - 20_000)),
+    ]);
+    const read = await chat.read();
+    expect(aiReplied(read)).toBe(false);
+    expect(read.automationState).not.toMatchObject({ ai: "on" });
+    expect(read.awaitingAgentSince).not.toBeNull();
+  });
+
+  it("a loja puxa o assunto (pergunta digitada, sem emoji) e o cliente responde: a IA não entra (Nazir, 18/11)", async () => {
+    const chat = await chatOf("7013", "Nazir Reis");
+    const asked = shown("OUTBOUND", "ola, boa tarde, seu pedido esta em rota de entrega, qual e a entrada ?", minutesAgo(3));
+    await chat.sync([asked]);
+    await chat.sync([asked, shown("INBOUND", "boa noite, a entrada principal", minutesAgo(1))]);
+    expect(aiReplied(await chat.read())).toBe(false);
+  });
+
+  it("atalho que a equipe digita em vários chats (entregador no local) é da loja: o cliente responde e a IA não entra (Denis, 18/11)", async () => {
+    const shortcut = "Boa Noite, entregador está no local. Por favor vá ate a porta/portaria para recebimento!";
+    const earlier = await chatOf("7014", "Cliente Atalho");
+    await earlier.sync([shown("OUTBOUND", shortcut, minutesAgo(30))]);
+    const chat = await chatOf("7015", "Denis Mura");
+    const ok = shown("INBOUND", "Ok", minutesAgo(3));
+    const macro = shown("OUTBOUND", shortcut, minutesAgo(2));
+    await chat.sync([ok, macro]);
+    await chat.sync([ok, macro, shown("INBOUND", "Já estou indo", minutesAgo(1))]);
+    expect(aiReplied(await chat.read())).toBe(false);
+  });
+
+  it('"Adicionar observação ao pedido": pergunta qual é, sem chamar a equipe; a observação chama com ela na nota (Terra Querida, 18/11)', async () => {
+    const chat = await chatOf("7016", "José Arthur");
+    const button = shown("INBOUND", "Adicionar observação ao pedido", minutesAgo(2));
+    await chat.sync([button]);
+    const asked = await chat.read();
+    expect(asked.messages.map((m) => (m.content as { automation?: string }).automation)).toContain("ifood_observation_ask");
+    expect(asked.awaitingAgentSince).toBeNull();
+    expect(aiReplied(asked)).toBe(false);
+
+    await chat.sync([button, shown("INBOUND", "é troco pra 100", minutesAgo(1))]);
+    const done = await chat.read();
+    expect(done.awaitingAgentSince).not.toBeNull();
+    expect(done.messages.some((m) => (m.content as { event?: string; text?: string }).event === "handoff" && /troco pra 100/.test((m.content as { text?: string }).text ?? ""))).toBe(true);
+    expect(aiReplied(done)).toBe(false);
+
+    // Observação junto com o botão: chama direto.
+    const direct = await chatOf("7017", "Vitor Rodrigues");
+    await direct.sync([shown("INBOUND", "Adicionar observação ao pedido\nsem cebola", minutesAgo(1))]);
+    const read = await direct.read();
+    expect(read.awaitingAgentSince).not.toBeNull();
+    expect(read.messages.map((m) => (m.content as { automation?: string }).automation)).not.toContain("ifood_observation_ask");
   });
 
   /** Cliente com dois pedidos na loja: uma conversa só na Inbox, um chat por pedido no iFood. */

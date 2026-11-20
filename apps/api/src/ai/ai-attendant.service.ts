@@ -611,7 +611,16 @@ export class AiAttendantService {
       const confirmed = pending && offered && answer?.order === "confirmed" ? pending.id : null;
       const deniedId = pending && offered && answer?.order === "denied" ? pending.id : null;
       const code = (pending?.displayCode ?? pending?.externalOrderId ?? "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      const offers = !!pending && !confirmed && !deniedId && !!answer && new RegExp(`(?<!\\d)${code}(?!\\d)`).test(answer.reply);
+      // A IA também mostra o pedido pela data, os itens e o total, sem o número (#41962, 18/11/2026: "pedido de 18/11, às 19:28,
+      // com 2x Poke Nippon, total de R$ 79,98"): sem contar isso, o "Sim" do cliente não confirmava, a conversa ficou sem
+      // pedido ligado e os avisos de saída e entrega nunca saíram.
+      const total = pending ? BRL.format(Number(pending.total)).replace(/ /g, " ") : "";
+      const offers =
+        !!pending &&
+        !confirmed &&
+        !deniedId &&
+        !!answer &&
+        (new RegExp(`(?<!\\d)${code}(?!\\d)`).test(answer.reply) || answer.reply.replace(/ /g, " ").includes(total));
       const notify = confirmed ? await this.confirmOrder(tx, conversationId, confirmed, pending!.byNumber) : [];
       const reason = answer?.reason.trim().slice(0, 200) || undefined;
       // Parece entregador e o cadastro não tem a tag: a conversa abre com a pergunta à equipe, uma vez por atendimento.

@@ -24,6 +24,11 @@ import { askedPhone, extractPhone, PhoneCollectionService } from "./phone-collec
 import { SurveyService } from "./survey.service.js";
 import { AI_REPLY_DELAY_MS } from "./triage.service.js";
 
+/** Mensagem pronta do iFood, sem acento e minúscula (o texto é comparado normalizado abaixo). */
+const OBSERVATION_BUTTON = /^adicionar observacao( ao pedido)?$/i;
+/** A resposta ao "qual observação?" vale por este tempo. */
+const OBSERVATION_WAIT_MS = 60 * 60_000;
+
 /**
  * Cliente que escreve no chat do iFood: sem menu, porque é sempre um problema com o pedido. Com o módulo Atendimento com
  * IA, a IA atende (já sabendo o pedido da conversa) e só chama a equipe quando precisar. Sem ele, cada atendimento novo
@@ -46,6 +51,7 @@ export class IfoodAttendanceService {
   async afterInbound(event: InboundEvent, orderId: string): Promise<void> {
     // A pesquisa não sai mais no iFood; esta é a nota de quem já tinha sido perguntado.
     if (await this.survey.handleAnswer(event)) return;
+    if (await this.observation(event, orderId)) return;
     if (await this.aiTakes(event, orderId)) return;
     // Sem a IA, quem atende o cliente é a equipe: a conversa vai para a aba Ativos.
     await leaveToTeam(this.db, event.channel.tenantId, event.conversationId);
@@ -88,6 +94,50 @@ export class IfoodAttendanceService {
       return ids;
     });
     await dispatch(this.outbound, this.realtime, tenantId, event.conversationId, messageIds);
+  }
+
+  /**
+   * O iFood manda a mensagem pronta "Adicionar observação ao pedido" sem a observação, que o cliente escreve depois em
+   * mensagens soltas (18/11/2026: o "é troco pra 100" do pedido #6380 chegou sem alarme e o pedido saiu sem troco). A
+   * automação pergunta qual é e só então chama a equipe, com a observação na nota. Com a observação junto, chama direto.
+   * Vale com ou sem a IA: quem inclui a observação no pedido é a equipe.
+   */
+  private async observation(event: InboundEvent, orderId: string, now = new Date()): Promise<boolean> {
+    const { tenantId } = event.channel;
+    const lines = (event.text ?? "").split("\n").map((line) => line.trim()).filter(Boolean);
+    const rest = lines.filter((line) => !OBSERVATION_BUTTON.test(line.normalize("NFD").replace(/\p{M}/gu, "").replace(/[.!\s]+$/, "")));
+    const pressed = rest.length < lines.length;
+    const result = await this.db.withTenants({ tenantIds: [tenantId] }, async (tx) => {
+      const conversation = await tx.conversation.findUniqueOrThrow({
+        where: { id: event.conversationId },
+        select: { id: true, tenantId: true, channelId: true, automationState: true },
+      });
+      const state = conversation.automationState as AutomationState;
+      const askedAt = state.ifoodObservationAskedAt ? new Date(state.ifoodObservationAskedAt).getTime() : 0;
+      const waiting = now.getTime() - askedAt < OBSERVATION_WAIT_MS;
+      if (!pressed && !waiting) return null;
+      const linkedOrder = state.linkedOrder ?? { id: orderId, at: now.toISOString() };
+      if (pressed && !rest.length) {
+        // Tocou de novo sem escrever nada: a pergunta já foi feita.
+        if (waiting) return { send: [] as string[] };
+        const messages = automationMessagesOf(await tenantSettings(tx, tenantId));
+        const id = await automationMessage(tx, conversation, "ifood_observation_ask", messages.ifoodObservationAsk);
+        await setAutomationState(tx, conversation.id, { ...state, triage: "done", linkedOrder, ifoodObservationAskedAt: now.toISOString() });
+        return { send: [id] };
+      }
+      const observation = rest.join(" ").trim();
+      if (!observation) return null;
+      const messages = automationMessagesOf(await tenantSettings(tx, tenantId));
+      const id = await automationMessage(tx, conversation, "handoff", messages.ifoodHandoff);
+      await systemEvent(tx, conversation, { event: "handoff", text: `Cliente pediu para adicionar uma observação ao pedido: "${observation}"` });
+      await setAutomationState(tx, conversation.id, { ...state, triage: "done", linkedOrder, ifoodObservationAskedAt: undefined, ...(state.ai && { ai: "off" as const }) });
+      await tx.conversation.update({ where: { id: conversation.id }, data: { teamInvolved: true } });
+      await callTeam(tx, conversation.id);
+      return { send: [id] };
+    });
+    if (!result) return false;
+    await dispatch(this.outbound, this.realtime, tenantId, event.conversationId, result.send);
+    return true;
   }
 
   /**

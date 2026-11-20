@@ -23,17 +23,30 @@ describe("webhook do Instagram", () => {
         timestamp: now,
         message: { mid: "m2", attachments: [{ type: "image", payload: { url: "https://cdn.example/foto.jpg" } }] },
       },
-      { sender: { id: "IGSID1" }, timestamp: now, message: { mid: "m3", attachments: [{ type: "story_mention", payload: {} }] } },
+      { sender: { id: "IGSID1" }, timestamp: now, message: { mid: "m3", text: "olha isso", attachments: [{ type: "share", payload: {} }] } },
       { sender: { id: "IG" }, timestamp: now, message: { mid: "m4", text: "resposta da loja", is_echo: true } },
       { sender: { id: "IGSID1" }, timestamp: now, read: { mid: "mid.OUT1" } },
     ]);
     expect(messages.map((m) => [m.externalMessageId, m.type, m.text])).toEqual([
       ["m1", "TEXT", "Oi"],
       ["m2", "IMAGE", undefined],
-      ["m3", "TEXT", "Mencionou o restaurante nos stories."],
+      ["m3", "TEXT", "olha isso"],
     ]);
     expect(messages[1]!.media).toEqual({ mimeType: "image/*", url: "https://cdn.example/foto.jpg" });
     expect(statuses).toEqual([expect.objectContaining({ externalMessageId: "mid.OUT1", status: "READ" })]);
+  });
+
+  it("curtida e compartilhamento sem texto não viram mensagem (não acionam a IA)", () => {
+    const now = Date.now();
+    const { messages, rejected } = parseInstagram("01a10330-b8c8-750e-95d2-fcb1c581d8de", [
+      { sender: { id: "IGSID1" }, timestamp: now, reaction: { mid: "mid.OUT1", action: "react", reaction: "love" } },
+      { sender: { id: "IGSID1" }, timestamp: now, message: { mid: "c1", attachments: [{ type: "like_heart", payload: {} }] } },
+      { sender: { id: "IGSID1" }, timestamp: now, message: { mid: "c2", attachments: [{ type: "share", payload: { url: "https://ig/p/1" } }] } },
+      { sender: { id: "IGSID1" }, timestamp: now, message: { mid: "c3", attachments: [{ type: "ig_reel", payload: {} }] } },
+      { sender: { id: "IGSID1" }, timestamp: now, message: { mid: "c4", attachments: [{ type: "story_mention", payload: {} }] } },
+    ]);
+    expect(messages).toEqual([]);
+    expect(rejected).toBe(0);
   });
 
   it("acha o telefone no meio da resposta do cliente", () => {

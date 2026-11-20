@@ -1,5 +1,5 @@
 import type { TenantTx } from "@dishdesk/database";
-import { AUTO_TAG_RULES, MANUAL_TAGS, RECOVERY_TAG } from "@dishdesk/shared";
+import { AUTO_TAG_RULES, COURIER_TAG, MANUAL_TAGS, RECOVERY_TAG, STAFF_TAG } from "@dishdesk/shared";
 import { InjectQueue } from "@nestjs/bullmq";
 import { Injectable, Logger, type OnModuleInit } from "@nestjs/common";
 import * as Sentry from "@sentry/nestjs";
@@ -58,7 +58,9 @@ export async function refreshContactTags(tx: TenantTx, now = new Date()): Promis
           CASE WHEN k.last_order < ${since(rules.goneDays)} THEN 'Sumido' END,
           CASE WHEN r.score <= ${rules.upsetMaxScore} THEN 'Insatisfeito' END,
           -- Sai com o primeiro pedido feito depois do atendimento ruim.
-          CASE WHEN b.at > COALESCE(k.last_order, '-infinity'::timestamptz) THEN ${RECOVERY_TAG} END
+          -- Entregador e funcionário nunca entram (19/11/2026: emanuel e Wallysson, avaliados antes de virarem entregador).
+          CASE WHEN b.at > COALESCE(k.last_order, '-infinity'::timestamptz)
+            AND NOT (${COURIER_TAG} = ANY(c.tags) OR ${STAFF_TAG} = ANY(c.tags)) THEN ${RECOVERY_TAG} END
         ], NULL) AS tags
       FROM contacts c
       LEFT JOIN ranked k ON k.contact_id = c.id

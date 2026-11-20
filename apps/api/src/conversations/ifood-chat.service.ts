@@ -44,16 +44,18 @@ const STORE_REPLY_MS = 5 * 60_000;
  */
 const STORE_TEMPLATE_MS = 3 * 24 * HOUR_MS;
 
-/** Balões da loja até este tempo um do outro são uma pessoa digitando. */
-const TYPED_BURST_MS = 60_000;
+const EMOJI = /\p{Extended_Pictographic}/u;
+/** Mensagens que o próprio iFood manda pela loja (entrega, pedido recebido). */
+const IFOOD_STANDARD = /acaba de ser entregue|recebemos o seu pedido/i;
 
-/** O balão da loja `index` é curto, sem emoji, e tem um vizinho igual a ele, da loja, colado: a equipe digitando no Gestor. */
-function typedBurst(entries: Entry[], index: number): boolean {
-  const typed = (item: Entry | undefined) =>
-    !!item && item.direction === "OUTBOUND" && item.text.trim().length <= 60 && !/\p{Extended_Pictographic}/u.test(item.text);
-  const entry = entries[index];
-  if (!typed(entry)) return false;
-  return [entries[index - 1], entries[index + 1]].some((near) => typed(near) && Math.abs(near!.at.getTime() - entry!.at.getTime()) <= TYPED_BURST_MS);
+/**
+ * Balão da loja que é resposta humana (a equipe digitando no Gestor): até STORE_REPLY_MS depois de uma mensagem do
+ * cliente, ou, antes de o cliente escrever, sem emoji. A loja puxando o assunto ("qual é a entrada ?") e o cliente
+ * respondendo era atendido pela IA, que entrava por cima (18/11/2026, Nazir). Só vale para o que não é padrão do iFood.
+ */
+function isStoreReply(entries: Entry[], entry: Entry): boolean {
+  const asked = entries.slice(0, entries.indexOf(entry)).reverse().find((item) => item.direction === "INBOUND");
+  return asked ? entry.at.getTime() - asked.at.getTime() < STORE_REPLY_MS : !EMOJI.test(entry.text);
 }
 /** O widget mostra assim a mensagem que não saiu: ela não chegou ao cliente e não entra na Inbox. */
 const NOT_SENT = /Mensagem não enviada\s*$/;
@@ -136,6 +138,8 @@ export class IfoodChatService {
       /** Saídas escritas no próprio widget (as da Inbox, inclusive as automáticas, só são confirmadas). */
       const typed = new Set<Entry>();
       let storeReplied = false;
+      /** Balões da loja desta leitura que são resposta humana. */
+      const storeReplies = new Set<Entry>();
       /** A última mensagem do cliente desta leitura já tem resposta que saiu da Inbox (da IA, de automação ou da equipe). */
       let answeredFromInbox = false;
       for (const entry of fresh) {
@@ -144,9 +148,13 @@ export class IfoodChatService {
           continue;
         }
         answeredFromInbox = false;
-        if (entry.direction === "OUTBOUND") typed.add(entry);
-        const storeReply = entry.direction === "OUTBOUND" && (await this.isStoreReply(tx, order.channelId, entries, entry, now));
+        // A mensagem padrão do iFood não é a loja falando: não conta como "digitada" nem como resposta (18/11/2026: a
+        // "entregue 🥳" do Pablo, no Nippon, parecia a loja atendendo e a IA ficou calada diante da queixa).
+        const template = entry.direction === "OUTBOUND" && (await this.isTemplate(tx, order.channelId, entries, entry, now));
+        if (entry.direction === "OUTBOUND" && !template) typed.add(entry);
+        const storeReply = entry.direction === "OUTBOUND" && !template && isStoreReply(entries, entry);
         storeReplied ||= storeReply;
+        if (storeReply) storeReplies.add(entry);
         await tx.message.create({
           data: {
             tenantId: order.tenantId,
@@ -206,8 +214,12 @@ export class IfoodChatService {
       // widget logo antes, na mesma leitura (só o lado do balão não basta: o iFood manda mensagens automáticas desse lado).
       const before = fresh[fresh.indexOf(first) - 1];
       const byTeam = !!touch?.sentByUserId || !!(touch?.content as MessageContent | undefined)?.storeReply;
+      // Leitura com a loja falando no meio (cliente, loja, cliente), ou depois do primeiro balão do cliente: a equipe já
+      // atende, e a IA respondia por cima (18/11/2026, "Paguei delivery").
       const answering =
-        (recent && byTeam) || (!!before && typed.has(before) && first.at.getTime() - before.at.getTime() < STORE_REPLY_MS);
+        (recent && byTeam) ||
+        (!!before && typed.has(before) && first.at.getTime() - before.at.getTime() < STORE_REPLY_MS) ||
+        [...storeReplies].some((reply) => reply.at.getTime() > first.at.getTime());
       // Como nos outros canais: conversa nova ou sem interação há ATTENDANCE_END_MS começa um atendimento. Resolvida antes
       // disso só foi arquivada: o atendimento continua (14/11/2026).
       const event = {
@@ -346,15 +358,15 @@ export class IfoodChatService {
   }
 
   /**
-   * Mensagem escrita no Gestor é resposta da loja ao cliente quando vem até STORE_REPLY_MS depois de uma mensagem dele
-   * e não é uma mensagem automática da loja (o mesmo texto em outros chats). Antes de o cliente escrever, só os balões
-   * curtos em sequência, como a equipe digita ("entregador esta no endereço", "pode receber ?"): a IA respondia por cima
-   * da loja à resposta do cliente (14/11/2026). As automáticas vêm num balão só, e as da loja são longas ou têm emoji.
+   * Mensagem padrão do iFood (não é a loja falando): o texto de entrega, ou um texto que a loja já mandou igual em outros
+   * chats e tem emoji, ou vem antes de qualquer mensagem do cliente. Os atalhos que a equipe digita, como "Boa Noite,
+   * entregador está no local...", repetem em vários chats mas são da equipe: a IA respondeu por cima do Denis, no
+   * Aglio Nero, porque o atalho foi tomado por padrão (18/11/2026).
    */
-  private async isStoreReply(tx: TenantTx, channelId: string, entries: Entry[], entry: Entry, now: Date): Promise<boolean> {
-    const index = entries.indexOf(entry);
-    const asked = entries.slice(0, index).reverse().find((item) => item.direction === "INBOUND");
-    if (asked ? entry.at.getTime() - asked.at.getTime() >= STORE_REPLY_MS : !typedBurst(entries, index)) return false;
+  private async isTemplate(tx: TenantTx, channelId: string, entries: Entry[], entry: Entry, now: Date): Promise<boolean> {
+    if (IFOOD_STANDARD.test(entry.text)) return true;
+    const asked = entries.slice(0, entries.indexOf(entry)).some((item) => item.direction === "INBOUND");
+    if (asked && !EMOJI.test(entry.text)) return false;
     const same = await tx.message.findFirst({
       where: {
         channelId,
@@ -364,7 +376,7 @@ export class IfoodChatService {
       },
       select: { id: true },
     });
-    return !same;
+    return !!same;
   }
 
   /** A mensagem lida é uma resposta que o painel digitou a partir da Inbox? Então já está na conversa: só ganha a identificação. */

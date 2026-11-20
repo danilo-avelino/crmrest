@@ -1,6 +1,6 @@
 import type { Prisma, TenantTx } from "@dishdesk/database";
 import type { ChannelType, ConversationStatus } from "@dishdesk/database/enums";
-import { CHANNEL_CAPABILITIES, type MessageContent, pausedOf } from "@dishdesk/shared";
+import { businessHoursOf, CHANNEL_CAPABILITIES, isOpenAt, type MessageContent, pausedOf } from "@dishdesk/shared";
 import type { Queue } from "bullmq";
 import type { Env } from "../config/env.js";
 import type { DatabaseService } from "../core/database.service.js";
@@ -27,7 +27,7 @@ export type AutomationState = {
   courierOrder?: string;
   /** Menu do entregador: o pedido a que ele se ligou neste atendimento (o painel da Inbox mostra esse pedido). */
   courierOrderId?: string;
-  /** Menu do entregador: quando o último aviso foi ao cliente (a foto que vem logo depois é o comprovante). */
+  /** Menu do entregador: quando o último aviso foi ao cliente ou a equipe foi chamada (a foto ou o texto que vem logo depois vai para a equipe, sem menu). Zera quando a equipe resolve a conversa. */
   courierNoticeAt?: string;
   /** O cliente recebeu os links e pediu sozinho; se continuar escrevendo, o menu volta uma vez. */
   selfServed?: boolean;
@@ -65,6 +65,8 @@ export type AutomationState = {
   aiOfferedOrderId?: string;
   /** Pedidos que a IA mostrou e o cliente disse não serem dele: ela procura outro (pelo número que ele informar). */
   aiDeniedOrderIds?: string[];
+  /** iFood: o cliente tocou em "Adicionar observação ao pedido" e a automação perguntou qual é; a próxima mensagem dele é a observação (19/11/2026). */
+  ifoodObservationAskedAt?: string;
 };
 
 /**
@@ -95,6 +97,16 @@ export async function callTeam(tx: TenantTx, conversationId: string): Promise<vo
     where: { id: conversationId, awaitingAgentSince: null },
     data: { awaitingAgentSince: new Date(), awaitingAgentQuiet: false },
   });
+}
+
+/**
+ * O restaurante está fechado agora (horário de Configurações ligado e fora dele)? Os chamados dele ficam abertos na
+ * Inbox, mas fora da contagem do alarme (sem bipe nem voz) até a loja abrir (`ConversationsService.counts`).
+ * 19/11/2026: a Jardel Costa escreveu às 07:56, com a loja abrindo às 11:00.
+ */
+export async function closedNow(tx: TenantTx, tenantId: string, now = new Date()): Promise<boolean> {
+  const hours = businessHoursOf(await tenantSettings(tx, tenantId));
+  return hours.enabled && !isOpenAt(hours, now);
 }
 
 /**

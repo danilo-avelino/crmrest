@@ -26,8 +26,8 @@ export function InboxWatcher() {
   });
   const quiet = counts.data?.awaitingQuiet ?? 0;
   const calling = (counts.data?.awaitingAgent ?? 0) - quiet;
-  const alarm = useAgentAlarm(calling + quiet);
-  useCallNotifications(counts.data ? { calling, quiet } : null, alarm.blocked);
+  const alarm = useAgentAlarm(calling + quiet, counts.data?.urgentSince ?? null);
+  useCallNotifications(counts.data ? { calling, quiet } : null, alarm.blocked, counts.data?.urgentSince ?? null);
   const unread = counts.data?.unread ?? 0;
 
   // Não lidas de quando a página abriu (ou o aviso foi fechado): o aviso só aparece para o que chegou depois.

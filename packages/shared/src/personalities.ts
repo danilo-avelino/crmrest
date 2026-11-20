@@ -108,6 +108,8 @@ export type AutomationMessages = {
   ifoodHandoff: string;
   /** Vem logo depois de `ifoodHandoff`, quando o cadastro não tem telefone. */
   ifoodPhoneRequest: string;
+  /** O cliente tocou em "Adicionar observação ao pedido" no chat do iFood, que não leva a observação: pergunta qual é (19/11/2026). */
+  ifoodObservationAsk: string;
 };
 
 export const PERSONALITY_MESSAGES: Record<Personality, AutomationMessages> = {
@@ -158,6 +160,7 @@ export const PERSONALITY_MESSAGES: Record<Personality, AutomationMessages> = {
     ifoodHandoff: "Olá! 👋 Estamos chamando um atendente.",
     ifoodPhoneRequest:
       "Enquanto ele chega, pode nos enviar seu número de telefone com DDD? É comum a conversa do iFood encerrar e ficarmos sem ter como entrar em contato.",
+    ifoodObservationAsk: "Claro! 😊 Qual observação você quer incluir no seu pedido? Pode escrever aqui que passamos para a equipe.",
   },
   formal: {
     greeting: "Olá, {nome}. Agradecemos o seu contato. Como podemos ajudar?",
@@ -209,6 +212,7 @@ export const PERSONALITY_MESSAGES: Record<Personality, AutomationMessages> = {
     ifoodHandoff: "Olá. Estamos acionando um de nossos atendentes.",
     ifoodPhoneRequest:
       "Enquanto isso, poderia, por gentileza, informar seu telefone com DDD? É comum a conversa do iFood ser encerrada, o que nos impede de retomar o contato.",
+    ifoodObservationAsk: "Certamente. Poderia nos informar qual observação deseja incluir em seu pedido? Assim que recebermos, encaminharemos à nossa equipe.",
   },
   jovial: {
     greeting: "Oiê, {nome}! 🤩 Que bom te ver por aqui! Como podemos te ajudar hoje?",
@@ -256,6 +260,7 @@ export const PERSONALITY_MESSAGES: Record<Personality, AutomationMessages> = {
     ifoodHandoff: "Oiê! 🤩 Já estamos chamando um atendente pra você!",
     ifoodPhoneRequest:
       "Enquanto ele chega, manda seu telefone com DDD? 📱 É que a conversa do iFood costuma encerrar e aí a gente fica sem ter como te chamar!",
+    ifoodObservationAsk: "Bora! 🤩 Qual observação você quer colocar no pedido? Manda aqui que a gente já passa pra equipe!",
   },
   descontraido: {
     greeting: "E aí, {nome}! Tudo certo? 😎 No que a gente pode te ajudar?",
@@ -301,6 +306,7 @@ export const PERSONALITY_MESSAGES: Record<Personality, AutomationMessages> = {
     courierOrderFound: "Achamos o pedido #{pedido} 👊 Qual vai ser?",
     ifoodHandoff: "E aí! Já estamos chamando alguém da equipe pra falar com você 😉",
     ifoodPhoneRequest: "Enquanto isso, passa seu telefone com DDD? A conversa do iFood costuma fechar e aí a gente fica sem ter como te achar.",
+    ifoodObservationAsk: "Fechou! 😎 Qual observação você quer incluir no pedido? Manda aí que a gente passa pra equipe.",
   },
   acolhedor: {
     greeting: "Olá, {nome}! 🧡 Que alegria receber sua mensagem. Como podemos cuidar de você hoje?",
@@ -352,6 +358,7 @@ export const PERSONALITY_MESSAGES: Record<Personality, AutomationMessages> = {
     ifoodHandoff: "Olá! 🧡 Já estamos chamando alguém da nossa equipe para cuidar de você.",
     ifoodPhoneRequest:
       "Enquanto isso, pode nos deixar seu telefone com DDD? É comum a conversa do iFood encerrar, e não queremos perder o contato com você.",
+    ifoodObservationAsk: "Com todo o prazer! 🧡 Qual observação você gostaria de incluir no seu pedido? Pode escrever aqui, que levamos para a nossa equipe com carinho.",
   },
   direto: {
     greeting: "Olá, {nome}. Como podemos ajudar?",
@@ -397,6 +404,7 @@ export const PERSONALITY_MESSAGES: Record<Personality, AutomationMessages> = {
     courierOrderFound: "Pedido #{pedido} encontrado. Escolha uma opção:",
     ifoodHandoff: "Olá. Estamos chamando um atendente.",
     ifoodPhoneRequest: "Enquanto isso, informe seu telefone com DDD: a conversa do iFood costuma encerrar e ficamos sem contato.",
+    ifoodObservationAsk: "Qual observação você quer incluir no pedido? Escreva aqui.",
   },
 };
 

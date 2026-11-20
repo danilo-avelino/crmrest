@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useSyncExternalStore } from "react";
+import { reminderRound } from "@/hooks/use-agent-alarm";
 
 /** Enquanto o som está bloqueado (ninguém clicou na página), o chamado volta a notificar neste intervalo. */
 const REPEAT_MS = 2 * 60_000;
@@ -59,7 +60,7 @@ function show(title: string, body: string, tag: string, urgent: boolean, onOpen:
  * deixa a página tocar som; a notificação do Windows toca o próprio. Notifica quando aumentam os chamados e, com o som
  * da página bloqueado, repete o urgente a cada 2 minutos. `counts` é null enquanto os números não chegaram.
  */
-export function useCallNotifications(counts: { calling: number; quiet: number } | null, blocked: boolean) {
+export function useCallNotifications(counts: { calling: number; quiet: number } | null, blocked: boolean, urgentSince: string | null = null) {
   const router = useRouter();
   const calling = counts?.calling ?? 0;
   const quiet = counts?.quiet ?? 0;
@@ -81,6 +82,19 @@ export function useCallNotifications(counts: { calling: number; quiet: number } 
       quietNote = null;
     }
   }, [loaded, calling, quiet, router]);
+
+  // Chamado parado: nas rodadas pares de 10 minutos sem resposta, a notificação volta (as ímpares são o bipe).
+  useEffect(() => {
+    if (calling === 0 || !urgentSince) return;
+    let handled = { since: urgentSince, round: reminderRound(urgentSince) };
+    const timer = setInterval(() => {
+      const round = reminderRound(urgentSince);
+      if (round <= handled.round) return;
+      handled = { since: urgentSince, round };
+      if (round % 2 === 0) callingNote = show("Chamando atendente", plural(calling, "chamando"), "dd-calling", true, () => router.push("/inbox")) ?? callingNote;
+    }, 10_000);
+    return () => clearInterval(timer);
+  }, [calling, urgentSince, router]);
 
   useEffect(() => {
     if (!blocked || calling === 0) return;
