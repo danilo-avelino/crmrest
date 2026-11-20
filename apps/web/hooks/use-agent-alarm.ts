@@ -27,6 +27,7 @@ export function useAgentAlarm(waiting: number, urgentSince: string | null = null
   const [blocked, setBlocked] = useState(false);
   const audioRef = useRef<AudioContext | null>(null);
   const waitingRef = useRef(waiting);
+  const urgentRef = useRef(urgentSince);
   const handledRound = useRef({ since: urgentSince, round: reminderRound(urgentSince) });
   const previous = useRef(0);
   const pending = useRef(false);
@@ -83,8 +84,9 @@ export function useAgentAlarm(waiting: number, urgentSince: string | null = null
     };
   }, [ringing]);
 
-  const urgentRef = useRef(urgentSince);
-  urgentRef.current = urgentSince;
+  useEffect(() => {
+    urgentRef.current = urgentSince;
+  }, [urgentSince]);
 
   useEffect(() => {
     waitingRef.current = waiting;
