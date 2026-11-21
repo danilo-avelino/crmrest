@@ -231,7 +231,7 @@ function Attention({ data }: { data: RatingsReportDto }) {
 
 /** Quem resolveu: só a IA ou passou pela equipe, e os motivos da passagem. */
 function WhoSolved({ ai }: { ai: Ai }) {
-  const toTeam = ai.withTeam;
+  const toTeam = ai.withTeam + ai.noTeamReply; // chamou a equipe, com ou sem resposta
   const total = ai.onlyAi + toTeam;
   const max = Math.max(0, ...ai.teamReasons.map((item) => item.count));
   return (
@@ -240,6 +240,8 @@ function WhoSolved({ ai }: { ai: Ai }) {
         <div className="text-sm font-semibold">Atendimento pela IA</div>
         <div className="text-xs text-ink-3">{plural(total, "atendimento", "atendimentos")}</div>
       </div>
+      <div className="mt-2 font-heading text-display tabular-nums">{total ? `${Math.round((ai.onlyAi / total) * 100)}%` : "—"}</div>
+      <div className="text-[12.5px] text-ink-3">resolvidos só pela IA</div>
       <div className="mt-4 mb-2.5 flex h-3 overflow-hidden rounded-lg bg-rule">
         <div className="bg-ink" style={{ width: `${total ? (ai.onlyAi / total) * 100 : 0}%` }} />
       </div>

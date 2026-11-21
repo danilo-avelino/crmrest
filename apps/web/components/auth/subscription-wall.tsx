@@ -1,12 +1,13 @@
 "use client";
 
-import { BILLING_PLANS, type BillingPlanKey, type CheckoutResponse, TRIAL_REUSE_DAYS, TRUST_DAYS } from "@dishdesk/shared";
+import { BILLING_PLANS, type BillingPlanKey, TRIAL_REUSE_DAYS, TRUST_DAYS } from "@dishdesk/shared";
 import { LoaderCircleIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { AuthAside } from "@/components/auth/auth-aside";
 import { useAuth } from "@/components/auth/auth-provider";
+import { ANNUAL_PLAN_TEXT, useCheckout, useConfirmPaymentReturn } from "@/components/auth/billing";
 import { LogoMark } from "@/components/brand/logo-mark";
 import { Button } from "@/components/ui/button";
 import { usePendingAction } from "@/hooks/use-pending-action";
@@ -14,8 +15,7 @@ import { ApiError, apiRequest } from "@/lib/api";
 import { currencyWhole } from "@/lib/format";
 
 const SUPPORT_WHATSAPP = "https://wa.me/5586999731647";
-// Depois de voltar da Stripe ou da InfinitePay, a confirmação chega pelo webhook: confere de 3 em 3 segundos, por até 2 minutos.
-const CONFIRM_INTERVAL_MS = 3_000;
+// Até 2 minutos de confirmações depois de voltar do pagamento.
 const CONFIRM_ATTEMPTS = 40;
 
 const PLANS: { key: BillingPlanKey; title: string; period: string; description: string; action: string }[] = [
@@ -24,7 +24,7 @@ const PLANS: { key: BillingPlanKey; title: string; period: string; description: 
     key: "annual",
     title: "Anual",
     period: "por ano",
-    description: `No cartão em até 10x de ${currencyWhole(BILLING_PLANS.annual.amountCents / 100 / 10)} sem juros, ou no Pix.`,
+    description: ANNUAL_PLAN_TEXT,
     action: "Pagar o plano anual",
   },
 ];
@@ -47,12 +47,11 @@ export function SubscriptionWall() {
   const { session, loading, selectContext, logout, reload } = useAuth();
   const router = useRouter();
   const params = useSearchParams();
-  const [error, setError] = useState<string | null>(null);
-  const [chosen, setChosen] = useState<BillingPlanKey | null>(null);
-  const [gaveUp, setGaveUp] = useState(false);
   const entering = useRef(false);
 
   const tenant = session?.tenants.find((t) => t.id === params.get("restaurante")) ?? session?.tenants.find((t) => t.blockedBy);
+  const { pay, paying, chosen, error, setError } = useCheckout(tenant?.id);
+  const gaveUp = useConfirmPaymentReturn(params.get("pago") === "1" && Boolean(tenant?.blockedBy), CONFIRM_ATTEMPTS);
   const confirming = params.get("pago") === "1" && Boolean(tenant?.blockedBy) && !gaveUp;
 
   // Sem sessão ou sem restaurante, volta ao login. Restaurante liberado (o pagamento foi confirmado): entra nele.
@@ -66,33 +65,7 @@ export function SubscriptionWall() {
     }
   }, [loading, session, tenant, selectContext, router]);
 
-  useEffect(() => {
-    if (!confirming) return;
-    let attempts = 0;
-    const timer = setInterval(() => {
-      if (++attempts > CONFIRM_ATTEMPTS) setGaveUp(true);
-      else void reload();
-    }, CONFIRM_INTERVAL_MS);
-    return () => clearInterval(timer);
-    // reload muda de identidade a cada sessão nova; o intervalo não pode recomeçar por isso.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [confirming]);
-
   const [leave, leaving] = usePendingAction(() => logout());
-
-  const [pay, paying] = usePendingAction(async (plan: BillingPlanKey) => {
-    if (!tenant) return;
-    setChosen(plan);
-    setError(null);
-    try {
-      const { url } = await apiRequest<CheckoutResponse>("/auth/billing/checkout", { method: "POST", body: { tenantId: tenant.id, plan } });
-      window.location.assign(url);
-      // Segura o "Carregando…" enquanto o navegador abre a página de pagamento.
-      await new Promise((resolve) => setTimeout(resolve, 5_000));
-    } catch (failure) {
-      setError(failure instanceof ApiError ? failure.message : "Não foi possível abrir o pagamento. Tente novamente.");
-    }
-  });
 
   const [release, releasing] = usePendingAction(async () => {
     if (!tenant) return;

@@ -1,12 +1,12 @@
 "use client";
 
 import { ADMIN_PHONES_MAX, AdminNotifications, formatPhone, type TenantSettingsDto } from "@dishdesk/shared";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { CircleAlertIcon, PlusIcon, XIcon } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
-import { TabLoading, useSettingsTenant } from "@/components/settings/settings-shell";
+import { useCurrentSettings, useSaveSettings } from "@/components/settings/use-settings";
+import { TabLoading } from "@/components/settings/settings-shell";
 import { Card, CardBody, CardFooter, Eyebrow } from "@/components/settings/settings-ui";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,11 +29,8 @@ const OPTIONS = [
 
 /** Página "Notificações": números do administrador que recebem alertas e relatórios pelo WhatsApp do restaurante. */
 export function NotificationsTab() {
-  const { request } = useAuth();
-  const tenant = useSettingsTenant();
-  const settings = useQuery({ queryKey: ["settings"], queryFn: () => request<TenantSettingsDto[]>("/settings") });
-  const current = settings.data?.find((item) => item.tenantId === tenant.id);
-  return current ? <NotificationsForm key={current.tenantId} settings={current} /> : <TabLoading failed={settings.isError} />;
+  const { current, failed } = useCurrentSettings();
+  return current ? <NotificationsForm key={current.tenantId} settings={current} /> : <TabLoading failed={failed} />;
 }
 
 type Draft = { phones: string[]; misconduct: boolean; weeklyReport: boolean };
@@ -42,7 +39,7 @@ const draftOf = (saved: AdminNotifications): Draft => ({ ...saved, phones: saved
 
 function NotificationsForm({ settings }: { settings: TenantSettingsDto }) {
   const { request } = useAuth();
-  const queryClient = useQueryClient();
+  const saveSettings = useSaveSettings();
   const toast = useToast();
   const [draft, setDraft] = useState<Draft>(() => draftOf(settings.adminNotifications));
   const [failure, setFailure] = useState<string | null>(null);
@@ -57,10 +54,7 @@ function NotificationsForm({ settings }: { settings: TenantSettingsDto }) {
     const parsed = AdminNotifications.safeParse({ ...draft, phones: draft.phones.filter((phone) => phone.trim()) });
     if (!parsed.success) return setFailure(parsed.error.issues[0]?.message ?? "Confira os números.");
     try {
-      const updated = await request<TenantSettingsDto>(`/settings/${settings.tenantId}/admin-notifications`, { method: "PUT", body: parsed.data });
-      queryClient.setQueryData<TenantSettingsDto[]>(["settings"], (list) =>
-        list?.map((item) => (item.tenantId === updated.tenantId ? updated : item)),
-      );
+      const updated = await saveSettings(settings.tenantId, "admin-notifications", parsed.data);
       setDraft(draftOf(updated.adminNotifications));
       toast("Notificações salvas");
     } catch (error) {

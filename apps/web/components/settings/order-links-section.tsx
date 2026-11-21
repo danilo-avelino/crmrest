@@ -1,11 +1,10 @@
 "use client";
 
 import { ORDER_LINKS_MAX, type OrderLink, type TenantSettingsDto, UpdateOrderLinksRequest } from "@dishdesk/shared";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { PlusIcon, Trash2Icon } from "lucide-react";
 import { Fragment, useId, useState } from "react";
-import { useAuth } from "@/components/auth/auth-provider";
-import { TabLoading, useSettingsTenant } from "@/components/settings/settings-shell";
+import { useCurrentSettings, useSaveSettings } from "@/components/settings/use-settings";
+import { TabLoading } from "@/components/settings/settings-shell";
 import { Card, CardBody, CardFooter } from "@/components/settings/settings-ui";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,20 +13,15 @@ import { useToast } from "@/components/ui/toast";
 import { usePendingAction } from "@/hooks/use-pending-action";
 import { ApiError } from "@/lib/api";
 
-/** Página "Links de pedido" do restaurante escolhido. */
 export function OrderLinksTab() {
-  const { request } = useAuth();
-  const tenant = useSettingsTenant();
-  const settings = useQuery({ queryKey: ["settings"], queryFn: () => request<TenantSettingsDto[]>("/settings") });
-  const current = settings.data?.find((item) => item.tenantId === tenant.id);
+  const { current, failed } = useCurrentSettings();
   // A chave remonta o formulário ao trocar de restaurante no painel master.
-  return current ? <OrderLinksSection key={current.tenantId} settings={current} /> : <TabLoading failed={settings.isError} />;
+  return current ? <OrderLinksSection key={current.tenantId} settings={current} /> : <TabLoading failed={failed} />;
 }
 
 /** Links que a IA manda quando o cliente quer pedir ou ver o cardápio (no menu, a opção "2 - Fazer um pedido"). */
 function OrderLinksSection({ settings }: { settings: TenantSettingsDto }) {
-  const { request } = useAuth();
-  const queryClient = useQueryClient();
+  const saveSettings = useSaveSettings();
   const toast = useToast();
   const id = useId();
   // O admin sem links já começa com uma linha em branco para preencher. No máximo 5 linhas: a posição serve de chave.
@@ -68,10 +62,7 @@ function OrderLinksSection({ settings }: { settings: TenantSettingsDto }) {
       return;
     }
     try {
-      const updated = await request<TenantSettingsDto>(`/settings/${settings.tenantId}/order-links`, { method: "PUT", body: parsed.data });
-      queryClient.setQueryData<TenantSettingsDto[]>(["settings"], (list) =>
-        list?.map((item) => (item.tenantId === updated.tenantId ? updated : item)),
-      );
+      const updated = await saveSettings(settings.tenantId, "order-links", parsed.data);
       setRows(updated.orderLinks);
       toast("Links salvos");
     } catch (error) {

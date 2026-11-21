@@ -1,4 +1,5 @@
 import { LoaderCircleIcon } from "lucide-react";
+import type { ReactNode } from "react";
 
 /** Cabeçalho das páginas da plataforma, no padrão de Configurações e Avaliações. */
 export function PlatformHeader({ title }: { title: string }) {
@@ -23,5 +24,17 @@ export function PlatformLoading({ failed }: { failed: boolean }) {
         </>
       )}
     </div>
+  );
+}
+
+/** Casco das páginas de lista da plataforma: cabeçalho e uma coluna de 760px que rola. */
+export function PlatformPage({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <main className="flex min-w-0 flex-1 flex-col overflow-hidden bg-surface">
+      <PlatformHeader title={title} />
+      <div className="flex-1 overflow-y-auto px-7 py-6">
+        <div className="max-w-[760px]">{children}</div>
+      </div>
+    </main>
   );
 }

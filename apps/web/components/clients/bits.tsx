@@ -5,7 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { UserIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
-import { CHANNEL_DOT } from "@/components/inbox/bits";
+import { CHANNEL_DOT } from "@/components/common/bits";
 import { initials } from "@/lib/format";
 import { cn } from "@/lib/utils";
 

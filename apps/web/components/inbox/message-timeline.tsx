@@ -16,14 +16,14 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import { Fragment, useEffect, useRef, useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
-import { Avatar } from "@/components/inbox/bits";
+import { Avatar } from "@/components/common/bits";
 import { canForward, ForwardDialog } from "@/components/inbox/forward-dialog";
 import { MessageMedia } from "@/components/inbox/message-media";
 import { OrderCard } from "@/components/inbox/order-card";
 import { AiScoreBadge, evaluationNotes, Pill } from "@/components/reports/report-ui";
 import { usePendingAction } from "@/hooks/use-pending-action";
 import { ApiError } from "@/lib/api";
-import { clock, weekdayClock } from "@/lib/format";
+import { clock, DAY_MS, weekdayClock } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 const AUTOMATION_LABEL: Record<NonNullable<MessageContent["automation"]>, string> = {
@@ -61,7 +61,6 @@ const FRAUD_TEAM_EVENTS = new Set<MessageContent["event"]>(["fraud_alert", "orde
 const FRAUD_HOT_EVENTS = new Set<MessageContent["event"]>(["fraud_alert", "order_canceled_by_team", "order_cancel_refused", "fraud_marked"]);
 const WARNING_EVENTS = new Set<MessageContent["event"]>(["phone_pending", "opt_out", "merge_conflict", "possible_duplicate", "order_ambiguous", "awaiting_agent", "ai_fallback"]);
 
-const DAY_MS = 24 * 60 * 60_000;
 const weekday = new Intl.DateTimeFormat("pt-BR", { weekday: "long" });
 const fullDate = new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
 const dayKey = (iso: string) => new Date(iso).toDateString();

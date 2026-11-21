@@ -5,7 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ChevronDownIcon, ChevronUpIcon } from "lucide-react";
 import { useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
-import { PlatformHeader, PlatformLoading } from "@/components/platform/platform-header";
+import { PlatformLoading, PlatformPage } from "@/components/platform/platform-header";
 import { useNow } from "@/hooks/use-now";
 import { dayTime } from "@/lib/format";
 
@@ -32,35 +32,30 @@ export function PlatformSuggestions() {
   const top = Math.max(1, ...groups.map((group) => group.items.length));
 
   return (
-    <main className="flex min-w-0 flex-1 flex-col overflow-hidden bg-surface">
-      <PlatformHeader title="Sugestões" />
-      <div className="flex-1 overflow-y-auto px-7 py-6">
-        <div className="max-w-[760px]">
-          {suggestions.data ? (
-            <section className="overflow-hidden rounded-xl border border-rule">
-              <div className="border-b border-rule px-5 pt-4 pb-3.5">
-                <h2 className="font-heading text-title font-semibold">Ranking por assunto</h2>
-                <p className="mt-1 text-ink-2">
-                  O que os restaurantes sugerem pelo assistente da extensão, depois de terminar a implantação. A IA classifica o
-                  assunto de cada sugestão.
-                </p>
-              </div>
-              {groups.length === 0 ? (
-                <p className="px-5 py-6 text-ink-3">Nenhuma sugestão ainda.</p>
-              ) : (
-                <ol>
-                  {groups.map((group, index) => (
-                    <SubjectRow key={group.subject ?? "none"} group={group} position={index + 1} top={top} now={now} />
-                  ))}
-                </ol>
-              )}
-            </section>
+    <PlatformPage title="Sugestões">
+      {suggestions.data ? (
+        <section className="overflow-hidden rounded-xl border border-rule">
+          <div className="border-b border-rule px-5 pt-4 pb-3.5">
+            <h2 className="font-heading text-title font-semibold">Ranking por assunto</h2>
+            <p className="mt-1 text-ink-2">
+              O que os restaurantes sugerem pelo assistente da extensão, depois de terminar a implantação. A IA classifica o
+              assunto de cada sugestão.
+            </p>
+          </div>
+          {groups.length === 0 ? (
+            <p className="px-5 py-6 text-ink-3">Nenhuma sugestão ainda.</p>
           ) : (
-            <PlatformLoading failed={suggestions.isError} />
+            <ol>
+              {groups.map((group, index) => (
+                <SubjectRow key={group.subject ?? "none"} group={group} position={index + 1} top={top} now={now} />
+              ))}
+            </ol>
           )}
-        </div>
-      </div>
-    </main>
+        </section>
+      ) : (
+        <PlatformLoading failed={suggestions.isError} />
+      )}
+    </PlatformPage>
   );
 }
 

@@ -5,7 +5,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertCircleIcon, CheckIcon, ForwardIcon, ImageIcon, LoaderCircleIcon, MapPinIcon, MessageSquareIcon, SearchIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
-import { Avatar } from "@/components/inbox/bits";
+import { Avatar } from "@/components/common/bits";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/toast";

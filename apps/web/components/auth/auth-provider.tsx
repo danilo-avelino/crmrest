@@ -65,7 +65,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch {}
   }, [isSuccess, signedIn]);
 
-  const value = useMemo<AuthValue>(() => {
+  // As funções só dependem do cache: têm identidade estável e podem entrar em dependências de efeitos.
+  const actions = useMemo<Omit<AuthValue, "session" | "loading">>(() => {
     const setSession = (next: AuthSession | null) => {
       // Dados de outro usuário ou restaurante nunca podem aparecer depois da troca.
       queryClient.removeQueries({ predicate: (query) => query.queryKey[0] !== SESSION_KEY[0] });
@@ -85,8 +86,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
 
     return {
-      session,
-      loading: isPending,
       async login(email, password) {
         setSession(await apiRequest<AuthSession>("/auth/login", { method: "POST", body: { email, password } }));
       },
@@ -101,7 +100,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setSession(null);
       },
       switchContext() {
-        if (session) setSession({ ...session, context: null, accessToken: null });
+        const current = queryClient.getQueryData<AuthSession | null>(SESSION_KEY);
+        if (current) setSession({ ...current, context: null, accessToken: null });
       },
       reload() {
         return queryClient.fetchQuery({ queryKey: SESSION_KEY, queryFn: fetchSession, staleTime: 0 });
@@ -113,7 +113,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return authenticated((token) => apiDownload(path, token));
       },
     };
-  }, [session, isPending, queryClient]);
+  }, [queryClient]);
+  const value = useMemo<AuthValue>(() => ({ session, loading: isPending, ...actions }), [session, isPending, actions]);
 
   return <AuthContext value={value}>{children}</AuthContext>;
 }

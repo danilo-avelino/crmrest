@@ -19,7 +19,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
 import { ChannelDots, ClientAvatar, DuplicateBadge, rememberListHref, useDuplicates } from "@/components/clients/bits";
-import { CHANNEL_DOT } from "@/components/inbox/bits";
+import { CHANNEL_DOT } from "@/components/common/bits";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,

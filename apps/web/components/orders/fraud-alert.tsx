@@ -5,7 +5,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { LoaderCircleIcon, LockIcon, ShieldAlertIcon } from "lucide-react";
 import { useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
-import { CHANNEL_DOT } from "@/components/inbox/bits";
+import { CHANNEL_DOT } from "@/components/common/bits";
 import { CancelOrderDialog } from "@/components/orders/cancel-order-dialog";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";

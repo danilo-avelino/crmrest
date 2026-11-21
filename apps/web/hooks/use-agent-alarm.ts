@@ -9,7 +9,7 @@ const VOICE_EVERY_MS = 60_000;
  * e a notificação do sistema (rodadas pares, em `useCallNotifications`). 19/11/2026: 12 conversas passadas para a
  * equipe na varredura de 17–18/11 ficaram sem resposta depois do primeiro aviso.
  */
-export const REMIND_EVERY_MS = 10 * 60_000;
+const REMIND_EVERY_MS = 10 * 60_000;
 const REMIND_CHECK_MS = 10_000;
 
 /** Quantos intervalos de 10 minutos o chamado urgente mais antigo (`urgentSince`) já esperou. */

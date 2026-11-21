@@ -17,7 +17,7 @@ import { AlertCircleIcon, LogInIcon, PlusIcon, SlidersHorizontalIcon, TriangleAl
 import { useRouter } from "next/navigation";
 import { type ComponentProps, useId, useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
-import { StatusBadge } from "@/components/inbox/bits";
+import { StatusBadge } from "@/components/common/bits";
 import { PlatformAiStatus } from "@/components/platform/platform-ai-status";
 import { PlatformHeader, PlatformLoading } from "@/components/platform/platform-header";
 import { Button } from "@/components/ui/button";

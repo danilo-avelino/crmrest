@@ -4,11 +4,10 @@ import {
   DISPUTE_REASON_LABEL,
   type OrderAction,
   type OrderCancellationReason,
-  type OrderCustomerChat,
   type OrderDispute,
   type OrderListItem,
 } from "@dishdesk/shared";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { AlertCircleIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useState } from "react";
@@ -19,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/toast";
 import { useNow } from "@/hooks/use-now";
+import { useOpenOrderChat, useOrderCustomerChat } from "@/hooks/use-order-customer-chat";
 import { ApiError } from "@/lib/api";
 import { clock, remaining } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -74,10 +74,8 @@ export function OrderActions({ order, withChat = true }: { order: OrderListItem;
   }, [waiting, queryClient]);
 
   // Por onde a equipe fala com o cliente (a mesma consulta do card do pedido na Inbox): sem canal, o botão não aparece.
-  const chat = useQuery({
-    queryKey: ["order-customer-chat", order.id],
-    queryFn: () => request<OrderCustomerChat>(`/orders/${order.id}/customer-chat`),
-  });
+  const chat = useOrderCustomerChat(order.id);
+  const openChat = useOpenOrderChat(order.id, (conversationId) => router.push(`/inbox?conversa=${conversationId}`));
   const canChat = withChat && Boolean(chat.data?.channel);
   const now = useNow(30_000);
 
@@ -111,16 +109,6 @@ export function OrderActions({ order, withChat = true }: { order: OrderListItem;
       empty: { text: "Ao aceitar, o iFood cancela o que o cliente pediu.", blocked: false },
       run: (chosen) => request(`/orders/${order.id}/dispute`, { method: "POST", body: { accept, ...(chosen && { reason: chosen }) } }),
     });
-  /** Abre (ou cria) a conversa com o cliente do pedido e leva a Inbox até ela. */
-  const openChat = async () => {
-    try {
-      const { conversationId } = await request<{ conversationId: string }>(`/orders/${order.id}/customer-chat`, { method: "POST" });
-      void queryClient.invalidateQueries({ queryKey: ["conversations"] });
-      router.push(`/inbox?conversa=${conversationId}`);
-    } catch (failure) {
-      toast(failure instanceof ApiError ? failure.message : "Não foi possível abrir a conversa.");
-    }
-  };
   const confirm = async () => {
     setError(null);
     try {
@@ -180,7 +168,7 @@ export function OrderActions({ order, withChat = true }: { order: OrderListItem;
               </Button>
             )}
             {canChat && (
-              <Button variant="outline" size="xs" onClick={openChat}>
+              <Button variant="outline" size="xs" onClick={() => openChat()}>
                 Abrir conversa
               </Button>
             )}

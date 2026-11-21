@@ -9,11 +9,10 @@ import { useAuth } from "@/components/auth/auth-provider";
 import { Button } from "@/components/ui/button";
 import { useNow } from "@/hooks/use-now";
 import { ApiError } from "@/lib/api";
-import { count, remaining, score } from "@/lib/format";
+import { count, DAY_MS, remaining, score } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { BarRow, Card, Chip, EmptyState, ErrorState, LoadingState, Metric, Pill, type PillTone, plural, SectionLabel, share } from "./report-ui";
 
-const DAY = 24 * 60 * 60 * 1000;
 const MIN_ANSWER = 10;
 const MAX_ANSWER = 300;
 
@@ -69,7 +68,7 @@ export function IfoodReviews({ tenantId, period }: { tenantId: string; period: I
   const reviews = data.reviews;
   const low = reviews.filter((review) => review.score < 5);
   const pending = reviews.filter((review) => review.status === "NOT_REPLIED");
-  const urgent = pending.filter((review) => review.replyBy && Date.parse(review.replyBy) - now < DAY).length;
+  const urgent = pending.filter((review) => review.replyBy && Date.parse(review.replyBy) - now < DAY_MS).length;
   const shown = filter === "pending" ? pending : filter === "low" ? low : reviews;
   const manyStores = data.stores.length + data.unavailable.length > 1;
   const others = data.stores.length === 1 ? "da outra loja" : `das outras ${count(data.stores.length)} lojas`;
@@ -356,6 +355,6 @@ function ScoreStars({ value }: { value: number }) {
 
 /** Prazo restante: "3 dias", "1 dia" ou, no último dia, "18h" / "45 min". */
 function timeLeft(iso: string, now: number): string {
-  const days = Math.floor((Date.parse(iso) - now) / DAY);
+  const days = Math.floor((Date.parse(iso) - now) / DAY_MS);
   return days >= 1 ? `${days} ${days === 1 ? "dia" : "dias"}` : remaining(iso, now);
 }

@@ -1,11 +1,10 @@
 "use client";
 
 import { BusinessHours, fillMessage, MAX_SHIFTS_PER_DAY, reopeningAt, type TenantSettingsDto, WEEKDAY_LABELS } from "@dishdesk/shared";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { CopyIcon, PlusIcon, XIcon } from "lucide-react";
 import { useState } from "react";
-import { useAuth } from "@/components/auth/auth-provider";
-import { TabLoading, useSettingsTenant } from "@/components/settings/settings-shell";
+import { useCurrentSettings, useSaveSettings } from "@/components/settings/use-settings";
+import { TabLoading } from "@/components/settings/settings-shell";
 import { AutomationBubble, Card, CardBody, CardFooter, CardPreview, TEXTAREA } from "@/components/settings/settings-ui";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
@@ -35,16 +34,12 @@ function nextShift(last: Shift): Shift {
 
 /** Página "Horário": quando o restaurante atende e o que o cliente recebe fora desse horário. */
 export function BusinessHoursTab() {
-  const { request } = useAuth();
-  const tenant = useSettingsTenant();
-  const settings = useQuery({ queryKey: ["settings"], queryFn: () => request<TenantSettingsDto[]>("/settings") });
-  const current = settings.data?.find((item) => item.tenantId === tenant.id);
-  return current ? <BusinessHoursForm key={current.tenantId} settings={current} /> : <TabLoading failed={settings.isError} />;
+  const { current, failed } = useCurrentSettings();
+  return current ? <BusinessHoursForm key={current.tenantId} settings={current} /> : <TabLoading failed={failed} />;
 }
 
 function BusinessHoursForm({ settings }: { settings: TenantSettingsDto }) {
-  const { request } = useAuth();
-  const queryClient = useQueryClient();
+  const saveSettings = useSaveSettings();
   const toast = useToast();
   const [hours, setHours] = useState<BusinessHours>(settings.businessHours);
   const [failure, setFailure] = useState<string | null>(null);
@@ -71,10 +66,7 @@ function BusinessHoursForm({ settings }: { settings: TenantSettingsDto }) {
       return setFailure(issue ? day + issue.message : "Confira os horários.");
     }
     try {
-      const updated = await request<TenantSettingsDto>(`/settings/${settings.tenantId}/business-hours`, { method: "PUT", body: parsed.data });
-      queryClient.setQueryData<TenantSettingsDto[]>(["settings"], (list) =>
-        list?.map((item) => (item.tenantId === updated.tenantId ? updated : item)),
-      );
+      const updated = await saveSettings(settings.tenantId, "business-hours", parsed.data);
       setHours(updated.businessHours);
       toast("Horário salvo");
     } catch (error) {

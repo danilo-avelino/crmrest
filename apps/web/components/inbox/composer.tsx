@@ -16,7 +16,7 @@ import Link from "next/link";
 import { type KeyboardEvent, useLayoutEffect, useRef, useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
 import { useIfoodWidget } from "@/components/ifood-widget";
-import { TimeRing } from "@/components/inbox/bits";
+import { TimeRing } from "@/components/common/bits";
 import { useBrokenChannels } from "@/components/inbox/channel-alert";
 import { TemplatePicker } from "@/components/inbox/template-picker";
 import { Button } from "@/components/ui/button";

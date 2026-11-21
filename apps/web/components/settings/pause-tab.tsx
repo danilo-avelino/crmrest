@@ -1,9 +1,8 @@
 "use client";
 
 import type { TenantSettingsDto } from "@dishdesk/shared";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { useAuth } from "@/components/auth/auth-provider";
+import { useSaveSettings, useSettingsList } from "@/components/settings/use-settings";
 import { TabLoading, useSettingsTenant } from "@/components/settings/settings-shell";
 import { Card, CardBody, CardFooter, Eyebrow } from "@/components/settings/settings-ui";
 import { Button } from "@/components/ui/button";
@@ -27,9 +26,8 @@ const STOPPED = [
  * Não existe no design: segue os cartões das outras páginas. Desktop no MVP.
  */
 export function PauseTab() {
-  const { request } = useAuth();
   const tenant = useSettingsTenant();
-  const settings = useQuery({ queryKey: ["settings"], queryFn: () => request<TenantSettingsDto[]>("/settings") });
+  const settings = useSettingsList();
   const current = settings.data?.find((item) => item.tenantId === tenant.id);
   if (!settings.data || !current) return <TabLoading failed={settings.isError} />;
   const editable = settings.data.filter((item) => item.canEdit);
@@ -41,16 +39,9 @@ export function PauseTab() {
   );
 }
 
-/** Grava a pausa de cada restaurante e atualiza a lista em cache. */
 function usePauseUpdate() {
-  const { request } = useAuth();
-  const queryClient = useQueryClient();
-  return async (tenantId: string, paused: boolean) => {
-    const updated = await request<TenantSettingsDto>(`/settings/${tenantId}/pause`, { method: "PUT", body: { paused } });
-    queryClient.setQueryData<TenantSettingsDto[]>(["settings"], (list) =>
-      list?.map((item) => (item.tenantId === updated.tenantId ? updated : item)),
-    );
-  };
+  const save = useSaveSettings();
+  return (tenantId: string, paused: boolean) => save(tenantId, "pause", { paused });
 }
 
 function StatusBadge({ paused }: { paused: boolean }) {

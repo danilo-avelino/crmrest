@@ -1,10 +1,11 @@
 "use client";
 
-import { type ChannelHealthDto, formatPhone } from "@dishdesk/shared";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { formatPhone } from "@dishdesk/shared";
+import { useQueryClient } from "@tanstack/react-query";
 import { MessageCircleIcon } from "lucide-react";
 import { useAuth } from "@/components/auth/auth-provider";
 import { useToast } from "@/components/ui/toast";
+import { useChannels } from "@/hooks/use-channels";
 import { usePendingAction } from "@/hooks/use-pending-action";
 import { ApiError } from "@/lib/api";
 
@@ -16,8 +17,7 @@ export function useWhatsAppChat(contactId: string, tenantId: string, onOpen: (co
   const { request } = useAuth();
   const queryClient = useQueryClient();
   const toast = useToast();
-  // Mesma consulta da faixa de canal desconectado (ChannelAlert).
-  const channels = useQuery({ queryKey: ["channels"], queryFn: () => request<ChannelHealthDto[]>("/channels"), refetchInterval: 60_000 });
+  const channels = useChannels();
   const connected = Boolean(
     channels.data?.some(
       (channel) => channel.type === "WHATSAPP" && channel.status === "CONNECTED" && (channel.tenantId === tenantId || channel.servedTenantIds.includes(tenantId)),

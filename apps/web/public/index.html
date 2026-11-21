@@ -83,6 +83,7 @@ details[open]{background:#FFFFFF}
 @media (prefers-reduced-motion:reduce){.ty1,.ty2{display:none}}
 @media (min-width:960px){.stick{position:sticky;top:110px}}
 @media (max-width:720px){.hide-sm{display:none !important}.hero-stage{height:600px !important}}
+@media (max-width:1100px){.hide-md{display:none !important}}
 /* barra fixa no celular: aparece depois do topo, com o teste grátis e o WhatsApp */
 .mbar{display:none}
 @media (max-width:720px){.mbar{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:40;gap:10px;padding:10px 16px calc(10px + env(safe-area-inset-bottom));background:rgba(26,24,20,.96);border-top:1px solid #2E2A25;transform:translateY(110%);visibility:hidden;transition:transform .25s ease,visibility .25s}.mbar.on{transform:none;visibility:visible}[data-lp]{padding-bottom:72px}}
@@ -109,6 +110,7 @@ details[open]{background:#FFFFFF}
       <a href="#preco" style="text-decoration: none; color: #CFC6BB">Preço</a>
     </div>
     <div style="margin-left: auto; display: flex; gap: 10px; align-items: center">
+      <a class="hide-md" href="https://wa.me/5586999731647?text=Ol%C3%A1!%20Quero%20conhecer%20o%20Dish%20Desk." style="text-decoration: none; font-weight: 500; font-size: 14px; color: #F7F4EF; padding: 0 12px; height: 44px; display: flex; align-items: center; gap: 8px"><span aria-hidden="true" style="width: 8px; height: 8px; border-radius: 50%; background: #25D366"></span>WhatsApp</a>
       <a href="/login" style="text-decoration: none; font-weight: 500; font-size: 14px; color: #F7F4EF; padding: 0 12px; height: 44px; display: flex; align-items: center">Entrar</a>
       <a class="btn btn-t" href="/cadastro" style="text-decoration: none; background: #B02E17; color: #FFFFFF; font-weight: 500; font-size: 14px; padding: 0 18px; height: 44px; border-radius: 6px; display: flex; align-items: center">Testar grátis</a>
     </div>
@@ -121,9 +123,9 @@ details[open]{background:#FFFFFF}
     <div class="hero-copy" style="flex: 1 1 440px; min-width: 0; position: relative; z-index: 2">
       <p style="margin: 0 0 22px; display: inline-flex; align-items: center; gap: 10px; font-size: 13px; font-weight: 500; color: #CFC6BB; border: 1px solid rgba(247,244,239,.16); background: rgba(247,244,239,.04); border-radius: 999px; padding: 6px 14px">
         <span class="live" style="width: 8px; height: 8px; border-radius: 50%; background: #2D7D46"></span>
-        Atendimento com IA para restaurantes com delivery
+        Feito para restaurantes com delivery
       </p>
-      <h1 style="margin: 0; font-family: Fraunces, Georgia, serif; font-weight: 700; font-size: clamp(42px, 6vw, 80px); line-height: 1.0; letter-spacing: -2px">Sexta à noite, nenhum cliente <span style="color: #C4341A; font-style: italic">sem resposta.</span></h1>
+      <h1 style="margin: 0; font-family: Fraunces, Georgia, serif; font-weight: 700; font-size: clamp(42px, 6vw, 80px); line-height: 1.0; letter-spacing: -2px">Atendimento com IA para <span style="color: #C4341A; font-style: italic">restaurantes.</span></h1>
       <p style="margin: 26px 0 0; max-width: 500px; font-size: 18px; color: #CFC6BB">O Dish Desk junta WhatsApp, Instagram, iFood, Cardápio Web e Neemo numa tela só. A IA responde na hora com o cardápio e o status do pedido, e a sua equipe só entra quando o cliente precisa de uma pessoa.</p>
       <div style="display: flex; gap: 12px; margin-top: 34px; flex-wrap: wrap">
         <a class="btn btn-t" href="/cadastro" style="text-decoration: none; background: #B02E17; color: #FFFFFF; font-weight: 500; font-size: 15px; padding: 0 24px; height: 52px; border-radius: 6px; display: flex; align-items: center">Testar grátis por 15 dias</a>
@@ -598,16 +600,10 @@ details[open]{background:#FFFFFF}
       </ul>
     </div>
     <div class="rv d1" style="flex: 1 1 400px; min-width: 0; display: flex; flex-direction: column; gap: 14px; background: #F7F4EF; color: #1A1814; border-radius: 14px; padding: 28px; box-shadow: 0 40px 90px -40px rgba(0,0,0,.8)">
-      <div style="display: flex; gap: 12px; flex-wrap: wrap">
-        <div style="flex: 1 1 170px; border: 1px solid #DDD8D0; border-radius: 10px; padding: 22px; background: #FFFFFF">
-          <p style="margin: 0; font-size: 13px; color: #4A4540; font-weight: 500">Mensal</p>
-          <p class="tab" style="margin: 6px 0 0"><strong style="font-family: Fraunces, Georgia, serif; font-size: 40px">R$ 149</strong><span style="color: #4A4540"> por mês</span></p>
-        </div>
-        <div style="flex: 1 1 170px; border: 2px solid #1A1814; border-radius: 10px; padding: 21px; background: #FFFFFF">
-          <p style="margin: 0; font-size: 13px; color: #4A4540; font-weight: 500">Anual</p>
-          <p class="tab" style="margin: 6px 0 0"><strong style="font-family: Fraunces, Georgia, serif; font-size: 40px">R$ 1.490</strong><span style="color: #4A4540"> por ano</span></p>
-          <p class="tab" style="margin: 6px 0 0; font-size: 13px; color: #2D7D46; font-weight: 500">em até 10x de R$ 149 sem juros. Equivale a 2 meses grátis.</p>
-        </div>
+      <div style="border: 1px solid #DDD8D0; border-radius: 10px; padding: 22px; background: #FFFFFF">
+        <p style="margin: 0; font-size: 13px; color: #4A4540; font-weight: 500">Mensal</p>
+        <p class="tab" style="margin: 6px 0 0"><strong style="font-family: Fraunces, Georgia, serif; font-size: 40px">R$ 149</strong><span style="color: #4A4540"> por mês</span></p>
+        <p style="margin: 10px 0 0; font-size: 13px; color: #4A4540"><span style="color: #2D7D46; font-weight: 500">No plano anual tem desconto.</span> <a href="https://wa.me/5586999731647?text=Ol%C3%A1!%20Quero%20saber%20do%20desconto%20no%20plano%20anual%20do%20Dish%20Desk." style="color: #C4341A; font-weight: 500">Fale com a gente no WhatsApp</a>.</p>
       </div>
       <a class="btn btn-t" href="/cadastro" style="margin-top: 6px; text-decoration: none; background: #B02E17; color: #FFFFFF; font-weight: 500; font-size: 16px; height: 56px; border-radius: 6px; display: flex; align-items: center; justify-content: center">Testar grátis por 15 dias</a>
       <p style="margin: 0; font-size: 13px; color: #8C857D; text-align: center">Não pede cartão.</p>
@@ -619,6 +615,7 @@ details[open]{background:#FFFFFF}
       <a href="/privacidade" style="color: #CFC6BB">Privacidade</a>
       <a href="/exclusao-de-dados" style="color: #CFC6BB">Exclusão de dados</a>
       <a href="/extensao" style="color: #CFC6BB">Extensão do Chrome</a>
+      <a href="https://wa.me/5586999731647?text=Ol%C3%A1!%20Quero%20conhecer%20o%20Dish%20Desk." style="color: #CFC6BB">WhatsApp</a>
       <a href="/login" style="color: #CFC6BB; margin-left: auto">Entrar</a>
     </div>
   </footer>

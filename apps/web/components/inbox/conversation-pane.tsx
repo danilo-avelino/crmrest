@@ -2,7 +2,6 @@
 
 import {
   CHANNEL_LABEL,
-  type ConversationCounts,
   type ConversationListItem,
   type ConversationMessages,
   type MemberDto,
@@ -13,7 +12,7 @@ import { BikeIcon, CheckIcon, ChevronDownIcon, EllipsisIcon, LoaderCircleIcon, S
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
 import { ClientDetail } from "@/components/clients/client-detail";
-import { Avatar, ChannelDot, StatusBadge, TeamOnlyBadge } from "@/components/inbox/bits";
+import { Avatar, ChannelDot, StatusBadge, TeamOnlyBadge } from "@/components/common/bits";
 import { ClientPanel } from "@/components/inbox/client-panel";
 import { beep } from "@/components/inbox/conversation-list";
 import { Composer } from "@/components/inbox/composer";
@@ -31,6 +30,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/components/ui/toast";
 import { usePendingAction } from "@/hooks/use-pending-action";
+import { useConversationCounts } from "@/hooks/use-conversation-counts";
 import { useNow } from "@/hooks/use-now";
 import { ApiError } from "@/lib/api";
 import { ago, count } from "@/lib/format";
@@ -41,11 +41,7 @@ import { cn } from "@/lib/utils";
  * O bipe sai daqui, com a mesma regra da lista: com o alarme de chamado tocando, ele já avisa.
  */
 function useInboundBeep(conversationId: string, data: ConversationMessages | undefined) {
-  const { request } = useAuth();
-  const counts = useQuery({
-    queryKey: ["counts", null],
-    queryFn: () => request<ConversationCounts>("/conversations/counts"),
-  });
+  const counts = useConversationCounts();
   const calling = counts.data?.awaitingAgent ?? 0;
   const lastInbound = data?.messages.findLast((message) => message.direction === "INBOUND")?.id;
   const seen = useRef<{ conversationId: string; id: string | undefined } | null>(null);

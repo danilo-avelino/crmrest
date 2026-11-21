@@ -1,28 +1,20 @@
 "use client";
 
-import { CHANNEL_LABEL, type OrderCustomerChat, type OrderDto } from "@dishdesk/shared";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { CHANNEL_LABEL, type OrderDto } from "@dishdesk/shared";
+import { useQueryClient } from "@tanstack/react-query";
 import { AlertCircleIcon } from "lucide-react";
 import { useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
-import { CHANNEL_DOT } from "@/components/inbox/bits";
+import { CHANNEL_DOT } from "@/components/common/bits";
 import { ItemOptions } from "@/components/orders/item-options";
+import { ORDER_STATUS } from "@/components/orders/order-status";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/components/ui/toast";
+import { useOpenOrderChat, useOrderCustomerChat } from "@/hooks/use-order-customer-chat";
 import { ApiError } from "@/lib/api";
 import { clock, currency } from "@/lib/format";
 import { cn } from "@/lib/utils";
-
-export const ORDER_STATUS: Record<OrderDto["status"], { label: string; className: string }> = {
-  PLACED: { label: "Novo", className: "text-tomate-ink" },
-  CONFIRMED: { label: "Confirmado", className: "text-warning" },
-  PREPARING: { label: "Em preparo", className: "text-warning" },
-  READY: { label: "Pronto", className: "text-warning" },
-  DISPATCHED: { label: "Em entrega", className: "text-warning" },
-  DELIVERED: { label: "Entregue", className: "text-success" },
-  CANCELED: { label: "Cancelado", className: "text-tomate" },
-};
 
 /**
  * Card do pedido dentro da conversa (board Inbox → "Card do pedido iFood"; o Cardápio Web usa o mesmo card).
@@ -97,13 +89,8 @@ export function OrderCard({
 
 /** Quem é o cliente do pedido e o botão para conversar com ele: pelo WhatsApp, se o cadastro tem telefone; senão, pelo chat do iFood. */
 function CustomerChat({ order, onOpen }: { order: OrderDto; onOpen: (conversationId: string) => void }) {
-  const { request } = useAuth();
-  const queryClient = useQueryClient();
-  const toast = useToast();
-  const chat = useQuery({
-    queryKey: ["order-customer-chat", order.id],
-    queryFn: () => request<OrderCustomerChat>(`/orders/${order.id}/customer-chat`),
-  });
+  const chat = useOrderCustomerChat(order.id);
+  const open = useOpenOrderChat(order.id, onOpen);
   if (!chat.data) {
     // Pedido de outra unidade atendida pelo canal, sem acesso do atendente a ela: a conversa com o cliente é por lá.
     if (!chat.isError || !order.restaurantName) return null;
@@ -115,21 +102,11 @@ function CustomerChat({ order, onOpen }: { order: OrderDto; onOpen: (conversatio
   }
   const { channel, contactName } = chat.data;
 
-  const open = async () => {
-    try {
-      const { conversationId } = await request<{ conversationId: string }>(`/orders/${order.id}/customer-chat`, { method: "POST" });
-      void queryClient.invalidateQueries({ queryKey: ["conversations"] });
-      onOpen(conversationId);
-    } catch (failure) {
-      toast(failure instanceof ApiError ? failure.message : "Não foi possível abrir a conversa.");
-    }
-  };
-
   return (
     <div className="flex items-center justify-between gap-2 border-t border-rule px-3.5 py-2 text-[11.5px]">
       <span className="min-w-0 truncate text-ink-2">Cliente: {contactName ?? "sem nome"}</span>
       {channel ? (
-        <Button variant="outline" size="xs" onClick={open}>
+        <Button variant="outline" size="xs" onClick={() => open()}>
           Conversar pelo {CHANNEL_LABEL[channel]}
         </Button>
       ) : (

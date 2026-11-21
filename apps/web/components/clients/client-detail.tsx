@@ -20,9 +20,9 @@ import { useAuth } from "@/components/auth/auth-provider";
 import { ClientAvatar, lastListHref, SectionLabel, useDuplicates, useIsAdmin } from "@/components/clients/bits";
 import { AnonymizeDialog, ExportDialog } from "@/components/clients/lgpd-dialogs";
 import { CustomerCancellationsCard } from "@/components/orders/fraud-alert";
-import { CHANNEL_DOT, StatusBadge } from "@/components/inbox/bits";
+import { CHANNEL_DOT, StatusBadge } from "@/components/common/bits";
 import { Cpf, linkedChannels, Tags } from "@/components/inbox/client-panel";
-import { ORDER_STATUS } from "@/components/inbox/order-card";
+import { OrderStatusBadge } from "@/components/orders/order-status";
 import { WhatsAppPhone } from "@/components/inbox/whatsapp-phone";
 import { ItemOptions } from "@/components/orders/item-options";
 import { AiScoreBadge, evaluationNotes, Pill } from "@/components/reports/report-ui";
@@ -53,17 +53,6 @@ const CONVERSATION_STATUS = {
   PENDING: { label: "Pendente", tone: "pending" },
   RESOLVED: { label: "Resolvida", tone: "resolved" },
 } as const;
-
-// Cor do selo de cada status de pedido na aba Pedidos (o texto vem do card de pedido da Inbox).
-export const ORDER_TONE: Record<OrderDto["status"], "open" | "pending" | "resolved"> = {
-  PLACED: "open",
-  CONFIRMED: "pending",
-  PREPARING: "pending",
-  READY: "pending",
-  DISPATCHED: "resolved",
-  DELIVERED: "resolved",
-  CANCELED: "open",
-};
 
 /**
  * Detalhe do cliente (board Clientes): cadastro à esquerda, métricas e abas Conversas/Pedidos à direita.
@@ -666,7 +655,7 @@ function OrdersTab({ contactId, total, now }: { contactId: string; total: number
                 <td className={cn(td, "text-ink-2 tabular-nums", open && "border-b-0")}>{dayTime(order.placedAt, now)}</td>
                 <td className={cn(td, "text-right tabular-nums", open && "border-b-0 font-medium")}>{currency(order.total)}</td>
                 <td className={cn(td, open && "border-b-0")}>
-                  <StatusBadge tone={ORDER_TONE[order.status]}>{ORDER_STATUS[order.status].label}</StatusBadge>
+                  <OrderStatusBadge status={order.status} />
                 </td>
               </tr>
             );

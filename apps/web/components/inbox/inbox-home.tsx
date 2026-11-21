@@ -4,11 +4,9 @@ import {
   type AiAttendanceDto,
   CHANNEL_LABEL,
   type ChannelHealthDto,
-  type ConversationCounts,
   type ConversationDayStats,
   INTEGRATION_TYPES,
   type IntegrationType,
-  type OrderCustomerChat,
   type OrderListItem,
   type OrderPage,
   type OrderStageCounts,
@@ -26,11 +24,11 @@ import {
 import Link from "next/link";
 import { type ReactNode, useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
-import { ORDER_TONE } from "@/components/clients/client-detail";
 import { useIfoodWidget } from "@/components/ifood-widget";
-import { ChannelDot, StatusBadge } from "@/components/inbox/bits";
+import { ChannelDot, StatusBadge } from "@/components/common/bits";
 import { useDebounced } from "@/components/inbox/conversation-list";
-import { ORDER_STATUS } from "@/components/inbox/order-card";
+import { type DayRange, DayRangePicker } from "@/components/inbox/day-range-picker";
+import { OrderStatusBadge } from "@/components/orders/order-status";
 import { SetupReminder } from "@/components/onboarding/setup-reminder";
 import { OrderDetails } from "@/components/orders/order-list";
 import {
@@ -39,13 +37,14 @@ import {
   STATUS,
   StatusBadge as IntegrationBadge,
   SystemIcon,
-} from "@/components/settings/integrations-tab";
+} from "@/components/settings/integration-systems";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
-import { useToast } from "@/components/ui/toast";
+import { useChannels } from "@/hooks/use-channels";
+import { useConversationCounts } from "@/hooks/use-conversation-counts";
 import { connectIfoodChat, type IfoodChatStatus, useIfoodChatState } from "@/hooks/use-ifood-chat";
 import { useNow } from "@/hooks/use-now";
-import { ApiError } from "@/lib/api";
+import { useOpenOrderChat, useOrderCustomerChat } from "@/hooks/use-order-customer-chat";
 import { ago, clock, count, currency, remaining, responseTime } from "@/lib/format";
 import { setIfoodWidgetChoice, useIfoodWidgetChoice } from "@/lib/ifood-widget-choice";
 import { cn } from "@/lib/utils";
@@ -80,6 +79,9 @@ export function InboxHome({ onOpenCalling }: { onOpenCalling: () => void }) {
   );
 }
 
+/** O dia de Brasília (sem horário de verão desde 2019) como AAAA-MM-DD. */
+const brasiliaDate = (at: number) => new Date(at - 3 * 3_600_000).toISOString().slice(0, 10);
+
 const TILE = "rounded-2xl border border-rule-soft bg-surface px-4 py-3.5 text-left";
 
 function Tile({ label, value, suffix, tone, children }: { label: string; value: string | undefined; suffix?: string; tone?: string; children: ReactNode }) {
@@ -103,11 +105,16 @@ function Tile({ label, value, suffix, tone, children }: { label: string; value: 
 function Today({ onOpenCalling }: { onOpenCalling: () => void }) {
   const { request } = useAuth();
   const now = useNow(60_000);
+  // Dia de hoje em Brasília; o cartão mostra hoje até escolherem outro dia ou período no calendário.
+  const todayDate = brasiliaDate(now);
+  const [range, setRange] = useState<DayRange | null>(null);
+  const shown = range ?? { from: todayDate, to: todayDate };
+  const isToday = shown.from === todayDate && shown.to === todayDate;
   const today = useQuery({
-    queryKey: ["counts", "today"],
-    queryFn: () => request<ConversationDayStats>("/conversations/today"),
+    queryKey: ["counts", "today", shown.from, shown.to],
+    queryFn: () => request<ConversationDayStats>(`/conversations/today?from=${shown.from}&to=${shown.to}`),
   });
-  const counts = useQuery({ queryKey: ["counts", null], queryFn: () => request<ConversationCounts>("/conversations/counts") });
+  const counts = useConversationCounts();
   const data = today.data;
   const waiting = counts.data ? counts.data.awaitingAgent - counts.data.awaitingQuiet : 0;
   const whole = (amount: number | undefined) => (amount === undefined ? undefined : count(amount));
@@ -115,10 +122,15 @@ function Today({ onOpenCalling }: { onOpenCalling: () => void }) {
 
   return (
     <section aria-labelledby="inbox-hoje" className="mb-[30px]">
-      <h2 id="inbox-hoje" className="font-heading text-[16px] font-bold tracking-[-0.3px]">
-        Hoje até agora
-      </h2>
-      <p className="mt-0.5 mb-4 text-ink-3">Conversas desde a meia-noite.</p>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 id="inbox-hoje" className="font-heading text-[16px] font-bold tracking-[-0.3px]">
+            {isToday ? "Hoje até agora" : "Conversas no período"}
+          </h2>
+          <p className="mt-0.5 mb-4 text-ink-3">{isToday ? "Conversas desde a meia-noite." : "Conversas dos dias escolhidos no calendário."}</p>
+        </div>
+        <DayRangePicker value={shown} today={todayDate} onChange={(next) => setRange(next.from === todayDate && next.to === todayDate ? null : next)} />
+      </div>
       {waiting > 0 && (
         <div className="mb-2.5 flex flex-wrap items-center justify-between gap-x-6 gap-y-3 rounded-2xl border border-tomate-line bg-tomate-lt px-5 py-4">
           <div className="flex items-center gap-4">
@@ -136,7 +148,7 @@ function Today({ onOpenCalling }: { onOpenCalling: () => void }) {
       <div className="grid grid-cols-1 gap-2.5 @xl:grid-cols-3">
         <div className={TILE}>
           <Tile label="Conversas abertas" value={whole(data?.opened)}>
-            clientes que escreveram hoje
+            {isToday ? "clientes que escreveram hoje" : "clientes que escreveram no período"}
           </Tile>
         </div>
         <div className={TILE}>
@@ -175,7 +187,7 @@ function Today({ onOpenCalling }: { onOpenCalling: () => void }) {
           <Tile label="Nota do atendimento" value={data?.aiScore == null ? undefined : `${Math.round(data.aiScore)}%`}>
             {data
               ? data.evaluations === 0
-                ? "nenhum atendimento avaliado pela IA hoje"
+                ? `nenhum atendimento avaliado pela IA ${isToday ? "hoje" : "no período"}`
                 : `avaliada pela IA em ${count(data.evaluations)} ${data.evaluations === 1 ? "atendimento" : "atendimentos"}`
               : " "}
           </Tile>
@@ -186,13 +198,8 @@ function Today({ onOpenCalling }: { onOpenCalling: () => void }) {
 }
 
 function Integrations() {
-  const { request, session } = useAuth();
-  // Mesma consulta da faixa de canal desconectado (ChannelAlert).
-  const channels = useQuery({
-    queryKey: ["channels"],
-    queryFn: () => request<ChannelHealthDto[]>("/channels"),
-    refetchInterval: 60_000,
-  });
+  const { session } = useAuth();
+  const channels = useChannels();
   const admin = (session?.context?.tenants ?? []).some((tenant) => tenant.role === "ADMIN");
   const widget = useIfoodWidget();
   const widgetChoice = useIfoodWidgetChoice();
@@ -456,26 +463,12 @@ export function OrderSearchField({ value, onChange }: { value: string; onChange:
  * pelo chat do iFood do pedido (a mesma regra do botão da aba Pedidos). Sem os dois, o aviso no lugar do botão.
  */
 function OrderChatButton({ order, onOpen }: { order: OrderListItem; onOpen: (conversationId: string) => void }) {
-  const { request } = useAuth();
-  const queryClient = useQueryClient();
-  const toast = useToast();
-  const chat = useQuery({
-    queryKey: ["order-customer-chat", order.id],
-    queryFn: () => request<OrderCustomerChat>(`/orders/${order.id}/customer-chat`),
-  });
+  const chat = useOrderCustomerChat(order.id);
+  const open = useOpenOrderChat(order.id, onOpen);
   if (!chat.data) return null;
   if (!chat.data.channel) return <span className="text-[11px] text-ink-3">Sem contato pelo Dish Desk</span>;
-  const open = async () => {
-    try {
-      const { conversationId } = await request<{ conversationId: string }>(`/orders/${order.id}/customer-chat`, { method: "POST" });
-      void queryClient.invalidateQueries({ queryKey: ["conversations"] });
-      onOpen(conversationId);
-    } catch (failure) {
-      toast(failure instanceof ApiError ? failure.message : "Não foi possível abrir a conversa.");
-    }
-  };
   return (
-    <Button variant="outline" size="sm" onClick={open}>
+    <Button variant="outline" size="sm" onClick={() => open()}>
       <MessageCircleIcon aria-hidden />
       Abrir conversa
     </Button>
@@ -613,7 +606,7 @@ export function TodayOrders({
                           Atrasado
                         </StatusBadge>
                       )}
-                      <StatusBadge tone={ORDER_TONE[order.status]}>{ORDER_STATUS[order.status].label}</StatusBadge>
+                      <OrderStatusBadge status={order.status} />
                     </span>
                   </div>
                   {order.dispute && (
@@ -639,7 +632,7 @@ export function TodayOrders({
                     Pedido {CHANNEL_LABEL[open.channelType]} #{open.displayCode ?? open.id.slice(0, 6)}
                   </DialogTitle>
                   {open.late && <StatusBadge tone="open">Atrasado</StatusBadge>}
-                  <StatusBadge tone={ORDER_TONE[open.status]}>{ORDER_STATUS[open.status].label}</StatusBadge>
+                  <OrderStatusBadge status={open.status} />
                   <span className="ml-auto flex items-center gap-2">
                     <OrderChatButton
                       order={open}

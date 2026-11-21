@@ -1,22 +1,15 @@
 "use client";
 
-import type { TenantSettingsDto } from "@dishdesk/shared";
-import { useQuery } from "@tanstack/react-query";
 import { PauseCircleIcon } from "lucide-react";
 import Link from "next/link";
-import { useAuth } from "@/components/auth/auth-provider";
+import { useSettingsList } from "@/components/settings/use-settings";
 
 /**
  * Faixa âmbar no topo da Inbox enquanto o Dish Desk está pausado (Configurações → Pausa): sem automações nem IA, as
  * mensagens só chegam. O administrador retoma por lá; o atendente é orientado a avisá-lo.
  */
 export function PauseAlert() {
-  const { request } = useAuth();
-  const settings = useQuery({
-    queryKey: ["settings"],
-    queryFn: () => request<TenantSettingsDto[]>("/settings"),
-    refetchInterval: 60_000,
-  });
+  const settings = useSettingsList({ refetchInterval: 60_000 });
   const paused = settings.data?.filter((item) => item.paused) ?? [];
   if (paused.length === 0) return null;
   const several = (settings.data?.length ?? 0) > 1;

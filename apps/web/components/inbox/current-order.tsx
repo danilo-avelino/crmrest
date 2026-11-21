@@ -1,25 +1,20 @@
 "use client";
 
 import { CHANNEL_LABEL, type CurrentOrderDto, type OrderDto } from "@dishdesk/shared";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
-import { CHANNEL_DOT } from "@/components/inbox/bits";
-import { ForecastButton, NOTIFIABLE, ORDER_STATUS } from "@/components/inbox/order-card";
+import { CHANNEL_DOT } from "@/components/common/bits";
+import { ForecastButton, NOTIFIABLE } from "@/components/inbox/order-card";
 import { WhatsAppPhone } from "@/components/inbox/whatsapp-phone";
 import { historyText } from "@/components/orders/customer-history";
+import { ORDER_STATUS } from "@/components/orders/order-status";
 import { Button } from "@/components/ui/button";
-import { useToast } from "@/components/ui/toast";
 import { useNow } from "@/hooks/use-now";
-import { ApiError } from "@/lib/api";
+import { useOpenOrderChat } from "@/hooks/use-order-customer-chat";
 import { clock, currency, responseTime } from "@/lib/format";
+import { type StageKey, orderStages, promiseCountdown, stageHint, stageProgress } from "@/lib/order-stages";
 import { cn } from "@/lib/utils";
-
-/** Cores do status no cabeçalho do bloco, quando diferem das do card do pedido. */
-const STATUS_TONE: Partial<Record<OrderDto["status"], string>> = {
-  READY: "text-[#2F6FB7] dark:text-[#6EA8F0]",
-  DISPATCHED: "text-[#C2610F] dark:text-[#F08A3C]",
-};
 
 /**
  * Pedido ligado ao cliente da conversa (painel lateral; o design ainda não tem este bloco): achado sozinho pelo
@@ -44,7 +39,7 @@ export function CurrentOrder({ conversationId, onOpenConversation }: { conversat
     <div className="flex flex-col gap-4 border-b border-rule px-4 py-4">
       <div className="flex items-center justify-between gap-2">
         <div className="text-[11px] font-semibold tracking-[0.08em] text-ink-3 uppercase">{courier ? "Pedido do entregador" : "Pedido do cliente"}</div>
-        <span className={cn("text-[12px] font-semibold", STATUS_TONE[order.status] ?? status.className)}>{status.label}</span>
+        <span className={cn("text-[12px] font-semibold", status.headerClassName ?? status.className)}>{status.label}</span>
       </div>
       <div className="flex flex-col gap-1">
         <div className="flex items-center gap-2">
@@ -98,20 +93,9 @@ function CourierCustomer({
   courier: NonNullable<CurrentOrderDto["courier"]>;
   onOpen: (conversationId: string) => void;
 }) {
-  const { request } = useAuth();
-  const queryClient = useQueryClient();
-  const toast = useToast();
   const { chat, customerId, customerName, customerPhone, reachable, tenantId } = courier;
-
-  const open = async () => {
-    try {
-      const { conversationId } = await request<{ conversationId: string }>(`/orders/${order.id}/customer-chat${chat === "IFOOD" ? "?via=ifood" : ""}`, { method: "POST" });
-      void queryClient.invalidateQueries({ queryKey: ["conversations"] });
-      onOpen(conversationId);
-    } catch (failure) {
-      toast(failure instanceof ApiError ? failure.message : "Não foi possível abrir a conversa.");
-    }
-  };
+  const openChat = useOpenOrderChat(order.id, onOpen);
+  const open = () => openChat(chat === "IFOOD" ? "ifood" : undefined);
 
   return (
     <div className="flex items-center justify-between gap-2 border-t border-rule pt-3 text-[12px]">
@@ -128,80 +112,6 @@ function CourierCustomer({
       )}
     </div>
   );
-}
-
-type StageKey = "preparing" | "waiting" | "route" | "delivered";
-type StageState = "done" | "current" | "next";
-
-export type OrderStage = {
-  key: StageKey;
-  label: string;
-  /** Hora em que a etapa começou; null: ainda não começou ou a plataforma não informou. */
-  startedAt: string | null;
-  /** Quanto durou (ou, na etapa atual, quanto já passou); null: sem as duas pontas. */
-  durationMs: number | null;
-  state: StageState;
-};
-
-/** Etapa em que cada status do pedido está. A retirada não tem a etapa "Em rota". */
-const STATUS_STAGE: Partial<Record<OrderDto["status"], StageKey>> = {
-  PLACED: "preparing",
-  CONFIRMED: "preparing",
-  PREPARING: "preparing",
-  READY: "waiting",
-  DISPATCHED: "route",
-  DELIVERED: "delivered",
-};
-
-/**
- * As etapas do pedido com o início e a duração de cada uma. Cada etapa termina quando começa a próxima que tem hora; se a
- * plataforma já informou uma etapa à frente do status, vale a mais adiantada.
- */
-export function orderStages(current: CurrentOrderDto, now: number): OrderStage[] {
-  const { order, takeout, startedAt, readyAt } = current;
-  const stages: Pick<OrderStage, "key" | "label" | "startedAt">[] = [
-    { key: "preparing", label: "Preparo", startedAt },
-    { key: "waiting", label: takeout ? "Aguardando retirada" : "Aguardando entrega", startedAt: readyAt },
-    ...(takeout ? [] : [{ key: "route" as const, label: "Em rota", startedAt: order.dispatchedAt }]),
-    { key: "delivered", label: takeout ? "Retirado" : "Entregue", startedAt: order.deliveredAt },
-  ];
-  const statusStage = STATUS_STAGE[order.status];
-  const byStatus = stages.findIndex((stage) => stage.key === (takeout && statusStage === "route" ? "waiting" : statusStage));
-  const byTime = stages.reduce((latest, stage, index) => (stage.startedAt ? index : latest), 0);
-  const active = Math.max(byStatus, byTime);
-
-  return stages.map((stage, index) => {
-    const state: StageState = index < active || stage.key === "delivered" && index === active ? "done" : index === active ? "current" : "next";
-    const start = stage.startedAt ? Date.parse(stage.startedAt) : null;
-    const nextStart = stages.slice(index + 1).find((later) => later.startedAt)?.startedAt;
-    const end = state === "current" ? now : nextStart ? Date.parse(nextStart) : null;
-    const durationMs = stage.key !== "delivered" && state !== "next" && start !== null && end !== null ? Math.max(0, end - start) : null;
-    return { ...stage, state, durationMs };
-  });
-}
-
-/** Parte da etapa atual já percorrida (0 a 1), pelo tempo até a saída prevista ou a entrega prometida; sem esse alvo, o meio. */
-export function stageProgress(current: CurrentOrderDto, stage: OrderStage, now: number): number {
-  const start = stage.startedAt ? Date.parse(stage.startedAt) : null;
-  const target = (stage.key === "route" ? null : current.forecast?.departAt) ?? current.promisedAt;
-  const end = target ? Date.parse(target) : null;
-  if (start === null || end === null || end <= start) return 0.5;
-  return Math.min(0.96, Math.max(0.04, (now - start) / (end - start)));
-}
-
-/** O que a dica de cada parte da trilha diz: quanto a etapa durou, ou por que não há esse tempo. */
-export function stageHint(stage: OrderStage): string {
-  if (stage.key === "delivered") return stage.startedAt ? `às ${clock(stage.startedAt)}` : stage.state === "done" ? "sem registro" : "ainda não aconteceu";
-  if (stage.state === "next") return "ainda não começou";
-  if (stage.durationMs === null) return "sem registro";
-  return `${responseTime(stage.durationMs / 1000)}${stage.state === "current" ? " até agora" : ""}`;
-}
-
-/** Quanto falta para a hora prevista ou, se ela já passou, há quanto tempo está atrasado. */
-export function promiseCountdown(promisedAt: string, now: number): { text: string; late: boolean } {
-  const difference = Date.parse(promisedAt) - now;
-  const time = responseTime(Math.max(60, Math.abs(difference) / 1000));
-  return difference < 0 ? { text: `atrasado há ${time}`, late: true } : { text: `faltam ${time}`, late: false };
 }
 
 const ICON_PROPS = { viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2.2, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true } as const;

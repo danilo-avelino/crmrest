@@ -1,18 +1,16 @@
 "use client";
 
-import { BILLING_PLANS, type BillingPlanKey, type CheckoutResponse, type TenantBilling } from "@dishdesk/shared";
+import { BILLING_PLANS, type TenantBilling } from "@dishdesk/shared";
 import { useSearchParams } from "next/navigation";
-import { type ReactNode, useEffect, useState } from "react";
+import type { ReactNode } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
+import { ANNUAL_PLAN_TEXT, useCheckout, useConfirmPaymentReturn } from "@/components/auth/billing";
 import { useSettingsTenant } from "@/components/settings/settings-shell";
 import { Card, CardFooter } from "@/components/settings/settings-ui";
 import { Button } from "@/components/ui/button";
-import { usePendingAction } from "@/hooks/use-pending-action";
-import { ApiError, apiRequest } from "@/lib/api";
 import { currencyWhole, fullDate } from "@/lib/format";
 
-// Depois de voltar da Stripe ou da InfinitePay, a confirmação chega pelo webhook: busca a sessão de 3 em 3 segundos, por meio minuto.
-const CONFIRM_INTERVAL_MS = 3_000;
+// Meio minuto de confirmações (a cada 3 segundos) depois de voltar do pagamento.
 const CONFIRM_ATTEMPTS = 10;
 
 function status(billing: TenantBilling): string {
@@ -28,37 +26,12 @@ function status(billing: TenantBilling): string {
  * O design ainda não tem este board: segue as outras páginas das configurações. Desktop no MVP.
  */
 export function BillingTab() {
-  const { session, reload } = useAuth();
+  const { session } = useAuth();
   const tenant = useSettingsTenant();
   const params = useSearchParams();
-  const [error, setError] = useState<string | null>(null);
-  const [chosen, setChosen] = useState<BillingPlanKey | null>(null);
   const paid = params.get("pago") === "1";
-
-  useEffect(() => {
-    if (!paid) return;
-    let attempts = 0;
-    const timer = setInterval(() => {
-      if (++attempts > CONFIRM_ATTEMPTS) clearInterval(timer);
-      else void reload();
-    }, CONFIRM_INTERVAL_MS);
-    return () => clearInterval(timer);
-    // reload muda de identidade a cada sessão nova; o intervalo não pode recomeçar por isso.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [paid]);
-
-  const [pay, paying] = usePendingAction(async (plan: BillingPlanKey) => {
-    setChosen(plan);
-    setError(null);
-    try {
-      const { url } = await apiRequest<CheckoutResponse>("/auth/billing/checkout", { method: "POST", body: { tenantId: tenant.id, plan } });
-      window.location.assign(url);
-      // Segura o "Carregando…" enquanto o navegador abre a página de pagamento.
-      await new Promise((resolve) => setTimeout(resolve, 5_000));
-    } catch (failure) {
-      setError(failure instanceof ApiError ? failure.message : "Não foi possível abrir o pagamento. Tente novamente.");
-    }
-  });
+  useConfirmPaymentReturn(paid, CONFIRM_ATTEMPTS);
+  const { pay, paying, chosen, error } = useCheckout(tenant.id);
 
   // Acesso de suporte: quem não é da equipe do restaurante não vê nem paga a assinatura dele.
   const member = session?.tenants.find((t) => t.id === tenant.id);
@@ -117,7 +90,7 @@ export function BillingTab() {
           title="Plano anual"
           price={`${currencyWhole(BILLING_PLANS.annual.amountCents / 100)} por ano`}
           description={[
-            `No cartão em até 10x de ${currencyWhole(BILLING_PLANS.annual.amountCents / 100 / 10)} sem juros, ou no Pix.`,
+            ANNUAL_PLAN_TEXT,
             upToDate && "O ano é somado ao fim do período atual.",
             monthly && "A assinatura mensal é cancelada quando o pagamento é confirmado.",
           ]

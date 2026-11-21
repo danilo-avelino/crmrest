@@ -6,9 +6,8 @@ import { AlertCircleIcon, ChevronDownIcon } from "lucide-react";
 import Link from "next/link";
 import { Fragment, useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
-import { ORDER_TONE } from "@/components/clients/client-detail";
-import { CHANNEL_DOT, StatusBadge } from "@/components/inbox/bits";
-import { ORDER_STATUS } from "@/components/inbox/order-card";
+import { CHANNEL_DOT, StatusBadge } from "@/components/common/bits";
+import { ORDER_STATUS, OrderStatusBadge } from "@/components/orders/order-status";
 import { CustomerHistoryLine } from "@/components/orders/customer-history";
 import { FraudAlert, FraudBadge, FraudMarkControl } from "@/components/orders/fraud-alert";
 import { ItemOptions } from "@/components/orders/item-options";
@@ -245,7 +244,7 @@ export function OrderList() {
                       </Td>
                       <Td align="right">{currency(order.total)}</Td>
                       <Td>
-                        <StatusBadge tone={ORDER_TONE[order.status]}>{ORDER_STATUS[order.status].label}</StatusBadge>
+                        <OrderStatusBadge status={order.status} />
                         {order.dispute && <div className="mt-0.5 text-[11px] text-warning">Cliente pediu cancelamento</div>}
                       </Td>
                     </tr>

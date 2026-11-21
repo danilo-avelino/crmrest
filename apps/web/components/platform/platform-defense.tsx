@@ -4,8 +4,8 @@ import { DEFENSE_CATEGORY_LABEL, DEFENSE_REASON_LABEL, type DefenseEventDto } fr
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
-import { StatusBadge } from "@/components/inbox/bits";
-import { PlatformHeader, PlatformLoading } from "@/components/platform/platform-header";
+import { StatusBadge } from "@/components/common/bits";
+import { PlatformLoading, PlatformPage } from "@/components/platform/platform-header";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import { useNow } from "@/hooks/use-now";
@@ -31,37 +31,32 @@ export function PlatformDefense() {
   });
 
   return (
-    <main className="flex min-w-0 flex-1 flex-col overflow-hidden bg-surface">
-      <PlatformHeader title="Defesa da API" />
-      <div className="flex-1 overflow-y-auto px-7 py-6">
-        <div className="max-w-[760px]">
-          {events.data ? (
-            <section className="overflow-hidden rounded-xl border border-rule">
-              <div className="border-b border-rule px-5 pt-4 pb-3.5">
-                <h2 className="font-heading text-title font-semibold">IPs banidos e suspeitas</h2>
-                <p className="mt-1 text-ink-2">
-                  Quem sonda arquivos sensíveis, varre rotas ou insiste no login é banido na hora, com prazo. O Jev analisa cada
-                  caso depois: com o ataque confirmado, o banimento passa a 7 dias. A suspeita de abuso de login só é banida aqui.
-                  Enquanto a defesa estiver só registrando, os casos aparecem como “Seria banido”: confira se os IPs são de
-                  visitantes de verdade antes de ligar o banimento.
-                </p>
-              </div>
-              {events.data.length === 0 ? (
-                <p className="px-5 py-6 text-ink-3">Nenhum caso registrado ainda.</p>
-              ) : (
-                <ul>
-                  {events.data.map((event) => (
-                    <DefenseRow key={event.id} event={event} now={now} />
-                  ))}
-                </ul>
-              )}
-            </section>
+    <PlatformPage title="Defesa da API">
+      {events.data ? (
+        <section className="overflow-hidden rounded-xl border border-rule">
+          <div className="border-b border-rule px-5 pt-4 pb-3.5">
+            <h2 className="font-heading text-title font-semibold">IPs banidos e suspeitas</h2>
+            <p className="mt-1 text-ink-2">
+              Quem sonda arquivos sensíveis, varre rotas ou insiste no login é banido na hora, com prazo. O Jev analisa cada
+              caso depois: com o ataque confirmado, o banimento passa a 7 dias. A suspeita de abuso de login só é banida aqui.
+              Enquanto a defesa estiver só registrando, os casos aparecem como “Seria banido”: confira se os IPs são de
+              visitantes de verdade antes de ligar o banimento.
+            </p>
+          </div>
+          {events.data.length === 0 ? (
+            <p className="px-5 py-6 text-ink-3">Nenhum caso registrado ainda.</p>
           ) : (
-            <PlatformLoading failed={events.isError} />
+            <ul>
+              {events.data.map((event) => (
+                <DefenseRow key={event.id} event={event} now={now} />
+              ))}
+            </ul>
           )}
-        </div>
-      </div>
-    </main>
+        </section>
+      ) : (
+        <PlatformLoading failed={events.isError} />
+      )}
+    </PlatformPage>
   );
 }
 

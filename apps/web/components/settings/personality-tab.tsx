@@ -1,32 +1,14 @@
 "use client";
 
 import { fillMessage, PERSONALITIES, PERSONALITY_INFO, PERSONALITY_MESSAGES, type Personality, type TenantSettingsDto } from "@dishdesk/shared";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useId, useState } from "react";
-import { useAuth } from "@/components/auth/auth-provider";
-import { TabLoading, useSettingsTenant } from "@/components/settings/settings-shell";
+import { useCurrentSettings, useSaveSettings } from "@/components/settings/use-settings";
+import { TabLoading } from "@/components/settings/settings-shell";
 import { AutomationBubble, Card, CardBody, CardFooter, CardPreview, ToggleRow } from "@/components/settings/settings-ui";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 import { ApiError } from "@/lib/api";
 import { cn } from "@/lib/utils";
-
-function useCurrentSettings() {
-  const { request } = useAuth();
-  const tenant = useSettingsTenant();
-  const settings = useQuery({ queryKey: ["settings"], queryFn: () => request<TenantSettingsDto[]>("/settings") });
-  return { current: settings.data?.find((item) => item.tenantId === tenant.id), failed: settings.isError };
-}
-
-/** Grava uma configuração do restaurante e atualiza a lista em cache. */
-function useSettingsUpdate(tenantId: string) {
-  const { request } = useAuth();
-  const queryClient = useQueryClient();
-  return async (path: string, body: object) => {
-    const updated = await request<TenantSettingsDto>(`/settings/${tenantId}/${path}`, { method: "PUT", body });
-    queryClient.setQueryData<TenantSettingsDto[]>(["settings"], (list) => list?.map((item) => (item.tenantId === updated.tenantId ? updated : item)));
-  };
-}
 
 /** Página "Personalidade": o tom da IA e dos avisos, e o que os avisos sobre o pedido dizem. */
 export function PersonalityPage() {
@@ -49,7 +31,7 @@ export function PersonalityTab() {
 
 /** Personalidade: o tom da IA e de todos os avisos automáticos, com uma prévia antes de salvar. */
 function PersonalityForm({ settings }: { settings: TenantSettingsDto }) {
-  const update = useSettingsUpdate(settings.tenantId);
+  const saveSettings = useSaveSettings();
   const toast = useToast();
   const id = useId();
   const [personality, setPersonality] = useState<Personality>(settings.personality);
@@ -59,7 +41,7 @@ function PersonalityForm({ settings }: { settings: TenantSettingsDto }) {
   const save = async () => {
     setFailure(null);
     try {
-      await update("personality", { personality });
+      await saveSettings(settings.tenantId, "personality", { personality });
       toast("Personalidade salva");
     } catch (error) {
       setFailure(error instanceof ApiError ? error.message : "Não foi possível salvar.");
@@ -118,14 +100,14 @@ function PersonalityForm({ settings }: { settings: TenantSettingsDto }) {
  * (E32, desligado por padrão, porque escreve a todo cliente com pedido entregue). Cada opção grava ao ser marcada.
  */
 function OrderMessagesCard({ settings }: { settings: TenantSettingsDto }) {
-  const update = useSettingsUpdate(settings.tenantId);
+  const saveSettings = useSaveSettings();
   const toast = useToast();
   const [failure, setFailure] = useState<string | null>(null);
 
   const change = async (path: string, body: object, saved: string) => {
     setFailure(null);
     try {
-      await update(path, body);
+      await saveSettings(settings.tenantId, path, body);
       toast(saved);
     } catch (error) {
       setFailure(error instanceof ApiError ? error.message : "Não foi possível salvar.");

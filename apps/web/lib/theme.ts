@@ -1,7 +1,7 @@
 /** Tema do painel: claro, escuro ou o do sistema. A escolha fica no navegador. */
 export type Theme = "light" | "dark" | "system";
 
-export const THEME_KEY = "dd-theme";
+const THEME_KEY = "dd-theme";
 
 const DARK_QUERY = "(prefers-color-scheme: dark)";
 
@@ -20,7 +20,7 @@ export function readTheme(): Theme {
   }
 }
 
-export function applyTheme(theme: Theme) {
+function applyTheme(theme: Theme) {
   const dark = theme === "dark" || (theme === "system" && window.matchMedia(DARK_QUERY).matches);
   document.documentElement.classList.toggle("dark", dark);
 }

@@ -1,19 +1,14 @@
 "use client";
 
 import { CHANNEL_LABEL, type ChannelHealthDto, tokenExpiryLabel, tokenExpiryWarning } from "@dishdesk/shared";
-import { useQuery } from "@tanstack/react-query";
 import { TriangleAlertIcon } from "lucide-react";
 import Link from "next/link";
 import { useAuth } from "@/components/auth/auth-provider";
+import { useChannels } from "@/hooks/use-channels";
 
-/** Canais desconectados ou com erro (a mesma consulta da faixa): a linha da conversa e a área de resposta avisam. */
+/** Canais desconectados ou com erro: a linha da conversa e a área de resposta avisam. */
 export function useBrokenChannels(): ReadonlySet<string> {
-  const { request } = useAuth();
-  const channels = useQuery({
-    queryKey: ["channels"],
-    queryFn: () => request<ChannelHealthDto[]>("/channels"),
-    refetchInterval: 60_000,
-  });
+  const channels = useChannels();
   return new Set(channels.data?.filter((channel) => channel.status !== "CONNECTED").map((channel) => channel.id));
 }
 
@@ -22,12 +17,8 @@ export function useBrokenChannels(): ReadonlySet<string> {
  * token está para vencer e a renovação automática falhou, em âmbar.
  */
 export function ChannelAlert() {
-  const { request, session } = useAuth();
-  const channels = useQuery({
-    queryKey: ["channels"],
-    queryFn: () => request<ChannelHealthDto[]>("/channels"),
-    refetchInterval: 60_000,
-  });
+  const { session } = useAuth();
+  const channels = useChannels();
   const broken = channels.data?.filter((channel) => channel.status !== "CONNECTED") ?? [];
   const expiring = (channels.data ?? [])
     .filter((channel) => channel.status === "CONNECTED")

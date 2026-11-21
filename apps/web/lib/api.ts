@@ -27,7 +27,6 @@ async function apiFetch(path: string, { method = "GET", body, token }: ApiInit):
   return response;
 }
 
-/** Chama a API e devolve o JSON. */
 export async function apiRequest<T>(path: string, init: ApiInit = {}): Promise<T> {
   const response = await apiFetch(path, init);
   return (response.status === 204 ? undefined : await response.json()) as T;

@@ -1,8 +1,6 @@
 import type { CurrentOrderDto } from "@dishdesk/shared";
-import { describe, expect, it, vi } from "vitest";
-import { orderStages, promiseCountdown, stageHint, stageProgress } from "./current-order";
-
-vi.mock("@/components/auth/auth-provider", () => ({ useAuth: () => ({ request: vi.fn() }) }));
+import { describe, expect, it } from "vitest";
+import { orderStages, promiseCountdown, stageHint, stageProgress } from "./order-stages";
 
 const MINUTE = 60_000;
 const start = Date.parse("2026-11-18T15:00:00.000Z");

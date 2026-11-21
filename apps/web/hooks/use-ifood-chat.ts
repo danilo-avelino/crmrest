@@ -12,7 +12,6 @@ const TAG = "ifood-bridge";
 /** Primeira versão da extensão que informa a posição dos balões (o lado diz quem enviou a mensagem). */
 const MIN_VERSION = [0, 3, 0];
 const BRIDGE_TIMEOUT_MS = 4_000;
-/** Intervalo entre os passos do motor. */
 const STEP_MS = 3_000;
 /** Sem a extensão (ou com o widget ainda carregando), procura por ela de novo neste intervalo. */
 const SEARCH_MS = 15_000;

@@ -5,7 +5,7 @@ import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { BellIcon, BellRingIcon, BikeIcon, CheckIcon, ChevronDownIcon, CornerUpLeftIcon, SearchIcon, StoreIcon, UnplugIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
-import { Avatar, StatusBadge, TeamOnlyBadge, TimeRing } from "@/components/inbox/bits";
+import { Avatar, StatusBadge, TeamOnlyBadge, TimeRing } from "@/components/common/bits";
 import { useBrokenChannels } from "@/components/inbox/channel-alert";
 import { FraudBadge } from "@/components/orders/fraud-alert";
 import { Button } from "@/components/ui/button";
@@ -15,8 +15,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useAgentAlarm } from "@/hooks/use-agent-alarm";
-import { askNotificationPermission, useCallNotifications, useNotificationPermission } from "@/hooks/use-call-notifications";
+import { askNotificationPermission, useNotificationPermission } from "@/hooks/use-call-notifications";
+import { useCallSignals } from "@/hooks/use-conversation-counts";
 import { useNow } from "@/hooks/use-now";
 import { usePendingAction } from "@/hooks/use-pending-action";
 import { ago } from "@/lib/format";
@@ -92,15 +92,7 @@ export function ConversationList({
   });
 
   // O alarme vale para todos os restaurantes do usuário, mesmo com a lista filtrada por um deles.
-  const allCounts = useQuery({
-    queryKey: ["counts", null],
-    queryFn: () => request<ConversationCounts>("/conversations/counts"),
-  });
-  // Chamado sem urgência (entregador com outro assunto) tem a própria faixa, mas entra na mesma contagem falada.
-  const quiet = allCounts.data?.awaitingQuiet ?? 0;
-  const calling = (allCounts.data?.awaitingAgent ?? 0) - quiet;
-  const alarm = useAgentAlarm(calling + quiet, allCounts.data?.urgentSince ?? null);
-  useCallNotifications(allCounts.data ? { calling, quiet } : null, alarm.blocked, allCounts.data?.urgentSince ?? null);
+  const { calling, quiet, alarm } = useCallSignals();
 
   const items = conversations.data?.pages.flatMap((page) => page.items) ?? [];
   useUnreadSignals(items, calling + quiet);

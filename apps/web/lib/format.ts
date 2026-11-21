@@ -2,7 +2,7 @@
 
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
-const DAY = 24 * HOUR;
+export const DAY_MS = 24 * HOUR;
 
 const clockFormat = new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", minute: "2-digit" });
 const weekdayFormat = new Intl.DateTimeFormat("pt-BR", { weekday: "short" });
@@ -28,14 +28,14 @@ export function ago(iso: string, now: number): string {
   const elapsed = Math.max(0, now - new Date(iso).getTime());
   if (elapsed < MINUTE) return "agora";
   if (elapsed < HOUR) return `${Math.floor(elapsed / MINUTE)} min`;
-  if (elapsed < DAY) return `${Math.floor(elapsed / HOUR)}h`;
-  return `${Math.floor(elapsed / DAY)}d`;
+  if (elapsed < DAY_MS) return `${Math.floor(elapsed / HOUR)}h`;
+  return `${Math.floor(elapsed / DAY_MS)}d`;
 }
 
 /** "Hoje, 19:07", "Ontem, 19:07", "3 dias atrás" ou "12/09". */
 export function dayLabel(iso: string, now: number): string {
   const date = new Date(iso);
-  const days = Math.round((startOfDay(now) - startOfDay(date.getTime())) / DAY);
+  const days = Math.round((startOfDay(now) - startOfDay(date.getTime())) / DAY_MS);
   if (days === 0) return `Hoje, ${clock(iso)}`;
   if (days === 1) return `Ontem, ${clock(iso)}`;
   if (days < 30) return `${days} dias atrás`;
@@ -51,7 +51,7 @@ export function remaining(iso: string, now: number): string {
 
 /** Há quanto tempo é cliente: "9m", "2a" ou "<1m". */
 export function tenure(iso: string, now: number): string {
-  const months = Math.floor((now - new Date(iso).getTime()) / (30 * DAY));
+  const months = Math.floor((now - new Date(iso).getTime()) / (30 * DAY_MS));
   if (months < 1) return "<1m";
   return months < 12 ? `${months}m` : `${Math.floor(months / 12)}a`;
 }
@@ -80,7 +80,7 @@ export function lastContact(iso: string, now: number): string {
 
 /** Há quanto tempo, por extenso (cliente desde): "3 dias", "2 semanas", "1 mês", "9 meses", "2 anos". */
 export function duration(iso: string, now: number): string {
-  const days = Math.max(1, Math.floor((now - new Date(iso).getTime()) / DAY));
+  const days = Math.max(1, Math.floor((now - new Date(iso).getTime()) / DAY_MS));
   if (days < 7) return plural(days, "dia", "dias");
   if (days < 30) return plural(Math.floor(days / 7), "semana", "semanas");
   if (days < 365) return plural(Math.floor(days / 30), "mês", "meses");
@@ -116,7 +116,7 @@ export function shortDay(iso: string, now: number): string {
 }
 
 function daysBetween(iso: string, now: number): number {
-  return Math.round((startOfDay(now) - startOfDay(new Date(iso).getTime())) / DAY);
+  return Math.round((startOfDay(now) - startOfDay(new Date(iso).getTime())) / DAY_MS);
 }
 
 function plural(count: number, one: string, many: string): string {

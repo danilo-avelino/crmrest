@@ -5,7 +5,7 @@ import { AlertTriangleIcon, StarIcon } from "lucide-react";
 import Link from "next/link";
 import { Children, type CSSProperties, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
-import { count, dayTime, score } from "@/lib/format";
+import { count, dayTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 // Peças do board "Avaliações · Atendimento · iFood · Estados": cartões de número, tabelas em grade, selos e estados.
@@ -154,17 +154,6 @@ export function AiScoreBadge({ value }: { value: number }) {
   return (
     <span className={cn("inline-flex h-6 min-w-[46px] items-center justify-center rounded-lg px-1.5 text-[12.5px] font-bold tabular-nums", tone)} aria-label={`Nota ${rounded}%`}>
       {rounded}%
-    </span>
-  );
-}
-
-/** Nota média: o quadradinho arredondado e o valor com uma casa ("4,6"). */
-export function AverageScore({ value }: { value: number | null }) {
-  if (value === null) return <span className="text-ink-3">—</span>;
-  return (
-    <span className="inline-flex items-center gap-2 tabular-nums">
-      <ScoreBadge value={value} />
-      {score(value)}
     </span>
   );
 }

@@ -4,8 +4,8 @@ import { TriangleAlertIcon } from "lucide-react";
 import Link from "next/link";
 import { useAuth } from "@/components/auth/auth-provider";
 import { useNow } from "@/hooks/use-now";
+import { DAY_MS } from "@/lib/format";
 
-const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
  * Lembrete no topo do painel enquanto o acesso está liberado por confiança (assinatura vencida): quem atende avisa

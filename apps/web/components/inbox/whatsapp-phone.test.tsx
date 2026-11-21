@@ -7,9 +7,9 @@ const request = vi.fn();
 vi.mock("@/components/auth/auth-provider", () => ({ useAuth: () => ({ request }) }));
 vi.mock("@/components/ui/toast", () => ({ useToast: () => vi.fn() }));
 
-function show(onOpen = vi.fn()) {
+function show(onOpen = vi.fn(), client = new QueryClient()) {
   render(
-    <QueryClientProvider client={new QueryClient()}>
+    <QueryClientProvider client={client}>
       <WhatsAppPhone contactId="cliente-1" tenantId="loja-1" phone="+5586994478163" onOpen={onOpen} />
     </QueryClientProvider>,
   );
@@ -43,8 +43,9 @@ describe("telefone do cliente", () => {
 
   it("sem WhatsApp conectado na loja do cliente: só o número", async () => {
     request.mockResolvedValue([{ tenantId: "outra-loja", servedTenantIds: [], type: "WHATSAPP", status: "CONNECTED" }]);
-    show();
-    await waitFor(() => expect(request).toHaveBeenCalledWith("/channels"));
+    const client = new QueryClient();
+    show(vi.fn(), client);
+    await waitFor(() => expect(client.getQueryState(["channels"])?.status).toBe("success"));
     expect(screen.queryByRole("button")).toBeNull();
     expect(screen.getByText("(86) 99447-8163")).toBeTruthy();
   });

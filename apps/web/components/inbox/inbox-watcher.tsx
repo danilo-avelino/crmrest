@@ -1,14 +1,10 @@
 "use client";
 
-import type { ConversationCounts } from "@dishdesk/shared";
-import { useQuery } from "@tanstack/react-query";
 import { BellIcon, BellRingIcon, MessageSquareIcon, XIcon } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { useAuth } from "@/components/auth/auth-provider";
 import { beep } from "@/components/inbox/conversation-list";
-import { useAgentAlarm } from "@/hooks/use-agent-alarm";
-import { useCallNotifications } from "@/hooks/use-call-notifications";
+import { useCallSignals } from "@/hooks/use-conversation-counts";
 import { useInboxRealtime } from "@/hooks/use-inbox-realtime";
 
 const NOTICE_CLASS = "flex items-center gap-2 rounded-[7px] px-3.5 py-2 text-xs font-medium shadow-sm";
@@ -18,16 +14,8 @@ const NOTICE_CLASS = "flex items-center gap-2 rounded-[7px] px-3.5 py-2 text-xs 
  * de chamado (bipe e contagem falada) e o bipe de nova mensagem e mostra um aviso no topo com o atalho para a Inbox.
  */
 export function InboxWatcher() {
-  const { request } = useAuth();
   useInboxRealtime();
-  const counts = useQuery({
-    queryKey: ["counts", null],
-    queryFn: () => request<ConversationCounts>("/conversations/counts"),
-  });
-  const quiet = counts.data?.awaitingQuiet ?? 0;
-  const calling = (counts.data?.awaitingAgent ?? 0) - quiet;
-  const alarm = useAgentAlarm(calling + quiet, counts.data?.urgentSince ?? null);
-  useCallNotifications(counts.data ? { calling, quiet } : null, alarm.blocked, counts.data?.urgentSince ?? null);
+  const { counts, calling, quiet, alarm } = useCallSignals();
   const unread = counts.data?.unread ?? 0;
 
   // Não lidas de quando a página abriu (ou o aviso foi fechado): o aviso só aparece para o que chegou depois.

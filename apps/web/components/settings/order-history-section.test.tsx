@@ -52,11 +52,14 @@ describe("importação do histórico de pedidos", () => {
     expect(toast).toHaveBeenCalledTimes(1);
   });
 
+  it("pronta, pode rodar de novo: traz o que entrou desde então", () => {
+    show(history({ status: "done", progress: 100 }));
+    expect(screen.getByRole("button", { name: "Importar de novo" })).toBeTruthy();
+  });
+
   it("não avisa ao abrir a tela com a importação já concluída, nem quando termina em parte", () => {
     show(history({ status: "done", progress: 100 }));
     expect(toast).not.toHaveBeenCalled();
-    // Pronta, pode rodar de novo: traz o que entrou desde então.
-    expect(screen.getByRole("button", { name: "Importar de novo" })).toBeTruthy();
     cleanup();
     const { update } = show(history({}));
     update(history({ status: "partial" }));
