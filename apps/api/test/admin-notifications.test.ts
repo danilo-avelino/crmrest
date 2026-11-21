@@ -109,6 +109,7 @@ describe("textos das notificações", () => {
       lowScores: 0,
       onlyAi: 15,
       withTeam: 5,
+      noTeamReply: 0,
       teamReasons: [],
       subjects: [],
       issues: [],

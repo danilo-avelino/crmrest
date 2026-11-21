@@ -1,4 +1,4 @@
-import { AUTO_TAG_RULES, type ContactSubject, type ServiceFault, type ServiceIssue, type TeamReason, withoutAi } from "@dishdesk/shared";
+import { AUTO_TAG_RULES, type ContactSubject, type MessageContent, type ServiceFault, type ServiceIssue, type TeamReason, withoutAi } from "@dishdesk/shared";
 import type { Message } from "@dishdesk/database";
 import { InjectQueue } from "@nestjs/bullmq";
 import { Injectable } from "@nestjs/common";
@@ -128,7 +128,7 @@ export class AiEvaluationService {
 
   async evaluate(tenantId: string, conversationId: string, now = new Date()): Promise<void> {
     const scope = { tenantIds: [tenantId] };
-    const attendance = await this.db.withTenants(scope, async (tx): Promise<{ messages: Message[]; userId: string } | { wait: number } | null> => {
+    const attendance = await this.db.withTenants(scope, async (tx): Promise<{ messages: Message[]; userId: string | null; byPhone: boolean } | { wait: number } | null> => {
       if (!this.jev.enabled) return null;
       const module = await tx.tenantModule.findUnique({ where: { tenantId_module: { tenantId, module: "AI" } }, select: { id: true } });
       if (!module) return null;
@@ -151,12 +151,20 @@ export class AiEvaluationService {
       // Conversa com mensagem há menos de EVALUATION_DELAY_MS (o cliente voltou a escrever): espera mais.
       const wait = messages.at(-1)!.createdAt.getTime() + EVALUATION_DELAY_MS - now.getTime();
       if (wait > 0) return { wait };
-      const userId = messages.findLast((message) => message.direction === "OUTBOUND" && message.sentByUserId)?.sentByUserId;
-      if (!userId) {
-        await tx.aiOnlyAttendance.create({ data: { tenantId, conversationId } }); // a equipe não respondeu: sem chamada de IA
+      const userId = messages.findLast((message) => message.direction === "OUTBOUND" && message.sentByUserId)?.sentByUserId ?? null;
+      // Resposta pelo celular da loja (Evolution) também é da equipe, mesmo sem usuário no sistema.
+      const byPhone = !userId && messages.some((message) => message.direction === "OUTBOUND" && !!(message.content as MessageContent).fromPhone);
+      if (!userId && !byPhone) {
+        // A equipe não respondeu: sem chamada de IA. Se foi chamada (handoff) e ninguém respondeu, não conta como resolvido só pela IA.
+        const from = messages[0]!.createdAt;
+        const handedOff = !!(await tx.message.findFirst({
+          where: { conversationId, type: "SYSTEM", createdAt: { gte: from }, content: { path: ["event"], equals: "handoff" } },
+          select: { id: true },
+        }));
+        await tx.aiOnlyAttendance.create({ data: { tenantId, conversationId, handedOff } });
         return null;
       }
-      return { messages, userId };
+      return { messages, userId, byPhone };
     });
     if (!attendance) return;
     if ("wait" in attendance) return scheduleEvaluation(this.ai, tenantId, conversationId, attendance.wait);
@@ -189,7 +197,7 @@ export class AiEvaluationService {
     };
     const atRisk = data.satisfied === false || data.score <= AUTO_TAG_RULES.recoveryMaxScore || (data.churnRisk ?? 0) >= AUTO_TAG_RULES.recoveryMinRisk;
     await this.db.withTenants(scope, async (tx) => {
-      await tx.conversationEvaluation.create({ data: { tenantId, conversationId, userId: attendance.userId, ...data, model } });
+      await tx.conversationEvaluation.create({ data: { tenantId, conversationId, userId: attendance.userId, byPhone: attendance.byPhone, ...data, model } });
       if (atRisk) await refreshContactTags(tx); // a tag Em recuperação entra na hora
     });
     this.realtime.inboxChanged(tenantId, conversationId);

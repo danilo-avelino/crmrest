@@ -237,6 +237,14 @@ export type ConversationDayStats = {
 /** `evaluations`: avaliações da IA, na ordem em que foram feitas (vazio para quem não é administrador). */
 export type ConversationMessages = { messages: MessageDto[]; orders: Record<string, OrderDto>; evaluations: ConversationEvaluationDto[] };
 
+/** Dias (AAAA-MM-DD, Brasília) do cartão "Hoje até agora"; sem eles, só hoje. */
+export const ConversationDayQuery = z.object({
+  tenantId: z.uuid().optional(),
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+});
+export type ConversationDayQuery = z.infer<typeof ConversationDayQuery>;
+
 export const ConversationListQuery = z.object({
   /**
    * ACTIVE: abertas e pendentes em que a equipe foi chamada ou atuou (o que ela ainda precisa tratar); OPEN também fica só

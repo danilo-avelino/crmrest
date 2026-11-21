@@ -2,6 +2,7 @@ import { Readable } from "node:stream";
 import {
   type ConversationCounts,
   type ConversationDayStats,
+  ConversationDayQuery,
   ConversationListQuery,
   type ConversationMessages,
   type ConversationPage,
@@ -45,10 +46,10 @@ export class ConversationsController {
 
   @Get("today")
   today(
-    @Query(new ZodPipe(ConversationListQuery.pick({ tenantId: true }))) query: { tenantId?: string },
+    @Query(new ZodPipe(ConversationDayQuery)) query: ConversationDayQuery,
     @CurrentAuth() auth: RequestAuth,
   ): Promise<ConversationDayStats> {
-    return this.conversations.today(auth, query.tenantId);
+    return this.conversations.today(auth, query.tenantId, new Date(), query);
   }
 
   @Get(":id")

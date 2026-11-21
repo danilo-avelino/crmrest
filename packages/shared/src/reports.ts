@@ -148,6 +148,8 @@ export type RatingsReportDto = {
     onlyAi: number;
     /** Atendimentos que passaram pela equipe (os avaliados). */
     withTeam: number;
+    /** Atendimentos em que a equipe foi chamada e ninguém respondeu: não contam como resolvidos só pela IA. */
+    noTeamReply: number;
     /** Motivos da passagem para a equipe, do mais comum ao menos. */
     teamReasons: { reason: TeamReason; count: number }[];
     /** Assuntos dos atendimentos avaliados, do mais comum ao menos (sem as avaliações antigas, que não têm assunto). */

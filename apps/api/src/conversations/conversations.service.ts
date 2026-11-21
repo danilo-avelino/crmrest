@@ -133,21 +133,26 @@ export class ConversationsService {
    * ela; as demais são sem a equipe, e as duas somam as conversas do dia. A conversa só da equipe (alerta de fraude) não
    * entra: o cliente nem está nela. O tempo de resposta e a nota da IA seguem a aba Avaliações.
    */
-  async today(auth: RequestAuth, tenantId?: string, now = new Date()): Promise<ConversationDayStats> {
-    const from = new Date(`${localDate(now)}T00:00:00-03:00`);
+  async today(auth: RequestAuth, tenantId?: string, now = new Date(), range: { from?: string; to?: string } = {}): Promise<ConversationDayStats> {
+    // Um dia ou um período (de `from` até o fim de `to`); sem datas, só hoje. Datas no futuro ou invertidas viram hoje.
+    const today = localDate(now);
+    const first = range.from && range.from <= today ? range.from : today;
+    const last = range.to && range.to >= first && range.to <= today ? range.to : first;
+    const from = new Date(`${first}T00:00:00-03:00`);
+    const until = new Date(Date.parse(`${last}T00:00:00-03:00`) + 24 * 60 * 60 * 1000);
     return this.db.withTenants(scopeFor(auth, tenantId), async (tx) => {
       const [conversations] = await tx.$queryRaw<Pick<ConversationDayStats, "opened" | "resolved" | "withTeam">[]>`
         SELECT count(*)::int AS opened,
                count(*) FILTER (WHERE c.status = 'RESOLVED')::int AS resolved,
                count(*) FILTER (WHERE EXISTS (
                  SELECT 1 FROM messages m
-                 WHERE m.conversation_id = c.id AND m.created_at >= ${from}
+                 WHERE m.conversation_id = c.id AND m.created_at >= ${from} AND m.created_at < ${until}
                    AND ((m.direction = 'OUTBOUND' AND (m.sent_by_user_id IS NOT NULL OR m.content->>'fromPhone' = 'true'))
                      OR (m.type = 'SYSTEM' AND m.content->>'event' IN ('handoff', 'awaiting_agent')))
                ))::int AS "withTeam"
         FROM conversations c
         WHERE NOT c.team_only
-          AND EXISTS (SELECT 1 FROM messages m WHERE m.conversation_id = c.id AND m.direction = 'INBOUND' AND m.created_at >= ${from})`;
+          AND EXISTS (SELECT 1 FROM messages m WHERE m.conversation_id = c.id AND m.direction = 'INBOUND' AND m.created_at >= ${from} AND m.created_at < ${until})`;
       // Cada passagem à equipe e a primeira resposta de uma pessoa depois dela, antes da próxima passagem.
       const [team] = await tx.$queryRaw<Pick<ConversationDayStats, "averageResponseSeconds">[]>`
         SELECT avg(EXTRACT(EPOCH FROM r.created_at - h.created_at))::float8 AS "averageResponseSeconds"
@@ -156,7 +161,7 @@ export class ConversationsService {
           SELECT m.created_at
           FROM messages m
           WHERE m.conversation_id = h.conversation_id
-            AND m.direction = 'OUTBOUND' AND m.sent_by_user_id IS NOT NULL AND m.created_at > h.created_at
+            AND m.direction = 'OUTBOUND' AND (m.sent_by_user_id IS NOT NULL OR m.content->>'fromPhone' = 'true') AND m.created_at > h.created_at
             AND NOT EXISTS (
               SELECT 1 FROM messages n
               WHERE n.conversation_id = h.conversation_id AND n.type = 'SYSTEM' AND n.content->>'event' = 'handoff'
@@ -165,9 +170,9 @@ export class ConversationsService {
           ORDER BY m.created_at
           LIMIT 1
         ) r ON true
-        WHERE h.type = 'SYSTEM' AND h.content->>'event' = 'handoff' AND h.created_at >= ${from}`;
+        WHERE h.type = 'SYSTEM' AND h.content->>'event' = 'handoff' AND h.created_at >= ${from} AND h.created_at < ${until}`;
       const evaluations = await tx.conversationEvaluation.aggregate({
-        where: { legacy: false, createdAt: { gte: from } },
+        where: { legacy: false, createdAt: { gte: from, lt: until } },
         _count: { _all: true },
         _avg: { score: true },
       });

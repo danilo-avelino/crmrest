@@ -569,6 +569,7 @@ model ConversationEvaluation {
   tenantId       String   @map("tenant_id") @db.Uuid
   conversationId String   @map("conversation_id") @db.Uuid
   userId         String?  @map("user_id") @db.Uuid
+  byPhone        Boolean  @default(false) @map("by_phone") // a equipe respondeu só pelo celular da loja (sem usuário no sistema)
   resolved       Boolean // o problema do cliente foi resolvido
   satisfied      Boolean? // null = o cliente não reagiu
   score          Int // nota da IA em porcentagem, 1 a 100 (nas antigas, de 1 a 5)
@@ -596,6 +597,7 @@ model AiOnlyAttendance {
   id             String   @id @default(uuid(7)) @db.Uuid
   tenantId       String   @map("tenant_id") @db.Uuid
   conversationId String   @map("conversation_id") @db.Uuid
+  handedOff      Boolean  @default(false) @map("handed_off") // a equipe foi chamada e ninguém respondeu: não conta como resolvido pela IA
   createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
   tenant       Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)

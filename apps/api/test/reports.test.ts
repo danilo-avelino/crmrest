@@ -154,6 +154,23 @@ describe("aba Avaliações: notas e tempo de resposta por atendente", () => {
     }
   });
 
+  it("resposta pelo celular da loja conta como resposta da equipe", async () => {
+    const now = Date.now();
+    const contact = await admin.contact.create({ data: { tenantId: fx.tenant.id, name: "Celular Teste" } });
+    const conv = await admin.conversation.create({ data: { tenantId: fx.tenant.id, contactId: contact.id, channelId: fx.whatsapp.id, status: "RESOLVED" } });
+    const base = { tenantId: fx.tenant.id, channelId: fx.whatsapp.id, conversationId: conv.id };
+    await admin.message.create({ data: { ...base, direction: "INTERNAL", type: "SYSTEM", content: { event: "handoff" }, createdAt: new Date(now - 15 * MINUTE) } });
+    await admin.message.create({
+      data: { ...base, direction: "OUTBOUND", type: "TEXT", content: { text: "Já vou ver", fromPhone: true }, status: "SENT", createdAt: new Date(now - 12 * MINUTE) },
+    });
+    await admin.tenantMember.updateMany({ where: { tenantId: fx.tenant.id, userId: fx.user.id }, data: { role: "ADMIN" } });
+    const token = await accessTokenFor(app, fx.user.email, fx.tenant.id);
+
+    const { body } = await report(token, "7d").expect(200);
+    expect(body.unanswered.some((u: { conversationId: string }) => u.conversationId === conv.id)).toBe(false);
+    expect(body.agents).toContainEqual({ userId: "phone", name: "Celular da loja", ratings: 0, averageScore: null, answered: 1, averageResponseSeconds: 180 });
+  });
+
   it("todos os restaurantes sem administrar nenhum: recusa", async () => {
     await admin.tenantMember.updateMany({ where: { tenantId: fx.tenant.id, userId: fx.user.id }, data: { role: "AGENT" } });
     const token = await accessTokenFor(app, fx.user.email, fx.tenant.id);

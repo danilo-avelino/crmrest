@@ -22,8 +22,10 @@ import { DatabaseService } from "../core/database.service.js";
 import { adminScopeOf } from "../settings/tenant-admin.js";
 
 const DAY = 24 * 60 * 60 * 1000;
+/** Nome do "atendente" das respostas dadas pelo celular da loja (userId "phone", sem usuário no sistema). */
+const PHONE_AGENT = "Celular da loja";
 
-type HandoffRow = { handed_at: Date; replied_at: Date | null; user_id: string | null };
+type HandoffRow = { handed_at: Date; replied_at: Date | null; user_id: string | null; by_phone: boolean };
 type UnansweredRow = { tenant_id: string; conversation_id: string; called_at: Date; after_hours: boolean; contact_name: string | null };
 type RatingRow = {
   id: string;
@@ -34,6 +36,7 @@ type RatingRow = {
   contact_name: string | null;
   order_code: string | null;
   user_id: string | null;
+  by_phone: boolean;
 };
 type ReviewRow = { user_id: string; review: "rewritten" | "kept"; total: number };
 type WaitingRow = { reason: string; total: number };
@@ -57,13 +60,13 @@ export class ReportsService {
     return this.db.withTenants(scope, async (tx) => {
       // Cada passagem à equipe e a primeira resposta de uma pessoa depois dela (antes da próxima passagem na conversa).
       const handoffs = await tx.$queryRaw<HandoffRow[]>`
-        SELECT h.created_at AS handed_at, r.created_at AS replied_at, r.sent_by_user_id AS user_id
+        SELECT h.created_at AS handed_at, r.created_at AS replied_at, r.sent_by_user_id AS user_id, r.by_phone
         FROM messages h
         LEFT JOIN LATERAL (
-          SELECT m.created_at, m.sent_by_user_id
+          SELECT m.created_at, m.sent_by_user_id, m.sent_by_user_id IS NULL AS by_phone
           FROM messages m
           WHERE m.conversation_id = h.conversation_id
-            AND m.direction = 'OUTBOUND' AND m.sent_by_user_id IS NOT NULL AND m.created_at > h.created_at
+            AND m.direction = 'OUTBOUND' AND (m.sent_by_user_id IS NOT NULL OR m.content->>'fromPhone' = 'true') AND m.created_at > h.created_at
             AND NOT EXISTS (
               SELECT 1 FROM messages n
               WHERE n.conversation_id = h.conversation_id AND n.type = 'SYSTEM' AND n.content->>'event' = 'handoff'
@@ -77,16 +80,16 @@ export class ReportsService {
       // Cada nota e quem respondeu por último antes dela, no mesmo atendimento (depois da última passagem à equipe).
       const ratings = await tx.$queryRaw<RatingRow[]>`
         SELECT r.id, r.tenant_id, r.score, r.created_at, r.conversation_id, c.name AS contact_name, o.display_code AS order_code,
-               a.sent_by_user_id AS user_id
+               a.sent_by_user_id AS user_id, COALESCE(a.by_phone, false) AS by_phone
         FROM ratings r
         JOIN conversations cv ON cv.id = r.conversation_id
         JOIN contacts c ON c.id = cv.contact_id
         LEFT JOIN orders o ON o.id = r.order_id
         LEFT JOIN LATERAL (
-          SELECT m.sent_by_user_id
+          SELECT m.sent_by_user_id, m.sent_by_user_id IS NULL AS by_phone
           FROM messages m
           WHERE m.conversation_id = r.conversation_id
-            AND m.direction = 'OUTBOUND' AND m.sent_by_user_id IS NOT NULL AND m.created_at < r.created_at
+            AND m.direction = 'OUTBOUND' AND (m.sent_by_user_id IS NOT NULL OR m.content->>'fromPhone' = 'true') AND m.created_at < r.created_at
             AND m.created_at > COALESCE((
               SELECT max(h.created_at) FROM messages h
               WHERE h.conversation_id = r.conversation_id AND h.type = 'SYSTEM' AND h.content->>'event' = 'handoff'
@@ -115,7 +118,7 @@ export class ReportsService {
         JOIN contacts ct ON ct.id = cv.contact_id
         WHERE NOT EXISTS (
           SELECT 1 FROM messages m
-          WHERE m.conversation_id = c.conversation_id AND m.direction = 'OUTBOUND' AND m.sent_by_user_id IS NOT NULL
+          WHERE m.conversation_id = c.conversation_id AND m.direction = 'OUTBOUND' AND (m.sent_by_user_id IS NOT NULL OR m.content->>'fromPhone' = 'true')
             AND m.created_at > c.created_at AND m.created_at < c.day_end
         )
         ORDER BY c.conversation_id, c.day_end, c.created_at`;
@@ -134,7 +137,8 @@ export class ReportsService {
           })
         : [];
       // Atendimentos sem resposta da equipe: não passam pela avaliação, só contam.
-      const aiOnlyAttendances = aiModule ? await tx.aiOnlyAttendance.count({ where: { tenantId: { in: aiTenantIds }, createdAt: { gte: from } } }) : 0;
+      const aiOnlyRows = aiModule ? await tx.aiOnlyAttendance.groupBy({ by: ["handedOff"], where: { tenantId: { in: aiTenantIds }, createdAt: { gte: from } }, _count: true }) : [];
+      const aiOnlyCount = (handedOff: boolean) => aiOnlyRows.find((row) => row.handedOff === handedOff)?._count ?? 0;
       // Respostas bloqueadas pela revisão da IA por má conduta.
       const misconduct = aiModule
         ? await tx.message.findMany({
@@ -197,15 +201,20 @@ export class ReportsService {
       const nameOf = (userId: string | null) => (userId ? (names.get(userId) ?? "Ex-atendente") : null);
 
       const answered = handoffs.filter((row) => row.replied_at);
-      const agents = [...new Set([...answered, ...ratings].map((row) => row.user_id))]
-        .map((userId) => ({
-          userId,
-          name: nameOf(userId) ?? "Sem resposta da equipe",
-          ...metrics(
-            ratings.filter((row) => row.user_id === userId),
-            answered.filter((row) => row.user_id === userId),
-          ),
-        }))
+      // Quem respondeu: um usuário, o celular da loja (sem usuário) ou ninguém (nota sem resposta da equipe).
+      const agentKey = (row: { user_id: string | null; by_phone: boolean }) => row.user_id ?? (row.by_phone ? "phone" : "none");
+      const agents = [...new Set([...answered, ...ratings].map(agentKey))]
+        .map((key) => {
+          const userId = key === "none" ? null : key; // "phone" = respostas pelo celular da loja, sem usuário
+          return {
+            userId,
+            name: key === "phone" ? PHONE_AGENT : (nameOf(userId) ?? "Sem resposta da equipe"),
+            ...metrics(
+              ratings.filter((row) => agentKey(row) === key),
+              answered.filter((row) => agentKey(row) === key),
+            ),
+          };
+        })
         .sort((a, b) => (a.userId === null ? 1 : b.userId === null ? -1 : a.name.localeCompare(b.name, "pt-BR")));
 
       return {
@@ -239,8 +248,9 @@ export class ReportsService {
               reacted: evaluations.filter((row) => row.satisfied !== null).length,
               satisfied: evaluations.filter((row) => row.satisfied).length,
               lowScores: evaluations.filter((row) => row.score <= LOW_AI_SCORE).length,
-              onlyAi: aiOnlyAttendances + evaluations.filter((row) => row.userId === null).length,
-              withTeam: evaluations.filter((row) => row.userId !== null).length,
+              onlyAi: aiOnlyCount(false) + evaluations.filter((row) => row.userId === null && !row.byPhone).length,
+              withTeam: evaluations.filter((row) => row.userId !== null || row.byPhone).length,
+              noTeamReply: aiOnlyCount(true),
               teamReasons: Object.keys(TEAM_REASONS)
                 .map((reason) => ({ reason: reason as TeamReason, count: evaluations.filter((row) => row.teamReason === reason).length }))
                 .filter((row) => row.count > 0)
@@ -269,10 +279,11 @@ export class ReportsService {
                 text: (rewriteExample.content as MessageContent).text ?? "",
                 createdAt: rewriteExample.createdAt.toISOString(),
               },
-              agents: [...new Set(evaluations.map((row) => row.userId))]
-                .map((userId) => {
-                  const rows = evaluations.filter((row) => row.userId === userId);
-                  return { userId, name: nameOf(userId) ?? "Só a IA", evaluations: rows.length, averageScore: evaluationMetrics(rows).averageScore };
+              agents: [...new Set(evaluations.map((row) => row.userId ?? (row.byPhone ? "phone" : "none")))]
+                .map((key) => {
+                  const userId = key === "none" ? null : key;
+                  const rows = evaluations.filter((row) => (row.userId ?? (row.byPhone ? "phone" : "none")) === key);
+                  return { userId, name: key === "phone" ? PHONE_AGENT : (nameOf(userId) ?? "Só a IA"), evaluations: rows.length, averageScore: evaluationMetrics(rows).averageScore };
                 })
                 .sort((a, b) => (a.userId === null ? 1 : b.userId === null ? -1 : a.name.localeCompare(b.name, "pt-BR"))),
               recent: evaluations.slice(0, 50).map((row) => ({
