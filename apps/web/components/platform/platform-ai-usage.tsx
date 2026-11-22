@@ -35,7 +35,8 @@ const pct = (part: number, whole: number) => (whole > 0 ? Math.round((part / who
 const pct1 = (part: number, whole: number) => (whole > 0 ? `${((part / whole) * 100).toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%` : "0%");
 
 const tokens = (totals: AiUsageTotals) => totals.inputTokens + totals.outputTokens;
-const paidOf = (providers: Partial<Record<AiUsageProvider, AiUsageTotals>>) => (providers.CLAUDE?.costUsd ?? 0) + (providers.JEV?.costUsd ?? 0);
+const paidOf = (providers: Partial<Record<AiUsageProvider, AiUsageTotals>>) =>
+  (providers.CLAUDE?.costUsd ?? 0) + (providers.JEV?.costUsd ?? 0) + (providers.TRANSCRIPTION?.costUsd ?? 0);
 const weekday = (date: string) => weekdayFormat.format(new Date(`${date}T00:00:00Z`)).replace(".", "");
 
 /** O dia de hoje no horário de Brasília: "2026-11-11". */
@@ -219,7 +220,7 @@ function SummaryCard({ label, value, detail }: { label: string; value: string; d
   );
 }
 
-const FILL = { CLAUDE: "bg-claude", JEV: "bg-jev" } as const;
+const FILL = { CLAUDE: "bg-claude", JEV: "bg-jev", TRANSCRIPTION: "bg-ink-2" } as const;
 
 /** Quadradinho da cor do provedor (a IA local é só o contorno), com o rótulo ao lado. */
 function Swatch({ provider, label, size = "md" }: { provider: AiUsageProvider; label?: ReactNode; size?: "sm" | "md" }) {
@@ -370,7 +371,7 @@ function DailyChart({ data, today, month, claudePct, jevPct }: { data: PlatformA
     future: false,
     claude: day.providers.CLAUDE.costUsd,
     jev: day.providers.JEV.costUsd,
-    calls: day.providers.CLAUDE.calls + day.providers.JEV.calls + day.providers.LOCAL.calls,
+    calls: day.providers.CLAUDE.calls + day.providers.JEV.calls + day.providers.LOCAL.calls + (day.providers.TRANSCRIPTION?.calls ?? 0),
     local: tokens(day.providers.LOCAL),
   }));
   // No mês atual, os dias que ainda não chegaram ficam marcados até o fim do mês.
@@ -560,7 +561,7 @@ function DayTooltip({ day, index, length }: { day: ChartDay; index: number; leng
 }
 
 const MODEL_COLS = "grid grid-cols-[1.5fr_1.4fr_0.8fr_1fr_0.9fr_1.2fr] gap-4";
-const PROVIDER_NAME = { CLAUDE: "Claude · Anthropic", JEV: "Jev · OpenRouter", LOCAL: "IA local · Ollama" } as const;
+const PROVIDER_NAME = { CLAUDE: "Claude · Anthropic", JEV: "Jev · OpenRouter", LOCAL: "IA local · Ollama", TRANSCRIPTION: "Transcrição · OpenRouter" } as const;
 
 function Models({ data, month }: { data: PlatformAiUsageDto; month: string }) {
   return (

@@ -82,6 +82,8 @@ describe("Transcrição dos áudios do cardápio (F5-02, F5-03)", () => {
     expect(await transcriptionOf(id)).toBe("quero uma calabresa grande");
     expect(provider.calls.at(-1)).toMatchObject({ mimeType: "audio/ogg; codecs=opus", vocabulary: expect.stringContaining("Calabresa") });
     expect(aiAdd).toHaveBeenCalledWith("reply", { tenantId: fx.b.id, conversationId });
+    // 4 s de áudio a 3 micro-US$ por segundo, em Gastos com IA.
+    expect(await admin.aiUsage.findFirst({ where: { tenantId: fx.b.id, provider: "TRANSCRIPTION" }, orderBy: { createdAt: "desc" } })).toMatchObject({ inputTokens: 4, costMicroUsd: 12 });
   });
 
   it("não entendeu (texto vazio ou falha na última tentativa): marca failed e pede para repetir no tom do restaurante", async () => {

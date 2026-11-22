@@ -762,6 +762,7 @@ enum AiProvider {
   CLAUDE
   JEV
   LOCAL
+  TRANSCRIPTION // F5-02: áudio do cardápio transcrito pelo OpenRouter
 }
 
 model AiUsage {

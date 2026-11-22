@@ -84,6 +84,9 @@ export class AudioMediaService {
   }
 }
 
+/** Preço do Whisper large-v3-turbo no OpenRouter: US$ 0,000003 por segundo (22/11/2026). Em `inputTokens` vão os segundos. */
+export const TRANSCRIPTION_MICRO_USD_PER_SECOND = 3;
+
 /** Transcrição guardada que é texto do cliente (e não um estado: pendente, sem provedor ou falha). */
 export const isTranscribedText = (value: string | undefined): value is string =>
   Boolean(value) && value !== "pending" && value !== "pending_provider" && value !== "failed";
@@ -98,6 +101,7 @@ export class TranscriptionProcessor extends JobProcessor {
   private readonly logger = new Logger(TranscriptionProcessor.name);
   /** Provedor (Whisper pelo OpenRouter); os testes trocam por um falso. */
   provider: TranscriptionProvider;
+  private readonly model: string;
 
   constructor(
     private readonly audio: AudioMediaService,
@@ -110,6 +114,7 @@ export class TranscriptionProcessor extends JobProcessor {
   ) {
     super();
     this.provider = new OpenRouterTranscriptionProvider(env);
+    this.model = env.TRANSCRIPTION_MODEL;
   }
 
   async process(job: Job<TranscriptionJob>): Promise<void> {
@@ -154,7 +159,14 @@ export class TranscriptionProcessor extends JobProcessor {
     }
     await this.patch(tenantId, messageId, "pending");
     const bytes = await this.storage.get(tenantId, loaded.media.storageKey!);
-    const { text } = await this.provider.transcribe({ bytes, mimeType: loaded.media.mimeType, vocabulary: loaded.vocabulary });
+    const { text, seconds } = await this.provider.transcribe({ bytes, mimeType: loaded.media.mimeType, vocabulary: loaded.vocabulary });
+    // Custo em Gastos com IA: por segundo de áudio (o do provedor, senão a duração da mensagem).
+    const billed = Math.max(1, Math.ceil(seconds ?? loaded.media.seconds ?? 0));
+    await this.db.withTenants(scope, (tx) =>
+      tx.aiUsage.create({
+        data: { tenantId, provider: "TRANSCRIPTION", model: this.model, inputTokens: billed, outputTokens: 0, costMicroUsd: billed * TRANSCRIPTION_MICRO_USD_PER_SECOND },
+      }),
+    );
     await this.finish(tenantId, messageId, text ? text.slice(0, 2_000) : "failed");
   }
 

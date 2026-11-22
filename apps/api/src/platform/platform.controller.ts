@@ -279,7 +279,7 @@ export class PlatformController {
     }));
     const names = new Map(tenants.map((t) => [t.id, t.name]));
     const zero = (): AiUsageTotals => ({ calls: 0, inputTokens: 0, outputTokens: 0, costUsd: 0 });
-    const perProvider = (): Record<AiUsageProvider, AiUsageTotals> => ({ CLAUDE: zero(), JEV: zero(), LOCAL: zero() });
+    const perProvider = (): Record<AiUsageProvider, AiUsageTotals> => ({ CLAUDE: zero(), JEV: zero(), LOCAL: zero(), TRANSCRIPTION: zero() });
     const add = (into: AiUsageTotals, from: AiUsageTotals) => {
       into.calls += from.calls;
       into.inputTokens += from.inputTokens;
@@ -315,10 +315,10 @@ export class PlatformController {
       return { date, providers: byDay.get(date) ?? perProvider() };
     });
     // Próximos 30 dias: a média diária dos últimos AI_FORECAST_BASIS_DAYS dias × 30.
-    const recentMicro: Record<AiUsageProvider, number> = { CLAUDE: 0, JEV: 0, LOCAL: 0 };
+    const recentMicro: Record<AiUsageProvider, number> = { CLAUDE: 0, JEV: 0, LOCAL: 0, TRANSCRIPTION: 0 };
     for (const row of recent) recentMicro[row.provider] += row._sum.costMicroUsd ?? 0;
     const project = (micro: number) => Math.round((micro * 30) / AI_FORECAST_BASIS_DAYS) / 1_000_000;
-    const forecastProviders = { CLAUDE: project(recentMicro.CLAUDE), JEV: project(recentMicro.JEV), LOCAL: project(recentMicro.LOCAL) };
+    const forecastProviders = { CLAUDE: project(recentMicro.CLAUDE), JEV: project(recentMicro.JEV), LOCAL: project(recentMicro.LOCAL), TRANSCRIPTION: project(recentMicro.TRANSCRIPTION) };
     const tokens = (row: AiUsageTotals) => row.inputTokens + row.outputTokens;
     const byCost = (a: AiUsageTotals, b: AiUsageTotals) => b.costUsd - a.costUsd || tokens(b) - tokens(a);
     return {
@@ -329,7 +329,7 @@ export class PlatformController {
       days,
       forecast: {
         basisDays: AI_FORECAST_BASIS_DAYS,
-        costUsd: project(recentMicro.CLAUDE + recentMicro.JEV + recentMicro.LOCAL),
+        costUsd: project(recentMicro.CLAUDE + recentMicro.JEV + recentMicro.LOCAL + recentMicro.TRANSCRIPTION),
         providers: forecastProviders,
       },
       tenants: [...byTenant.values()].sort(byCost),

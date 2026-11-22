@@ -156,13 +156,13 @@ export type PlatformAiStatusDto = {
 };
 
 /** Quem respondeu as chamadas de IA: o Claude (a reserva paga), o Jev (pelo OpenRouter) e a LLM local (sem custo). */
-export const AI_USAGE_PROVIDER_LABEL = { CLAUDE: "Claude", JEV: "Jev", LOCAL: "IA local" } as const;
+export const AI_USAGE_PROVIDER_LABEL = { CLAUDE: "Claude", JEV: "Jev", LOCAL: "IA local", TRANSCRIPTION: "Transcrição" } as const;
 export type AiUsageProvider = keyof typeof AI_USAGE_PROVIDER_LABEL;
 
 export type AiUsageTotals = { calls: number; inputTokens: number; outputTokens: number; costUsd: number };
 
 /** Por onde cada provedor é cobrado: o Claude pela Anthropic, o Jev pelo OpenRouter. */
-export const AI_USAGE_PROVIDER_VIA = { CLAUDE: "Anthropic", JEV: "OpenRouter", LOCAL: "Ollama" } as const;
+export const AI_USAGE_PROVIDER_VIA = { CLAUDE: "Anthropic", JEV: "OpenRouter", LOCAL: "Ollama", TRANSCRIPTION: "OpenRouter" } as const;
 
 /** Dias de uso que a previsão dos próximos 30 dias usa como base (a média diária deles × 30). */
 export const AI_FORECAST_BASIS_DAYS = 14;

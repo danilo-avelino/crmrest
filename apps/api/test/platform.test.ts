@@ -266,7 +266,7 @@ describe("painel da plataforma (Super Admin)", () => {
       // O mês vazio vem zerado.
       const { body: empty } = await api("get", "ai-usage?month=1999-01", superToken).expect(200);
       const none = { calls: 0, inputTokens: 0, outputTokens: 0, costUsd: 0 };
-      const providers = { CLAUDE: none, JEV: none, LOCAL: none };
+      const providers = { CLAUDE: none, JEV: none, LOCAL: none, TRANSCRIPTION: none };
       expect(empty).toMatchObject({ month: "1999-01", ...none, providers, models: [], tenants: [] });
       expect(empty.days).toHaveLength(31);
       expect(empty.days.every((day: { providers: unknown }) => JSON.stringify(day.providers) === JSON.stringify(providers))).toBe(true);
