@@ -5,9 +5,21 @@ import {
   BusinessHours,
   businessHoursOf,
   COURIER_MENU_OPTIONS,
+  closingTimeAt,
+  DEFAULT_BUSINESS_HOURS,
+  DEFAULT_MENU_ACCENT,
+  DEFAULT_MENU_AGENT,
+  DEFAULT_MENU_STORE,
+  effectivePaymentMethods,
   isOpenAt,
+  MENU_AGENT_RULES_MAX,
+  menuAgentOf,
+  menuStoreOf,
   menuMessage,
+  pixAvailable,
   reopeningAt,
+  UpdateMenuAgentRequest,
+  UpdateMenuStoreRequest,
 } from "../src/settings.js";
 
 // Horários de Brasília (-03:00). 2026-10-05 é segunda-feira.
@@ -43,6 +55,8 @@ describe("personalidade do atendimento", () => {
     dispatchNotice: ["pedido", "hora"],
     deliveredNotice: ["pedido"],
     orderCanceled: ["nome", "pedido"],
+    menuCartRecovery: ["nome"],
+    menuRecoveryOffer: ["nome", "presente"],
     readyNotice: ["pedido"],
     courierGreeting: ["nome"],
     courierArrivalConfirmed: ["pedido"],
@@ -52,6 +66,13 @@ describe("personalidade do atendimento", () => {
     courierOrderNotFound: ["pedido"],
     courierProblemRequest: ["pedido"],
     reviewInvite: ["pedido"],
+    menuOrderSummary: ["nome"],
+    menuPixSent: ["total", "validade"],
+    menuPaymentConfirmed: ["pedido", "hora"],
+    menuClosedScheduling: ["retorno"],
+    menuLoginCode: ["codigo", "loja"],
+    menuItemSoldOut: ["item"],
+    menuOrderConfirmed: ["nome", "pedido", "quando", "pagamento"],
   };
 
   it.each(PERSONALITIES)("%s: todas as mensagens preenchidas, com os marcadores certos", (personality) => {
@@ -146,5 +167,117 @@ describe("horário de funcionamento", () => {
     expect(read.enabled).toBe(true);
     expect(read.days).toEqual([[], ...Array(6).fill([{ open: "18:00", close: "23:00" }])]);
     expect(isOpenAt(read, at("2026-10-05T19:00:00"))).toBe(true);
+  });
+});
+
+describe("loja do cardápio digital", () => {
+  it("sem configuração salva, valem os padrões (vitrine a cada 24 h)", () => {
+    expect(menuStoreOf({})).toEqual(DEFAULT_MENU_STORE);
+    expect(menuStoreOf(null)).toEqual(DEFAULT_MENU_STORE);
+    expect(DEFAULT_MENU_STORE.promoShowcase.frequencyHours).toBe(24);
+  });
+
+  it("configuração válida é devolvida como está", () => {
+    const menuStore = {
+      ...DEFAULT_MENU_STORE,
+      delivery: { mode: "BY_RADIUS", radii: [{ maxKm: 3, feeCents: 500 }, { maxKm: 6, feeCents: 900 }] },
+      minOrderCents: 3000,
+      freeDeliveryFromCents: 8000,
+      paymentMethods: ["pix", "cash"],
+    };
+    expect(menuStoreOf({ menuStore })).toEqual(menuStore);
+  });
+
+  it("valor fora do formato volta aos padrões", () => {
+    expect(menuStoreOf({ menuStore: { ...DEFAULT_MENU_STORE, minOrderCents: 12.5 } })).toEqual(DEFAULT_MENU_STORE);
+    expect(menuStoreOf({ menuStore: { ...DEFAULT_MENU_STORE, paymentMethods: ["boleto"] } })).toEqual(DEFAULT_MENU_STORE);
+    expect(menuStoreOf({ menuStore: "x" })).toEqual(DEFAULT_MENU_STORE);
+  });
+});
+
+describe("formas de pagamento do cardápio", () => {
+  it("o padrão é pagar na entrega: dinheiro, crédito, débito e Pix na maquininha, sem Pix online", () => {
+    expect(DEFAULT_MENU_STORE.paymentMethods).toEqual(["cash", "credit", "debit", "pix_on_delivery"]);
+    expect(pixAvailable(DEFAULT_MENU_STORE)).toBe(false);
+    expect(effectivePaymentMethods(DEFAULT_MENU_STORE)).toEqual(["cash", "credit", "debit", "pix_on_delivery"]);
+  });
+
+  it("o Pix sai das formas efetivas enquanto não há provedor configurado", () => {
+    expect(effectivePaymentMethods({ ...DEFAULT_MENU_STORE, paymentMethods: ["pix", "cash"] })).toEqual(["cash"]);
+    expect(effectivePaymentMethods({ ...DEFAULT_MENU_STORE, paymentMethods: ["debit", "pix"] })).toEqual(["debit"]);
+    // Pix na maquininha não é o Pix online: continua valendo.
+    expect(effectivePaymentMethods({ ...DEFAULT_MENU_STORE, paymentMethods: ["pix", "pix_on_delivery"] })).toEqual(["pix_on_delivery"]);
+  });
+
+  it("loja que guardou só Pix (padrão antigo) volta a dinheiro, crédito e débito: nunca zero formas", () => {
+    expect(effectivePaymentMethods({ ...DEFAULT_MENU_STORE, paymentMethods: ["pix"] })).toEqual(["cash", "credit", "debit", "pix_on_delivery"]);
+  });
+});
+
+describe("agente de pedidos pela IA", () => {
+  it("sem configuração salva, o agente fica ligado e sugere complementos", () => {
+    for (const settings of [{}, null, undefined, "x", { menuAgent: "x" }]) expect(menuAgentOf(settings)).toEqual(DEFAULT_MENU_AGENT);
+    expect(DEFAULT_MENU_AGENT).toEqual({ enabled: true, houseRules: "", suggestAddons: true, maxSuggestionsPerConversation: 2 });
+  });
+
+  it("configuração parcial ou antiga completa os campos que faltam", () => {
+    expect(menuAgentOf({ menuAgent: { enabled: false } })).toEqual({ enabled: false, houseRules: "", suggestAddons: true, maxSuggestionsPerConversation: 2 });
+    expect(menuAgentOf({ personality: "formal", menuAgent: { attendantName: "Vila", houseRules: "Sem borda no broto.", dailyTokensPerConversation: 50_000 } })).toEqual({
+      enabled: true,
+      attendantName: "Vila",
+      houseRules: "Sem borda no broto.",
+      suggestAddons: true,
+      maxSuggestionsPerConversation: 2,
+      dailyTokensPerConversation: 50_000,
+    });
+  });
+
+  it("valor fora do formato volta aos padrões", () => {
+    expect(menuAgentOf({ menuAgent: { houseRules: "x".repeat(MENU_AGENT_RULES_MAX + 1) } })).toEqual(DEFAULT_MENU_AGENT);
+    expect(menuAgentOf({ menuAgent: { dailyTokensPerConversation: 5 } })).toEqual(DEFAULT_MENU_AGENT);
+    expect(menuAgentOf({ menuAgent: { enabled: "sim" } })).toEqual(DEFAULT_MENU_AGENT);
+    expect(menuAgentOf({ menuAgent: { maxSuggestionsPerConversation: 4 } })).toEqual(DEFAULT_MENU_AGENT);
+    expect(menuAgentOf({ menuAgent: { maxSuggestionsPerConversation: 0 } }).maxSuggestionsPerConversation).toBe(0);
+  });
+
+  it("o pedido do painel apara os textos e recusa regras longas ou teto fora da faixa", () => {
+    expect(UpdateMenuAgentRequest.parse({ attendantName: "  Vila ", houseRules: "  Sem meio a meio no broto.  " })).toMatchObject({
+      attendantName: "Vila",
+      houseRules: "Sem meio a meio no broto.",
+    });
+    expect(UpdateMenuAgentRequest.safeParse({ houseRules: "x".repeat(MENU_AGENT_RULES_MAX + 1) }).success).toBe(false);
+    expect(UpdateMenuAgentRequest.safeParse({ dailyTokensPerConversation: 1_000 }).success).toBe(false);
+    expect(UpdateMenuAgentRequest.safeParse({ dailyTokensPerConversation: 12.5 }).success).toBe(false);
+    expect(UpdateMenuAgentRequest.safeParse({ attendantName: "x".repeat(31) }).success).toBe(false);
+  });
+});
+
+describe("marca e contato da loja (F2-13)", () => {
+  it("configuração antiga, sem os campos novos, continua valendo", () => {
+    expect(menuStoreOf({ menuStore: DEFAULT_MENU_STORE })).toEqual(DEFAULT_MENU_STORE);
+    expect(DEFAULT_MENU_STORE.accentColor).toBeUndefined();
+    expect(DEFAULT_MENU_ACCENT).toBe("#8E2F1B");
+  });
+
+  it("aceita marca e contato; cor fora de #RRGGBB e sobre longo demais voltam aos padrões", () => {
+    const brand = { logoUrl: "https://x/l.png", accentColor: "#112233", city: "Recife", phone: "(81) 99999-0000", cnpj: "12.345.678/0001-90", about: "Casa de massas" };
+    expect(menuStoreOf({ menuStore: { ...DEFAULT_MENU_STORE, ...brand } })).toEqual({ ...DEFAULT_MENU_STORE, ...brand });
+    expect(menuStoreOf({ menuStore: { ...DEFAULT_MENU_STORE, accentColor: "vermelho" } })).toEqual(DEFAULT_MENU_STORE);
+    expect(menuStoreOf({ menuStore: { ...DEFAULT_MENU_STORE, about: "a".repeat(501) } })).toEqual(DEFAULT_MENU_STORE);
+  });
+
+  it("o pedido do painel não aceita logo nem capa", () => {
+    const parsed = UpdateMenuStoreRequest.parse({ ...DEFAULT_MENU_STORE, logoUrl: "https://evil/x.png", coverUrl: "https://evil/y.png" });
+    expect(parsed).not.toHaveProperty("logoUrl");
+    expect(parsed).not.toHaveProperty("coverUrl");
+  });
+
+  it("closingTimeAt: hora em que o turno aberto termina, inclusive depois da meia-noite", () => {
+    const hours: BusinessHours = { ...DEFAULT_BUSINESS_HOURS, enabled: true, days: Array.from({ length: 7 }, () => [{ open: "18:00", close: "23:00" }]) };
+    expect(closingTimeAt(hours, at("2026-10-05T20:00:00"))).toBe("23:00");
+    expect(closingTimeAt(hours, at("2026-10-05T15:00:00"))).toBeNull();
+    const night = { ...hours, days: hours.days.map(() => [{ open: "18:00", close: "02:00" }]) };
+    expect(closingTimeAt(night, at("2026-10-06T01:00:00"))).toBe("02:00");
+    expect(closingTimeAt(night, at("2026-10-06T03:00:00"))).toBeNull();
   });
 });

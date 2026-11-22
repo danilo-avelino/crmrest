@@ -4,8 +4,8 @@ import { z } from "zod";
 // Painel da plataforma (Super Admin, E16): restaurantes, uso, plano, módulos e auditoria.
 
 /** Módulos pagos à parte do plano, que a plataforma liga por restaurante. */
-export const MODULES = ["CAMPAIGNS", "AI"] as const satisfies readonly ModuleKey[];
-export const MODULE_LABEL: Record<ModuleKey, string> = { CAMPAIGNS: "Campanhas", AI: "Atendimento com IA" };
+export const MODULES = ["CAMPAIGNS", "AI", "MENU"] as const satisfies readonly ModuleKey[];
+export const MODULE_LABEL: Record<ModuleKey, string> = { CAMPAIGNS: "Campanhas", AI: "Atendimento com IA", MENU: "Cardápio" };
 
 /** Restaurante como aparece na lista da plataforma, com o uso de cada um. */
 export type PlatformTenantDto = {
@@ -28,6 +28,8 @@ export type PlatformTenantDto = {
   openConversations: number;
   /** Mensagens (recebidas e enviadas) nos últimos 30 dias. */
   messagesLast30Days: number;
+  /** Uso do módulo Cardápio (X1), só com ele ligado: itens, pedidos do cardápio no mês e custo de IA no mês. */
+  menuUsage?: { items: number; ordersThisMonth: number; aiCostMicroUsd: number } | null;
 };
 
 export const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;

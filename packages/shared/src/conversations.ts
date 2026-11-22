@@ -1,3 +1,4 @@
+import type { OrderOrigin } from "./channels.js";
 import type {
   ChannelStatus,
   ChannelType,
@@ -42,7 +43,12 @@ export type MessageContent = {
     | "courier_front_desk"
     | "courier_front_desk_confirmed"
     | "courier_problem_request"
-    | "ifood_observation_ask";
+    | "ifood_observation_ask"
+    | "menu_order_confirmed"
+    | "menu_cart_recovery"
+    | "menu_recovery_offer"
+    | "menu_pix"
+    | "menu_audio_failed";
   /** Evento do sistema mostrado na conversa. */
   event?:
     | "conversation_opened"
@@ -67,6 +73,8 @@ export type MessageContent = {
     | "ai_skip"
     /** A IA acha que quem escreve é um entregador sem a tag: a equipe confirma no modal da conversa. */
     | "courier_check"
+    /** O agente de pedidos do cardápio mexeu no carrinho (adicionou, trocou, definiu a entrega, resumiu). */
+    | "menu_agent"
     | "cancellation_alert"
     /** Prevenção de fraude: só a equipe vê. */
     | "fraud_alert"
@@ -81,9 +89,30 @@ export type MessageContent = {
   /** Template aprovado do WhatsApp (o único envio permitido fora da janela de 24h). */
   template?: { name: string; language: string; variables: string[] };
   /** `forwardOf`: mídia encaminhada de outra mensagem do restaurante; o arquivo é buscado nela na hora do envio. */
-  media?: { mimeType: string; externalMediaId?: string; url?: string; filename?: string; forwardOf?: string };
+  media?: {
+    mimeType: string;
+    externalMediaId?: string;
+    url?: string;
+    filename?: string;
+    forwardOf?: string;
+    /** Áudio de restaurante com o módulo MENU: chave no storage privado (F5-01), servida no lugar da plataforma. */
+    storageKey?: string;
+    /** Duração em segundos, quando a plataforma informa. */
+    seconds?: number;
+    /** Por que o áudio não foi guardado: too_long, too_large, no_source ou failed. */
+    storeError?: string;
+    /** Transcrição do áudio (F5-02): enquanto não há provedor, "pending_provider". */
+    transcription?: string;
+  };
   /** Mensagem encaminhada de outra conversa pela equipe. */
   forwarded?: boolean;
+  /**
+   * Pergunta com opções fechadas do agente de pedidos (F4-05). `text` já traz a versão numerada (o que a Inbox mostra e
+   * o que sai nos conectores sem botões); na API oficial do WhatsApp sai como botões ou lista, com `question` no corpo.
+   */
+  choices?: { question: string; options: { id: string; title: string }[] };
+  /** Mensagem recebida: id do botão ou do item de lista que o cliente tocou (WhatsApp Cloud API). */
+  replyId?: string;
   location?: { latitude: number; longitude: number; name?: string; address?: string };
   /**
    * Mensagem recebida: id de quem escreveu no canal (wa_id, IGSID). Um cadastro pode ter mais de um perfil no mesmo
@@ -154,10 +183,27 @@ export type MessageDto = {
   createdAt: string;
 };
 
+/** Forma de pagamento do pedido do cardápio próprio: `pix` é pago no app; as demais, na entrega (ou na retirada). */
+export type MenuOrderPayment = { method: "pix" | "cash" | "credit" | "debit" | "pix_on_delivery"; changeForCents: number | null };
+
+/** Por onde o pedido do cardápio próprio nasceu: o site, a conversa com a IA no WhatsApp ou um anúncio. */
+export type MenuOrderOrigin = "site" | "whatsapp_ai" | "ad";
+
+/** O que a cozinha e o atendente precisam saber de um pedido do cardápio próprio (source MENU); null nos demais. */
+export type MenuOrderInfo = {
+  takeout: boolean;
+  /** Horário marcado (pedido agendado); null: o quanto antes. */
+  scheduledFor: string | null;
+  payment: MenuOrderPayment | null;
+  origin: MenuOrderOrigin;
+  /** Vantagem aplicada (cupom da tag ou presente da casa); ausente em pedido sem vantagem. */
+  benefit?: { label: string; discountCents: number; freeDelivery: boolean } | null;
+};
+
 export type OrderDto = {
   id: string;
   /** De onde veio o pedido (iFood, Cardápio Web). */
-  channelType: ChannelType;
+  channelType: OrderOrigin;
   displayCode: string | null;
   status: OrderStatus;
   subtotal: string;
@@ -168,6 +214,8 @@ export type OrderDto = {
   deliveredAt: string | null;
   /** `unitPrice` já inclui os complementos escolhidos (`options`, na ordem do pedido). */
   items: { name: string; quantity: number; unitPrice: string; notes: string | null; options: string[] }[];
+  /** Só no pedido do cardápio próprio. Ausente em API antiga (deploy em andamento). */
+  menu?: MenuOrderInfo | null;
   /** Pedido de outro restaurante atendido pelo canal da conversa (Configurações → Integrações): o nome dele. */
   restaurantName?: string;
 };

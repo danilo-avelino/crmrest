@@ -21,6 +21,7 @@ import { parseInstagram } from "../connectors/instagram.connector.js";
 import { splitMetaPayload } from "../connectors/meta.js";
 import { type ParsedWebhook, parseWhatsApp } from "../connectors/whatsapp.connector.js";
 import { DatabaseService } from "../core/database.service.js";
+import { AudioMediaService } from "./audio-media.service.js";
 import { type AutomationJob, QUEUES } from "../queues/queues.module.js";
 import { RealtimeEmitter } from "../realtime/realtime.emitter.js";
 
@@ -62,6 +63,7 @@ export class InboundService {
     private readonly connectors: ConnectorsService,
     private readonly triage: TriageService,
     @InjectQueue(QUEUES.automations) private readonly automations: Queue<AutomationJob>,
+    private readonly audio: AudioMediaService,
     @Inject(ENV) env: Env,
   ) {
     this.key = parseEncryptionKey(env.ENCRYPTION_KEY);
@@ -172,6 +174,7 @@ export class InboundService {
   /** Grava a mensagem recebida; devolve a conversa, ou null se o webhook era repetido. */
   async handleMessage(channel: ResolvedChannel, message: NormalizedMessage): Promise<OpenedConversation | null> {
     const at = arrivalTime(message.timestamp);
+    let audioMessageId: string | null = null;
     const opened = await this.db.withTenants({ tenantIds: [channel.tenantId] }, async (tx) => {
       const duplicate = await tx.message.findUnique({
         where: { channelId_externalMessageId: { channelId: channel.id, externalMessageId: message.externalMessageId } },
@@ -181,7 +184,7 @@ export class InboundService {
 
       const contact = await this.resolveContact(tx, channel.tenantId, message);
       const conversation = await this.openConversation(tx, channel, contact.id, at);
-      await tx.message.create({
+      const created = await tx.message.create({
         data: {
           tenantId: channel.tenantId,
           conversationId: conversation.id,
@@ -193,7 +196,16 @@ export class InboundService {
           status: "DELIVERED",
           createdAt: at,
         },
+        select: { id: true },
       });
+      // Áudio de restaurante com o módulo MENU: o arquivo é guardado e transcrito (F5-01); os demais seguem como antes.
+      if (message.type === "AUDIO" && message.media) {
+        const menu = await tx.tenantModule.findUnique({
+          where: { tenantId_module: { tenantId: channel.tenantId, module: "MENU" } },
+          select: { id: true },
+        });
+        if (menu) audioMessageId = created.id;
+      }
       if (conversation.newAttendance && contact.tags.includes(CANCELLATION_TAG)) {
         // Alerta para a equipe (nunca vai para o cliente), a cada atendimento que ele começa.
         await tx.message.create({
@@ -239,6 +251,12 @@ export class InboundService {
       return conversation;
     });
     if (opened) this.realtime.inboxChanged(channel.tenantId, opened.id);
+    if (opened && audioMessageId) {
+      const messageId = audioMessageId;
+      await this.audio.enqueue(channel.tenantId, messageId).catch((error) => {
+        this.logger.warn(`Áudio ${messageId} não enfileirado: ${error instanceof Error ? error.message : String(error)}`);
+      });
+    }
     return opened;
   }
 
@@ -452,8 +470,10 @@ function contentOf(message: NormalizedMessage): MessageContent & Prisma.InputJso
   const metadata = message.metadata ?? {};
   const location = metadata.location as MessageContent["location"];
   const filename = typeof metadata.filename === "string" ? metadata.filename : undefined;
+  const replyId = typeof metadata.replyId === "string" ? metadata.replyId : undefined;
   return {
     from: message.externalContactId,
+    ...(replyId && { replyId }),
     ...(message.text && { text: message.text }),
     ...(message.media && { media: { ...message.media, ...(filename && { filename }) } }),
     ...(location && { location }),

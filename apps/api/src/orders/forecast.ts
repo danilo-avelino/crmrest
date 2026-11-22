@@ -175,7 +175,7 @@ export async function forecastOrder(tx: TenantTx, orderId: string, now = new Dat
 }
 
 /** Se o restaurante marca a saída nesta integração: na maioria dos últimos pedidos entregues, a saída foi registrada. */
-async function tracksDispatch(tx: TenantTx, channelId: string, orderId: string): Promise<boolean> {
+async function tracksDispatch(tx: TenantTx, channelId: string | null, orderId: string): Promise<boolean> {
   const delivered = await tx.order.findMany({
     where: { channelId, id: { not: orderId }, status: "DELIVERED" },
     orderBy: { placedAt: "desc" },
@@ -261,7 +261,7 @@ const DISPATCH_SAMPLE_MIN = 5;
  * Terra Querida, no Cardápio Web, vai de confirmado direto a concluído). O aviso de saída nunca sai, e a IA não deve
  * prometê-lo (15/11/2026). Com poucas entregas, vale que marca.
  */
-export async function skipsDispatch(tx: TenantTx, channelId: string, now = new Date()): Promise<boolean> {
+export async function skipsDispatch(tx: TenantTx, channelId: string | null, now = new Date()): Promise<boolean> {
   const delivered = (
     await tx.order.findMany({
       where: { channelId, status: "DELIVERED", placedAt: { gte: new Date(now.getTime() - 7 * 24 * 60 * 60_000) } },

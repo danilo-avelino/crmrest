@@ -1,0 +1,96 @@
+{
+  "descricao": "Pedido grande, combos e perguntas fora do cardápio ou do assunto.",
+  "cenarios": [
+    {
+      "id": "pedido-grande-festa",
+      "titulo": "Festa: 4 calabresas, 3 margheritas, 2 portuguesas e 5 guaranás",
+      "tema": "pedido-grande",
+      "turnos": [
+        {
+          "cliente": "é pra uma festa: 4 calabresas grandes, 3 margheritas grandes, 2 portuguesas grandes e 5 guaranás 2 litros",
+          "espera": {
+            "carrinho": {
+              "itens": [
+                { "nome": "calabresa", "tamanho": "grande", "quantidade": 4 },
+                { "nome": "margherita", "tamanho": "grande", "quantidade": 3 },
+                { "nome": "portuguesa", "tamanho": "grande", "quantidade": 2 },
+                { "nome": "guarana", "quantidade": 5 }
+              ],
+              "exatamente": true
+            }
+          }
+        },
+        {
+          "cliente": "qual o total?",
+          "espera": { "carrinho": { "totalNaResposta": true } }
+        }
+      ]
+    },
+    {
+      "id": "pedido-grande-combos",
+      "titulo": "Dois combos família com guaraná",
+      "tema": "pedido-grande",
+      "turnos": [
+        {
+          "cliente": "quero 2 combos família, os dois com guaraná",
+          "espera": { "carrinho": { "itens": [{ "nome": "combo", "quantidade": 2 }], "exatamente": true } }
+        }
+      ]
+    },
+    {
+      "id": "fora-do-cardapio-hamburguer",
+      "titulo": "Vocês têm hambúrguer?",
+      "tema": "fora-do-cardapio",
+      "turnos": [
+        {
+          "cliente": "vocês têm hambúrguer?",
+          "espera": { "ferramentas": ["buscar_cardapio"], "respostaContem": ["n[aã]o"], "carrinho": { "vazio": true } }
+        }
+      ]
+    },
+    {
+      "id": "fora-do-cardapio-cerveja",
+      "titulo": "Tem cerveja? Não inventa",
+      "tema": "fora-do-cardapio",
+      "turnos": [
+        {
+          "cliente": "tem cerveja? quero uma heineken",
+          "espera": { "ferramentas": ["buscar_cardapio"], "respostaContem": ["n[aã]o"], "respostaNaoContem": ["heineken (por|de|sai) R"], "carrinho": { "vazio": true } }
+        }
+      ]
+    },
+    {
+      "id": "fora-do-assunto-tempo",
+      "titulo": "Pergunta fora do assunto: volta para o pedido",
+      "tema": "fora-do-cardapio",
+      "turnos": [
+        {
+          "cliente": "qual a previsão do tempo pra amanhã?",
+          "espera": { "respostaNaoContem": ["graus|°C|chuva|ensolarad"], "carrinho": { "vazio": true } }
+        }
+      ]
+    },
+    {
+      "id": "transferencia-pedido-atrasado",
+      "titulo": "Pedido de ontem não chegou: passa para a equipe",
+      "tema": "transferencia",
+      "turnos": [
+        {
+          "cliente": "meu pedido de ontem não chegou e ninguém me respondeu",
+          "espera": { "ferramentas": ["transferir_para_humano"], "transferencia": true }
+        }
+      ]
+    },
+    {
+      "id": "transferencia-quer-pessoa",
+      "titulo": "Quero falar com uma pessoa",
+      "tema": "transferencia",
+      "turnos": [
+        {
+          "cliente": "quero falar com um atendente de verdade",
+          "espera": { "ferramentas": ["transferir_para_humano"], "transferencia": true }
+        }
+      ]
+    }
+  ]
+}

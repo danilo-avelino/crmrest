@@ -34,6 +34,7 @@ enum BillingPlan {
 enum ModuleKey {
   CAMPAIGNS
   AI
+  MENU // cardápio digital com IA (docs/cardapio-ia)
 }
 
 model Tenant {
@@ -84,6 +85,20 @@ model Tenant {
   quickReplies        QuickReply[]
   auditLogs           AuditLog[]
   modules             TenantModule[]
+  menus               Menu[]
+  menuCategories      MenuCategory[]
+  menuItems           MenuItem[]
+  menuItemSizes       MenuItemSize[]
+  menuOptionGroups    MenuOptionGroup[]
+  menuOptions         MenuOption[]
+  menuItemGroups      MenuItemOptionGroup[]
+  menuAvailabilities  MenuAvailability[]
+  menuItemPairings    MenuItemPairing[]
+  carts               Cart[]
+  cartItems           CartItem[]
+  payments            Payment[]
+  funnelEvents        FunnelEvent[]
+  menuImportRequests  MenuImportRequest[]
 
   @@map("tenants")
 }
@@ -117,6 +132,7 @@ model User {
   agentSessions         AgentSession[]
   productSuggestions    ProductSuggestion[]
   supportTickets        SupportTicket[]
+  menuImportRequests    MenuImportRequest[]
   alertDecidedOrders    Order[] @relation("OrderAlertDecidedBy")
   fraudMarkedOrders     Order[] @relation("OrderFraudMarkedBy")
 
@@ -248,6 +264,7 @@ model Contact {
   dismissedAsB  ContactDuplicateDismissal[] @relation("DismissedB")
   reviewedAsA   ContactDuplicateReview[]    @relation("ReviewedA")
   reviewedAsB   ContactDuplicateReview[]    @relation("ReviewedB")
+  carts         Cart[]
 
   @@index([tenantId, phone])
   @@index([tenantId, cpfHash])
@@ -405,6 +422,7 @@ model Conversation {
   ratings      Rating[]
   evaluations  ConversationEvaluation[]
   aiOnlyAttendances AiOnlyAttendance[]
+  carts        Cart[]
 
   @@index([tenantId, status, lastMessageAt])
   @@index([tenantId, contactId])
@@ -465,7 +483,7 @@ model Order {
   id              String      @id @default(uuid(7)) @db.Uuid
   tenantId        String      @map("tenant_id") @db.Uuid
   contactId       String      @map("contact_id") @db.Uuid
-  channelId       String      @map("channel_id") @db.Uuid
+  channelId       String?     @map("channel_id") @db.Uuid // null só no pedido do cardápio próprio (source MENU) sem conversa
   conversationId  String?     @map("conversation_id") @db.Uuid
   externalOrderId String      @map("external_order_id") // id do pedido no iFood
   displayCode     String?     @map("display_code") // código curto exibido (#485329)
@@ -490,17 +508,23 @@ model Order {
   fraudMarkedById  String?   @map("fraud_marked_by_id") @db.Uuid
   fraudAddressKey  String?   @map("fraud_address_key") // endereço normalizado (orders/address-key.ts); null sem endereço
   alertAnalysis    Json?     @map("alert_analysis") // o que o Jev respondeu sobre o caso (orders/fraud-alert.ts); null: não foi consultado
+  // Cardápio próprio (docs/cardapio-ia, PLANO C5): o pedido nasce pago, ou confirmado quando o pagamento é na entrega.
+  source        OrderSource @default(PLATFORM)
+  scheduledFor  DateTime?   @map("scheduled_for") @db.Timestamptz(3) // pedido agendado; null: o quanto antes
+  paymentMethod String?     @map("payment_method") // PIX, CARD_ON_DELIVERY, CASH... como o cliente escolheu
 
   alertDecidedBy User? @relation("OrderAlertDecidedBy", fields: [alertDecidedById], references: [id], onDelete: SetNull)
   fraudMarkedBy  User? @relation("OrderFraudMarkedBy", fields: [fraudMarkedById], references: [id], onDelete: SetNull)
   tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   contact      Contact       @relation(fields: [contactId], references: [id], onDelete: NoAction)
-  channel      Channel       @relation(fields: [channelId], references: [id], onDelete: NoAction)
+  channel      Channel?      @relation(fields: [channelId], references: [id], onDelete: NoAction)
   conversation Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
   items        OrderItem[]
   ratings      Rating[]
   events       OrderEvent[]
   reviewInvite ReviewInvite?
+  cart         Cart?
+  payments     Payment[]
 
   @@unique([channelId, externalOrderId])
   @@index([tenantId, contactId, placedAt])
@@ -517,9 +541,11 @@ model OrderItem {
   unitPrice Decimal @map("unit_price") @db.Decimal(10, 2) // já com os complementos escolhidos
   notes     String?
   options   String[] @default([]) // complementos escolhidos, como a equipe lê: "1× Bacon"
+  menuItemId String? @map("menu_item_id") @db.Uuid // item do cardápio próprio; null nos pedidos das plataformas
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  order  Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  order    Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  menuItem MenuItem? @relation(fields: [menuItemId], references: [id], onDelete: SetNull)
 
   @@index([tenantId, orderId])
   @@map("order_items")
@@ -797,6 +823,284 @@ model SiteVisit {
   @@map("site_visits")
 }
 
+// ---------- Cardápio digital com IA (módulo MENU, docs/cardapio-ia) ----------
+// Valores sempre em centavos inteiros. Um cardápio por restaurante.
+
+enum OrderSource {
+  PLATFORM // veio de um canal integrado (iFood, Cardápio Web, Neemo...)
+  MENU // cardápio próprio do Dish Desk
+}
+
+// Preço da pizza meio a meio: o da metade mais cara, a média das metades ou a soma das frações.
+enum HalfPricingRule {
+  MAX
+  AVERAGE
+  SUM
+}
+
+enum CartStatus {
+  DRAFT
+  AWAITING_CONFIRMATION
+  CHECKED_OUT
+  ABANDONED
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  EXPIRED
+  REFUNDED
+  CANCELED
+}
+
+model Menu {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  tenantId  String   @unique @map("tenant_id") @db.Uuid
+  name      String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  tenant       Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  categories   MenuCategory[]
+  optionGroups MenuOptionGroup[]
+
+  @@map("menus")
+}
+
+model MenuCategory {
+  id          String          @id @default(uuid(7)) @db.Uuid
+  tenantId    String          @map("tenant_id") @db.Uuid
+  menuId      String          @map("menu_id") @db.Uuid
+  name        String
+  description String?
+  sortOrder   Int             @default(0) @map("sort_order")
+  active      Boolean         @default(true)
+  allowsHalf  Boolean         @default(false) @map("allows_half") // itens da categoria podem ser meio a meio
+  halfPricing HalfPricingRule @default(MAX) @map("half_pricing")
+
+  tenant         Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  menu           Menu               @relation(fields: [menuId], references: [id], onDelete: Cascade)
+  items          MenuItem[]
+  availabilities MenuAvailability[]
+
+  @@index([tenantId, menuId, sortOrder])
+  @@map("menu_categories")
+}
+
+model MenuItem {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  categoryId  String   @map("category_id") @db.Uuid
+  name        String
+  description String?
+  priceCents  Int?     @map("price_cents") // null: o preço vem do tamanho
+  photoUrl    String?  @map("photo_url")
+  sortOrder   Int      @default(0) @map("sort_order")
+  active      Boolean  @default(true)
+  soldOut     Boolean  @default(false) @map("sold_out")
+  allowsHalf  Boolean  @default(true) @map("allows_half") // vale só quando a categoria aceita meio a meio
+  // Campos que a IA usa para buscar, explicar e recomendar.
+  ingredients  String[] @default([])
+  allergens    String[] @default([])
+  servesPeople Int?     @map("serves_people")
+  tags         String[] @default([]) // ex.: "vegetariano", "picante", "mais pedido"
+  synonyms     String[] @default([]) // como o cliente chama: "calabreza", "linguiça"
+  aiNotes      String?  @map("ai_notes") // orientação do restaurante para a IA sobre o item
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  tenant         Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  category       MenuCategory          @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  sizes          MenuItemSize[]
+  optionGroups   MenuItemOptionGroup[]
+  availabilities MenuAvailability[]
+  pairsWith      MenuItemPairing[]     @relation("PairingFrom")
+  pairedBy       MenuItemPairing[]     @relation("PairingTo")
+  cartItems      CartItem[]
+  orderItems     OrderItem[]
+
+  @@index([tenantId, categoryId, sortOrder])
+  @@map("menu_items")
+}
+
+model MenuItemSize {
+  id         String  @id @default(uuid(7)) @db.Uuid
+  tenantId   String  @map("tenant_id") @db.Uuid
+  itemId     String  @map("item_id") @db.Uuid
+  name       String // ex.: broto, média, grande
+  priceCents Int     @map("price_cents")
+  sortOrder  Int     @default(0) @map("sort_order")
+  active     Boolean @default(true)
+
+  tenant    Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  item      MenuItem   @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  cartItems CartItem[]
+
+  @@index([tenantId, itemId])
+  @@map("menu_item_sizes")
+}
+
+// Grupo de complementos (borda, adicionais, bebida do combo), reaproveitável entre itens.
+model MenuOptionGroup {
+  id        String @id @default(uuid(7)) @db.Uuid
+  tenantId  String @map("tenant_id") @db.Uuid
+  menuId    String @map("menu_id") @db.Uuid
+  name      String
+  minSelect Int    @default(0) @map("min_select")
+  maxSelect Int    @default(1) @map("max_select")
+  sortOrder Int    @default(0) @map("sort_order")
+
+  tenant  Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  menu    Menu                  @relation(fields: [menuId], references: [id], onDelete: Cascade)
+  options MenuOption[]
+  items   MenuItemOptionGroup[]
+
+  @@index([tenantId, menuId])
+  @@map("menu_option_groups")
+}
+
+model MenuOption {
+  id         String  @id @default(uuid(7)) @db.Uuid
+  tenantId   String  @map("tenant_id") @db.Uuid
+  groupId    String  @map("group_id") @db.Uuid
+  name       String
+  priceCents Int     @default(0) @map("price_cents")
+  sortOrder  Int     @default(0) @map("sort_order")
+  active     Boolean @default(true)
+  soldOut    Boolean @default(false) @map("sold_out")
+
+  tenant Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  group  MenuOptionGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, groupId])
+  @@map("menu_options")
+}
+
+model MenuItemOptionGroup {
+  id        String @id @default(uuid(7)) @db.Uuid
+  tenantId  String @map("tenant_id") @db.Uuid
+  itemId    String @map("item_id") @db.Uuid
+  groupId   String @map("group_id") @db.Uuid
+  sortOrder Int    @default(0) @map("sort_order")
+
+  tenant Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  item   MenuItem        @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  group  MenuOptionGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@unique([itemId, groupId])
+  @@index([tenantId, groupId])
+  @@map("menu_item_option_groups")
+}
+
+// Faixa de horário em que a categoria ou o item aparece (uma das duas). Sem faixa: sempre disponível.
+// weekday 0 (domingo) a 6; minutos desde a meia-noite, fim exclusivo; fim menor que o início vira o dia.
+model MenuAvailability {
+  id          String  @id @default(uuid(7)) @db.Uuid
+  tenantId    String  @map("tenant_id") @db.Uuid
+  categoryId  String? @map("category_id") @db.Uuid
+  itemId      String? @map("item_id") @db.Uuid
+  weekday     Int
+  startMinute Int     @map("start_minute")
+  endMinute   Int     @map("end_minute")
+
+  tenant   Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  category MenuCategory? @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  item     MenuItem?     @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, categoryId])
+  @@index([tenantId, itemId])
+  @@map("menu_availabilities")
+}
+
+// "Combina com": sugestão da IA ao adicionar o item.
+model MenuItemPairing {
+  id           String @id @default(uuid(7)) @db.Uuid
+  tenantId     String @map("tenant_id") @db.Uuid
+  itemId       String @map("item_id") @db.Uuid
+  pairedItemId String @map("paired_item_id") @db.Uuid
+
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  item       MenuItem @relation("PairingFrom", fields: [itemId], references: [id], onDelete: Cascade)
+  pairedItem MenuItem @relation("PairingTo", fields: [pairedItemId], references: [id], onDelete: Cascade)
+
+  @@unique([itemId, pairedItemId])
+  @@index([tenantId, pairedItemId])
+  @@map("menu_item_pairings")
+}
+
+// Sacola do cliente (PLANO C5): o Order só nasce no checkout.
+model Cart {
+  id              String     @id @default(uuid(7)) @db.Uuid
+  tenantId        String     @map("tenant_id") @db.Uuid
+  contactId       String?    @map("contact_id") @db.Uuid
+  sessionToken    String?    @unique @map("session_token") // visitante do cardápio público ainda sem contato
+  conversationId  String?    @map("conversation_id") @db.Uuid // montada pela IA numa conversa
+  orderId         String?    @unique @map("order_id") @db.Uuid // pedido gerado no checkout
+  status          CartStatus @default(DRAFT)
+  deliveryAddress Json?      @map("delivery_address")
+  notes           String?
+  recoverySentAt  DateTime?  @map("recovery_sent_at") @db.Timestamptz(3) // F7-07: mensagem de recuperação mandada
+  createdAt       DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contact      Contact?      @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  conversation Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  order        Order?        @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  items        CartItem[]
+  payments     Payment[]
+
+  @@index([tenantId, contactId, status])
+  @@index([tenantId, status, updatedAt])
+  @@map("carts")
+}
+
+model CartItem {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  cartId    String   @map("cart_id") @db.Uuid
+  itemId    String   @map("item_id") @db.Uuid
+  sizeId    String?  @map("size_id") @db.Uuid
+  halves    String[] @default([]) @db.Uuid // ids dos itens das outras metades (meio a meio); vazio: sabor único
+  options   Json     @default("[]") // complementos escolhidos, cópia de nome e preço no momento da escolha
+  quantity  Int      @default(1)
+  notes     String?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  tenant Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  cart   Cart          @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  item   MenuItem      @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  size   MenuItemSize? @relation(fields: [sizeId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, cartId])
+  @@map("cart_items")
+}
+
+model Payment {
+  id          String        @id @default(uuid(7)) @db.Uuid
+  tenantId    String        @map("tenant_id") @db.Uuid
+  cartId      String?       @map("cart_id") @db.Uuid
+  orderId     String?       @map("order_id") @db.Uuid
+  status      PaymentStatus @default(PENDING)
+  provider    String // ex.: o PSP do Pix
+  txid        String? // id da cobrança no provedor
+  amountCents Int           @map("amount_cents")
+  expiresAt   DateTime?     @map("expires_at") @db.Timestamptz(3)
+  paidAt      DateTime?     @map("paid_at") @db.Timestamptz(3)
+  raw         Json? // última resposta do provedor
+  createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  cart   Cart?  @relation(fields: [cartId], references: [id], onDelete: SetNull)
+  order  Order? @relation(fields: [orderId], references: [id], onDelete: SetNull)
+
+  @@unique([provider, txid])
+  @@index([tenantId, status, expiresAt])
+  @@map("payments")
+}
+
 // ---------- Auditoria ----------
 
 model AuditLog {
@@ -814,4 +1118,74 @@ model AuditLog {
 
   @@index([tenantId, createdAt])
   @@map("audit_logs")
+}
+
+enum FunnelStage {
+  PAGE_VIEW
+  VIEW_CONTENT
+  SEARCH
+  ADD_TO_CART
+  INITIATE_CHECKOUT
+  ADD_PAYMENT_INFO
+  PURCHASE
+}
+
+enum FunnelChannel {
+  WEB
+  WHATSAPP
+}
+
+/// Funil de vendas do cardápio (F7-01): gravado pelo backend, sem depender do Pixel. eventId é o id de deduplicação
+/// com a Meta (único por restaurante). Sem FKs além do restaurante: o evento sobrevive ao carrinho/pedido apagado.
+model FunnelEvent {
+  id          String        @id @default(uuid(7)) @db.Uuid
+  tenantId    String        @map("tenant_id") @db.Uuid
+  eventId     String        @map("event_id") @db.Uuid
+  stage       FunnelStage
+  channel     FunnelChannel
+  sessionId   String?       @map("session_id") // visitante anônimo do cardápio web
+  contactId   String?       @map("contact_id") @db.Uuid
+  conversationId String?    @map("conversation_id") @db.Uuid
+  cartId      String?       @map("cart_id") @db.Uuid
+  orderId     String?       @map("order_id") @db.Uuid
+  menuItemId  String?       @map("menu_item_id") @db.Uuid
+  valueCents  Int?          @map("value_cents")
+  attribution Json          @default("{}") // utm_*, fbclid, fbc, fbp, referrer, ctwa_clid
+  capiSentAt  DateTime?     @map("capi_sent_at") @db.Timestamptz(3) // F7-04: enviado à Conversions API da Meta
+  capiError   String?       @map("capi_error") // F7-04: último erro da Meta (ou o motivo de não enviar)
+  createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, eventId])
+  @@index([tenantId, createdAt])
+  @@index([tenantId, stage, createdAt])
+  @@map("funnel_events")
+}
+
+enum MenuImportStatus {
+  OPEN
+  DONE
+  REJECTED
+}
+
+// Pedido de importação do cardápio do iFood: o restaurante pede (nome da loja e CNPJ) e a equipe da plataforma
+// importa pela Catalog API do iFood. O restaurante não importa do iFood sozinho.
+model MenuImportRequest {
+  id         String           @id @default(uuid(7)) @db.Uuid
+  tenantId   String           @map("tenant_id") @db.Uuid
+  userId     String           @map("user_id") @db.Uuid
+  source     String           @default("IFOOD")
+  storeName  String           @map("store_name")
+  cnpj       String // só dígitos
+  status     MenuImportStatus @default(OPEN)
+  note       String? // resposta da plataforma ao restaurante
+  resolvedAt DateTime?        @map("resolved_at") @db.Timestamptz(3)
+  createdAt  DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+  @@map("menu_import_requests")
 }

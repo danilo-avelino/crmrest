@@ -10,6 +10,7 @@ import {
   TEAM_REASONS,
   toE164,
   type UpdateContactRequest,
+  ORDER_ORIGIN_LABEL,
 } from "@dishdesk/shared";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertCircleIcon, ChevronLeftIcon, ChevronRightIcon, LoaderCircleIcon, MoreHorizontalIcon, TriangleAlertIcon, XIcon } from "lucide-react";
@@ -649,7 +650,7 @@ function OrdersTab({ contactId, total, now }: { contactId: string; total: number
                 <td className={cn(td, open && "border-b-0")}>
                   <span className="flex items-center gap-[5px] text-ink-2">
                     <span className={cn("size-2 rounded-full", CHANNEL_DOT[order.channelType])} />
-                    {CHANNEL_LABEL[order.channelType]}
+                    {ORDER_ORIGIN_LABEL[order.channelType]}
                   </span>
                 </td>
                 <td className={cn(td, "text-ink-2 tabular-nums", open && "border-b-0")}>{dayTime(order.placedAt, now)}</td>

@@ -1,12 +1,13 @@
 "use client";
 
-import { CHANNEL_LABEL, type OrderDto } from "@dishdesk/shared";
+import { CHANNEL_LABEL, type OrderDto, ORDER_ORIGIN_LABEL } from "@dishdesk/shared";
 import { useQueryClient } from "@tanstack/react-query";
 import { AlertCircleIcon } from "lucide-react";
 import { useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
 import { CHANNEL_DOT } from "@/components/common/bits";
 import { ItemOptions } from "@/components/orders/item-options";
+import { MenuBadgeList } from "@/components/orders/menu-badges";
 import { ORDER_STATUS } from "@/components/orders/order-status";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
@@ -42,7 +43,7 @@ export function OrderCard({
         <div className="flex items-center gap-1.5">
           <span className={cn("size-[7px] shrink-0 rounded-full", CHANNEL_DOT[order.channelType])} />
           <span className="text-[11.5px] font-semibold">
-            Pedido {CHANNEL_LABEL[order.channelType]} #{order.displayCode ?? order.id.slice(0, 6)}
+            Pedido {ORDER_ORIGIN_LABEL[order.channelType]} #{order.displayCode ?? order.id.slice(0, 6)}
             {order.restaurantName && <span className="font-normal text-ink-3"> · {order.restaurantName}</span>}
           </span>
         </div>
@@ -55,6 +56,7 @@ export function OrderCard({
           {status.label}
         </span>
       </div>
+      <MenuBadgeList menu={order.menu} className="flex flex-wrap gap-1 border-b border-rule px-3.5 py-2" />
       <div className="flex flex-col gap-[5px] px-3.5 py-2.5 text-[12.5px]">
         {order.items.map((item, index) => (
           <div key={index} className="flex justify-between">
@@ -163,7 +165,7 @@ export function ForecastButton({ order, conversationId, size = "xs" }: { order: 
           <div className="border-b border-rule px-6 py-5">
             <DialogTitle className="mb-1">{dispatched ? "Avisar que o pedido saiu" : "Enviar previsão de saída"}</DialogTitle>
             <DialogDescription>
-              Pedido {CHANNEL_LABEL[order.channelType]} #{order.displayCode ?? order.id.slice(0, 6)} · confira antes de enviar ao cliente
+              Pedido {ORDER_ORIGIN_LABEL[order.channelType]} #{order.displayCode ?? order.id.slice(0, 6)} · confira antes de enviar ao cliente
             </DialogDescription>
           </div>
           <div className="px-6 py-[18px]">

@@ -100,6 +100,7 @@ const during = (step: string) => (error: Error) => {
 /** Envio e perfil pela API do Instagram (graph.instagram.com). */
 export class InstagramConnector implements ChannelConnector {
   readonly type = "INSTAGRAM" as const;
+  readonly capabilities = { interactive: false };
 
   constructor(
     private readonly env: Pick<Env, "INSTAGRAM_GRAPH_URL" | "INSTAGRAM_OAUTH_URL" | "INSTAGRAM_APP_ID" | "INSTAGRAM_APP_SECRET" | "CHANNELS_DRY_RUN">,

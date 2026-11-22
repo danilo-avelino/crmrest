@@ -1,9 +1,10 @@
 import type { Prisma, TenantTx } from "@dishdesk/database";
-import { CHANNEL_LABEL, type OrderAlertDto } from "@dishdesk/shared";
+import { ORDER_ORIGIN_LABEL, type OrderAlertDto, orderOriginOf } from "@dishdesk/shared";
 import { Injectable, Logger, NotFoundException, UnprocessableEntityException } from "@nestjs/common";
 import * as Sentry from "@sentry/nestjs";
 import type { RequestAuth } from "../auth/auth.decorators.js";
 import { systemEvent } from "../automations/automation.js";
+import { connectedWhatsApp } from "../conversations/open-whatsapp.js";
 import { DatabaseService } from "../core/database.service.js";
 import { JevClient, type JevQuestion } from "../defense/jev.client.js";
 import { RealtimeEmitter } from "../realtime/realtime.emitter.js";
@@ -54,13 +55,13 @@ const RISK_QUESTION: JevQuestion = {
 
 /** O caso como o Jev lê: o pedido, o histórico do cliente e, se houver, os endereços parecidos a comparar. */
 function caseState(order: ArrivedOrder, alert: OrderAlertDto | null, similar: { address: string }[], now: Date): Record<string, unknown> {
-  const payments = order.channel.type === "IFOOD" ? (platformInfo(order.raw)?.payments ?? []) : [];
+  const payments = order.channel?.type === "IFOOD" ? (platformInfo(order.raw)?.payments ?? []) : [];
   const prepaid = payments.filter((payment) => payment.prepaid).length;
   const history = alert?.cancellations;
   return {
     como_ler: CASE_GUIDE,
     pedido: {
-      origem: CHANNEL_LABEL[order.channel.type],
+      origem: ORDER_ORIGIN_LABEL[orderOriginOf(order.channel)],
       valor: order.total.toFixed(2),
       pagamento: !payments.length ? "não informado" : prepaid === payments.length ? "online, já pago" : prepaid ? "parte online, parte na entrega" : "na entrega",
       tipo: order.deliveryAddress ? "entrega" : "retirada",
@@ -74,7 +75,7 @@ function caseState(order: ArrivedOrder, alert: OrderAlertDto | null, similar: { 
         cancelamentos_recentes: history.rows.slice(0, 10).map((row) => ({
           ha_dias: Math.max(0, Math.round((now.getTime() - new Date(row.placedAt).getTime()) / 86_400_000)),
           valor: row.total,
-          origem: CHANNEL_LABEL[row.channelType],
+          origem: ORDER_ORIGIN_LABEL[row.channelType],
           motivo: row.reason ?? "não informado",
           cancelado_por: row.canceledBy ? CANCELED_BY_LABEL[row.canceledBy] : "não informado",
           quando: row.afterDispatch ? "depois de sair para a entrega" : "antes de sair para a entrega",
@@ -117,7 +118,7 @@ export class FraudService {
       const found = await this.db.withTenants(scope, async (tx) => {
         const order = await tx.order.findUniqueOrThrow({ where: { id: orderId }, select: arrivedSelect });
         // O que aconteceu antes de conectar a loja não aciona nada (a integração ainda entrega as últimas horas).
-        if (order.channel.connectedAt && order.placedAt < order.channel.connectedAt) return null;
+        if (order.channel?.connectedAt && order.placedAt < order.channel.connectedAt) return null;
         const assessed = await assessOrder(tx, { ...order, alertDecidedBy: null }, order.contact, true);
         return { order, assessed, similar: await similarAddressCandidates(tx, order) };
       });
@@ -135,6 +136,8 @@ export class FraudService {
         await tx.order.update({ where: { id: orderId }, data: { alertAt: now } });
         const open = await conversationOfOrder(tx, order);
         const conversation = open ?? (await this.openForTeam(tx, order, now));
+        // Pedido do cardápio sem conversa e sem WhatsApp conectado: o alerta fica só no card do pedido.
+        if (!conversation) return null;
         const { riskCount, ordersCount } = alert.cancellations;
         const reasons = [
           riskCount > 0 && `${riskCount} de ${ordersCount} pedidos cancelados`,
@@ -190,8 +193,11 @@ export class FraudService {
   }
 
   /** O cliente não está nesta conversa: ela existe para a equipe ver o alerta. Reaproveita a última do cliente nessa loja. */
-  private async openForTeam(tx: TenantTx, order: { id: string; tenantId: string; contactId: string; channelId: string }, now: Date) {
-    const where = { contactId: order.contactId, channelId: order.channelId };
+  private async openForTeam(tx: TenantTx, order: { id: string; tenantId: string; contactId: string; channelId: string | null }, now: Date) {
+    // Pedido do cardápio próprio não tem canal: a conversa da equipe fica no WhatsApp conectado da loja.
+    const channelId = order.channelId ?? (await connectedWhatsApp(tx, order.tenantId))?.id;
+    if (!channelId) return null;
+    const where = { contactId: order.contactId, channelId };
     const select = { id: true, tenantId: true, channelId: true };
     const latest = await tx.conversation.findFirst({ where: { ...where, teamOnly: true }, orderBy: { createdAt: "desc" }, select: { id: true } });
     const conversation = latest

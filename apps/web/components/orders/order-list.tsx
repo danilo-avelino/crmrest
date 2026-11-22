@@ -1,6 +1,6 @@
 "use client";
 
-import { CHANNEL_LABEL, type OrderListItem, type OrderPage, type ReportPeriod } from "@dishdesk/shared";
+import { type OrderListItem, type OrderPage, type ReportPeriod, ORDER_ORIGIN_LABEL } from "@dishdesk/shared";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { AlertCircleIcon, ChevronDownIcon } from "lucide-react";
 import Link from "next/link";
@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useNow } from "@/hooks/use-now";
 import { clock, count, currency, dayMonth, dayTime, responseTime } from "@/lib/format";
+import { MENU_ORIGIN_LABEL, menuBadges, parseMenuItemName } from "@/lib/menu-order";
 import { cn } from "@/lib/utils";
 
 type Status = OrderListItem["status"];
@@ -57,6 +58,7 @@ const PAYMENT_METHOD: Record<string, string> = {
   DEBIT: "Débito",
   CASH: "Dinheiro",
   PIX: "Pix",
+  PIX_ON_DELIVERY: "Pix na maquininha",
   MEAL_VOUCHER: "Vale-refeição",
   FOOD_VOUCHER: "Vale-alimentação",
   DIGITAL_WALLET: "Carteira digital",
@@ -75,11 +77,12 @@ export function OrderList() {
   const [period, setPeriod] = useState<ReportPeriod>("today");
   const [status, setStatus] = useState<Status | null>(null);
   const [channel, setChannel] = useState<Channel | null>(null);
+  const [scheduled, setScheduled] = useState(false);
   const [page, setPage] = useState(1);
   const [expanded, setExpanded] = useState<string | null>(null);
   const now = useNow(60_000);
 
-  const params = new URLSearchParams({ period, page: String(page), ...(status && { status }), ...(channel && { channel }) });
+  const params = new URLSearchParams({ period, page: String(page), ...(status && { status }), ...(channel && { channel }), ...(scheduled && { scheduled: "true" }) });
   const orders = useQuery({
     queryKey: ["orders", params.toString()],
     queryFn: () => request<OrderPage>(`/orders?${params}`),
@@ -113,6 +116,9 @@ export function OrderList() {
               {item.label}
             </button>
           ))}
+          <button type="button" aria-pressed={scheduled} onClick={() => filter(setScheduled)(!scheduled)} className={chipClass(scheduled)}>
+            Agendados
+          </button>
           <DropdownMenu>
             <DropdownMenuTrigger className={chipClass(Boolean(status))}>
               {status ? ORDER_STATUS[status].label : "Status"}
@@ -131,16 +137,16 @@ export function OrderList() {
           </DropdownMenu>
           <DropdownMenu>
             <DropdownMenuTrigger className={chipClass(Boolean(channel))}>
-              {channel ? CHANNEL_LABEL[channel] : "Origem"}
+              {channel ? ORDER_ORIGIN_LABEL[channel] : "Origem"}
               <ChevronDownIcon className="size-2.5" aria-hidden />
             </DropdownMenuTrigger>
             <DropdownMenuContent className="w-48">
               <DropdownMenuRadioGroup value={channel ?? ""} onValueChange={(value: string) => filter(setChannel)((value || null) as Channel | null)}>
                 <DropdownMenuRadioItem value="">Todas</DropdownMenuRadioItem>
-                {ORIGINS.map((key) => (
+                {(data?.menuOrigin || channel === "MENU" ? (["MENU", ...ORIGINS] as Channel[]) : ORIGINS).map((key) => (
                   <DropdownMenuRadioItem key={key} value={key}>
                     <span className={cn("size-2 rounded-full", CHANNEL_DOT[key])} />
-                    {CHANNEL_LABEL[key]}
+                    {ORDER_ORIGIN_LABEL[key]}
                   </DropdownMenuRadioItem>
                 ))}
               </DropdownMenuRadioGroup>
@@ -203,8 +209,9 @@ export function OrderList() {
                       <Td>
                         <span className="flex items-center gap-[5px] text-ink-2">
                           <span className={cn("size-2 rounded-full", CHANNEL_DOT[order.channelType])} />
-                          {CHANNEL_LABEL[order.channelType]}
+                          {ORDER_ORIGIN_LABEL[order.channelType]}
                         </span>
+                        <MenuBadges order={order} now={new Date(now)} />
                       </Td>
                       <Td>
                         <Link
@@ -295,6 +302,14 @@ export function OrderDetails({ order, withChat = true }: { order: OrderListItem;
       <div className="col-span-2">
         <CustomerHistoryLine history={order.history} />
       </div>
+      {order.menu && (
+        <div className="col-span-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 rounded-[7px] border border-tomate-line bg-surface px-3.5 py-2.5 text-xs">
+          <MenuBadges order={order} now={new Date()} />
+          <span className="text-ink-3">
+            {order.menu.takeout ? "Retirada na loja" : "Entrega"} · Origem: <span className="text-ink-2">{MENU_ORIGIN_LABEL[order.menu.origin]}</span>
+          </span>
+        </div>
+      )}
       {order.cancellation && (
         <div className="col-span-2 flex flex-col gap-1 rounded-[7px] border border-tomate-line bg-surface px-3.5 py-2.5 text-xs">
           <div className="text-[11px] font-medium tracking-[0.05em] text-ink-3 uppercase">Cancelamento</div>
@@ -303,7 +318,7 @@ export function OrderDetails({ order, withChat = true }: { order: OrderListItem;
           </div>
           {order.cancellation.outsideAt && (
             <div className="text-[12px] text-ink-3">
-              Cancelado no {CHANNEL_LABEL[order.channelType]}, fora do Dish Desk, em {dayMonth(order.cancellation.outsideAt)} às {clock(order.cancellation.outsideAt)}.
+              Cancelado no {ORDER_ORIGIN_LABEL[order.channelType]}, fora do Dish Desk, em {dayMonth(order.cancellation.outsideAt)} às {clock(order.cancellation.outsideAt)}.
             </div>
           )}
           <FraudMarkControl row={order.cancellation} />
@@ -313,7 +328,7 @@ export function OrderDetails({ order, withChat = true }: { order: OrderListItem;
         {order.items.map((item, index) => (
           <div key={index} className="flex justify-between border-b border-surface-2 px-3.5 py-2.5">
             <span className="text-ink-2">
-              {item.quantity}× {item.name}
+              {order.menu ? <MenuItemLines quantity={item.quantity} name={item.name} /> : `${item.quantity}× ${item.name}`}
               <ItemOptions options={item.options} />
               {item.notes?.trim() && <span className="block text-[11px] text-ink-3">Obs.: {item.notes}</span>}
             </span>
@@ -346,6 +361,37 @@ export function OrderDetails({ order, withChat = true }: { order: OrderListItem;
       {order.platform && <PlatformInfo info={order.platform} />}
       <OrderActions order={order} withChat={withChat} />
     </div>
+  );
+}
+
+/** Selos do pedido do cardápio próprio: pagamento (Pix, na entrega, troco) e agendamento. */
+function MenuBadges({ order, now }: { order: OrderListItem; now: Date }) {
+  const badges = menuBadges(order.menu, now);
+  if (badges.length === 0) return null;
+  return (
+    <span className="mt-1 flex flex-wrap gap-1">
+      {badges.map((badge) => (
+        <StatusBadge key={badge.key} tone={badge.tone}>
+          {badge.label}
+        </StatusBadge>
+      ))}
+    </span>
+  );
+}
+
+/** Item do cardápio próprio para a cozinha: tamanho em destaque e, no meio a meio, um sabor por linha. */
+function MenuItemLines({ quantity, name }: { quantity: number; name: string }) {
+  const { size, halves, title } = parseMenuItemName(name);
+  return (
+    <>
+      {quantity}× {halves.length ? "Meio a meio" : title}
+      {size && <span className="font-medium text-ink"> · {size}</span>}
+      {halves.map((half, index) => (
+        <span key={index} className="block text-[12px] text-ink-2">
+          ½ {half}
+        </span>
+      ))}
+    </>
   );
 }
 

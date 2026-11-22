@@ -4,7 +4,9 @@ import {
   Building2Icon,
   ChartColumnIcon,
   CoinsIcon,
+  DownloadIcon,
   LightbulbIcon,
+  QrCodeIcon,
   ScrollTextIcon,
   ShieldIcon,
   TicketIcon,
@@ -18,6 +20,8 @@ const NAV: SideMenuGroup[] = [
     items: [
       { href: "/plataforma", label: "Restaurantes", icon: Building2Icon },
       { href: "/plataforma/tickets", label: "Tickets de suporte", icon: TicketIcon },
+      { href: "/plataforma/importacoes", label: "Importações do iFood", icon: DownloadIcon },
+      { href: "/plataforma/pix", label: "Pix do cardápio", icon: QrCodeIcon },
       { href: "/plataforma/sugestoes", label: "Sugestões", icon: LightbulbIcon },
     ],
   },

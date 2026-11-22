@@ -1,0 +1,58 @@
+{
+  "descricao": "Meio a meio. O preço sai sempre do PricingService pela regra da categoria (no seed, salgadas pelo MAIOR e doces pela MÉDIA; com a regra SOMA, a soma dos preços cheios). A asserção confere o total do sistema na resposta, não um número fixo.",
+  "cenarios": [
+    {
+      "id": "meio-a-meio-calabresa-margherita",
+      "titulo": "Grande meio calabresa, meio margherita, com o preço do sistema",
+      "tema": "meio-a-meio",
+      "turnos": [
+        {
+          "cliente": "quero uma pizza grande metade calabresa metade margherita",
+          "espera": {
+            "ferramentas": ["adicionar_ao_carrinho"],
+            "carrinho": { "itens": [{ "nome": "calabresa", "outraMetade": "margherita", "tamanho": "grande" }], "exatamente": true }
+          }
+        },
+        {
+          "cliente": "quanto deu?",
+          "espera": { "carrinho": { "totalNaResposta": true } }
+        }
+      ]
+    },
+    {
+      "id": "meio-a-meio-doce",
+      "titulo": "Doce grande meio chocolate com morango, meio romeu e julieta",
+      "tema": "meio-a-meio",
+      "turnos": [
+        {
+          "cliente": "uma pizza doce grande, metade chocolate com morango e metade romeu e julieta",
+          "espera": {
+            "carrinho": { "itens": [{ "nome": "chocolate com morango", "outraMetade": "romeu", "tamanho": "grande" }], "exatamente": true }
+          }
+        }
+      ]
+    },
+    {
+      "id": "meio-a-meio-categorias-diferentes",
+      "titulo": "Meio calabresa, meio doce: não pode (categorias diferentes)",
+      "tema": "meio-a-meio",
+      "turnos": [
+        {
+          "cliente": "dá pra fazer uma grande meio calabresa meio chocolate com morango?",
+          "espera": { "carrinho": { "vazio": true }, "respostaNaoContem": ["adicionei|anotei|no carrinho"] }
+        }
+      ]
+    },
+    {
+      "id": "meio-a-meio-pergunta-preco",
+      "titulo": "Pergunta como cobra o meio a meio antes de pedir",
+      "tema": "meio-a-meio",
+      "turnos": [
+        {
+          "cliente": "como vocês cobram a pizza meio a meio? queria meio portuguesa meio quatro queijos grande",
+          "espera": { "algumaFerramenta": ["detalhar_item", "adicionar_ao_carrinho", "buscar_cardapio"], "respostaContem": ["R\\$"] }
+        }
+      ]
+    }
+  ]
+}

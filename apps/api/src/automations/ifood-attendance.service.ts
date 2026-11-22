@@ -193,7 +193,7 @@ async function missedNotice(
     select: { status: true, displayCode: true, externalOrderId: true, dispatchedAt: true, placedAt: true, channel: { select: { connectedAt: true } } },
   });
   // Como no OrderNoticeService: pedido de antes de a loja ser conectada não recebe aviso.
-  if (order.channel.connectedAt && order.placedAt < order.channel.connectedAt) return null;
+  if (order.channel?.connectedAt && order.placedAt < order.channel.connectedAt) return null;
   const code = order.displayCode ?? order.externalOrderId;
   const missed =
     order.status === "READY"

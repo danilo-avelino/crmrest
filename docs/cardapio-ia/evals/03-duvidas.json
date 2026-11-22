@@ -1,0 +1,81 @@
+{
+  "descricao": "Dúvidas de ingrediente, alérgeno e recomendação. O agente responde pelo cardápio e não põe nada no carrinho sem o cliente pedir.",
+  "cenarios": [
+    {
+      "id": "ingrediente-portuguesa",
+      "titulo": "O que vem na portuguesa",
+      "tema": "ingrediente-alergeno",
+      "turnos": [
+        {
+          "cliente": "o que vem na portuguesa?",
+          "espera": { "algumaFerramenta": ["detalhar_item", "buscar_cardapio"], "respostaContem": ["ovo", "ervilha"], "carrinho": { "vazio": true } }
+        }
+      ]
+    },
+    {
+      "id": "alergeno-lactose",
+      "titulo": "Alérgico a lactose: todas as pizzas têm, o agente não inventa uma sem",
+      "tema": "ingrediente-alergeno",
+      "turnos": [
+        {
+          "cliente": "sou alérgico a lactose, qual pizza eu posso comer?",
+          "espera": {
+            "algumaFerramenta": ["detalhar_item", "buscar_cardapio", "recomendar"],
+            "respostaContem": ["lactose"],
+            "respostaNaoContem": ["(calabresa|margherita|portuguesa|quatro queijos) (é|e) sem lactose"],
+            "carrinho": { "vazio": true }
+          }
+        }
+      ]
+    },
+    {
+      "id": "alergeno-ovo-pudim",
+      "titulo": "Tem ovo no pudim",
+      "tema": "ingrediente-alergeno",
+      "turnos": [
+        {
+          "cliente": "tem ovo no pudim?",
+          "espera": { "algumaFerramenta": ["detalhar_item", "buscar_cardapio"], "respostaContem": ["sim|leva ovo|tem ovo|cont[eé]m ovo"], "carrinho": { "vazio": true } }
+        }
+      ]
+    },
+    {
+      "id": "ingrediente-sem-cebola",
+      "titulo": "Calabresa sem cebola vai como observação",
+      "tema": "ingrediente-alergeno",
+      "turnos": [
+        {
+          "cliente": "quero uma calabresa grande sem cebola",
+          "espera": { "ferramentas": ["adicionar_ao_carrinho"], "carrinho": { "itens": [{ "nome": "calabresa", "tamanho": "grande" }], "exatamente": true } }
+        }
+      ]
+    },
+    {
+      "id": "recomendacao-5-pessoas",
+      "titulo": "Para 5 pessoas: recomenda pelo sistema, sem adicionar sozinho",
+      "tema": "recomendacao",
+      "turnos": [
+        {
+          "cliente": "somos 5 pessoas, o que vocês recomendam?",
+          "espera": { "ferramentas": ["recomendar"], "respostaContem": ["R\\$"], "carrinho": { "vazio": true } }
+        }
+      ]
+    },
+    {
+      "id": "recomendacao-vegetariano",
+      "titulo": "Vegetariano para 2",
+      "tema": "recomendacao",
+      "turnos": [
+        {
+          "cliente": "queria algo vegetariano pra 2 pessoas",
+          "espera": {
+            "algumaFerramenta": ["recomendar", "buscar_cardapio"],
+            "respostaContem": ["margherita|quatro queijos"],
+            "respostaNaoContem": ["calabresa|portuguesa|frango"],
+            "carrinho": { "vazio": true }
+          }
+        }
+      ]
+    }
+  ]
+}

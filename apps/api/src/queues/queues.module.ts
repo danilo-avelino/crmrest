@@ -8,7 +8,7 @@ import type { Env } from "../config/env.js";
  * Filas (§3.1): inbound = webhooks; outbound = envios aos canais; automations = etapas das automações;
  * ifood, cardapioWeb e neemo = polling de pedidos (e, no Cardápio Web e na Neemo, a importação da base de clientes); channels = manutenção dos canais (renovação de tokens);
  * ai = respostas e avaliações da IA (módulo Atendimento com IA), separadas para a LLM não atrasar as automações, e a
- * revisão dos possíveis duplicados pelo Jev (com prioridade menor que as respostas).
+ * revisão dos possíveis duplicados pelo Jev (com prioridade menor que as respostas); menu = leitura do cardápio por foto/PDF com IA.
  */
 export const QUEUES = {
   inbound: "inbound",
@@ -19,6 +19,8 @@ export const QUEUES = {
   neemo: "neemo",
   channels: "channels",
   ai: "ai",
+  menu: "menu",
+  transcription: "transcription",
 } as const;
 
 /** Payload bruto de um webhook, como chegou da plataforma. */
@@ -42,6 +44,11 @@ export type NeemoHistoryJob = { tenantId: string; channelId: string; until: stri
 export type AiJob = { tenantId: string; conversationId: string };
 /** "duplicate-review" (fila ai): o Jev revisa um possível duplicado (ids em ordem, como na consulta) antes de ir ao admin. */
 export type DuplicateReviewJob = { tenantId: string; contactIds: [string, string]; reasons: DuplicateReason[] };
+/** "menu-import-ai" (fila menu): a IA lê a foto ou o PDF do cardápio (F2-10) guardado no bucket privado. */
+export type MenuImportAiJob = { tenantId: string; key: string; mime: "application/pdf" | "image/jpeg" | "image/png" | "image/webp"; fileName: string; pages: number | null };
+
+/** Fila transcription (F5-01): "store-audio" baixa o áudio recebido e guarda no storage; "transcribe" (F5-02) o transcreve. */
+export type TranscriptionJob = { tenantId: string; messageId: string };
 
 @Global()
 @Module({})
@@ -68,6 +75,8 @@ export class QueuesModule {
           { name: QUEUES.neemo },
           { name: QUEUES.channels },
           { name: QUEUES.ai },
+          { name: QUEUES.menu },
+          { name: QUEUES.transcription },
         ),
       ],
       exports: [BullModule],

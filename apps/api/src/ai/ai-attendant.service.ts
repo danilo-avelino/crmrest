@@ -7,6 +7,9 @@ import {
   CHANNEL_LABEL,
   COURIER_TAG,
   fillMessage,
+  ORDER_ORIGIN_LABEL,
+  type OrderOrigin,
+  orderOriginOf,
   type MessageContent,
   orderLinksOf,
 } from "@dishdesk/shared";
@@ -227,7 +230,7 @@ export function otherOrderNumber(reply: string, code: string): string | null {
 export type OrderFacts = {
   displayCode: string | null;
   externalOrderId: string;
-  channelType: ChannelType;
+  channelType: OrderOrigin;
   placedAt: Date;
   status: OrderStatus;
   items: { quantity: number; name: string }[];
@@ -335,7 +338,7 @@ export function orderFactsOf(order: OrderFacts | null, noPhone: boolean): string
       : order.confirmed
         ? "Pedido do cliente (ele confirmou que é dele):"
         : `Pedido que pode ser do cliente (${source}; ainda não confirmado por ele):`,
-    `#${order.displayCode ?? order.externalOrderId} (${CHANNEL_LABEL[order.channelType]}), feito em ${BRASILIA_TIME.format(order.placedAt)}, ${ORDER_STATUS_TEXT[order.status]}.${order.status === "CANCELED" && order.cancellationReason ? ` Motivo do cancelamento, dado pela loja: ${order.cancellationReason}.` : ""}`,
+    `#${order.displayCode ?? order.externalOrderId} (${ORDER_ORIGIN_LABEL[order.channelType]}), feito em ${BRASILIA_TIME.format(order.placedAt)}, ${ORDER_STATUS_TEXT[order.status]}.${order.status === "CANCELED" && order.cancellationReason ? ` Motivo do cancelamento, dado pela loja: ${order.cancellationReason}.` : ""}`,
     `Itens: ${order.items.map((item) => `${item.quantity}x ${item.name}`).join("; ")}. Total: ${BRL.format(Number(order.total))}.`,
     ...(order.chatOrder
       ? [
@@ -424,12 +427,12 @@ export class AiAttendantService {
         const linked = confirmed ?? (await latestOrderOf(orders, conversation.contact, now, denied));
         const found = linked ?? (await orderByNumber(orders, history, now, denied));
         if (!found) return null;
-        const channel = await orders.channel.findUniqueOrThrow({ where: { id: found.channelId }, select: { type: true } });
+        const channel = found.channelId ? await orders.channel.findUniqueOrThrow({ where: { id: found.channelId }, select: { type: true } }) : null;
         const update = await orderUpdateMessage(orders, found.id, now, settings, this.jev);
         const takeout = isTakeout(found.raw);
         const waiting = !found.dispatchedAt && !["DELIVERED", "CANCELED"].includes(found.status);
         const skips = !takeout && waiting && (await skipsDispatch(orders, found.channelId, now));
-        return { ...found, confirmed: !!confirmed, byNumber: !linked, channelType: channel.type, update, chatOrder: false, takeout, skipsDispatch: skips };
+        return { ...found, confirmed: !!confirmed, byNumber: !linked, channelType: orderOriginOf(channel), update, chatOrder: false, takeout, skipsDispatch: skips };
       });
       return { conversation, settings, history, lastId: last.id, last, order };
     });

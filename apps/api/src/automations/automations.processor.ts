@@ -1,9 +1,12 @@
-import { Processor } from "@nestjs/bullmq";
-import type { Job } from "bullmq";
+import { InjectQueue, Processor } from "@nestjs/bullmq";
+import type { OnModuleInit } from "@nestjs/common";
+import type { Job, Queue } from "bullmq";
 import { AiForwardService } from "../ai/ai-forward.service.js";
 import { ContactTagsService } from "../contacts/contact-tags.service.js";
 import { DatabaseService } from "../core/database.service.js";
 import { AdminNotificationsService } from "../notifications/admin-notifications.service.js";
+import { MetaCapiService } from "../funnel/meta-capi.service.js";
+import { PublicOrderService } from "../public/public-order.service.js";
 import { JobProcessor } from "../queues/job-processor.js";
 import { type AdminMessageJob, type AiForwardJob, type AutomationJob, QUEUES } from "../queues/queues.module.js";
 import { IfoodAttendanceService } from "./ifood-attendance.service.js";
@@ -17,10 +20,11 @@ import { SurveyService } from "./survey.service.js";
  * Etapas das automações: lembrete e desistência da coleta de telefone, e o pedido dele no fim do atendimento; pesquisa ao resolver; encerramento por inatividade;
  * mensagem do cliente no chat do iFood; conversas que esperavam um atendente; conversas só com automação já paradas
  * (resolvidas sozinhas). E, de hora em hora, as tags automáticas dos clientes;
- * as notificações ao administrador pelo WhatsApp e, toda segunda, o relatório semanal.
+ * as notificações ao administrador pelo WhatsApp e, toda segunda, o relatório semanal. A cada minuto, os Pix pendentes
+ * do cardápio (F6-06) e os eventos do funil para a Conversions API da Meta (F7-04).
  */
 @Processor(QUEUES.automations)
-export class AutomationsProcessor extends JobProcessor {
+export class AutomationsProcessor extends JobProcessor implements OnModuleInit {
   constructor(
     private readonly phoneCollection: PhoneCollectionService,
     private readonly survey: SurveyService,
@@ -31,8 +35,16 @@ export class AutomationsProcessor extends JobProcessor {
     private readonly adminNotifications: AdminNotificationsService,
     private readonly reviewInvites: ReviewInviteService,
     private readonly db: DatabaseService,
+    private readonly menuOrders: PublicOrderService,
+    private readonly capi: MetaCapiService,
+    @InjectQueue(QUEUES.automations) private readonly automations: Queue,
   ) {
     super();
+  }
+
+  async onModuleInit(): Promise<void> {
+    await this.automations.upsertJobScheduler("menu-pix-sweep", { every: 60_000 }, { name: "menu-pix-sweep" });
+    await this.automations.upsertJobScheduler("meta-capi-sweep", { every: 60_000 }, { name: "meta-capi-sweep" });
   }
 
   async process(job: Job<AutomationJob | AiForwardJob | AdminMessageJob>): Promise<void> {
@@ -42,6 +54,8 @@ export class AutomationsProcessor extends JobProcessor {
     if (job.name === "ai-forward-sweep") return this.aiForward.sweep();
     if (job.name === "review-invite-sweep") return this.reviewInvites.sweep();
     if (job.name === "auto-resolve-sweep") return this.inactivity.resolveIdle();
+    if (job.name === "menu-pix-sweep") return this.menuOrders.sweepPix();
+    if (job.name === "meta-capi-sweep") return this.capi.sweep();
     if (job.name === "ai-forward") return this.aiForward.forward(job.data.tenantId);
     const data = job.data as AutomationJob;
     const { tenantId, conversationId } = data;

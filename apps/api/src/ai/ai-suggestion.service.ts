@@ -1,4 +1,4 @@
-import { CHANNEL_LABEL, type ReplySuggestionDto, withoutAi } from "@dishdesk/shared";
+import { CHANNEL_LABEL, orderOriginOf, type ReplySuggestionDto, withoutAi } from "@dishdesk/shared";
 import { Injectable, Logger, NotFoundException, ServiceUnavailableException, UnprocessableEntityException } from "@nestjs/common";
 import { z } from "zod";
 import type { RequestAuth } from "../auth/auth.decorators.js";
@@ -84,9 +84,9 @@ export class AiSuggestionService {
         const confirmed = state.linkedOrder ? await orders.order.findUnique({ where: { id: state.linkedOrder.id }, include: { items: true } }) : null;
         const found = confirmed ?? (await latestOrderOf(orders, conversation.contact, now));
         if (!found) return null;
-        const channel = await orders.channel.findUniqueOrThrow({ where: { id: found.channelId }, select: { type: true } });
+        const channel = found.channelId ? await orders.channel.findUniqueOrThrow({ where: { id: found.channelId }, select: { type: true } }) : null;
         const update = await orderUpdateMessage(orders, found.id, now, settings, this.jev);
-        return { ...found, confirmed: !!confirmed, byNumber: false, channelType: channel.type, update };
+        return { ...found, confirmed: !!confirmed, byNumber: false, channelType: orderOriginOf(channel), update };
       });
       return { conversation, settings, history, order };
     });

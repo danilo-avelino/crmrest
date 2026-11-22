@@ -1,0 +1,86 @@
+{
+  "descricao": "Áudio transcrito com erros (o texto chega como a transcrição saiu) e cliente que muda de ideia no meio do pedido.",
+  "cenarios": [
+    {
+      "id": "audio-calabreza-grandi",
+      "titulo": "Transcrição: calabreza grandi e guarana dois litro",
+      "tema": "audio-transcrito",
+      "turnos": [
+        {
+          "cliente": "boa noite quero uma calabreza grandi e um guarana dois litro",
+          "espera": { "carrinho": { "itens": [{ "nome": "calabresa", "tamanho": "grande" }, { "nome": "guarana" }], "exatamente": true } }
+        }
+      ]
+    },
+    {
+      "id": "audio-frango-catupiri",
+      "titulo": "Transcrição: frango catupiri media com borda de chedar",
+      "tema": "audio-transcrito",
+      "turnos": [
+        {
+          "cliente": "manda uma de frango catupiri media com borda de chedar",
+          "espera": { "carrinho": { "itens": [{ "nome": "frango", "tamanho": "media" }], "exatamente": true } }
+        }
+      ]
+    },
+    {
+      "id": "audio-marguerita-pudin",
+      "titulo": "Transcrição: eh uma marguerita broto e um pudin",
+      "tema": "audio-transcrito",
+      "turnos": [
+        {
+          "cliente": "eh... é... uma marguerita broto e um pudin de sobremesa",
+          "espera": { "carrinho": { "itens": [{ "nome": "margherita", "tamanho": "broto" }, { "nome": "pudim" }], "exatamente": true } }
+        }
+      ]
+    },
+    {
+      "id": "troca-de-ideia-sabor",
+      "titulo": "Pede calabresa e troca por portuguesa",
+      "tema": "troca-de-ideia",
+      "turnos": [
+        {
+          "cliente": "uma calabresa grande",
+          "espera": { "carrinho": { "itens": [{ "nome": "calabresa", "tamanho": "grande" }], "exatamente": true } }
+        },
+        {
+          "cliente": "pensando bem, troca por uma portuguesa",
+          "espera": {
+            "algumaFerramenta": ["alterar_item_carrinho", "remover_do_carrinho"],
+            "carrinho": { "itens": [{ "nome": "portuguesa", "tamanho": "grande" }], "exatamente": true }
+          }
+        }
+      ]
+    },
+    {
+      "id": "troca-de-ideia-tamanho-quantidade",
+      "titulo": "Duas margheritas médias viram uma grande",
+      "tema": "troca-de-ideia",
+      "turnos": [
+        {
+          "cliente": "duas margheritas médias",
+          "espera": { "carrinho": { "itens": [{ "nome": "margherita", "tamanho": "media", "quantidade": 2 }], "exatamente": true } }
+        },
+        {
+          "cliente": "na verdade é só uma, e grande",
+          "espera": { "carrinho": { "itens": [{ "nome": "margherita", "tamanho": "grande", "quantidade": 1 }], "exatamente": true } }
+        }
+      ]
+    },
+    {
+      "id": "troca-de-ideia-remover",
+      "titulo": "Tira a sobremesa",
+      "tema": "troca-de-ideia",
+      "turnos": [
+        {
+          "cliente": "uma calabresa grande e um petit gateau",
+          "espera": { "carrinho": { "itens": [{ "nome": "calabresa" }, { "nome": "petit" }], "exatamente": true } }
+        },
+        {
+          "cliente": "tira a sobremesa",
+          "espera": { "ferramentas": ["remover_do_carrinho"], "carrinho": { "itens": [{ "nome": "calabresa" }], "exatamente": true } }
+        }
+      ]
+    }
+  ]
+}

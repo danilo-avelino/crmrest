@@ -1,0 +1,58 @@
+{
+  "descricao": "Item esgotado (Coca-Cola 2 L no seed) e loja fechada. A loja das evals abre das 18:00 às 23:30 e agenda (antecedência de 60 min).",
+  "cenarios": [
+    {
+      "id": "esgotado-coca",
+      "titulo": "Coca-Cola esgotada: oferece outra bebida",
+      "tema": "esgotado",
+      "turnos": [
+        {
+          "cliente": "quero uma coca 2 litros",
+          "espera": {
+            "carrinho": { "vazio": true },
+            "respostaContem": ["esgotad|acabou|em falta|indispon[ií]vel|n[aã]o temos", "guaran[aá]|suco"]
+          }
+        }
+      ]
+    },
+    {
+      "id": "esgotado-aceita-alternativa",
+      "titulo": "Pizza e coca: a pizza entra, a coca não, e o guaraná entra depois",
+      "tema": "esgotado",
+      "turnos": [
+        {
+          "cliente": "uma calabresa grande e uma coca 2l",
+          "espera": { "carrinho": { "itens": [{ "nome": "calabresa", "tamanho": "grande" }], "exatamente": true }, "respostaContem": ["esgotad|acabou|em falta|indispon[ií]vel|n[aã]o temos"] }
+        },
+        {
+          "cliente": "pode ser guaraná então",
+          "espera": { "carrinho": { "itens": [{ "nome": "calabresa" }, { "nome": "guarana" }], "exatamente": true } }
+        }
+      ]
+    },
+    {
+      "id": "loja-fechada-oferece-agendar",
+      "titulo": "Sexta 15h, loja fechada: diz que abre às 18h e oferece agendar",
+      "tema": "loja-fechada",
+      "quando": "2026-11-20T18:00:00.000Z",
+      "turnos": [
+        {
+          "cliente": "quero pedir uma calabresa grande",
+          "espera": { "ferramentas": ["verificar_funcionamento"], "respostaContem": ["18", "agend"], "transferencia": false }
+        }
+      ]
+    },
+    {
+      "id": "loja-fechada-pergunta-horario",
+      "titulo": "Sábado 10h: estão abertos?",
+      "tema": "loja-fechada",
+      "quando": "2026-11-21T13:00:00.000Z",
+      "turnos": [
+        {
+          "cliente": "vocês estão abertos?",
+          "espera": { "ferramentas": ["verificar_funcionamento"], "respostaContem": ["18"], "respostaNaoContem": ["estamos abertos"] }
+        }
+      ]
+    }
+  ]
+}

@@ -28,6 +28,7 @@ const TENANTS = [
   { slug: "cantina-da-nonna", name: "Cantina da Nonna" },
   { slug: "sushi-kaze", name: "Sushi Kaze" },
   { slug: "bistro-bellagio", name: "Bistrô Bellagio" },
+  { slug: "forno-da-vila", name: "Forno da Vila" }, // pizzaria com o cardápio digital (módulo MENU)
 ] as const;
 type Slug = (typeof TENANTS)[number]["slug"];
 
@@ -35,7 +36,7 @@ const USERS: { email: string; name: string; roles: Partial<Record<Slug, "ADMIN" 
   {
     email: "ana.silva@cantinadanonna.com.br",
     name: "Ana Silva",
-    roles: { "cantina-da-nonna": "AGENT", "sushi-kaze": "ADMIN", "bistro-bellagio": "AGENT" },
+    roles: { "cantina-da-nonna": "AGENT", "sushi-kaze": "ADMIN", "bistro-bellagio": "AGENT", "forno-da-vila": "ADMIN" },
   },
   { email: "diego@cantinadanonna.com.br", name: "Diego Rocha", roles: { "cantina-da-nonna": "ADMIN" } },
 ];
@@ -339,7 +340,184 @@ async function main() {
   // ---------- Bistrô Bellagio: canal conectado, sem conversas ----------
   await createChannel(tenants["bistro-bellagio"].id, "bistro-bellagio", "WHATSAPP", "WhatsApp");
 
+  // ---------- Forno da Vila: cardápio digital de exemplo ----------
+  const forno = tenants["forno-da-vila"].id;
+  await createChannel(forno, "forno-da-vila", "WHATSAPP", "WhatsApp");
+  await prisma.tenantModule.create({ data: { tenantId: forno, module: "MENU" } });
+  await seedMenu(forno);
+
   console.log(`Seed concluído. Login: ${USERS[0]!.email} / ${DEMO_PASSWORD}`);
+}
+
+// Cardápio da pizzaria de exemplo: sabores com broto/média/grande, meio a meio, combo, bordas, bebida esgotada e
+// sobremesas, com os campos da IA. Valores em centavos.
+async function seedMenu(tenantId: string) {
+  const menu = await prisma.menu.create({ data: { tenantId, name: "Cardápio Forno da Vila" } });
+  const group = (name: string, minSelect: number, maxSelect: number, options: [string, number][]) =>
+    prisma.menuOptionGroup.create({
+      data: {
+        tenantId,
+        menuId: menu.id,
+        name,
+        minSelect,
+        maxSelect,
+        options: { create: options.map(([option, priceCents], sortOrder) => ({ tenantId, name: option, priceCents, sortOrder })) },
+      },
+    });
+  const borda = await group("Borda recheada", 0, 1, [["Catupiry", 1000], ["Cheddar", 1000], ["Chocolate", 1200]]);
+  const bebidaCombo = await group("Refrigerante do combo", 1, 1, [["Guaraná 2 L", 0], ["Coca-Cola 2 L", 0]]);
+
+  const category = (name: string, sortOrder: number, half?: "MAX" | "AVERAGE") =>
+    prisma.menuCategory.create({
+      data: { tenantId, menuId: menu.id, name, sortOrder, allowsHalf: Boolean(half), halfPricing: half ?? "MAX" },
+    });
+  type ItemSeed = Omit<Prisma.MenuItemUncheckedCreateInput, "tenantId" | "categoryId"> & {
+    sizes?: [number, number, number]; // broto, média, grande
+    groups?: string[];
+  };
+  const items = async (categoryId: string, list: ItemSeed[]) => {
+    const created: Record<string, string> = {};
+    for (const [sortOrder, { sizes, groups, ...item }] of list.entries()) {
+      const { id } = await prisma.menuItem.create({
+        data: {
+          ...item,
+          tenantId,
+          categoryId,
+          sortOrder,
+          sizes: sizes && {
+            create: (["Broto", "Média", "Grande"] as const).map((name, i) => ({ tenantId, name, priceCents: sizes[i]!, sortOrder: i })),
+          },
+          optionGroups: groups && { create: groups.map((groupId) => ({ tenantId, groupId })) },
+        },
+      });
+      created[item.name] = id;
+    }
+    return created;
+  };
+
+  // Pizzas só à noite, todos os dias (18h à meia-noite).
+  const pizzas = await category("Pizzas salgadas", 0, "MAX");
+  await prisma.menuAvailability.createMany({
+    data: [0, 1, 2, 3, 4, 5, 6].map((weekday) => ({ tenantId, categoryId: pizzas.id, weekday, startMinute: 18 * 60, endMinute: 24 * 60 })),
+  });
+  const salgadas = await items(pizzas.id, [
+    {
+      name: "Calabresa",
+      description: "Calabresa fatiada, cebola e azeitona.",
+      sizes: [3490, 4990, 5990],
+      groups: [borda.id],
+      ingredients: ["molho de tomate", "muçarela", "linguiça calabresa", "cebola", "azeitona"],
+      allergens: ["lactose", "glúten"],
+      servesPeople: 3,
+      tags: ["mais pedido"],
+      synonyms: ["calabreza", "linguiça"],
+      aiNotes: "A grande tem 8 fatias. Dá para pedir sem cebola.",
+    },
+    {
+      name: "Margherita",
+      description: "Muçarela, tomate e manjericão fresco.",
+      sizes: [3290, 4690, 5690],
+      groups: [borda.id],
+      ingredients: ["molho de tomate", "muçarela", "tomate", "manjericão"],
+      allergens: ["lactose", "glúten"],
+      servesPeople: 3,
+      tags: ["vegetariano"],
+      synonyms: ["marguerita", "margarita"],
+    },
+    {
+      name: "Portuguesa",
+      description: "Presunto, ovo, cebola, ervilha e azeitona.",
+      sizes: [3690, 5290, 6290],
+      groups: [borda.id],
+      ingredients: ["molho de tomate", "muçarela", "presunto", "ovo", "cebola", "ervilha", "azeitona"],
+      allergens: ["lactose", "glúten", "ovo"],
+      servesPeople: 3,
+    },
+    {
+      name: "Frango com Catupiry",
+      sizes: [3690, 5290, 6290],
+      groups: [borda.id],
+      ingredients: ["molho de tomate", "frango desfiado", "catupiry", "milho"],
+      allergens: ["lactose", "glúten"],
+      servesPeople: 3,
+      tags: ["mais pedido"],
+      synonyms: ["frango catupiri", "frango"],
+    },
+    {
+      name: "Quatro Queijos",
+      sizes: [3890, 5490, 6590],
+      groups: [borda.id],
+      ingredients: ["muçarela", "provolone", "parmesão", "gorgonzola"],
+      allergens: ["lactose", "glúten"],
+      servesPeople: 3,
+      tags: ["vegetariano"],
+      synonyms: ["4 queijos"],
+    },
+  ]);
+
+  // Doces: meio a meio pela média das metades.
+  const doces = await category("Pizzas doces", 1, "AVERAGE");
+  await items(doces.id, [
+    {
+      name: "Chocolate com Morango",
+      sizes: [3290, 4490, 5490],
+      ingredients: ["chocolate ao leite", "morango"],
+      allergens: ["lactose", "glúten"],
+      tags: ["doce"],
+      synonyms: ["prestígio de morango"],
+    },
+    {
+      name: "Romeu e Julieta",
+      sizes: [3190, 4290, 5290],
+      ingredients: ["muçarela", "goiabada"],
+      allergens: ["lactose", "glúten"],
+      tags: ["doce"],
+      synonyms: ["goiabada com queijo"],
+    },
+  ]);
+
+  const combos = await category("Combos", 2);
+  await items(combos.id, [
+    {
+      name: "Combo Família",
+      description: "Uma pizza grande salgada (sabor a combinar) e um refrigerante de 2 L.",
+      priceCents: 7490,
+      groups: [bebidaCombo.id],
+      servesPeople: 4,
+      tags: ["promoção"],
+      synonyms: ["combo", "promoção família"],
+      aiNotes: "Ofereça quando o cliente pedir pizza grande e refrigerante separados: sai mais barato.",
+    },
+  ]);
+
+  const bebidasCategory = await category("Bebidas", 3);
+  const bebidas = await items(bebidasCategory.id, [
+    { name: "Guaraná Antarctica 2 L", priceCents: 1200, synonyms: ["guaraná", "refri"], tags: ["gelado"] },
+    { name: "Coca-Cola 2 L", priceCents: 1400, soldOut: true, synonyms: ["coca", "refri"] },
+    { name: "Suco de laranja 500 ml", priceCents: 900, ingredients: ["laranja"], synonyms: ["suco natural"] },
+  ]);
+
+  const sobremesasCategory = await category("Sobremesas", 4);
+  const sobremesas = await items(sobremesasCategory.id, [
+    {
+      name: "Petit gâteau",
+      description: "Com sorvete de creme.",
+      priceCents: 1890,
+      ingredients: ["chocolate", "sorvete de creme"],
+      allergens: ["lactose", "glúten", "ovo"],
+      servesPeople: 1,
+      synonyms: ["petit gateau", "bolinho de chocolate"],
+    },
+    { name: "Pudim", priceCents: 1290, ingredients: ["leite condensado", "ovo"], allergens: ["lactose", "ovo"], servesPeople: 1 },
+  ]);
+
+  await prisma.menuItemPairing.createMany({
+    data: [
+      { itemId: salgadas["Calabresa"]!, pairedItemId: bebidas["Guaraná Antarctica 2 L"]! },
+      { itemId: salgadas["Quatro Queijos"]!, pairedItemId: bebidas["Suco de laranja 500 ml"]! },
+      { itemId: salgadas["Frango com Catupiry"]!, pairedItemId: sobremesas["Petit gâteau"]! },
+    ].map((pairing) => ({ tenantId, ...pairing })),
+  });
 }
 
 try {

@@ -1,0 +1,7 @@
+categoria;item;descricao;preco;tamanho;preco_tamanho;ingredientes;alergenos;serve_pessoas;tags;apelidos
+Pizzas;Calabresa;Linguiça calabresa fatiada com cebola e azeitonas;;Média;49,90;"molho de tomate;mussarela;linguiça calabresa;cebola;azeitona";"glúten;lactose";2;mais pedido;"calabreza;linguiça"
+Pizzas;Calabresa;;;Grande;62,90;;;3;;
+Pizzas;Quatro Queijos;Mussarela, provolone, parmesão e gorgonzola;;Média;54,90;"mussarela;provolone;parmesão;gorgonzola";"glúten;lactose";2;vegetariano;4 queijos
+Pizzas;Quatro Queijos;;;Grande;67,90;;;3;;
+Bebidas;Coca-Cola 2L;Refrigerante gelado;R$ 14,00;;;;;;;"refri;coca"
+Sobremesas;Petit Gâteau;Bolo quente de chocolate com sorvete de creme;32.50;;;"chocolate;farinha;ovo;sorvete de creme";"glúten;ovo;lactose";1;doce;

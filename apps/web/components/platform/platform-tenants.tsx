@@ -593,7 +593,16 @@ function PlanDialog({ tenant }: { tenant: PlatformTenantDto }) {
               const enabled = tenant.modules.includes(module);
               return (
                 <li key={module} className="flex items-center gap-3 border-b border-rule-soft px-3.5 py-2.5 last:border-b-0">
-                  <span className="flex-1 font-medium">{MODULE_LABEL[module]}</span>
+                  <span className="flex-1">
+                    <span className="block font-medium">{MODULE_LABEL[module]}</span>
+                    {/* X1: o uso do Cardápio no mês, para a equipe ver se o restaurante usa e quanto custa. */}
+                    {module === "MENU" && enabled && tenant.menuUsage && (
+                      <span className="block text-[12px] text-ink-3 tabular-nums">
+                        {tenant.menuUsage.items.toLocaleString("pt-BR")} itens · {tenant.menuUsage.ordersThisMonth.toLocaleString("pt-BR")} pedidos no mês · IA US${" "}
+                        {(tenant.menuUsage.aiCostMicroUsd / 1_000_000).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} no mês
+                      </span>
+                    )}
+                  </span>
                   {enabled ? <StatusBadge tone="resolved">Ligado</StatusBadge> : <span className="text-[12px] text-ink-3">Desligado</span>}
                   <Button variant={enabled ? "destructive" : "outline"} size="sm" onClick={() => setModule(module, !enabled)}>
                     {enabled ? "Desligar" : "Ligar"}

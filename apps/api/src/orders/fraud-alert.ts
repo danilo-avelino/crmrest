@@ -1,6 +1,6 @@
 import type { Prisma, TenantTx } from "@dishdesk/database";
 import type { ChannelType, OrderStatus } from "@dishdesk/database/enums";
-import { type CanceledOrderRow, type CustomerCancellations, FRAUD_RULES, type OrderAlertDecision, type OrderAlertDto } from "@dishdesk/shared";
+import { type CanceledOrderRow, type CustomerCancellations, FRAUD_RULES, type OrderAlertDecision, type OrderAlertDto, type OrderOrigin, orderOriginOf } from "@dishdesk/shared";
 import { z } from "zod";
 import { startOfYesterday } from "../automations/automation.js";
 import { addressBase, addressKey, addressText } from "./address-key.js";
@@ -47,7 +47,7 @@ export function toCanceledRow(order: RowOrder, showRestaurant = false): Canceled
   return {
     id: order.id,
     displayCode: order.displayCode,
-    channelType: order.channel.type,
+    channelType: orderOriginOf(order.channel),
     restaurantName: showRestaurant ? order.tenant.name : null,
     total: order.total.toFixed(2),
     placedAt: order.placedAt.toISOString(),
@@ -76,10 +76,11 @@ export async function customerCancellations(tx: TenantTx, contact: ContactKeys):
 
 export function summarize(ordersCount: number, canceledCount: number, allOrders: RowOrder[]): CustomerCancellations {
   // Canal ou restaurante que o contexto não enxerga (a RLS devolve null mesmo na relação obrigatória): a linha sai da lista.
-  const orders = allOrders.filter((order) => order.channel && order.tenant);
+  // Sem canal de propósito (cardápio próprio, channelId null) a linha fica.
+  const orders = allOrders.filter((order) => (order.channel || !order.channelId) && order.tenant);
   const showRestaurant = new Set(orders.map((order) => order.tenantId)).size > 1;
-  const bySource = new Map<ChannelType, number>();
-  for (const order of orders) bySource.set(order.channel.type, (bySource.get(order.channel.type) ?? 0) + 1);
+  const bySource = new Map<OrderOrigin, number>();
+  for (const order of orders) bySource.set(orderOriginOf(order.channel), (bySource.get(orderOriginOf(order.channel)) ?? 0) + 1);
   const rows = orders.map((order) => toCanceledRow(order, showRestaurant));
   return {
     ordersCount,

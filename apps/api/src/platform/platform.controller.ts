@@ -476,7 +476,10 @@ export class PlatformController {
 
     // A lista de restaurantes veio do banco, depois de conferir o super admin; as contagens rodam no contexto deles.
     const since = new Date(Date.now() - 30 * DAY_MS);
-    const [members, channels, conversations, messages, modules] = await this.db.withTenants(
+    // Mês corrente em Brasília (UTC-3): o uso do Cardápio (X1) conta do dia 1.
+    const brt = new Date(Date.now() - 3 * 60 * 60_000);
+    const monthStart = new Date(Date.UTC(brt.getUTCFullYear(), brt.getUTCMonth(), 1, 3));
+    const [members, channels, conversations, messages, modules, menuItems, menuOrders, aiCosts] = await this.db.withTenants(
       { tenantIds: tenants.map((t) => t.id), userId },
       (tx) =>
         Promise.all([
@@ -485,11 +488,15 @@ export class PlatformController {
           tx.conversation.groupBy({ by: ["tenantId"], where: { status: { in: ["OPEN", "PENDING"] } }, _count: { _all: true } }),
           tx.message.groupBy({ by: ["tenantId"], where: { createdAt: { gte: since } }, _count: { _all: true } }),
           tx.tenantModule.findMany({ select: { tenantId: true, module: true }, orderBy: { module: "asc" } }),
+          tx.menuItem.groupBy({ by: ["tenantId"], _count: { _all: true } }),
+          tx.order.groupBy({ by: ["tenantId"], where: { source: "MENU", placedAt: { gte: monthStart } }, _count: { _all: true } }),
+          tx.aiUsage.groupBy({ by: ["tenantId"], where: { createdAt: { gte: monthStart } }, _sum: { costMicroUsd: true } }),
         ]),
     );
+    const aiCost = new Map(aiCosts.map((row) => [row.tenantId, row._sum.costMicroUsd ?? 0]));
     const count = (rows: { tenantId: string; _count: { _all: number } }[]) =>
       new Map(rows.map((row) => [row.tenantId, row._count._all]));
-    const [m, c, o, msg] = [count(members), count(channels), count(conversations), count(messages)];
+    const [m, c, o, msg, items, menuMonth] = [count(members), count(channels), count(conversations), count(messages), count(menuItems), count(menuOrders)];
 
     return tenants.map((t) => ({
       id: t.id,
@@ -507,11 +514,14 @@ export class PlatformController {
       connectedChannels: c.get(t.id) ?? 0,
       openConversations: o.get(t.id) ?? 0,
       messagesLast30Days: msg.get(t.id) ?? 0,
+      menuUsage: modules.some((row) => row.tenantId === t.id && row.module === "MENU")
+        ? { items: items.get(t.id) ?? 0, ordersThisMonth: menuMonth.get(t.id) ?? 0, aiCostMicroUsd: aiCost.get(t.id) ?? 0 }
+        : null,
     }));
   }
 }
 
-async function requireSuperAdmin(tx: TenantTx, userId: string): Promise<void> {
+export async function requireSuperAdmin(tx: TenantTx, userId: string): Promise<void> {
   const user = await tx.user.findUnique({ where: { id: userId }, select: { isSuperAdmin: true, isActive: true } });
   if (!user?.isSuperAdmin || !user.isActive) throw new ForbiddenException("Só a equipe da plataforma acessa este painel.");
 }

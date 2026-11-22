@@ -60,7 +60,8 @@ export function SideMenu({
             <p className="mb-1 px-5 pt-1 text-[10px] font-semibold tracking-[0.1em] text-ink-3 uppercase">{group}</p>
             <ul>
               {items.map(({ href, label: item, icon: Icon }) => {
-                const active = href === root ? pathname === href : pathname.startsWith(href);
+                // Prefixo só por segmento: "/configuracoes/pagamento" não acende em "/configuracoes/pagamentos-cardapio".
+                const active = href === root ? pathname === href : pathname === href || pathname.startsWith(`${href}/`);
                 return (
                   <li key={href}>
                     <Link

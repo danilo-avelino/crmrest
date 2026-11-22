@@ -1,0 +1,103 @@
+{
+  "descricao": "Pedidos simples no cardápio do Forno da Vila (seed). Preços: Calabresa B/M/G 34,90/49,90/59,90; Margherita 32,90/46,90/56,90; Portuguesa e Frango com Catupiry 36,90/52,90/62,90; Quatro Queijos 38,90/54,90/65,90; Guaraná 2 L 12,00; bordas 10,00 (chocolate 12,00).",
+  "cenarios": [
+    {
+      "id": "pedido-simples-calabresa",
+      "titulo": "Uma calabresa grande, direto",
+      "tema": "pedido-simples",
+      "turnos": [
+        {
+          "cliente": "Boa noite! Quero uma pizza calabresa grande",
+          "espera": {
+            "ferramentas": ["adicionar_ao_carrinho"],
+            "carrinho": { "itens": [{ "nome": "calabresa", "tamanho": "grande", "quantidade": 1 }], "exatamente": true },
+            "respostaContem": ["59,90"],
+            "transferencia": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "pedido-simples-ate-o-resumo",
+      "titulo": "Margherita média com entrega em Pinheiros até a confirmação",
+      "tema": "pedido-simples",
+      "turnos": [
+        {
+          "cliente": "oi, quero uma margherita média",
+          "espera": { "ferramentas": ["adicionar_ao_carrinho"], "carrinho": { "itens": [{ "nome": "margherita", "tamanho": "media" }], "exatamente": true } }
+        },
+        {
+          "cliente": "só isso. É pra entregar na Rua Fradique Coutinho, 300, Pinheiros, São Paulo",
+          "espera": { "ferramentas": ["definir_dados_entrega"], "carrinho": { "entrega": "entrega" }, "transferencia": false }
+        },
+        {
+          "cliente": "manda o resumo",
+          "espera": { "ferramentas": ["resumir_pedido"], "carrinho": { "totalNaResposta": true }, "respostaContem": ["8,00"] }
+        },
+        {
+          "cliente": "confirmo, pode fechar",
+          "espera": { "semFerramentas": ["confirmar_pedido", "gerar_pix"], "transferencia": false }
+        },
+        {
+          "cliente": "vou pagar em dinheiro na entrega, não preciso de troco",
+          "espera": { "ferramentas": ["confirmar_pedido"], "transferencia": false }
+        }
+      ]
+    },
+    {
+      "id": "pedido-simples-pizza-e-bebida",
+      "titulo": "Portuguesa broto e guaraná na mesma mensagem",
+      "tema": "pedido-simples",
+      "turnos": [
+        {
+          "cliente": "me vê uma portuguesa broto e um guaraná 2 litros",
+          "espera": {
+            "carrinho": { "itens": [{ "nome": "portuguesa", "tamanho": "broto" }, { "nome": "guarana" }], "exatamente": true },
+            "transferencia": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "pedido-simples-quantidade",
+      "titulo": "Duas calabresas grandes",
+      "tema": "pedido-simples",
+      "turnos": [
+        {
+          "cliente": "quero duas calabresas grandes",
+          "espera": { "carrinho": { "itens": [{ "nome": "calabresa", "tamanho": "grande", "quantidade": 2 }], "exatamente": true } }
+        }
+      ]
+    },
+    {
+      "id": "pedido-simples-com-borda",
+      "titulo": "Frango com catupiry grande com borda de cheddar",
+      "tema": "pedido-simples",
+      "turnos": [
+        {
+          "cliente": "uma frango com catupiry grande com borda de cheddar",
+          "espera": {
+            "ferramentas": ["adicionar_ao_carrinho"],
+            "carrinho": { "itens": [{ "nome": "frango", "tamanho": "grande" }], "exatamente": true },
+            "respostaContem": ["cheddar"]
+          }
+        }
+      ]
+    },
+    {
+      "id": "pedido-simples-tamanho-faltando",
+      "titulo": "Pede sem tamanho: o agente pergunta antes de adicionar",
+      "tema": "pedido-simples",
+      "turnos": [
+        {
+          "cliente": "quero uma quatro queijos",
+          "espera": { "respostaContem": ["broto|m[eé]dia|grande|tamanho"], "carrinho": { "vazio": true } }
+        },
+        {
+          "cliente": "grande",
+          "espera": { "ferramentas": ["adicionar_ao_carrinho"], "carrinho": { "itens": [{ "nome": "quatro queijos", "tamanho": "grande" }], "exatamente": true } }
+        }
+      ]
+    }
+  ]
+}

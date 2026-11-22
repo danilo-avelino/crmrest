@@ -1,6 +1,6 @@
 "use client";
 
-import { CHANNEL_ARTICLE, CHANNEL_LABEL, type OrderCancellationOptions, type OrderDto } from "@dishdesk/shared";
+import { type OrderCancellationOptions, type OrderDto, ORDER_ORIGIN_LABEL, ORDER_ORIGIN_ARTICLE } from "@dishdesk/shared";
 import { useQuery } from "@tanstack/react-query";
 import { CheckCircle2Icon, LoaderCircleIcon } from "lucide-react";
 import { useId, useState } from "react";
@@ -62,8 +62,8 @@ function CancelOrderBody({
     staleTime: 0,
   });
 
-  const label = CHANNEL_LABEL[order.channelType];
-  const article = CHANNEL_ARTICLE[order.channelType];
+  const label = ORDER_ORIGIN_LABEL[order.channelType];
+  const article = ORDER_ORIGIN_ARTICLE[order.channelType];
   const title = `Cancelar o pedido ${label} #${order.displayCode ?? order.id.slice(0, 6)}?`;
   const data = options.data;
   const list = data?.reasonMode === "list";

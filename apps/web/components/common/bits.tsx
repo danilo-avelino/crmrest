@@ -1,4 +1,4 @@
-import type { ConversationListItem } from "@dishdesk/shared";
+import type { ConversationListItem, OrderOrigin } from "@dishdesk/shared";
 import { initials } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -13,7 +13,8 @@ const AVATAR_COLORS = [
   "bg-[#E8DFF0] text-[#5A3A8C]",
 ];
 
-export const CHANNEL_DOT: Record<ChannelType, string> = {
+/** Bolinha da origem: os canais e o cardápio próprio do Dish Desk (pedido sem canal). */
+export const CHANNEL_DOT: Record<OrderOrigin, string> = {
   WHATSAPP: "bg-whatsapp",
   INSTAGRAM: "bg-instagram",
   IFOOD: "bg-ifood",
@@ -21,6 +22,7 @@ export const CHANNEL_DOT: Record<ChannelType, string> = {
   WEBCHAT: "bg-ink-3",
   CARDAPIO_WEB: "bg-cardapio-web",
   NEEMO: "bg-neemo",
+  MENU: "bg-ink",
 };
 
 /** Anel de tempo: `share` (0 a 1) é a parte cheia. O tempo em texto fica sempre ao lado. */
@@ -95,7 +97,7 @@ export function Avatar({
   );
 }
 
-export function ChannelDot({ type, className }: { type: ChannelType; className?: string }) {
+export function ChannelDot({ type, className }: { type: OrderOrigin; className?: string }) {
   return <span className={cn("size-1.5 shrink-0 rounded-full", CHANNEL_DOT[type], className)} />;
 }
 
@@ -104,6 +106,7 @@ const BADGE = {
   resolved: "border-success-line bg-success-lt text-success-ink",
   open: "border-tomate-line bg-tomate-lt text-tomate-ink",
   neutral: "border-rule bg-surface-2 text-ink-2",
+  info: "border-jev/30 bg-jev/10 text-jev-ink",
 } as const;
 
 /** Conversa aberta pelo alerta de fraude: o cliente não está nela. */

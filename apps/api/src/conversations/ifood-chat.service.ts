@@ -92,7 +92,7 @@ export class IfoodChatService {
     this.requireEnabled();
     const scope = await ifoodWidgetScope(this.db, auth);
     const changed = await this.db.withTenants(scope, async (tx): Promise<Synced | { conversationId?: undefined } | null> => {
-      const order = await tx.order.findFirst({
+      const found = await tx.order.findFirst({
         where: { displayCode: body.orderCode, channel: { type: "IFOOD" } },
         orderBy: { placedAt: "desc" },
         select: {
@@ -107,7 +107,9 @@ export class IfoodChatService {
           reviewInvite: { select: { text: true } },
         },
       });
-      if (!order) return null;
+      // Filtrado pelo canal iFood: o pedido achado sempre tem canal.
+      if (!found?.channelId || !found.channel) return null;
+      const order = { ...found, channelId: found.channelId, channel: found.channel };
       // O convite de avaliação não aparece na Inbox: sem ele na cópia, a resposta do cliente segue como numa conversa nova.
       const invite = order.reviewInvite?.text;
       const entries = transcript(order, body.messages).filter(

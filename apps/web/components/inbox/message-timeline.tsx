@@ -53,6 +53,11 @@ const AUTOMATION_LABEL: Record<NonNullable<MessageContent["automation"]>, string
   courier_front_desk_confirmed: "Automação · cliente avisado da portaria",
   courier_problem_request: "Automação · problema com o pedido",
   ifood_observation_ask: "Automação · observação do pedido",
+  menu_order_confirmed: "Automação · pedido do cardápio",
+  menu_cart_recovery: "Automação · recuperação de carrinho",
+  menu_recovery_offer: "Automação · presente de recuperação",
+  menu_pix: "Automação · Pix do pedido",
+  menu_audio_failed: "Automação · áudio não entendido",
 };
 
 const SUCCESS_EVENTS = new Set<MessageContent["event"]>(["phone_collected", "contacts_merged", "rating"]);
@@ -266,6 +271,8 @@ function SystemEvent({ message }: { message: MessageDto }) {
       ? "border border-tomate-line bg-tomate-lt font-semibold text-tomate"
       : FRAUD_HOT_EVENTS.has(event)
       ? "border border-tomate-line bg-tomate-lt text-tomate-ink"
+      : event === "menu_agent"
+      ? "border border-warning-line bg-warning-lt text-warning-ink"
       : event === "order_kept"
       ? "border border-success-line bg-success-lt text-success-ink"
       : WARNING_EVENTS.has(event)
@@ -275,6 +282,7 @@ function SystemEvent({ message }: { message: MessageDto }) {
     <div className="flex justify-center">
       <span className={cn("flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px]", tone)}>
         {SUCCESS_EVENTS.has(event) && <CheckCircle2Icon className="size-3" aria-hidden />}
+        {event === "menu_agent" && <SparklesIcon className="size-3" aria-hidden />}
         {event === "cancellation_alert" && <TriangleAlertIcon className="size-3" aria-hidden />}
         {FRAUD_TEAM_EVENTS.has(event) && <LockIcon className="size-3" aria-label="Só a equipe vê" />}
         {text}

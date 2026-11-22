@@ -22,6 +22,7 @@ import { CheckCircle2Icon, CopyIcon, IdCardIcon, LoaderCircleIcon, MailIcon, Map
 import { type ReactNode, useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
 import { Avatar, CHANNEL_DOT } from "@/components/common/bits";
+import { AiCart } from "@/components/inbox/ai-cart";
 import { CurrentOrder } from "@/components/inbox/current-order";
 import { ORDER_STATUS } from "@/components/orders/order-status";
 import { useWhatsAppChat, WhatsAppPhone } from "@/components/inbox/whatsapp-phone";
@@ -123,6 +124,7 @@ export function ClientPanel({
       ) : (
         <>
           {data.tags.includes(RECOVERY_TAG) && <LastTime contactId={data.id} />}
+          <AiCart conversationId={conversationId} />
           <CurrentOrder conversationId={conversationId} onOpenConversation={onOpenConversation} />
           <Section title="Contato">
             <Row icon={PhoneIcon}>

@@ -263,6 +263,12 @@ export class IfoodClient {
     });
   }
 
+  /** GET de leitura com o JSON cru (204 = null); quem chama valida o formato. Usado pela Catalog API. */
+  async get(path: string): Promise<unknown> {
+    const response = await this.call(path);
+    return response.status === 204 ? null : response.json();
+  }
+
   private async call(path: string, init:Omit<RequestInit, "headers"> & { headers?: Record<string, string> } = {}): Promise<Response> {
     const response = await fetch(`${this.env.IFOOD_API_URL}${path}`, {
       ...init,

@@ -25,6 +25,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
   UnprocessableEntityException,
 } from "@nestjs/common";
 import type { Queue } from "bullmq";
@@ -43,6 +44,7 @@ import { withOrderTenants } from "../orders/order-scope.js";
 import { RealtimeEmitter } from "../realtime/realtime.emitter.js";
 import { isTenantAdmin, memberScope } from "../settings/tenant-admin.js";
 import { conversationListInclude, listEvaluations, toListItem, toMessageDto, toOrderDto, withoutRatingScores } from "./conversation.mapper.js";
+import { StorageService } from "../storage/storage.service.js";
 import { downloadMedia } from "./message-media.js";
 
 const PAGE_SIZE = 50;
@@ -65,6 +67,7 @@ export class ConversationsService {
     private readonly connectors: ConnectorsService,
     private readonly llm: LlmClient,
     @Inject(ENV) private readonly env: Env,
+    @Optional() private readonly storage?: StorageService,
   ) {
     this.key = parseEncryptionKey(env.ENCRYPTION_KEY);
   }
@@ -235,7 +238,7 @@ export class ConversationsService {
     const message = await this.db.withTenants(auth.scope, (tx) =>
       tx.message.findFirst({
         where: { id: messageId, conversationId },
-        select: { content: true, channel: { select: { type: true, credentials: true } } },
+        select: { tenantId: true, content: true, channel: { select: { type: true, credentials: true } } },
       }),
     );
     const media = (message?.content as MessageContent | undefined)?.media;
@@ -243,6 +246,11 @@ export class ConversationsService {
     // Mídia encaminhada: o arquivo é o da mensagem original.
     if (media.forwardOf) return this.media(auth, await this.conversationOf(auth, media.forwardOf), media.forwardOf);
     try {
+      // Áudio já guardado (módulo MENU, F5-01): vem do storage, não da plataforma.
+      if (media.storageKey && this.storage) {
+        const bytes = await this.storage.get(message.tenantId, media.storageKey);
+        return { body: new Response(bytes as Uint8Array<ArrayBuffer>).body!, mimeType: media.mimeType };
+      }
       return await downloadMedia(this.connectors, message.channel, media);
     } catch (error) {
       this.logger.warn(`Mídia da mensagem ${messageId} indisponível: ${error instanceof Error ? error.message : String(error)}`);

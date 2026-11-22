@@ -29,11 +29,13 @@ export function useInboxRealtime(): boolean {
     const socket = io(REALTIME_URL, { auth: { token }, transports: ["websocket"] });
     socket.on("inbox.changed", ({ conversationId }: { conversationId: string }) => {
       // "channels": um envio pode ter mudado a saúde do canal (token recusado ou de volta).
-      for (const queryKey of [["conversations"], ["counts"], ["conversation", conversationId], ["messages", conversationId], ["contact"], ["channels"], ["current-order", conversationId]]) {
+      for (const queryKey of [["conversations"], ["counts"], ["conversation", conversationId], ["messages", conversationId], ["contact"], ["channels"], ["current-order", conversationId], ["conversation-cart", conversationId]]) {
         void queryClient.invalidateQueries({ queryKey });
       }
       window.dispatchEvent(new Event(INBOX_CHANGED_EVENT));
     });
+    // Pedido do cardápio próprio (sem conversa): a aba Pedidos e o painel da Inbox buscam de novo.
+    socket.on("orders.changed", () => void queryClient.invalidateQueries({ queryKey: ["orders"] }));
     // Reconexão (API reiniciou, rede caiu) ou conexão nova com token renovado: avisos podem ter se perdido no intervalo.
     socket.on("connect", () => {
       setOffline(false);

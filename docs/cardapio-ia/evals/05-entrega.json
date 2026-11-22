@@ -1,0 +1,107 @@
+{
+  "descricao": "Entrega e retirada. A loja das evals entrega por bairro: Vila Madalena R$ 6,00, Pinheiros R$ 8,00, Perdizes R$ 10,00; retirada na Rua Harmonia, 500 com preparo de 30 min.",
+  "cenarios": [
+    {
+      "id": "fora-da-area-tatuape",
+      "titulo": "Endereço no Tatuapé: fora da área, oferece retirada",
+      "tema": "fora-da-area",
+      "turnos": [
+        {
+          "cliente": "uma margherita grande pra entregar na Rua Tuiuti, 1000, Tatuapé",
+          "espera": {
+            "algumaFerramenta": ["definir_dados_entrega", "calcular_entrega"],
+            "respostaContem": ["n[aã]o (entregamos|atendemos|chega|fazemos|consigo)|fora da (área|area|regi[aã]o)", "retir"]
+          }
+        }
+      ]
+    },
+    {
+      "id": "entrega-taxa-perdizes",
+      "titulo": "Quanto é a entrega para Perdizes",
+      "tema": "entrega",
+      "turnos": [
+        {
+          "cliente": "quanto é a taxa de entrega pra Perdizes?",
+          "espera": { "ferramentas": ["calcular_entrega"], "respostaContem": ["10,00"] }
+        }
+      ]
+    },
+    {
+      "id": "entrega-localizacao-sem-bairro",
+      "titulo": "Manda a localização: na entrega por bairro, o agente pergunta o bairro",
+      "tema": "entrega",
+      "turnos": [
+        {
+          "cliente": "uma calabresa média"
+        },
+        {
+          "cliente": "[localização enviada: lat -23.5558, lng -46.6913]",
+          "espera": { "respostaContem": ["bairro"] }
+        }
+      ]
+    },
+    {
+      "id": "retirada-quatro-queijos",
+      "titulo": "Quatro queijos média para retirar",
+      "tema": "retirada",
+      "turnos": [
+        {
+          "cliente": "quero uma quatro queijos média pra retirar aí na loja",
+          "espera": {
+            "ferramentas": ["adicionar_ao_carrinho", "definir_dados_entrega"],
+            "carrinho": { "itens": [{ "nome": "quatro queijos", "tamanho": "media" }], "entrega": "retirada" },
+            "respostaNaoContem": ["taxa de entrega de R\\$"]
+          }
+        }
+      ]
+    },
+    {
+      "id": "retirada-troca-para-entrega",
+      "titulo": "Começa na retirada e muda para entrega na Vila Madalena",
+      "tema": "retirada",
+      "turnos": [
+        {
+          "cliente": "uma margherita grande, vou buscar",
+          "espera": { "carrinho": { "itens": [{ "nome": "margherita" }], "entrega": "retirada" } }
+        },
+        {
+          "cliente": "mudei de ideia, entrega na Rua Aspicuelta 200, Vila Madalena",
+          "espera": { "ferramentas": ["definir_dados_entrega"], "carrinho": { "entrega": "entrega" }, "respostaContem": ["6,00"] }
+        }
+      ]
+    },
+    {
+      "id": "endereco-salvo-reaproveitado",
+      "titulo": "Cliente com endereço salvo pede para entregar em casa",
+      "tema": "endereco-salvo",
+      "enderecoSalvo": { "rotulo": "Casa", "rua": "Rua Mourato Coelho", "numero": "1000", "bairro": "Vila Madalena", "cidade": "São Paulo", "estado": "SP" },
+      "turnos": [
+        {
+          "cliente": "uma calabresa grande",
+          "espera": { "carrinho": { "itens": [{ "nome": "calabresa", "tamanho": "grande" }] } }
+        },
+        {
+          "cliente": "manda lá em casa, no endereço de sempre",
+          "espera": { "ferramentas": ["definir_dados_entrega"], "carrinho": { "entrega": "entrega" }, "respostaContem": ["Mourato"] }
+        }
+      ]
+    },
+    {
+      "id": "endereco-salvo-novo-endereco",
+      "titulo": "Tem endereço salvo, mas pede outro: vale o novo",
+      "tema": "endereco-salvo",
+      "enderecoSalvo": { "rotulo": "Casa", "rua": "Rua Mourato Coelho", "numero": "1000", "bairro": "Vila Madalena", "cidade": "São Paulo", "estado": "SP" },
+      "turnos": [
+        {
+          "cliente": "uma portuguesa grande pra entregar na Rua Cardeal Arcoverde, 500, Pinheiros",
+          "espera": {
+            "ferramentas": ["definir_dados_entrega"],
+            "carrinho": { "entrega": "entrega" },
+            "respostaContem": ["Cardeal|Pinheiros"],
+            "respostaNaoContem": ["Mourato"]
+          }
+        }
+      ]
+    }
+  ]
+}

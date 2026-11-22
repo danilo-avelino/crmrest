@@ -33,6 +33,16 @@ export const CHANNEL_LABEL: Record<ChannelType, string> = {
   NEEMO: "Neemo",
 };
 
+/** De onde veio um pedido: um canal integrado ou o cardápio próprio (source MENU sem conversa, que não tem canal). */
+export type OrderOrigin = ChannelType | "MENU";
+
+export const ORDER_ORIGIN_LABEL: Record<OrderOrigin, string> = { ...CHANNEL_LABEL, MENU: "Cardápio Dish Desk" };
+
+/** Origem pelo canal do pedido: sem canal, é o cardápio próprio. */
+export function orderOriginOf(channel: { type: ChannelType } | null | undefined): OrderOrigin {
+  return channel?.type ?? "MENU";
+}
+
 /** Artigo do nome de cada canal, para as frases: "o iFood", "a Neemo". */
 export const CHANNEL_ARTICLE: Record<ChannelType, "o" | "a"> = {
   WHATSAPP: "o",
@@ -43,3 +53,5 @@ export const CHANNEL_ARTICLE: Record<ChannelType, "o" | "a"> = {
   CARDAPIO_WEB: "o",
   NEEMO: "a",
 };
+
+export const ORDER_ORIGIN_ARTICLE: Record<OrderOrigin, "o" | "a"> = { ...CHANNEL_ARTICLE, MENU: "o" };

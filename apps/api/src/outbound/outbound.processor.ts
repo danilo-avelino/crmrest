@@ -5,7 +5,7 @@ import { Logger } from "@nestjs/common";
 import { DelayedError, type Job, type Queue } from "bullmq";
 import { AiReviewService } from "../ai/ai-review.service.js";
 import { INACTIVITY_CLOSE_MS } from "../automations/inactivity.service.js";
-import { type ChannelConnector, ChannelAuthError, type OutboundMedia, PermanentSendError, type SendTarget } from "../connectors/connector.js";
+import { type ChannelConnector, ChannelAuthError, interactiveLayout, type OutboundMedia, PermanentSendError, type SendTarget } from "../connectors/connector.js";
 import { ConnectorsService } from "../connectors/connectors.service.js";
 import { downloadMedia } from "../conversations/message-media.js";
 import { DatabaseService } from "../core/database.service.js";
@@ -103,7 +103,10 @@ export class OutboundProcessor extends JobProcessor {
       let sent: { externalMessageId: string };
       if (content.template && connector.sendTemplate) sent = await connector.sendTemplate(target, content.template);
       else if (content.media?.forwardOf) sent = await this.sendForwarded(scope, connector, target, message.type, content);
-      else if (content.text) sent = await connector.send(target, { type: "TEXT", text: content.text });
+      else if (content.media?.url && message.type === "IMAGE") sent = await this.sendPixImage(connector, target, content);
+      else if (content.choices && connector.capabilities?.interactive && connector.sendInteractive && interactiveLayout({ body: content.choices.question, options: content.choices.options })) {
+        sent = await connector.sendInteractive(target, { body: content.choices.question, options: content.choices.options });
+      } else if (content.text) sent = await connector.send(target, { type: "TEXT", text: content.text });
       else throw new PermanentSendError("Este canal não permite enviar esta mensagem.");
       outcome = { status: "SENT", externalMessageId: sent.externalMessageId };
     } catch (error) {
@@ -129,6 +132,29 @@ export class OutboundProcessor extends JobProcessor {
     if (outcome.status === "SENT") {
       await this.automations.add("inactivity", { tenantId, conversationId: message.conversationId }, { delay: INACTIVITY_CLOSE_MS });
     }
+  }
+
+  /**
+   * QR Code do Pix (F6-04): a imagem que a Pagar.me hospeda, com a legenda. Canal sem envio de arquivo, URL fora da
+   * Pagar.me ou download que falha: vai só a legenda (o código copia e cola sai na mensagem seguinte de qualquer jeito).
+   */
+  private async sendPixImage(connector: ChannelConnector, target: SendTarget, content: MessageContent): Promise<{ externalMessageId: string }> {
+    const url = content.media!.url!;
+    const caption = content.text ?? "";
+    if (connector.sendMedia && isPixImageUrl(url)) {
+      try {
+        const response = await fetch(url, { signal: AbortSignal.timeout(10_000), redirect: "error" });
+        const bytes = response.ok ? Buffer.from(await response.arrayBuffer()) : null;
+        if (bytes && bytes.length > 0 && bytes.length <= PIX_IMAGE_MAX_BYTES) {
+          const mimeType = response.headers.get("content-type")?.split(";")[0] || "image/png";
+          return await connector.sendMedia(target, { kind: "IMAGE", mimeType, base64: bytes.toString("base64"), caption, fileName: "pix.png" });
+        }
+      } catch (error) {
+        this.logger.warn(`QR Code do Pix não baixado: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+    if (!caption) throw new PermanentSendError("Este canal não permite enviar esta mensagem.");
+    return connector.send(target, { type: "TEXT", text: caption });
   }
 
   /** Arquivo encaminhado: buscado na mensagem original (o Dish Desk não guarda mídia) e enviado com a legenda. */
@@ -158,3 +184,14 @@ export class OutboundProcessor extends JobProcessor {
 }
 
 const MEDIA_KINDS: OutboundMedia["kind"][] = ["IMAGE", "VIDEO", "DOCUMENT", "AUDIO"];
+
+/** Só a imagem do QR Code da Pagar.me é baixada por URL (F6-04): https e domínio dela, até 1 MB. */
+export function isPixImageUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "https:" && (parsed.hostname === "pagar.me" || parsed.hostname.endsWith(".pagar.me"));
+  } catch {
+    return false;
+  }
+}
+const PIX_IMAGE_MAX_BYTES = 1024 * 1024;

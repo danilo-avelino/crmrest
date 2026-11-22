@@ -4,6 +4,7 @@ import {
   type AnswerDisputeRequest,
   type CancelOrderRequest,
   COURIER_TAG,
+  ORDER_ORIGIN_LABEL,
   type CurrentOrderDto,
   type CustomerCancellations,
   type CustomerHistory,
@@ -73,11 +74,11 @@ export class OrdersService {
   }
 
   /** Dá para cancelar o pedido pelo Dish Desk? iFood: com a trava ligada (senão, o Dish Desk só acompanha). */
-  private canCancel(order: { status: OrderStatus; channel: { type: ChannelType } }): boolean {
+  private canCancel(order: { status: OrderStatus; channel: { type: ChannelType } | null }): boolean {
     if (!CANCELABLE.has(order.status)) return false;
-    if (order.channel.type === "IFOOD") return this.ifoodCancelOn() && this.ifood.configured;
-    if (order.channel.type === "NEEMO") return this.neemo.configured;
-    return order.channel.type === "CARDAPIO_WEB" && this.cardapioWeb.configured;
+    if (order.channel?.type === "IFOOD") return this.ifoodCancelOn() && this.ifood.configured;
+    if (order.channel?.type === "NEEMO") return this.neemo.configured;
+    return order.channel?.type === "CARDAPIO_WEB" && this.cardapioWeb.configured;
   }
 
   async list(auth: RequestAuth, query: OrderListQuery, now = new Date()): Promise<OrderPage> {
@@ -86,7 +87,9 @@ export class OrdersService {
       // O histórico importado da loja (de antes da conexão) fica no cadastro do cliente, fora desta aba.
       importedAt: null,
       ...(query.status && { status: query.status }),
-      ...(query.channel && { channel: { type: query.channel } }),
+      // "MENU": cardápio próprio, o pedido sem canal.
+      ...(query.channel && (query.channel === "MENU" ? { channelId: null } : { channel: { type: query.channel } })),
+      ...(query.scheduled && { scheduledFor: { not: null } }),
       ...(query.production && { status: { in: IN_PRODUCTION }, dispatchedAt: null }),
       ...(query.q && {
         OR: [
@@ -95,8 +98,8 @@ export class OrdersService {
         ],
       }),
     };
-    const sort = query.production ? "asc" : "desc";
-    const [rows, total, histories, late, alerts, cancellations] = await this.db.withTenants(scopeFor(auth, query.tenantId), async (tx) => {
+    const sort = query.production || query.scheduled ? "asc" : "desc";
+    const [rows, total, histories, late, alerts, cancellations, menuOrigin] = await this.db.withTenants(scopeFor(auth, query.tenantId), async (tx) => {
       const [rows, total] = await Promise.all([
         tx.order.findMany({
           where,
@@ -109,7 +112,7 @@ export class OrdersService {
             alertDecidedBy: { select: { name: true } },
             fraudMarkedBy: { select: { name: true } },
           },
-          orderBy: [{ placedAt: sort }, { id: sort }],
+          orderBy: query.scheduled ? [{ scheduledFor: "asc" }, { id: "asc" }] : [{ placedAt: sort }, { id: sort }],
           skip: (query.page - 1) * PAGE_SIZE,
           take: PAGE_SIZE,
         }),
@@ -135,7 +138,9 @@ export class OrdersService {
         if (!cancellations.has(order.contact.id)) cancellations.set(order.contact.id, await customerCancellations(tx, order.contact));
         alerts.set(order.id, await orderAlert(tx, order, order.contact, true));
       }
-      return [rows, total, histories, late, alerts, cancellations] as const;
+      // O filtro "Cardápio Dish Desk" só aparece para quem tem o módulo ou já recebeu pedido dele.
+      const menuOrigin = (await tx.tenantModule.count({ where: { module: "MENU" } })) > 0 || (await tx.order.count({ where: { source: "MENU" } })) > 0;
+      return [rows, total, histories, late, alerts, cancellations, menuOrigin] as const;
     }, LIST_TX);
     return {
       items: rows.map((order) => {
@@ -144,14 +149,14 @@ export class OrdersService {
         // Na entrega, a loja costuma ir de confirmado direto para "saiu" (sem marcar pronto): a saída fecha o preparo.
         const marked = at("READY_TO_PICKUP");
         const ready = marked ?? order.dispatchedAt;
-        const ifood = order.channel.type === "IFOOD";
+        const ifood = order.channel?.type === "IFOOD";
         // Sem a trava, o Dish Desk só acompanha o pedido: nenhuma ação é oferecida.
         const actions = ifood && this.env.IFOOD_ORDER_ACTIONS;
         const dispute = ifood ? openDispute(order.events, now) : null;
         return {
           ...toOrderDto(order),
           tenant: order.tenant,
-          store: order.channel.name,
+          store: order.channel?.name ?? ORDER_ORIGIN_LABEL.MENU,
           contact: { id: order.contact.id, name: order.contact.name },
           history: histories.get(order.contact.id)!,
           events: order.events.map((event) => ({
@@ -176,6 +181,7 @@ export class OrdersService {
       total,
       page: query.page,
       pageSize: PAGE_SIZE,
+      menuOrigin,
     };
   }
 
@@ -283,12 +289,12 @@ export class OrdersService {
     await this.fraud.canceledByTeam(auth, orderId, { reason, markFraud, confirmed: true });
   }
 
-  private async channelTypeOf(auth: RequestAuth, orderId: string): Promise<ChannelType> {
+  private async channelTypeOf(auth: RequestAuth, orderId: string): Promise<ChannelType | null> {
     const order = await this.db.withTenants(auth.scope, (tx) =>
       tx.order.findUnique({ where: { id: orderId }, select: { channel: { select: { type: true } } } }),
     );
     if (!order) throw new NotFoundException("Pedido não encontrado.");
-    return order.channel.type;
+    return order.channel?.type ?? null;
   }
 
   /** Pedido do Cardápio Web ou da Neemo que dá para cancelar pelo Dish Desk. */
@@ -306,8 +312,8 @@ export class OrdersService {
       }),
     );
     if (!order) throw new NotFoundException("Pedido não encontrado.");
-    if (!this.canCancel(order)) throw new UnprocessableEntityException("Este pedido não pode ser cancelado pelo Dish Desk.");
-    return order;
+    if (!order.channel || !this.canCancel(order)) throw new UnprocessableEntityException("Este pedido não pode ser cancelado pelo Dish Desk.");
+    return { ...order, channel: order.channel };
   }
 
   /**
@@ -340,13 +346,13 @@ export class OrdersService {
       }),
     );
     if (!order) throw new NotFoundException("Pedido não encontrado.");
-    if (order.channel.type !== "IFOOD" || !this.ifood.configured) {
+    if (order.channel?.type !== "IFOOD" || !this.ifood.configured) {
       throw new UnprocessableEntityException("Este pedido não pode ser alterado pelo Dish Desk.");
     }
     if (!(cancelling ? this.ifoodCancelOn() : this.env.IFOOD_ORDER_ACTIONS)) {
       throw new UnprocessableEntityException("O Dish Desk só acompanha os pedidos do iFood: a ação é feita no sistema de pedidos da loja.");
     }
-    return { ...order, client: this.ifood.clientFor(order.channel) };
+    return { ...order, channel: order.channel, client: this.ifood.clientFor(order.channel) };
   }
 
   private async askIfood<T>(call: () => Promise<T>): Promise<T> {
@@ -389,7 +395,7 @@ export class OrdersService {
     const order = await tx.order.findUnique({ where: { id: orderId }, include: { contact: true, channel: { select: { type: true } } } });
     if (!order) throw new NotFoundException("Pedido não encontrado.");
     const whatsapp = order.contact.phone ? await connectedWhatsApp(tx, order.tenantId) : null;
-    return { order, whatsapp, ifood: order.channel.type === "IFOOD" && this.env.IFOOD_CHAT_BRIDGE };
+    return { order, whatsapp, ifood: order.channel?.type === "IFOOD" && this.env.IFOOD_CHAT_BRIDGE };
   }
 
   /**
@@ -429,7 +435,7 @@ export class OrdersService {
         const at = (code: string) => order.events.find((event) => event.code === code)?.occurredAt;
         const reachable = auth.scope.tenantIds.includes(order.tenantId);
         const customer = courierOrder ? order.contact : conversation.contact;
-        const ifoodChat = order.channel.type === "IFOOD" && this.env.IFOOD_CHAT_BRIDGE;
+        const ifoodChat = order.channel?.type === "IFOOD" && this.env.IFOOD_CHAT_BRIDGE;
         const courier = courierOrder && {
           customerId: order.contact.id,
           customerName: order.contact.name,
@@ -478,8 +484,8 @@ function canceledOutsideAt(order: { alertDecision: string | null; canceledAt: Da
  * Próxima etapa que a loja informa ao iFood. O despacho só existe na entrega feita pela própria loja: com entregador do
  * iFood (ou retirada), a saída vem do evento de coleta.
  */
-export function nextOrderAction(order: { status: OrderStatus; raw: unknown; channel: { type: ChannelType } }): OrderAction | null {
-  if (order.channel.type !== "IFOOD") return null;
+export function nextOrderAction(order: { status: OrderStatus; raw: unknown; channel: { type: ChannelType } | null }): OrderAction | null {
+  if (order.channel?.type !== "IFOOD") return null;
   if (order.status === "PLACED") return "CONFIRM";
   if (order.status === "CONFIRMED" || order.status === "PREPARING") return "READY";
   if (order.status !== "READY") return null;

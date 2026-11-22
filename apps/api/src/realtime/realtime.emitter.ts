@@ -5,6 +5,8 @@ import { ENV, type Env } from "../config/env.js";
 
 export const INBOX_CHANGED = "inbox.changed";
 export type InboxChanged = { tenantId: string; conversationId: string };
+/** Pedido novo sem conversa (cardápio próprio): o painel busca a lista de pedidos de novo. */
+export const ORDERS_CHANGED = "orders.changed";
 
 export function tenantRoom(tenantId: string): string {
   return `tenant:${tenantId}`;
@@ -26,6 +28,10 @@ export class RealtimeEmitter implements OnModuleDestroy {
 
   inboxChanged(tenantId: string, conversationId: string): void {
     this.emitter.to(tenantRoom(tenantId)).emit(INBOX_CHANGED, { tenantId, conversationId } satisfies InboxChanged);
+  }
+
+  ordersChanged(tenantId: string): void {
+    this.emitter.to(tenantRoom(tenantId)).emit(ORDERS_CHANGED, { tenantId });
   }
 
   /** Health check: o Redis responde? */

@@ -299,7 +299,7 @@ export class CourierMenuService {
     const notify = async (store: TenantTx, notice: string) => {
       const chat = await openIfoodConversation(store, order, new Date(), "RESOLVED");
       const label = kind === "arrival" ? "courier_arrival" : "courier_front_desk";
-      const messageId = await automationMessage(store, { id: chat.id, tenantId: order.tenantId, channelId: order.channelId }, label, notice);
+      const messageId = await automationMessage(store, { id: chat.id, tenantId: order.tenantId, channelId: chat.channelId }, label, notice);
       return { tenantId: order.tenantId, conversationId: chat.id, messageId };
     };
     const alsoSend =

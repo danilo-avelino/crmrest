@@ -105,7 +105,7 @@ export class ReviewInviteService implements OnModuleInit {
       const rows: Prisma.ReviewInviteCreateManyInput[] = [];
       for (const order of orders) {
         // Pedido feito antes de a loja ser conectada: sem convite, como nos avisos do pedido.
-        if (order.channel.connectedAt && order.placedAt < order.channel.connectedAt) continue;
+        if (order.channel?.connectedAt && order.placedAt < order.channel.connectedAt) continue;
         const decision = reviewInviteDecision(order, now);
         if (!decision) continue;
         const text = decision.status === "PENDING" ? fillMessage(reviewInvite, { pedido: order.displayCode! }) : null;

@@ -69,10 +69,23 @@ const EnvSchema = z.object({
   INFINITEPAY_HANDLE: z.string().min(1).optional(),
   INFINITEPAY_API_KEY: z.string().min(1).optional(),
   INFINITEPAY_API_URL: z.url().default("https://api.checkout.infinitepay.io"),
+  // Transcrição dos áudios do cardápio (F5-02, D4: Whisper large-v3-turbo pelo OpenRouter). Pode ser a mesma chave do
+  // JEV_API_KEY (as duas são do OpenRouter); sem ela, o áudio fica "pending_provider".
+  OPENROUTER_API_KEY: z.string().min(1).optional(),
+  OPENROUTER_API_URL: z.url().default("https://openrouter.ai/api/v1"),
+  TRANSCRIPTION_MODEL: z.string().min(1).default("openai/whisper-large-v3-turbo"),
+  // Pix do cardápio (F6): conta de plataforma (marketplace) da Pagar.me; o dinheiro vai ao recebedor de cada restaurante.
+  PAGARME_SECRET_KEY: z.string().min(1).optional(),
+  PAGARME_API_URL: z.url().default("https://api.pagar.me/core/v5"),
+  /** Usuário e senha do Basic Auth que o webhook da Pagar.me manda (configurados no painel da Pagar.me). */
+  PAGARME_WEBHOOK_USER: z.string().min(1).optional(),
+  PAGARME_WEBHOOK_PASSWORD: z.string().min(1).optional(),
   // Supabase Auth: só manda o e-mail de "Esqueceu a senha?" e confere o link de volta; o login continua sendo o nosso.
   // A chave é a secreta (service_role). Sem as duas, a recuperação de senha responde 503.
   SUPABASE_URL: z.url().optional(),
   SUPABASE_SECRET_KEY: z.string().min(1).optional(),
+  // Pasta dos arquivos do cardápio quando não há Supabase (só desenvolvimento). Sem ela, vale apps/api/.storage.
+  STORAGE_LOCAL_DIR: z.string().min(1).optional(),
   // "Continuar com Google" no login: o cliente OAuth do Google Cloud, com o retorno WEB_ORIGIN + /api/auth/google/callback.
   // Sem os dois, o botão avisa que o login com Google não está disponível.
   GOOGLE_CLIENT_ID: z.string().min(1).optional(),
@@ -95,6 +108,9 @@ const EnvSchema = z.object({
   AI_FALLBACK_API_KEY: z.string().min(1).optional(),
   AI_FALLBACK_MODEL: z.string().min(1).optional(),
   AI_FALLBACK_TIMEOUT_MS: z.coerce.number().int().positive().default(180_000),
+  // Agente de pedidos do cardápio (módulo MENU, F4-07): teto de tokens por conversa por dia (entrada com o cache e
+  // saída, de todas as chamadas do dia). Passou do teto, a IA para e a equipe é chamada.
+  MENU_AGENT_DAILY_TOKENS: z.coerce.number().int().positive().default(400_000),
   // Jev (modelo de decisão da TypeSafe AI), pela API Decisions do OpenRouter: analisa os casos suspeitos da defesa e
   // avalia os atendimentos (E29). JEV_API_KEY é a chave do OpenRouter. Sem ela, as regras continuam banindo, só sem a
   // análise, e os atendimentos não são avaliados.

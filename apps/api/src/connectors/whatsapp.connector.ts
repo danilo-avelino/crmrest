@@ -3,7 +3,7 @@ import type { MessageType } from "@dishdesk/database/enums";
 import { NormalizedMessage, phoneFromWhatsAppId, StatusUpdate, type WhatsAppTemplate } from "@dishdesk/shared";
 import { z } from "zod";
 import type { Env } from "../config/env.js";
-import { type ChannelConnector, type OutboundTemplate, type OutboundText, type SendTarget, sendFailure } from "./connector.js";
+import { type ChannelConnector, type OutboundInteractive, type OutboundTemplate, type OutboundText, type SendTarget, PermanentSendError, interactiveLayout, sendFailure } from "./connector.js";
 
 // Webhook da WhatsApp Cloud API: só os campos que o Dish Desk usa.
 const WaMedia = z.looseObject({
@@ -29,8 +29,8 @@ const WaMessage = z.looseObject({
   button: z.looseObject({ text: z.string() }).optional(),
   interactive: z
     .looseObject({
-      button_reply: z.looseObject({ title: z.string() }).optional(),
-      list_reply: z.looseObject({ title: z.string() }).optional(),
+      button_reply: z.looseObject({ id: z.string().optional(), title: z.string() }).optional(),
+      list_reply: z.looseObject({ id: z.string().optional(), title: z.string() }).optional(),
     })
     .optional(),
 });
@@ -114,8 +114,8 @@ function messageBody(message: z.infer<typeof WaMessage>): { type: MessageType; t
   }
   if (message.type === "location" && message.location) return { type: "LOCATION", metadata: { location: message.location } };
   if (message.type === "button" && message.button) return { type: "TEXT", text: message.button.text };
-  const reply = message.interactive?.button_reply?.title ?? message.interactive?.list_reply?.title;
-  if (message.type === "interactive" && reply) return { type: "TEXT", text: reply };
+  const reply = message.interactive?.button_reply ?? message.interactive?.list_reply;
+  if (message.type === "interactive" && reply) return { type: "TEXT", text: reply.title, ...(reply.id && { metadata: { replyId: reply.id } }) };
   return { type: "TEXT", text: "Mensagem de um tipo que o Dish Desk ainda não exibe.", metadata: { unsupportedType: message.type } };
 }
 
@@ -170,11 +170,37 @@ const TemplatesResponse = z.object({
 /** Envio pela WhatsApp Cloud API (§6): POST /{phone_number_id}/messages. */
 export class WhatsAppConnector implements ChannelConnector {
   readonly type = "WHATSAPP" as const;
+  readonly capabilities = { interactive: true };
 
   constructor(private readonly env: Pick<Env, "META_GRAPH_URL" | "CHANNELS_DRY_RUN" | "META_APP_ID" | "META_APP_SECRET">) {}
 
   send(target: SendTarget, message: OutboundText): Promise<{ externalMessageId: string }> {
     return this.post(target, { type: "text", text: { body: message.text, preview_url: false } });
+  }
+
+  /** Botões de resposta (até 3) ou lista (até 10); o id da escolha volta no webhook (button_reply / list_reply). */
+  async sendInteractive(target: SendTarget, message: OutboundInteractive): Promise<{ externalMessageId: string }> {
+    const layout = interactiveLayout(message);
+    if (!layout) throw new PermanentSendError("As opções não cabem em botões nem em lista do WhatsApp.");
+    const body = { text: message.body };
+    if (layout === "buttons") {
+      return this.post(target, {
+        type: "interactive",
+        interactive: {
+          type: "button",
+          body,
+          action: { buttons: message.options.map((option) => ({ type: "reply", reply: { id: option.id, title: option.title } })) },
+        },
+      });
+    }
+    return this.post(target, {
+      type: "interactive",
+      interactive: {
+        type: "list",
+        body,
+        action: { button: "Ver opções", sections: [{ title: "Opções", rows: message.options.map((option) => ({ id: option.id, title: option.title })) }] },
+      },
+    });
   }
 
   sendTemplate(target: SendTarget, template: OutboundTemplate): Promise<{ externalMessageId: string }> {

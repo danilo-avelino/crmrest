@@ -18,7 +18,7 @@ const PING_TIMEOUT_MS = 15_000;
  * Preço do Claude em dólares por milhão de tokens (entrada, saída), que é o mesmo que milionésimos de dólar por token.
  * O Haiku 5.5 cobra mais acima de 100 mil tokens de entrada, o que os prompts daqui não chegam perto.
  */
-const CLAUDE_PRICES: Record<string, { input: number; output: number }> = {
+export const CLAUDE_PRICES: Record<string, { input: number; output: number }> = {
   "claude-haiku-5-5": { input: 0.1, output: 0.5 },
   "claude-haiku-4-5": { input: 1, output: 5 },
   "claude-sonnet-5-5": { input: 2, output: 10 },

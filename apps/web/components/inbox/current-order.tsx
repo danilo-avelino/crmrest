@@ -1,6 +1,6 @@
 "use client";
 
-import { CHANNEL_LABEL, type CurrentOrderDto, type OrderDto } from "@dishdesk/shared";
+import { CHANNEL_LABEL, type CurrentOrderDto, type OrderDto, ORDER_ORIGIN_LABEL } from "@dishdesk/shared";
 import { useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
@@ -8,6 +8,7 @@ import { CHANNEL_DOT } from "@/components/common/bits";
 import { ForecastButton, NOTIFIABLE } from "@/components/inbox/order-card";
 import { WhatsAppPhone } from "@/components/inbox/whatsapp-phone";
 import { historyText } from "@/components/orders/customer-history";
+import { MenuBadgeList } from "@/components/orders/menu-badges";
 import { ORDER_STATUS } from "@/components/orders/order-status";
 import { Button } from "@/components/ui/button";
 import { useNow } from "@/hooks/use-now";
@@ -45,12 +46,13 @@ export function CurrentOrder({ conversationId, onOpenConversation }: { conversat
         <div className="flex items-center gap-2">
           <span className={cn("size-2 shrink-0 rounded-full", CHANNEL_DOT[order.channelType])} />
           <span className="shrink-0 text-[16px] font-bold">
-            {CHANNEL_LABEL[order.channelType]} #{order.displayCode ?? order.id.slice(0, 6)}
+            {ORDER_ORIGIN_LABEL[order.channelType]} #{order.displayCode ?? order.id.slice(0, 6)}
           </span>
           {order.restaurantName && <span className="truncate text-[12px] text-ink-3">· {order.restaurantName}</span>}
           <span className="ml-auto shrink-0 text-[15px] font-medium text-ink-2 tabular-nums">{currency(order.total)}</span>
         </div>
         <p className="text-[13px] text-ink-3">{historyText(current.history)}</p>
+        <MenuBadgeList menu={order.menu} />
       </div>
 
       <ul className="flex flex-col gap-1 text-[14px] font-semibold">
@@ -249,7 +251,7 @@ function Progress({ current, action }: { current: CurrentOrderDto; action?: Reac
             {current.promisedAt && (
               <div>
                 <dt className="text-[12px] text-ink-3">
-                  Previsão de {current.takeout ? "retirada" : "entrega"} ({CHANNEL_LABEL[order.channelType]})
+                  Previsão de {current.takeout ? "retirada" : "entrega"} ({ORDER_ORIGIN_LABEL[order.channelType]})
                 </dt>
                 <dd className="text-[15px] font-bold">
                   {clock(current.promisedAt)}

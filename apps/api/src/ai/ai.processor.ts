@@ -3,6 +3,7 @@ import type { Job } from "bullmq";
 import { tenantPaused } from "../automations/automation.js";
 import { ContactDuplicateReviewService } from "../contacts/contact-duplicate-review.service.js";
 import { DatabaseService } from "../core/database.service.js";
+import { OrderAgentService } from "../menu-agent/order-agent.service.js";
 import { JobProcessor } from "../queues/job-processor.js";
 import { type AiJob, type DuplicateReviewJob, QUEUES } from "../queues/queues.module.js";
 import { AiAttendantService } from "./ai-attendant.service.js";
@@ -16,6 +17,7 @@ export class AiProcessor extends JobProcessor {
     private readonly evaluation: AiEvaluationService,
     private readonly duplicates: ContactDuplicateReviewService,
     private readonly db: DatabaseService,
+    private readonly orderAgent: OrderAgentService,
   ) {
     super();
   }
@@ -27,7 +29,11 @@ export class AiProcessor extends JobProcessor {
     if (await tenantPaused(this.db, tenantId)) return;
     if (job.name === "duplicate-review") return this.duplicates.review(job.data as DuplicateReviewJob);
     const { conversationId } = job.data as AiJob;
-    if (job.name === "reply") await this.attendant.reply(tenantId, conversationId);
+    // Módulo MENU com cardápio ativo, no WhatsApp: o agente de pedidos responde no lugar do atendente (F4-04).
+    if (job.name === "reply") {
+      if (await this.orderAgent.handles(tenantId, conversationId)) await this.orderAgent.reply(tenantId, conversationId);
+      else await this.attendant.reply(tenantId, conversationId);
+    }
     if (job.name === "evaluate") await this.evaluation.evaluate(tenantId, conversationId);
   }
 }

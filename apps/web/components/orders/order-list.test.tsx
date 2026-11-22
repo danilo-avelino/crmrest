@@ -60,3 +60,47 @@ describe("bloco Cancelamento da aba Pedidos", () => {
     expect(screen.queryByText(/fora do Dish Desk/)).toBeNull();
   });
 });
+
+describe("detalhe do pedido do cardápio próprio", () => {
+  afterEach(cleanup);
+
+  const menuOrder = (menu: object | null) =>
+    ({
+      id: "pedido-2",
+      displayCode: "1001",
+      channelType: "MENU",
+      status: "CONFIRMED",
+      items: [
+        { name: "½ Calabresa + ½ Frango (Grande)", quantity: 1, unitPrice: "56.00", notes: "Sem cebola", options: ["2× Bacon"] },
+        { name: "Refri", quantity: 2, unitPrice: "8.00", notes: null, options: [] },
+      ],
+      deliveryFee: "5.00",
+      events: [],
+      history: { orders: 1, bySource: [{ channelType: "MENU", orders: 1 }] },
+      nextAction: null,
+      cancelable: false,
+      dispute: null,
+      alert: null,
+      platform: null,
+      cancellation: null,
+      menu,
+    }) as unknown as OrderListItem;
+
+  it("mostra selos, origem, tamanho e um sabor por linha", () => {
+    show(menuOrder({ takeout: false, scheduledFor: "2026-11-22T22:30:00.000Z", payment: { method: "cash", changeForCents: 10_000 }, origin: "whatsapp_ai" }));
+    expect(screen.getByText("Pagar na entrega: dinheiro, troco p/ R$ 100")).toBeTruthy();
+    expect(screen.getByText(/^Agendado (\d{2}\/\d{2} )?19:30$/)).toBeTruthy();
+    expect(screen.getAllByText("WhatsApp pela IA")).toHaveLength(2); // selo e linha de origem
+    expect(screen.getByText("Grande", { exact: false })).toBeTruthy();
+    expect(screen.getByText("½ Calabresa")).toBeTruthy();
+    expect(screen.getByText("½ Frango")).toBeTruthy();
+    expect(screen.getByText("Obs.: Sem cebola")).toBeTruthy();
+    expect(screen.getByText("2× Refri")).toBeTruthy();
+  });
+
+  it("pedido de plataforma não ganha o bloco do cardápio", () => {
+    show({ ...menuOrder(null), channelType: "IFOOD" } as OrderListItem);
+    expect(screen.queryByText(/Origem:/)).toBeNull();
+    expect(screen.getByText("1× ½ Calabresa + ½ Frango (Grande)")).toBeTruthy();
+  });
+});

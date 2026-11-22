@@ -1,3 +1,4 @@
+import type { OrderOrigin } from "./channels.js";
 import type { ChannelType } from "@dishdesk/database/enums";
 import { ChannelType as ChannelTypeEnum, OrderStatus as OrderStatusEnum } from "@dishdesk/database/enums";
 import { z } from "zod";
@@ -9,7 +10,10 @@ export const OrderListQuery = z.object({
   tenantId: z.uuid().optional(),
   period: z.enum(REPORT_PERIODS).default("today"),
   status: z.enum(OrderStatusEnum).optional(),
-  channel: z.enum(ChannelTypeEnum).optional(),
+  /** Canal integrado ou "MENU" (cardápio próprio, sem canal). */
+  channel: z.union([z.enum(ChannelTypeEnum), z.literal("MENU")]).optional(),
+  /** Só os pedidos agendados (com horário marcado), do que sai primeiro para o que sai por último. */
+  scheduled: z.stringbool().optional(),
   /** Só os pedidos em produção (ainda não saíram do restaurante), do mais antigo para o mais novo. */
   production: z.stringbool().optional(),
   /** Busca pelo número do pedido (com ou sem "#") ou pelo nome do cliente. */
@@ -25,7 +29,7 @@ export type OrderListQuery = z.infer<typeof OrderListQuery>;
 export type CustomerHistory = {
   orders: number;
   total: string;
-  bySource: { channelType: ChannelType; orders: number }[];
+  bySource: { channelType: OrderOrigin; orders: number }[];
 };
 
 /** Etapa que a equipe informa à plataforma pelo Dish Desk (iFood): confirmar, avisar que ficou pronto, despachar. */
@@ -61,7 +65,7 @@ export type OrderCancellationOptions = {
 export type CanceledOrderRow = {
   id: string;
   displayCode: string | null;
-  channelType: ChannelType;
+  channelType: OrderOrigin;
   /** Unidade do pedido, quando o cliente tem pedidos em mais de uma do grupo. */
   restaurantName: string | null;
   total: string;
@@ -90,7 +94,7 @@ export type CustomerCancellations = {
   /** Cancelamentos que entram na conta do risco (`counted`). */
   riskCount: number;
   fraudCount: number;
-  bySource: { channelType: ChannelType; orders: number }[];
+  bySource: { channelType: OrderOrigin; orders: number }[];
   /** Do mais recente para o mais antigo. */
   rows: CanceledOrderRow[];
 };
@@ -221,7 +225,14 @@ export type OrderListItem = OrderDto & {
   customerCanceled: number;
 };
 
-export type OrderPage = { items: OrderListItem[]; total: number; page: number; pageSize: number };
+export type OrderPage = {
+  items: OrderListItem[];
+  total: number;
+  page: number;
+  pageSize: number;
+  /** O restaurante tem o módulo Cardápio ou já recebeu pedido dele: a aba mostra o filtro "Cardápio Dish Desk". */
+  menuOrigin?: boolean;
+};
 
 /** Pedidos de hoje em cada etapa (faixa recolhida da Inbox), sem os cancelados. */
 export type OrderStageCounts = { production: number; ready: number; dispatched: number; delivered: number };

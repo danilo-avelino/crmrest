@@ -198,6 +198,159 @@ export function businessHoursOf(settings: unknown): BusinessHours {
   return saved ?? { ...DEFAULT_BUSINESS_HOURS, closedMessage: PERSONALITY_MESSAGES[personalityOf(settings)].closedMessage };
 }
 
+// ---------- Loja do cardápio digital ----------
+
+const Cents = z.number().int().min(0);
+const text = (max: number) => z.string().trim().max(max);
+
+/**
+ * Configurações da loja do cardápio digital (em `tenant.settings.menuStore`). O horário de funcionamento é o
+ * `businessHours`, não se repete aqui. Dinheiro sempre em centavos inteiros.
+ */
+export const MenuStoreSettings = z.object({
+  address: z.object({
+    street: text(120),
+    number: text(20),
+    district: text(80),
+    city: text(80),
+    state: text(2),
+    zip: text(9),
+    lat: z.number().min(-90).max(90).optional(),
+    lng: z.number().min(-180).max(180).optional(),
+  }),
+  pickupEnabled: z.boolean(),
+  /** Tempo de preparo para retirada, em minutos. */
+  prepMinutes: z.number().int().min(0).max(600),
+  /** Entrega por bairro (taxa de cada um) ou por raio (taxa até cada distância, em km). */
+  delivery: z.discriminatedUnion("mode", [
+    z.object({ mode: z.literal("BY_DISTRICT"), districts: z.array(z.object({ district: text(80).min(1), feeCents: Cents })).max(500) }),
+    z.object({ mode: z.literal("BY_RADIUS"), radii: z.array(z.object({ maxKm: z.number().positive().max(200), feeCents: Cents })).max(50) }),
+  ]),
+  minOrderCents: Cents,
+  /** Pedido com subtotal a partir deste valor não paga frete (vazio: nunca). */
+  freeDeliveryFromCents: Cents.optional(),
+  deliveryMinMinutes: z.number().int().min(0).max(600),
+  deliveryMaxMinutes: z.number().int().min(0).max(600),
+  paymentMethods: z.array(z.enum(["pix", "cash", "credit", "debit", "pix_on_delivery"])).min(1),
+  scheduling: z.object({
+    enabled: z.boolean(),
+    /** Antecedência mínima para agendar, em minutos. */
+    minLeadMinutes: z.number().int().min(0).max(10080),
+    /** Tamanho de cada faixa de horário, em minutos. */
+    slotMinutes: z.number().int().min(5).max(240),
+  }),
+  /** Vitrine de promoções: itens do cardápio e de quantas em quantas horas o cliente a vê de novo. */
+  promoShowcase: z.object({ itemIds: z.array(z.string()).max(50), frequencyHours: z.number().int().min(1).max(720) }),
+  /** Marca e contato da loja (F2-13). Tudo opcional: quem não preencheu fica com os padrões da página pública. */
+  logoUrl: z.string().max(500).optional(),
+  coverUrl: z.string().max(500).optional(),
+  /** Cor de destaque da página pública (hex `#RRGGBB`); sem ela vale `DEFAULT_MENU_ACCENT`. */
+  accentColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+  city: text(80).optional(),
+  phone: text(20).optional(),
+  cnpj: text(18).optional(),
+  about: text(500).optional(),
+  /** Meta Ads (F7-03): Pixel do restaurante no cardápio público (só com o consentimento do visitante) e o código de teste de eventos. */
+  metaPixelId: z.string().regex(/^\d{8,20}$/, "O Pixel ID tem só números (8 a 20).").optional(),
+  metaTestEventCode: text(40).optional(),
+  /** Pix online (F6): recebedor da Pagar.me do restaurante. Só a equipe da plataforma define (o PUT da loja não muda). */
+  pixRecipientId: z.string().regex(/^re_[A-Za-z0-9]{6,40}$/).optional(),
+  /** Validade do Pix em minutos (5 a 120). */
+  pixExpiresMinutes: z.number().int().min(5).max(120).optional(),
+});
+export type MenuStoreSettings = z.infer<typeof MenuStoreSettings>;
+
+export const DEFAULT_MENU_ACCENT = "#8E2F1B";
+
+/** O que o painel envia: a logo e a capa só mudam pelo envio de arquivo, nunca por uma URL no corpo. */
+export const UpdateMenuStoreRequest = MenuStoreSettings.omit({ logoUrl: true, coverUrl: true, pixRecipientId: true });
+export type UpdateMenuStoreRequest = z.infer<typeof UpdateMenuStoreRequest>;
+
+export const DEFAULT_MENU_STORE: MenuStoreSettings = {
+  address: { street: "", number: "", district: "", city: "", state: "", zip: "" },
+  pickupEnabled: true,
+  prepMinutes: 30,
+  delivery: { mode: "BY_DISTRICT", districts: [] },
+  minOrderCents: 0,
+  deliveryMinMinutes: 40,
+  deliveryMaxMinutes: 60,
+  paymentMethods: ["cash", "credit", "debit", "pix_on_delivery"],
+  scheduling: { enabled: false, minLeadMinutes: 60, slotMinutes: 30 },
+  promoShowcase: { itemIds: [], frequencyHours: 24 },
+};
+
+/**
+ * Formas de pagamento na entrega/retirada: o que o cardápio aceita enquanto o Pix online não existe. `pix_on_delivery` é
+ * o Pix na maquininha (pago ao entregador ou no balcão); `pix` é o Pix online, que só existe com a Pagar.me (F6).
+ */
+export const DEFAULT_PAY_ON_DELIVERY_METHODS: MenuStoreSettings["paymentMethods"] = ["cash", "credit", "debit", "pix_on_delivery"];
+
+/**
+ * O restaurante tem Pix online configurado? Por enquanto nunca (o provedor é a Pagar.me, tarefa F6, ainda não existe).
+ * Ponto de encaixe da F6: devolver `true` quando a loja tiver o recebedor da Pagar.me ativo. Todo o resto (cardápio
+ * público, validação do pedido, agente) já passa por `effectivePaymentMethods`, então nada mais muda.
+ */
+export function pixAvailable(store: MenuStoreSettings): boolean {
+  return Boolean(store.pixRecipientId);
+}
+
+/** Validade do Pix (padrão 15 min). */
+export const pixExpiresMinutesOf = (store: MenuStoreSettings): number => store.pixExpiresMinutes ?? 15;
+
+/**
+ * Formas de pagamento que o cliente realmente pode usar: as configuradas, sem o Pix enquanto ele não estiver
+ * disponível. Compatibilidade: lojas que guardaram só `["pix"]` (o padrão antigo) ficariam sem forma alguma; nesse
+ * caso valem dinheiro, crédito e débito, para o checkout nunca terminar com zero opções.
+ */
+export function effectivePaymentMethods(store: MenuStoreSettings): MenuStoreSettings["paymentMethods"] {
+  const methods = pixAvailable(store) ? store.paymentMethods : store.paymentMethods.filter((method) => method !== "pix");
+  return methods.length > 0 ? methods : DEFAULT_PAY_ON_DELIVERY_METHODS;
+}
+
+/** A loja do cardápio guardada em `tenant.settings` (sem configuração ou fora do formato: os padrões). */
+export function menuStoreOf(settings: unknown): MenuStoreSettings {
+  return z.looseObject({ menuStore: MenuStoreSettings.optional() }).safeParse(settings).data?.menuStore ?? DEFAULT_MENU_STORE;
+}
+
+// ---------- Agente de pedidos pela IA (Configurações → Pedidos pela IA) ----------
+
+export const MENU_AGENT_RULES_MAX = 1000;
+export const MENU_AGENT_NAME_MAX = 30;
+export const MENU_AGENT_SUGGESTIONS_MAX = 3;
+/** Limites do teto de tokens por conversa por dia que o painel aceita (o padrão vem do ambiente, `MENU_AGENT_DAILY_TOKENS`). */
+export const MENU_AGENT_TOKENS_MIN = 10_000;
+export const MENU_AGENT_TOKENS_MAX = 2_000_000;
+
+/**
+ * Configurações do agente de pedidos (em `tenant.settings.menuAgent`). Sem nada salvo valem os padrões: ligado e
+ * sugerindo complementos. As regras da casa são instruções do restaurante e ficam abaixo das regras de segurança do
+ * agente (preço e status nunca mudam por texto).
+ */
+export const MenuAgentSettings = z.object({
+  /** Desligado: o atendente com IA responde como antes, sem montar pedido. */
+  enabled: z.boolean().default(true),
+  /** Como o agente se apresenta ("Vila"); vazio: sem nome. */
+  attendantName: text(MENU_AGENT_NAME_MAX).optional(),
+  houseRules: text(MENU_AGENT_RULES_MAX).default(""),
+  suggestAddons: z.boolean().default(true),
+  /** Quantas sugestões de complemento o agente faz por conversa (0 a 3; 0: não sugere). */
+  maxSuggestionsPerConversation: z.number().int().min(0).max(MENU_AGENT_SUGGESTIONS_MAX).default(2),
+  /** Teto de tokens por conversa por dia; vazio: o padrão do ambiente. */
+  dailyTokensPerConversation: z.number().int().min(MENU_AGENT_TOKENS_MIN).max(MENU_AGENT_TOKENS_MAX).optional(),
+});
+export type MenuAgentSettings = z.infer<typeof MenuAgentSettings>;
+
+/** O que o painel envia (um campo ausente volta ao padrão). */
+export const UpdateMenuAgentRequest = MenuAgentSettings;
+export type UpdateMenuAgentRequest = z.infer<typeof UpdateMenuAgentRequest>;
+
+export const DEFAULT_MENU_AGENT: MenuAgentSettings = MenuAgentSettings.parse({});
+
+/** O agente de pedidos guardado em `tenant.settings` (sem configuração ou fora do formato: os padrões). */
+export function menuAgentOf(settings: unknown): MenuAgentSettings {
+  return z.looseObject({ menuAgent: MenuAgentSettings.optional() }).safeParse(settings).data?.menuAgent ?? DEFAULT_MENU_AGENT;
+}
+
 const BRASILIA_CLOCK = new Intl.DateTimeFormat("en-US", {
   timeZone: "America/Sao_Paulo",
   weekday: "short",
@@ -223,6 +376,17 @@ export function isOpenAt(hours: BusinessHours, at: Date): boolean {
   );
   // Turno de ontem que passou da meia-noite.
   return openToday || yesterday.some((shift) => crossesMidnight(shift) && now < minutesOf(shift.close));
+}
+
+/** Hora em que o turno aberto agora termina ("23:00"), ou null se não há turno aberto neste instante. */
+export function closingTimeAt(hours: BusinessHours, at: Date): string | null {
+  const { day, now } = brasiliaClock(at);
+  const today = (hours.days[day] ?? []).find((shift) =>
+    crossesMidnight(shift) ? now >= minutesOf(shift.open) : now >= minutesOf(shift.open) && now < minutesOf(shift.close),
+  );
+  if (today) return today.close;
+  const yesterday = (hours.days[(day + 6) % 7] ?? []).find((shift) => crossesMidnight(shift) && now < minutesOf(shift.close));
+  return yesterday?.close ?? null;
 }
 
 /** "11:00 às 15:00 e 16:00 às 23:00", ou "fechado". */

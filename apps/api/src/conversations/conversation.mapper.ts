@@ -4,6 +4,9 @@ import type {
   ContactSubject,
   ConversationEvaluationDto,
   ConversationListItem,
+  MenuOrderInfo,
+  MenuOrderOrigin,
+  MenuOrderPayment,
   MessageContent,
   MessageDto,
   OrderDto,
@@ -11,7 +14,7 @@ import type {
   ServiceIssue,
   TeamReason,
 } from "@dishdesk/shared";
-import { COURIER_TAG } from "@dishdesk/shared";
+import { COURIER_TAG, orderOriginOf } from "@dishdesk/shared";
 import type { RequestAuth } from "../auth/auth.decorators.js";
 import { type AutomationState, RATING_ANSWER } from "../automations/automation.js";
 import { isTenantAdmin } from "../settings/tenant-admin.js";
@@ -48,10 +51,34 @@ export function toMessageDto(message: Message & { sentByUser?: { id: string; nam
   };
 }
 
-export function toOrderDto(order: Order & { items: OrderItem[]; channel: { type: ChannelType } }): OrderDto {
+const MENU_PAYMENT: Record<string, MenuOrderPayment["method"]> = { PIX: "pix", CASH: "cash", CREDIT_ON_DELIVERY: "credit", DEBIT_ON_DELIVERY: "debit", PIX_ON_DELIVERY: "pix_on_delivery" };
+const MENU_ORIGINS: MenuOrderOrigin[] = ["site", "whatsapp_ai", "ad"];
+
+/** Pagamento, retirada, agendamento e origem do pedido do cardápio próprio (o que `public-order.service` grava); null nos demais. */
+export function menuInfoOf(order: Pick<Order, "source" | "scheduledFor" | "paymentMethod" | "raw">): MenuOrderInfo | null {
+  if (order.source !== "MENU") return null;
+  const raw = (order.raw ?? {}) as {
+    orderType?: string;
+    origin?: string;
+    payment?: { method?: string; changeForCents?: number | null };
+    benefit?: { label?: string; discountCents?: number; freeDelivery?: boolean };
+  };
+  const method = (raw.payment?.method && MENU_PAYMENT[raw.payment.method.toUpperCase()]) || (order.paymentMethod ? MENU_PAYMENT[order.paymentMethod] : undefined);
+  const origin = MENU_ORIGINS.find((key) => key === raw.origin);
+  return {
+    takeout: raw.orderType === "TAKEOUT",
+    scheduledFor: order.scheduledFor?.toISOString() ?? null,
+    payment: method ? { method, changeForCents: method === "cash" ? (raw.payment?.changeForCents ?? null) : null } : null,
+    // Pedido da conversa (carrinho da IA) ou do anúncio grava `raw.origin`; sem a marca, veio do site.
+    origin: origin ?? "site",
+    benefit: raw.benefit?.label ? { label: raw.benefit.label, discountCents: raw.benefit.discountCents ?? 0, freeDelivery: raw.benefit.freeDelivery ?? false } : null,
+  };
+}
+
+export function toOrderDto(order: Order & { items: OrderItem[]; channel: { type: ChannelType } | null }): OrderDto {
   return {
     id: order.id,
-    channelType: order.channel.type,
+    channelType: orderOriginOf(order.channel),
     displayCode: order.displayCode,
     status: order.status,
     subtotal: order.subtotal.toFixed(2),
@@ -67,6 +94,7 @@ export function toOrderDto(order: Order & { items: OrderItem[]; channel: { type:
       notes: item.notes,
       options: item.options,
     })),
+    menu: menuInfoOf(order),
   };
 }
 

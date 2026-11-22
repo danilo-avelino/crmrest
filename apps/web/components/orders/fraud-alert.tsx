@@ -1,6 +1,6 @@
 "use client";
 
-import { CHANNEL_ARTICLE, CHANNEL_LABEL, type CanceledOrderRow, type CurrentOrderDto, type CustomerCancellations, type OrderAlertDto, type OrderDto } from "@dishdesk/shared";
+import { type CanceledOrderRow, type CurrentOrderDto, type CustomerCancellations, type OrderAlertDto, type OrderDto, ORDER_ORIGIN_LABEL, ORDER_ORIGIN_ARTICLE } from "@dishdesk/shared";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { LoaderCircleIcon, LockIcon, ShieldAlertIcon } from "lucide-react";
 import { useState } from "react";
@@ -31,9 +31,9 @@ function plural(value: number, one: string, many: string): string {
 
 /** Onde cancelar quando o Dish Desk não pode. */
 function cancelElsewhere(channelType: OrderDto["channelType"]): { where: string; why: string } {
-  const label = CHANNEL_LABEL[channelType];
+  const label = ORDER_ORIGIN_LABEL[channelType];
   if (channelType === "IFOOD") return { where: "no Gestor de Pedidos do iFood", why: "O Dish Desk só acompanha os pedidos do iFood." };
-  const article = CHANNEL_ARTICLE[channelType];
+  const article = ORDER_ORIGIN_ARTICLE[channelType];
   return { where: `n${article} ${label}`, why: `${article.toUpperCase()} ${label} não permite cancelar pelo Dish Desk.` };
 }
 
@@ -115,7 +115,7 @@ export function FraudAlert({
   });
 
   const { decision, cancellations } = alert;
-  const label = CHANNEL_LABEL[order.channelType];
+  const label = ORDER_ORIGIN_LABEL[order.channelType];
   const dialog = <CancelOrderDialog order={order} open={canceling} onOpenChange={setCanceling} onDone={refresh} />;
 
   if (decision && !reviewing) {
@@ -392,7 +392,7 @@ export function CancellationTable({
 function cancellationsLine({ canceledCount, ordersCount, bySource, fraudCount }: CustomerCancellations): string {
   return [
     `${count(canceledCount)} de ${plural(ordersCount, "pedido", "pedidos")}`,
-    ...bySource.map((source) => `${CHANNEL_LABEL[source.channelType]} ${count(source.orders)}`),
+    ...bySource.map((source) => `${ORDER_ORIGIN_LABEL[source.channelType]} ${count(source.orders)}`),
     ...(fraudCount > 0 ? [plural(fraudCount, "marcado como fraude", "marcados como fraude")] : []),
   ].join(" · ");
 }
@@ -404,7 +404,7 @@ function CancellationRow({ row }: { row: CanceledOrderRow }) {
       <span className="min-w-0">
         <span className="flex items-center gap-[5px] whitespace-nowrap">
           <span className={cn("size-2 shrink-0 rounded-full", CHANNEL_DOT[row.channelType])} />
-          {CHANNEL_LABEL[row.channelType]}
+          {ORDER_ORIGIN_LABEL[row.channelType]}
         </span>
         {row.restaurantName && <span className="block truncate text-[10.5px] text-ink-3">{row.restaurantName}</span>}
       </span>
@@ -521,7 +521,7 @@ export function CustomerCancellationsCard({ cancellations }: { cancellations: Cu
           {bySource.map((source) => (
             <span key={source.channelType} className="flex items-center gap-[5px] tabular-nums">
               <span className={cn("size-2 rounded-full", CHANNEL_DOT[source.channelType])} />
-              {CHANNEL_LABEL[source.channelType]} {count(source.orders)}
+              {ORDER_ORIGIN_LABEL[source.channelType]} {count(source.orders)}
             </span>
           ))}
         </span>

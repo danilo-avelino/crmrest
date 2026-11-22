@@ -67,6 +67,8 @@ export type AutomationState = {
   aiDeniedOrderIds?: string[];
   /** iFood: o cliente tocou em "Adicionar observação ao pedido" e a automação perguntou qual é; a próxima mensagem dele é a observação (19/11/2026). */
   ifoodObservationAskedAt?: string;
+  /** Agente de pedidos do cardápio: as opções fechadas que ele ofereceu na última resposta; valem por 30 min (F4-05). */
+  offered?: { options: { id: string; title: string }[]; at: string };
 };
 
 /**

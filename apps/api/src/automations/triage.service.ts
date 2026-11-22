@@ -6,6 +6,8 @@ import {
   businessHoursOf,
   CHANNEL_CAPABILITIES,
   CHANNEL_LABEL,
+  ORDER_ORIGIN_LABEL,
+  orderOriginOf,
   COURIER_TAG,
   fillMessage,
   isOpenAt,
@@ -428,10 +430,10 @@ export class TriageService {
 export async function linkOrderContact(
   tx: TenantTx,
   conversation: Conversation,
-  order: { tenantId: string; displayCode: string | null; contact: Contact; channel: { type: ChannelType }; tenant: { name: string } },
+  order: { tenantId: string; displayCode: string | null; contact: Contact; channel: { type: ChannelType } | null; tenant: { name: string } },
 ): Promise<string[]> {
   if (order.contact.id === conversation.contact.id) return [];
-  const label = `#${order.displayCode} (${CHANNEL_LABEL[order.channel.type]})`;
+  const label = `#${order.displayCode} (${ORDER_ORIGIN_LABEL[orderOriginOf(order.channel)]})`;
   if (order.tenantId !== conversation.tenantId) {
     await systemEvent(tx, conversation, { event: "order_other_restaurant", text: `O pedido ${label} é do restaurante ${order.tenant.name}` });
     return [];

@@ -1,5 +1,5 @@
 import type { Prisma, TenantTx } from "@dishdesk/database";
-import type { CustomerHistory } from "@dishdesk/shared";
+import type { CustomerHistory, OrderOrigin } from "@dishdesk/shared";
 
 type ContactKeys = { id: string; phone: string | null; phoneSource: string | null; cpfHash: string | null; email: string | null };
 
@@ -46,14 +46,15 @@ export async function customerHistory(tx: TenantTx, contact: ContactKeys): Promi
   const where: Prisma.OrderWhereInput = { AND: [await linkedOrdersWhere(tx, contact), { status: { not: "CANCELED" } }] };
   const groups = await tx.order.groupBy({ by: ["channelId"], where, _count: { _all: true }, _sum: { total: true } });
   const channels = await tx.channel.findMany({
-    where: { id: { in: groups.map((group) => group.channelId) } },
+    where: { id: { in: groups.flatMap((group) => (group.channelId ? [group.channelId] : [])) } },
     select: { id: true, type: true },
   });
   const typeOf = new Map(channels.map((channel) => [channel.id, channel.type]));
-  const bySource = new Map<CustomerHistory["bySource"][number]["channelType"], number>();
+  const bySource = new Map<OrderOrigin, number>();
   let total = 0;
   for (const group of groups) {
-    const type = typeOf.get(group.channelId);
+    // Sem canal: pedido do cardápio próprio.
+    const type = group.channelId ? typeOf.get(group.channelId) : "MENU";
     if (type) bySource.set(type, (bySource.get(type) ?? 0) + group._count._all);
     total += Number(group._sum.total ?? 0);
   }

@@ -1,9 +1,9 @@
-import { CHANNEL_LABEL, type CustomerHistory } from "@dishdesk/shared";
+import { type CustomerHistory, ORDER_ORIGIN_LABEL } from "@dishdesk/shared";
 import { count } from "@/lib/format";
 
 /** "iFood 3 · Cardápio Web 2" */
 export function sourcesText(history: Pick<CustomerHistory, "bySource">): string {
-  return history.bySource.map((source) => `${CHANNEL_LABEL[source.channelType]} ${count(source.orders)}`).join(" · ");
+  return history.bySource.map((source) => `${ORDER_ORIGIN_LABEL[source.channelType]} ${count(source.orders)}`).join(" · ");
 }
 
 /** "Este cliente tem 5 pedidos (iFood 3 · Cardápio Web 2)" ou "Primeiro pedido deste cliente". */

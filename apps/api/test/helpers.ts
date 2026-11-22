@@ -4,7 +4,7 @@ import type { AddressInfo } from "node:net";
 import { createPrismaClient, encrypt, parseEncryptionKey } from "@dishdesk/database";
 import { getQueueToken } from "@nestjs/bullmq";
 import type { INestApplication } from "@nestjs/common";
-import { Test } from "@nestjs/testing";
+import { Test, type TestingModuleBuilder } from "@nestjs/testing";
 import { hash } from "@node-rs/argon2";
 import type { Queue } from "bullmq";
 import { Redis } from "ioredis";
@@ -19,14 +19,18 @@ import { QUEUES } from "../src/queues/queues.module.js";
 /** Dono das tabelas (ignora a RLS): só para preparar e limpar dados de teste. */
 export const admin = createPrismaClient(process.env.DATABASE_ADMIN_URL ?? "");
 
-export async function createTestApp(overrides: Record<string, string> = {}): Promise<INestApplication> {
+/** `configure`: troca providers do app (ex.: o provedor de LLM do agente de pedidos, com o SDK falso). */
+export async function createTestApp(
+  overrides: Record<string, string> = {},
+  configure: (builder: TestingModuleBuilder) => TestingModuleBuilder = (builder) => builder,
+): Promise<INestApplication> {
   const env = loadEnv({ ...process.env, ...overrides });
   // A trava do login fica no Redis: cada app de teste começa sem as senhas erradas dos arquivos anteriores.
   const redis = new Redis(env.REDIS_URL);
   const keys = await redis.keys(`${KEY_PREFIX}*`);
   if (keys.length) await redis.del(...keys);
   await redis.quit();
-  const moduleRef = await Test.createTestingModule({ imports: [AppModule.forRole(env)] }).compile();
+  const moduleRef = await configure(Test.createTestingModule({ imports: [AppModule.forRole(env)] })).compile();
   return configureApp(moduleRef.createNestApplication({ rawBody: true }), env).init();
 }
 

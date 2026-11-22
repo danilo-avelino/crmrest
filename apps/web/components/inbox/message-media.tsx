@@ -7,6 +7,7 @@ import { type ReactNode, useCallback, useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { type AudioNote, audioNote } from "@/lib/audio-transcription";
 import { cn } from "@/lib/utils";
 
 const MEDIA_LABEL: Partial<Record<MessageDto["type"], string>> = {
@@ -114,9 +115,43 @@ function Picture({ message, label }: { message: MessageDto; label: string }) {
 function Voice({ message, label }: { message: MessageDto; label: string }) {
   const { blob, failed } = useMedia(message);
   const source = useBlobSource(blob);
-  if (failed) return <MediaLabel label={label} detail={UNAVAILABLE} />;
-  if (!blob) return <MediaLabel label={label} detail="carregando…" />;
-  return <audio ref={source} controls aria-label={label} className="mb-1 h-9 w-72" />;
+  const note = message.content.media ? audioNote(message.content.media) : null;
+  const player = failed ? (
+    <MediaLabel label={label} detail={UNAVAILABLE} />
+  ) : !blob ? (
+    <MediaLabel label={label} detail="carregando…" />
+  ) : (
+    <audio ref={source} controls aria-label={label} className="mb-1 h-9 w-72" />
+  );
+  if (!note) return player;
+  return (
+    <>
+      {player}
+      <TranscriptionNote note={note} />
+    </>
+  );
+}
+
+const NOTE_TONE: Record<AudioNote["state"], string> = {
+  text: "bg-paper text-ink-2",
+  busy: "bg-paper text-ink-3",
+  unavailable: "bg-paper text-ink-3",
+  failed: "bg-tomate-lt text-tomate",
+  store_failed: "bg-tomate-lt text-tomate",
+  too_long: "bg-[#FEF9EC] text-[#7A5008]",
+};
+
+/** Transcrição ou aviso sob o áudio (módulo Cardápio); só aparece quando a mensagem traz esses campos. */
+function TranscriptionNote({ note }: { note: AudioNote }) {
+  return (
+    <div
+      role={note.state === "busy" ? "status" : undefined}
+      className={cn("mb-1 w-72 max-w-full rounded-md px-2.5 py-1.5 text-[12px] leading-snug", NOTE_TONE[note.state])}
+    >
+      <p className="font-medium">{note.head}</p>
+      {note.body && <p className="mt-0.5">{note.body}</p>}
+    </div>
+  );
 }
 
 /** Vídeo e documento: baixados pelo atendente, com o nome original quando o canal informa. */

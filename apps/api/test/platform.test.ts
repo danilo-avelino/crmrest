@@ -161,6 +161,13 @@ describe("painel da plataforma (Super Admin)", () => {
     ]);
   });
 
+  it("liga e desliga o módulo do cardápio (MENU)", async () => {
+    const on = await api("put", `tenants/${fx.b.id}/modules/MENU`, superToken).send({ enabled: true }).expect(200);
+    expect(on.body.find((t: { id: string }) => t.id === fx.b.id).modules).toEqual(["MENU"]);
+    const off = await api("put", `tenants/${fx.b.id}/modules/MENU`, superToken).send({ enabled: false }).expect(200);
+    expect(off.body.find((t: { id: string }) => t.id === fx.b.id).modules).toEqual([]);
+  });
+
   it("libera o acesso até uma data a quem se cadastrou pelo site, e o restaurante bloqueado volta a entrar", async () => {
     // B como cadastro do site com o teste grátis vencido: bloqueado até pagar.
     const past = new Date(Date.now() - 20 * 24 * 60 * 60 * 1000);

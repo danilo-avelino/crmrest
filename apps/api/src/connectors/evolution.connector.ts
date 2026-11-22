@@ -187,6 +187,8 @@ export type EvolutionConnection = { state: "open"; ownerId: string; name: string
  */
 export class EvolutionConnector implements ChannelConnector {
   readonly type = "WHATSAPP" as const;
+  /** Botões e listas do Baileys não são confiáveis: o agente do cardápio manda as opções numeradas em texto. */
+  readonly capabilities = { interactive: false };
 
   constructor(
     private readonly env: Pick<

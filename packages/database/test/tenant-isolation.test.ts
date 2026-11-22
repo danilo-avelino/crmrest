@@ -47,6 +47,20 @@ const tenantTables: Record<string, (db: TenantTx) => Promise<Row[]>> = {
   product_suggestions: (db) => db.productSuggestion.findMany({ select: { id: true, tenantId: true } }),
   support_tickets: (db) => db.supportTicket.findMany({ select: { id: true, tenantId: true } }),
   ai_usages: (db) => db.aiUsage.findMany({ select: { id: true, tenantId: true } }),
+  menus: (db) => db.menu.findMany({ select: { id: true, tenantId: true } }),
+  menu_categories: (db) => db.menuCategory.findMany({ select: { id: true, tenantId: true } }),
+  menu_items: (db) => db.menuItem.findMany({ select: { id: true, tenantId: true } }),
+  menu_item_sizes: (db) => db.menuItemSize.findMany({ select: { id: true, tenantId: true } }),
+  menu_option_groups: (db) => db.menuOptionGroup.findMany({ select: { id: true, tenantId: true } }),
+  menu_options: (db) => db.menuOption.findMany({ select: { id: true, tenantId: true } }),
+  menu_item_option_groups: (db) => db.menuItemOptionGroup.findMany({ select: { id: true, tenantId: true } }),
+  menu_availabilities: (db) => db.menuAvailability.findMany({ select: { id: true, tenantId: true } }),
+  menu_item_pairings: (db) => db.menuItemPairing.findMany({ select: { id: true, tenantId: true } }),
+  carts: (db) => db.cart.findMany({ select: { id: true, tenantId: true } }),
+  cart_items: (db) => db.cartItem.findMany({ select: { id: true, tenantId: true } }),
+  payments: (db) => db.payment.findMany({ select: { id: true, tenantId: true } }),
+  funnel_events: (db) => db.funnelEvent.findMany({ select: { id: true, tenantId: true } }),
+  menu_import_requests: (db) => db.menuImportRequest.findMany({ select: { id: true, tenantId: true } }),
 };
 
 type Seeded = { tenantId: string; userId: string; email: string; contactId: string };
@@ -141,6 +155,32 @@ async function seedTenant(label: string): Promise<Seeded> {
   await admin.auditLog.create({
     data: { tenantId, userId: user.id, action: "contact.cpf_viewed", entity: "contact", entityId: contact.id },
   });
+  // Cardápio: um item com tamanho, complemento, horário e "combina com"; sacola e pagamento.
+  const menu = await admin.menu.create({ data: { tenantId, name: "Cardápio" } });
+  const category = await admin.menuCategory.create({ data: { tenantId, menuId: menu.id, name: "Pizzas", allowsHalf: true } });
+  const pizza = await admin.menuItem.create({
+    data: {
+      tenantId,
+      categoryId: category.id,
+      name: "Calabresa",
+      synonyms: ["calabreza"],
+      sizes: { create: { tenantId, name: "Grande", priceCents: 5990 } },
+      availabilities: { create: { tenantId, weekday: 5, startMinute: 18 * 60, endMinute: 23 * 60 } },
+    },
+    include: { sizes: true },
+  });
+  const drink = await admin.menuItem.create({ data: { tenantId, categoryId: category.id, name: "Guaraná", priceCents: 800 } });
+  await admin.menuItemPairing.create({ data: { tenantId, itemId: pizza.id, pairedItemId: drink.id } });
+  const group = await admin.menuOptionGroup.create({
+    data: { tenantId, menuId: menu.id, name: "Borda", options: { create: { tenantId, name: "Catupiry", priceCents: 1000 } } },
+  });
+  await admin.menuItemOptionGroup.create({ data: { tenantId, itemId: pizza.id, groupId: group.id } });
+  const cart = await admin.cart.create({
+    data: { tenantId, contactId: contact.id, items: { create: { tenantId, itemId: pizza.id, sizeId: pizza.sizes[0]!.id } } },
+  });
+  await admin.payment.create({ data: { tenantId, cartId: cart.id, provider: "teste", txid: `tx-${suffix}`, amountCents: 5990 } });
+  await admin.funnelEvent.create({ data: { tenantId, eventId: randomUUID(), stage: "ADD_TO_CART", channel: "WEB", cartId: cart.id } });
+  await admin.menuImportRequest.create({ data: { tenantId, userId: user.id, storeName: `Loja ${label}`, cnpj: "11222333000181" } });
   return { tenantId, userId: user.id, email, contactId: contact.id };
 }
 

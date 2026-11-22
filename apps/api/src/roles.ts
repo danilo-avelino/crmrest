@@ -6,6 +6,7 @@ import { AiForwardService } from "./ai/ai-forward.service.js";
 import { AiReviewService } from "./ai/ai-review.service.js";
 import { AiSuggestionService } from "./ai/ai-suggestion.service.js";
 import { AiProcessor } from "./ai/ai.processor.js";
+import { AnthropicLlmProvider } from "./ai/llm-provider.js";
 import { LlmClient } from "./ai/llm.client.js";
 import { AgentController } from "./agent/agent.controller.js";
 import { AgentService } from "./agent/agent.service.js";
@@ -23,6 +24,7 @@ import { ContactDuplicateReviewService } from "./contacts/contact-duplicate-revi
 import { ContactTagsService } from "./contacts/contact-tags.service.js";
 import { ContactsController } from "./contacts/contacts.controller.js";
 import { ContactsService } from "./contacts/contacts.service.js";
+import { ConversationCartController } from "./conversations/conversation-cart.controller.js";
 import { ConversationsController } from "./conversations/conversations.controller.js";
 import { ConversationsService } from "./conversations/conversations.service.js";
 import { IfoodChatController } from "./conversations/ifood-chat.controller.js";
@@ -31,8 +33,40 @@ import { TeamController } from "./conversations/team.controller.js";
 import { CardapioWebProcessor, CardapioWebService } from "./inbound/cardapio-web.service.js";
 import { IfoodProcessor, IfoodService } from "./inbound/ifood.service.js";
 import { InboundProcessor } from "./inbound/inbound.processor.js";
+import { AudioMediaService, TranscriptionProcessor } from "./inbound/audio-media.service.js";
 import { InboundService } from "./inbound/inbound.service.js";
 import { NeemoProcessor, NeemoService } from "./inbound/neemo.service.js";
+import { ENV, type Env } from "./config/env.js";
+import { DatabaseService } from "./core/database.service.js";
+import { AgentSimulatorService } from "./menu-agent/agent-simulator.service.js";
+import { MenuAgentSettingsController } from "./menu-agent/menu-agent-settings.controller.js";
+import { ORDER_AGENT_LLM, OrderAgentService } from "./menu-agent/order-agent.service.js";
+import { MenuController } from "./menu/menu.controller.js";
+import { MenuDescribeController } from "./menu/menu-describe.controller.js";
+import { MenuImportController } from "./menu/menu-import.controller.js";
+import { MenuImportAiController } from "./menu/menu-import-ai.controller.js";
+import { MenuDescribeService } from "./menu/menu-describe.service.js";
+import { MenuImportAiExtractor, MenuImportAiProcessor, MenuImportAiService } from "./menu/menu-import-ai.service.js";
+import { MenuImportService } from "./menu/menu-import.service.js";
+import { AbandonedCartsController } from "./menu/abandoned-carts.controller.js";
+import { TagBenefitsController } from "./menu/tag-benefits.controller.js";
+import { PlatformPixController } from "./menu/platform-pix.controller.js";
+import { MenuImportRequestController, PlatformMenuImportController } from "./menu/menu-import-request.controller.js";
+import { MenuImportRequestService } from "./menu/menu-import-request.service.js";
+import { MenuPhotoController } from "./menu/menu-photo.controller.js";
+import { StorageController } from "./storage/storage.controller.js";
+import { MenuStoreController } from "./menu/menu-store.controller.js";
+import { MenuService } from "./menu/menu.service.js";
+import { StorageService } from "./storage/storage.service.js";
+import { FunnelController } from "./funnel/funnel.controller.js";
+import { FunnelDashboardController } from "./funnel/funnel-dashboard.controller.js";
+import { FunnelService } from "./funnel/funnel.service.js";
+import { PublicMenuController } from "./public/public-menu.controller.js";
+import { PublicMenuService } from "./public/public-menu.service.js";
+import { CustomerAuthService } from "./public/customer-auth.service.js";
+import { PublicOrderService } from "./public/public-order.service.js";
+import { MetaCapiController } from "./funnel/meta-capi.controller.js";
+import { MetaCapiService } from "./funnel/meta-capi.service.js";
 import { OrdersController } from "./orders/orders.controller.js";
 import { FraudService } from "./orders/fraud.service.js";
 import { OrderNoticeService } from "./orders/order-notice.service.js";
@@ -59,6 +93,7 @@ import { InfinitepayWebhookController } from "./webhooks/infinitepay-webhook.con
 import { AdminNotificationsService } from "./notifications/admin-notifications.service.js";
 import { MetaWebhookController } from "./webhooks/meta-webhook.controller.js";
 import { StripeWebhookController } from "./webhooks/stripe-webhook.controller.js";
+import { PagarmeWebhookController } from "./webhooks/pagarme-webhook.controller.js";
 
 // Um módulo por papel de processo (§3.2); o AppModule monta os do APP_ROLE.
 
@@ -66,6 +101,7 @@ import { StripeWebhookController } from "./webhooks/stripe-webhook.controller.js
 @Module({
   controllers: [
     ConversationsController,
+    ConversationCartController,
     ContactsController,
     TeamController,
     IfoodChatController,
@@ -81,6 +117,24 @@ import { StripeWebhookController } from "./webhooks/stripe-webhook.controller.js
     AgentController,
     SuggestionsController,
     SiteController,
+    MenuController,
+    MenuImportController,
+    MenuImportRequestController,
+    AbandonedCartsController,
+    PagarmeWebhookController,
+    PlatformPixController,
+    TagBenefitsController,
+    PlatformMenuImportController,
+    MenuDescribeController,
+    MenuImportAiController,
+    MenuPhotoController,
+    StorageController,
+    MenuStoreController,
+    MenuAgentSettingsController,
+    PublicMenuController,
+    FunnelController,
+    FunnelDashboardController,
+    MetaCapiController,
   ],
   providers: [
     ConversationsService,
@@ -99,6 +153,25 @@ import { StripeWebhookController } from "./webhooks/stripe-webhook.controller.js
     AgentService,
     SuggestionsService,
     AdminNotificationsService,
+    MenuImportService,
+    MenuImportRequestService,
+    MenuImportAiService,
+    MenuDescribeService,
+    MenuService,
+    StorageService,
+    PublicMenuService,
+    CustomerAuthService,
+    PublicOrderService,
+    FunnelService,
+    MetaCapiService,
+    // "Simular conversa" (C4) roda o agente de pedidos no processo da api, sem enviar nada.
+    {
+      provide: ORDER_AGENT_LLM,
+      inject: [ENV, DatabaseService],
+      useFactory: (env: Env, db: DatabaseService) => new AnthropicLlmProvider(env, db),
+    },
+    OrderAgentService,
+    AgentSimulatorService,
   ],
 })
 export class ApiRoleModule {}
@@ -115,6 +188,8 @@ export class RealtimeRoleModule {}
 @Module({
   providers: [
     InboundService,
+    AudioMediaService,
+    TranscriptionProcessor,
     InboundProcessor,
     OutboundProcessor,
     PhoneCollectionService,
@@ -126,6 +201,12 @@ export class RealtimeRoleModule {}
     InactivityService,
     ContactTagsService,
     ContactDuplicateReviewService,
+    // Varredura dos Pix do cardápio (F6-06): o PublicOrderService cria o pedido do Pix pago.
+    PublicMenuService,
+    CustomerAuthService,
+    FunnelService,
+    PublicOrderService,
+    MetaCapiService,
     AutomationsProcessor,
     IfoodService,
     IfoodProcessor,
@@ -143,8 +224,17 @@ export class RealtimeRoleModule {}
     AiEvaluationService,
     AiForwardService,
     AiProcessor,
+    {
+      provide: ORDER_AGENT_LLM,
+      inject: [ENV, DatabaseService],
+      useFactory: (env: Env, db: DatabaseService) => new AnthropicLlmProvider(env, db),
+    },
+    OrderAgentService,
     ReportsService,
     AdminNotificationsService,
+    StorageService,
+    MenuImportAiExtractor,
+    MenuImportAiProcessor,
   ],
 })
 export class WorkerRoleModule {}

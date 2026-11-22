@@ -10,6 +10,7 @@ import {
   type OrderListItem,
   type OrderPage,
   type OrderStageCounts,
+  ORDER_ORIGIN_LABEL,
 } from "@dishdesk/shared";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -629,7 +630,7 @@ export function TodayOrders({
               <div className="shrink-0 border-b border-rule px-6 py-5">
                 <div className="mb-1 flex items-center gap-2">
                   <DialogTitle>
-                    Pedido {CHANNEL_LABEL[open.channelType]} #{open.displayCode ?? open.id.slice(0, 6)}
+                    Pedido {ORDER_ORIGIN_LABEL[open.channelType]} #{open.displayCode ?? open.id.slice(0, 6)}
                   </DialogTitle>
                   {open.late && <StatusBadge tone="open">Atrasado</StatusBadge>}
                   <OrderStatusBadge status={open.status} />

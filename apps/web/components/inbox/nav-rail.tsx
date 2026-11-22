@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  BookOpenIcon,
   MegaphoneIcon,
   MessageSquareIcon,
   ReceiptTextIcon,
@@ -13,6 +14,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/components/auth/auth-provider";
 import { InboxWatcher } from "@/components/inbox/inbox-watcher";
+import { useMenu } from "@/components/menu/use-menu";
 import { useState } from "react";
 import {
   DropdownMenu,
@@ -35,6 +37,7 @@ const ITEMS = [
   { label: "Pedidos", icon: ReceiptTextIcon, href: "/pedidos", adminOnly: true },
   { label: "Clientes", icon: UsersIcon, href: "/clientes", adminOnly: true },
   { label: "Avaliações", icon: StarIcon, href: "/avaliacoes", adminOnly: true },
+  { label: "Cardápio", icon: BookOpenIcon, href: "/cardapio", adminOnly: true, module: "MENU" },
   { label: "Campanhas", icon: MegaphoneIcon, href: null, adminOnly: true },
   { label: "Configurações", icon: SettingsIcon, href: "/configuracoes", adminOnly: true },
 ];
@@ -47,6 +50,8 @@ export function NavRail({ onHome }: { onHome?: () => void }) {
   const router = useRouter();
   const pathname = usePathname();
   const [signOut] = usePendingAction(() => logout());
+  // O Cardápio é um módulo: a API responde 403 quando ele não está ligado no restaurante, e aí a entrada some.
+  const menuOn = useMenu().isSuccess;
   // O tema salvo só existe no navegador. O menu só é desenhado aberto, então o servidor nunca mostra este valor.
   const [theme, setTheme] = useState<Theme>(() => (typeof window === "undefined" ? "system" : readTheme()));
   if (!session?.context) return null;
@@ -71,7 +76,7 @@ export function NavRail({ onHome }: { onHome?: () => void }) {
         </svg>
       </Link>
 
-      {ITEMS.filter((item) => isAdmin || !item.adminOnly).map(({ label, icon: Icon, href }) => {
+      {ITEMS.filter((item) => (isAdmin || !item.adminOnly) && (!item.module || menuOn)).map(({ label, icon: Icon, href }) => {
         if (!href) {
           return (
             <button

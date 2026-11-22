@@ -110,6 +110,38 @@ export type AutomationMessages = {
   ifoodPhoneRequest: string;
   /** O cliente tocou em "Adicionar observação ao pedido" no chat do iFood, que não leva a observação: pergunta qual é (19/11/2026). */
   ifoodObservationAsk: string;
+  /** Cardápio digital: introdução do resumo do pedido; os itens e o total vêm logo abaixo. {nome} */
+  menuOrderSummary: string;
+  /** Pede a confirmação do resumo; as opções 1, 2 e 3 vão no texto. */
+  menuConfirmAsk: string;
+  /** Pix gerado: o QR Code e o código vão em mensagens separadas. {total} {validade} (hora, ex.: 20:30) */
+  menuPixSent: string;
+  /** Logo depois do QR Code, antes do código sozinho em outra mensagem. */
+  menuPixCodeFollowUp: string;
+  /** Pagamento confirmado. {pedido} {hora} (previsão de saída) */
+  menuPaymentConfirmed: string;
+  /** O Pix venceu sem pagamento: oferece outro. */
+  menuPixExpired: string;
+  /** Loja fechada no cardápio, com a oferta de agendar. {retorno} */
+  menuClosedScheduling: string;
+  /** O endereço está fora da área de entrega. */
+  menuOutOfArea: string;
+  /** Não deu para entender o áudio. */
+  menuAudioFailed: string;
+  /** Item esgotado: pergunta se serve uma alternativa. {item} */
+  menuItemSoldOut: string;
+  /** Código de entrada no cardápio digital (OTP), pelo WhatsApp do restaurante. {codigo} {loja} */
+  menuLoginCode: string;
+  /** O agente de pedidos parou (teto de uso da conversa, falha da IA ou transferência sem texto): a equipe continua o pedido. */
+  menuAgentHandoff: string;
+  /** Recuperação de carrinho parado (F7-07): mandada pela equipe, só com a janela de 24 h do WhatsApp aberta. {nome}. */
+  menuCartRecovery: string;
+  /** Recuperação de cliente com tag negativa: oferece o presente sem dizer o motivo. {nome}, {presente}. */
+  menuRecoveryOffer: string;
+  /** Fecha a pergunta com opções numeradas do agente de pedidos (canais sem botões). */
+  menuChoiceHint: string;
+  /** Pedido do cardápio com pagamento na entrega ou na retirada, ao cliente com o código confirmado. {nome} {pedido} {quando} (previsão ou horário agendado, já com o ponto final) {pagamento} ("na entrega, em dinheiro") */
+  menuOrderConfirmed: string;
 };
 
 export const PERSONALITY_MESSAGES: Record<Personality, AutomationMessages> = {
@@ -161,6 +193,22 @@ export const PERSONALITY_MESSAGES: Record<Personality, AutomationMessages> = {
     ifoodPhoneRequest:
       "Enquanto ele chega, pode nos enviar seu número de telefone com DDD? É comum a conversa do iFood encerrar e ficarmos sem ter como entrar em contato.",
     ifoodObservationAsk: "Claro! 😊 Qual observação você quer incluir no seu pedido? Pode escrever aqui que passamos para a equipe.",
+    menuOrderSummary: "Aqui está o resumo do seu pedido, {nome}:",
+    menuConfirmAsk: "Está tudo certo? Responda 1 Confirmar · 2 Alterar · 3 Cancelar",
+    menuPixSent: "Pix gerado! 😊 Valor: {total}. Pague até as {validade}.",
+    menuPixCodeFollowUp: "Se preferir, é só copiar o código abaixo e colar no app do seu banco.",
+    menuPaymentConfirmed: "Pagamento confirmado! 🎉 Seu pedido #{pedido} já está sendo preparado e a previsão de saída é por volta das {hora}.",
+    menuPixExpired: "O tempo do Pix acabou e o pagamento não foi identificado. Quer que a gente gere um novo? 😊",
+    menuClosedScheduling: "No momento estamos fechados, mas você pode agendar seu pedido para quando abrirmos ({retorno}). Quer agendar?",
+    menuOutOfArea: "Infelizmente ainda não entregamos nesse endereço. Se quiser, você pode retirar o pedido na loja ou nos enviar outro endereço.",
+    menuAudioFailed: "Não conseguimos entender o seu áudio. Pode repetir ou escrever sua mensagem, por favor?",
+    menuItemSoldOut: "Poxa, {item} acabou hoje. Posso sugerir uma alternativa parecida? 😊",
+    menuLoginCode: "Olá! Seu código para entrar no cardápio de {loja} é {codigo}. Ele vale por 10 minutos. Se não foi você, é só ignorar esta mensagem.",
+    menuAgentHandoff: "Vou chamar alguém da equipe para continuar seu pedido por aqui. Só um instante! 😊",
+    menuCartRecovery: "Oi, {nome}! Seu pedido ficou na sacola por aqui. Quer que eu finalize para você? É só responder 😊",
+    menuRecoveryOffer: "Oi, {nome}! Separamos um presente para o seu próximo pedido: {presente}. Já entra sozinho no cardápio quando você entrar com o seu número 😊",
+    menuChoiceHint: "Responda com o número da opção.",
+    menuOrderConfirmed: "Recebemos seu pedido #{pedido}, {nome}! 🎉 {quando} O pagamento é {pagamento}.",
   },
   formal: {
     greeting: "Olá, {nome}. Agradecemos o seu contato. Como podemos ajudar?",
@@ -213,6 +261,22 @@ export const PERSONALITY_MESSAGES: Record<Personality, AutomationMessages> = {
     ifoodPhoneRequest:
       "Enquanto isso, poderia, por gentileza, informar seu telefone com DDD? É comum a conversa do iFood ser encerrada, o que nos impede de retomar o contato.",
     ifoodObservationAsk: "Certamente. Poderia nos informar qual observação deseja incluir em seu pedido? Assim que recebermos, encaminharemos à nossa equipe.",
+    menuOrderSummary: "Segue o resumo do seu pedido, {nome}:",
+    menuConfirmAsk: "O pedido está correto? Responda 1 Confirmar · 2 Alterar · 3 Cancelar",
+    menuPixSent: "O Pix foi gerado no valor de {total}, com validade até as {validade}.",
+    menuPixCodeFollowUp: "Caso prefira, copie o código a seguir e cole no aplicativo do seu banco.",
+    menuPaymentConfirmed: "Pagamento confirmado. Seu pedido #{pedido} está em preparo, com previsão de saída por volta das {hora}.",
+    menuPixExpired: "O prazo do Pix expirou e não identificamos o pagamento. Deseja que geremos um novo?",
+    menuClosedScheduling: "No momento estamos fechados. Podemos agendar o seu pedido para quando reabrirmos ({retorno}). Deseja agendar?",
+    menuOutOfArea: "Lamentamos, mas ainda não realizamos entregas nesse endereço. Poderá retirar o pedido em nossa loja ou nos informar outro endereço.",
+    menuAudioFailed: "Não foi possível compreender o seu áudio. Poderia repeti-lo ou escrever a sua mensagem?",
+    menuItemSoldOut: "Lamentamos, mas o item {item} está esgotado. Podemos sugerir uma alternativa semelhante?",
+    menuLoginCode: "Prezado cliente, o seu código de acesso ao cardápio de {loja} é {codigo}. Ele é válido por 10 minutos. Caso não tenha solicitado, desconsidere esta mensagem.",
+    menuAgentHandoff: "Um membro da nossa equipe dará continuidade ao seu pedido por aqui em instantes.",
+    menuCartRecovery: "Olá, {nome}. Seu pedido ficou em aberto. Deseja que o finalizemos? Basta responder a esta mensagem.",
+    menuRecoveryOffer: "Olá, {nome}. Reservamos uma cortesia para o seu próximo pedido: {presente}. Ela será aplicada automaticamente no cardápio ao entrar com o seu número.",
+    menuChoiceHint: "Queira responder com o número da opção desejada.",
+    menuOrderConfirmed: "Prezado(a) {nome}, recebemos o seu pedido #{pedido}. {quando} O pagamento será {pagamento}.",
   },
   jovial: {
     greeting: "Oiê, {nome}! 🤩 Que bom te ver por aqui! Como podemos te ajudar hoje?",
@@ -261,6 +325,22 @@ export const PERSONALITY_MESSAGES: Record<Personality, AutomationMessages> = {
     ifoodPhoneRequest:
       "Enquanto ele chega, manda seu telefone com DDD? 📱 É que a conversa do iFood costuma encerrar e aí a gente fica sem ter como te chamar!",
     ifoodObservationAsk: "Bora! 🤩 Qual observação você quer colocar no pedido? Manda aqui que a gente já passa pra equipe!",
+    menuOrderSummary: "Olha o resumo do seu pedido, {nome}! 😋",
+    menuConfirmAsk: "Tá tudo certinho? Manda 1 Confirmar · 2 Alterar · 3 Cancelar",
+    menuPixSent: "Pix gerado! 🚀 Valor: {total}. Paga até as {validade}!",
+    menuPixCodeFollowUp: "Bora pagar? Copia o código aqui embaixo e cola no app do seu banco! 😉",
+    menuPaymentConfirmed: "Pagamento confirmado! 🎉 Seu pedido #{pedido} já tá sendo preparado e deve sair por volta das {hora}!",
+    menuPixExpired: "Eita, o Pix venceu e o pagamento não apareceu! 😅 Quer que eu gere outro?",
+    menuClosedScheduling: "Agora a gente tá fechado, mas dá pra agendar seu pedido pra quando abrir ({retorno})! 🕒 Quer agendar?",
+    menuOutOfArea: "Poxa, ainda não entregamos nesse endereço! 😕 Mas você pode retirar na loja ou mandar outro endereço!",
+    menuAudioFailed: "Não consegui entender seu áudio! 🙈 Pode mandar de novo ou escrever pra mim?",
+    menuItemSoldOut: "Ixi, {item} acabou! 😱 Quer que eu sugira uma opção parecida?",
+    menuLoginCode: "Oi! 😄 Seu código pra entrar no cardápio de {loja} é {codigo}. Vale por 10 minutos! Se não foi você, pode ignorar.",
+    menuAgentHandoff: "Vou chamar alguém da equipe pra continuar seu pedido aqui! Rapidinho! 🙌",
+    menuCartRecovery: "Ei, {nome}! Teu pedido ficou na sacola! Bora finalizar? É só responder aqui 🙌",
+    menuRecoveryOffer: "Ei, {nome}! Tem presente pra você no próximo pedido: {presente}! Entra no cardápio com teu número que já cai sozinho 🎉",
+    menuChoiceHint: "Me responde com o número da opção! 😄",
+    menuOrderConfirmed: "Oba, {nome}! Pedido #{pedido} recebido! 🎉 {quando} O pagamento é {pagamento}.",
   },
   descontraido: {
     greeting: "E aí, {nome}! Tudo certo? 😎 No que a gente pode te ajudar?",
@@ -307,6 +387,22 @@ export const PERSONALITY_MESSAGES: Record<Personality, AutomationMessages> = {
     ifoodHandoff: "E aí! Já estamos chamando alguém da equipe pra falar com você 😉",
     ifoodPhoneRequest: "Enquanto isso, passa seu telefone com DDD? A conversa do iFood costuma fechar e aí a gente fica sem ter como te achar.",
     ifoodObservationAsk: "Fechou! 😎 Qual observação você quer incluir no pedido? Manda aí que a gente passa pra equipe.",
+    menuOrderSummary: "Dá uma olhada no resumo do pedido, {nome}:",
+    menuConfirmAsk: "Tá beleza? Responde 1 Confirmar · 2 Alterar · 3 Cancelar",
+    menuPixSent: "Pix gerado, {total}. Paga até as {validade}, beleza? 😎",
+    menuPixCodeFollowUp: "Se quiser, copia o código aí embaixo e cola no app do banco.",
+    menuPaymentConfirmed: "Fechou! Pagamento confirmado 🙌 O pedido #{pedido} já tá sendo feito e deve sair umas {hora}.",
+    menuPixExpired: "E aí, o Pix venceu e o pagamento não caiu. Quer que eu gere outro?",
+    menuClosedScheduling: "A gente tá fechado agora, mas dá pra agendar o pedido pra quando abrir ({retorno}). Bora agendar?",
+    menuOutOfArea: "Putz, ainda não entregamos nesse endereço. Dá pra retirar na loja ou mandar outro endereço, tranquilo?",
+    menuAudioFailed: "Não consegui entender o áudio. Manda de novo ou escreve aí, por favor?",
+    menuItemSoldOut: "Putz, {item} acabou. Quer que eu sugira outra coisa parecida?",
+    menuLoginCode: "E aí! Teu código pra entrar no cardápio de {loja} é {codigo}. Vale por 10 minutos. Não foi você? Só ignora 👍",
+    menuAgentHandoff: "Vou chamar o pessoal da equipe pra seguir com teu pedido aqui, beleza? 👍",
+    menuCartRecovery: "E aí, {nome}! Teu pedido ficou parado aqui. Quer fechar? Manda um oi que a gente resolve 👍",
+    menuRecoveryOffer: "E aí, {nome}! Guardamos um mimo pro teu próximo pedido: {presente}. Entra no cardápio com teu número que ele aparece sozinho 😉",
+    menuChoiceHint: "Manda o número da opção que você quer, beleza? 👍",
+    menuOrderConfirmed: "Show, {nome}! Pedido #{pedido} na mão 🙌 {quando} Pagamento {pagamento}.",
   },
   acolhedor: {
     greeting: "Olá, {nome}! 🧡 Que alegria receber sua mensagem. Como podemos cuidar de você hoje?",
@@ -359,6 +455,22 @@ export const PERSONALITY_MESSAGES: Record<Personality, AutomationMessages> = {
     ifoodPhoneRequest:
       "Enquanto isso, pode nos deixar seu telefone com DDD? É comum a conversa do iFood encerrar, e não queremos perder o contato com você.",
     ifoodObservationAsk: "Com todo o prazer! 🧡 Qual observação você gostaria de incluir no seu pedido? Pode escrever aqui, que levamos para a nossa equipe com carinho.",
+    menuOrderSummary: "Preparamos o resumo do seu pedido com carinho, {nome}:",
+    menuConfirmAsk: "Está tudo certinho para você? Responda 1 Confirmar · 2 Alterar · 3 Cancelar 🧡",
+    menuPixSent: "Geramos o seu Pix, no valor de {total}. Ele vale até as {validade}. 🧡",
+    menuPixCodeFollowUp: "Se for mais fácil, copie o código abaixo e cole no aplicativo do seu banco.",
+    menuPaymentConfirmed: "Pagamento confirmado, muito obrigado! 🧡 Seu pedido #{pedido} já está sendo preparado com todo o cuidado e deve sair por volta das {hora}.",
+    menuPixExpired: "O tempo do Pix acabou e não recebemos o pagamento, mas não tem problema. Quer que a gente gere um novo para você? 🧡",
+    menuClosedScheduling: "No momento estamos fechadinhos, mas teremos o maior prazer em agendar o seu pedido para quando abrirmos ({retorno}). Quer que a gente agende? 🧡",
+    menuOutOfArea: "Que pena, ainda não conseguimos entregar nesse endereço. 😔 Você pode retirar o pedido aqui na loja ou nos mandar outro endereço, será um prazer atender.",
+    menuAudioFailed: "Não conseguimos ouvir bem o seu áudio. Poderia repetir ou escrever para nós, por favor? 🧡",
+    menuItemSoldOut: "Que pena, o {item} acabou hoje. 😔 Podemos sugerir algo parecido de que você vai gostar?",
+    menuLoginCode: "Oi! Que bom te ver por aqui 🧡 Seu código para entrar no cardápio de {loja} é {codigo}. Ele vale por 10 minutos. Se não foi você, pode ignorar esta mensagem.",
+    menuAgentHandoff: "Vou chamar alguém da nossa equipe para cuidar do seu pedido com carinho por aqui. Só um instante 🧡",
+    menuCartRecovery: "Oi, {nome}! Vi que seu pedido ficou guardadinho aqui. Quer que eu finalize com carinho para você? É só responder 🧡",
+    menuRecoveryOffer: "Oi, {nome}! Preparamos um carinho para o seu próximo pedido: {presente}. Ele entra sozinho no cardápio quando você entrar com o seu número 🧡",
+    menuChoiceHint: "Pode me responder com o número da opção, tá bom? 🧡",
+    menuOrderConfirmed: "Que alegria, {nome}! Recebemos seu pedido #{pedido} 🧡 {quando} O pagamento é {pagamento}.",
   },
   direto: {
     greeting: "Olá, {nome}. Como podemos ajudar?",
@@ -405,6 +517,22 @@ export const PERSONALITY_MESSAGES: Record<Personality, AutomationMessages> = {
     ifoodHandoff: "Olá. Estamos chamando um atendente.",
     ifoodPhoneRequest: "Enquanto isso, informe seu telefone com DDD: a conversa do iFood costuma encerrar e ficamos sem contato.",
     ifoodObservationAsk: "Qual observação você quer incluir no pedido? Escreva aqui.",
+    menuOrderSummary: "Resumo do pedido, {nome}:",
+    menuConfirmAsk: "Confirma? 1 Confirmar · 2 Alterar · 3 Cancelar",
+    menuPixSent: "Pix gerado. Valor: {total}. Validade: {validade}.",
+    menuPixCodeFollowUp: "Ou copie o código abaixo.",
+    menuPaymentConfirmed: "Pagamento confirmado. Pedido #{pedido}. Saída prevista: {hora}.",
+    menuPixExpired: "O Pix venceu. Gerar um novo?",
+    menuClosedScheduling: "Estamos fechados. Agendar o pedido para {retorno}?",
+    menuOutOfArea: "Fora da área de entrega. Retirar na loja ou enviar outro endereço.",
+    menuAudioFailed: "Áudio não compreendido. Repita ou escreva.",
+    menuItemSoldOut: "{item} esgotado. Sugerir alternativa?",
+    menuLoginCode: "Código de acesso ao cardápio de {loja}: {codigo}. Vale 10 minutos. Não pediu? Ignore.",
+    menuAgentHandoff: "A equipe vai continuar seu pedido por aqui.",
+    menuCartRecovery: "{nome}, seu pedido ficou em aberto. Responda para finalizar.",
+    menuRecoveryOffer: "{nome}, seu próximo pedido tem {presente}. Entre no cardápio com o seu número.",
+    menuChoiceHint: "Responda com o número.",
+    menuOrderConfirmed: "Pedido #{pedido} recebido, {nome}. {quando} Pagamento {pagamento}.",
   },
 };
 

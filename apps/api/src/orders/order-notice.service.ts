@@ -69,7 +69,7 @@ export class OrderNoticeService {
         },
       });
       // Pedido feito antes de a loja ser conectada (o iFood ainda entrega as últimas horas ao conectar): sem aviso.
-      if (order.channel.connectedAt && order.placedAt < order.channel.connectedAt) return [];
+      if (order.channel?.connectedAt && order.placedAt < order.channel.connectedAt) return [];
       const since = Math.max(order.placedAt.getTime(), promisedAt(order.raw)?.getTime() ?? 0);
       if (now.getTime() - since > NOTICE_LIMIT_MS) return [];
       const targets = await this.targetsOf(tx, order, now);
@@ -113,7 +113,7 @@ export class OrderNoticeService {
         where: { id: orderId },
         select: { displayCode: true, externalOrderId: true, dispatchedAt: true, placedAt: true, raw: true, channel: { select: { connectedAt: true } } },
       });
-      if (order.channel.connectedAt && order.placedAt < order.channel.connectedAt) return null;
+      if (order.channel?.connectedAt && order.placedAt < order.channel.connectedAt) return null;
       const since = Math.max(order.placedAt.getTime(), promisedAt(order.raw)?.getTime() ?? 0);
       return now.getTime() - since > NOTICE_LIMIT_MS ? null : order;
     });
@@ -194,7 +194,7 @@ export class OrderNoticeService {
   /** Conversas que recebem os avisos do pedido. A conversa só da equipe nunca recebe: o cliente não está nela. */
   private async targetsOf(
     tx: TenantTx,
-    order: { externalOrderId: string; channelId: string; channel: { type: ChannelType }; contact: { id: string; phone: string | null; phoneSource: string | null; cpfHash: string | null; email: string | null } },
+    order: { externalOrderId: string; channelId: string | null; channel: { type: ChannelType } | null; contact: { id: string; phone: string | null; phoneSource: string | null; cpfHash: string | null; email: string | null } },
     now: Date,
   ) {
     const { id, cpfHash, email } = order.contact;
@@ -235,7 +235,7 @@ export class OrderNoticeService {
     // envia é o painel). Conversa encerrada também recebe: o cliente segue vendo o chat do pedido no app do iFood, e a IA
     // promete os avisos ("vou enviar aqui quando sair"); o encerramento antes da saída o deixava sem eles (#4520, 14/11/2026).
     const ifoodChat =
-      this.env.IFOOD_CHAT_BRIDGE && order.channel.type === "IFOOD"
+      this.env.IFOOD_CHAT_BRIDGE && order.channel?.type === "IFOOD"
         ? conversations.find((c) => c.channelId === order.channelId && c._count.messages > 0)
         : undefined;
     return [conversation, ifoodChat].filter((target) => target !== undefined);
