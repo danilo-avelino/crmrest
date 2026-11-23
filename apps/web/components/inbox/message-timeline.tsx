@@ -51,6 +51,7 @@ const AUTOMATION_LABEL: Record<NonNullable<MessageContent["automation"]>, string
   courier_arrival_confirmed: "Automação · cliente avisado da chegada",
   courier_front_desk: "Automação · deixado na portaria",
   courier_front_desk_confirmed: "Automação · cliente avisado da portaria",
+  courier_customer_link: "Automação · link para o entregador avisar o cliente",
   courier_problem_request: "Automação · problema com o pedido",
   ifood_observation_ask: "Automação · observação do pedido",
   menu_order_confirmed: "Automação · pedido do cardápio",
@@ -64,7 +65,7 @@ const SUCCESS_EVENTS = new Set<MessageContent["event"]>(["phone_collected", "con
 /** Prevenção de fraude: pílula com cadeado, a hora e, no que chama atenção, o tom do alerta. */
 const FRAUD_TEAM_EVENTS = new Set<MessageContent["event"]>(["fraud_alert", "order_kept", "order_canceled_by_team", "order_cancel_refused", "fraud_marked", "fraud_unmarked"]);
 const FRAUD_HOT_EVENTS = new Set<MessageContent["event"]>(["fraud_alert", "order_canceled_by_team", "order_cancel_refused", "fraud_marked"]);
-const WARNING_EVENTS = new Set<MessageContent["event"]>(["phone_pending", "opt_out", "merge_conflict", "possible_duplicate", "order_ambiguous", "awaiting_agent", "ai_fallback"]);
+const WARNING_EVENTS = new Set<MessageContent["event"]>(["phone_pending", "opt_out", "merge_conflict", "possible_duplicate", "order_ambiguous", "awaiting_agent", "ai_fallback", "bot_detected"]);
 
 const weekday = new Intl.DateTimeFormat("pt-BR", { weekday: "long" });
 const fullDate = new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });

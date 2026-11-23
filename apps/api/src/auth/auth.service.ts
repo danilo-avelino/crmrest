@@ -9,7 +9,14 @@ import type {
   SelectContextRequest,
   SignupRequest,
 } from "@dishdesk/shared";
-import { SelectContextRequest as SelectContextSchema, slugify, tenantBilling, tenantBlock, TRIAL_DAYS } from "@dishdesk/shared";
+import {
+  PROMO_TRIAL_DAYS,
+  SelectContextRequest as SelectContextSchema,
+  slugify,
+  tenantBilling,
+  tenantBlock,
+  TRIAL_DAYS,
+} from "@dishdesk/shared";
 import { hash, verify } from "@node-rs/argon2";
 import {
   BadRequestException,
@@ -23,9 +30,11 @@ import {
   type OnModuleInit,
   ServiceUnavailableException,
   UnauthorizedException,
+  UnprocessableEntityException,
 } from "@nestjs/common";
 import { ENV, type Env } from "../config/env.js";
 import { DatabaseService } from "../core/database.service.js";
+import { isDemoEmail, isDemoSettings } from "@dishdesk/database";
 import { type GoogleCallback, googleLoginStart, googleVerifiedEmail, hasGoogleAuth } from "./google-auth.js";
 import { LoginLimitsService } from "./login-limits.service.js";
 import { consumeRecoveryToken, hasSupabaseAuth, sendRecoveryEmail, type SupabaseEnv } from "./supabase-auth.js";
@@ -105,17 +114,21 @@ export class AuthService implements OnModuleInit {
     return { refreshToken: await this.openSession(found.id, userAgent) };
   }
 
-  /** Cadastro pelo site: cria o restaurante em teste e já entra nele como administrador. */
+  /**
+   * Cadastro pelo site: cria o restaurante em teste e já entra nele como administrador. Com o código promocional de um
+   * vendedor ou parceiro, o teste vai para PROMO_TRIAL_DAYS e o restaurante fica ligado ao código.
+   */
   async signup(body: SignupRequest, userAgent?: string) {
     const passwordHash = await hash(body.password);
     const [tenantId, userId] = [randomUUID(), randomUUID()];
     const slug = slugify(body.restaurantName).slice(0, 50) || "restaurante";
-    const [result] = await this.db.client.$queryRaw<{ created: boolean }[]>`
+    const [result] = await this.db.client.$queryRaw<{ status: "created" | "email_taken" | "invalid_code" }[]>`
       SELECT app.signup_tenant(
         ${tenantId}::uuid, ${userId}::uuid, ${body.restaurantName}, ${slug}, ${body.name}, ${body.email},
-        ${passwordHash}, ${body.phone}, ${body.taxId}, ${TRIAL_DAYS}::int
-      ) AS created`;
-    if (!result?.created) throw new ConflictException("Já existe uma conta com este e-mail. Entre no sistema.");
+        ${passwordHash}, ${body.phone}, ${body.taxId}, ${TRIAL_DAYS}::int, ${body.promoCode ?? null}, ${PROMO_TRIAL_DAYS}::int
+      ) AS status`;
+    if (result?.status === "invalid_code") throw new BadRequestException("Código promocional não encontrado. Confira com quem passou.");
+    if (result?.status !== "created") throw new ConflictException("Já existe uma conta com este e-mail. Entre no sistema.");
 
     const refreshToken = await this.openSession(userId, userAgent);
     return { refreshToken, session: await this.selectContext(refreshToken, { mode: "tenant", tenantId }) };
@@ -127,6 +140,9 @@ export class AuthService implements OnModuleInit {
    */
   async addTenant(refreshToken: string | undefined, body: AddTenantRequest): Promise<AddTenantResponse> {
     const { userId } = await this.requireSession(refreshToken);
+    // Logins da demo não criam restaurante de verdade (nem passam pela cobrança).
+    const [owner] = await this.db.withTenants({ tenantIds: [], userId }, (tx) => tx.user.findMany({ where: { id: userId }, select: { email: true } }));
+    if (owner && isDemoEmail(owner.email)) throw new UnprocessableEntityException("Indisponível na conta de demonstração.");
     const tenantId = randomUUID();
     const slug = slugify(body.name).slice(0, 50) || "restaurante";
     const [result] = await this.db.withTenants({ tenantIds: [], userId }, (tx) =>
@@ -146,6 +162,7 @@ export class AuthService implements OnModuleInit {
    * o envio, para a resposta não revelar quais e-mails têm conta.
    */
   async forgotPassword(email: string): Promise<void> {
+    if (isDemoEmail(email)) return; // logins da demo: nenhum e-mail sai (a senha se troca pelo pnpm demo:reset)
     const env = this.supabaseEnv();
     const [found] = await this.db.client.$queryRaw<{ is_active: boolean }[]>`
       SELECT is_active FROM app.find_login_user(${email})`;
@@ -267,6 +284,7 @@ export class AuthService implements OnModuleInit {
               trialRevokedAt: true,
               trustUntil: true,
               billingPlan: true,
+              settings: true,
             },
           },
         },
@@ -294,6 +312,7 @@ export class AuthService implements OnModuleInit {
         openConversations: open.get(tenant.id) ?? 0,
         blockedBy: tenantBlock(tenant),
         billing: tenantBilling(tenant),
+        demo: isDemoSettings(tenant.settings),
       })),
     };
   }

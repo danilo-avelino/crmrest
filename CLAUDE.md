@@ -138,4 +138,28 @@ Rodar a skill **security-audit** ([.claude/skills/security-audit/](.claude/skill
 
 - 2026-10-30: auditoria completa (perfil standard, só leitura do código; dependências não instaladas, então nada pôde ser executado). 0 confirmados, 21 a validar (sem severidade); os mais urgentes: workflow `deploy-db` com a credencial de dono do banco ao alcance de PRs de fork, conta pré-cadastrada herdando papel ao ser adicionada como membro, e telefone/código de pedido informado pelo cliente usado como prova de identidade. Relatório em `~/security-audit-skill/crmrest/run-1/REPORT.md`.
 
+## 12. Code Mode (experimental) para reduzir gasto de tokens
+
+Quando o gasto de tokens virar problema, sugerir o **Code Mode** do Claude Code (docs: https://code.claude.com/docs/en/code-mode). Nele o Claude escreve um script JavaScript que faz várias chamadas de ferramenta de uma vez, na ferramenta `REPL`.
+
+**Medição de 20/11/2026** (3 tarefas só de leitura, cada uma uma vez com Code Mode desligado e uma ligado, Sonnet 5.5, v2.1.329):
+
+- **Tokens:** o Code Mode gastou cerca de 39% menos (599 mil contra 978 mil), quase tudo em cache lido. O output ficou igual.
+- **Contra:** mais turnos (29 contra 12) e um pouco mais de tempo (117 s contra 92 s). As respostas saíram um pouco menos completas em 2 de 3 tarefas. É experimento: cada caso rodou uma vez só.
+- **Quando vale:** tarefas de leitura com muitos passos pequenos (Grep, Glob, Read, git) e saídas grandes. Não usar para tarefas que dependem de resposta completa e fiel sem revisão.
+
+**Como ligar** (só na janela atual do PowerShell, e só no `claude` interativo no terminal; não roda no painel do VS Code, no app Desktop nem com `-p`):
+
+```powershell
+$env:CLAUDE_CODE_EXPERIMENTAL_CODE_MODE = "1"; claude
+```
+
+Na primeira vez, escolher **Yes, turn on Code Mode**. A confirmação é a linha `Code Mode (experimental) is on`. Para desligar, abrir outra janela ou definir a variável como `0`. Para retomar uma sessão (`--continue` ou `--resume`) iniciada com ele, manter a variável em `1`.
+
+**Cuidados:**
+
+- Abrir o `claude` num terminal **limpo**. Se for aberto de dentro de uma sessão do Claude Code (ou do painel do VS Code), ele herda `CLAUDE_CODE_*` e `CLAUDECODE`, não grava transcript e pode não ligar o Code Mode. Nesse caso, remover essas variáveis antes de rodar.
+- O hook `rtk` (`PreToolUse`, matcher Bash) não tem `onFailure`: se ele falhar, a chamada é recusada. Se o Code Mode reclamar disso, avaliar `"onFailure": "continue"` (não foi mexido). Num teste, o `rtk` ocultou parte da saída de um comando e a resposta saiu incompleta.
+- Não ligar de forma permanente no `~/.claude/settings.json` sem o usuário pedir.
+
 **These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.

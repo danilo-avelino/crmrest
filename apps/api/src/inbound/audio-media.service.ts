@@ -5,6 +5,7 @@ import { automationMessagesOf, type MessageContent } from "@dishdesk/shared";
 import type { Job, Queue } from "bullmq";
 import { ConnectorsService } from "../connectors/connectors.service.js";
 import { DatabaseService } from "../core/database.service.js";
+import { isDemoTenant } from "../demo/demo.js";
 import { JobProcessor } from "../queues/job-processor.js";
 import { type AutomationState, automationMessage, dispatch } from "../automations/automation.js";
 import { ENV, type Env } from "../config/env.js";
@@ -140,6 +141,7 @@ export class TranscriptionProcessor extends JobProcessor {
   }
 
   async transcribe(tenantId: string, messageId: string): Promise<void> {
+    if (await isDemoTenant(this.db, tenantId)) return; // conta de demonstração: o áudio não vai ao provedor de transcrição
     const scope = { tenantIds: [tenantId] };
     const loaded = await this.db.withTenants(scope, async (tx) => {
       const message = await tx.message.findUnique({ where: { id: messageId }, select: { content: true } });

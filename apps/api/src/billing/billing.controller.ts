@@ -21,6 +21,7 @@ import { ENV, type Env } from "../config/env.js";
 import { DatabaseService } from "../core/database.service.js";
 import { createAnnualLink } from "./infinitepay.js";
 import { createCardUpdateSession, createCheckoutSession, hasSubscription } from "./stripe.js";
+import { DemoLocked } from "../demo/demo.guard.js";
 
 /**
  * Pagamento da assinatura: na tela de bloqueio (teste encerrado ou assinatura vencida) e na aba Pagamento das
@@ -39,6 +40,7 @@ export class BillingController {
   ) {}
 
   @Public()
+  @DemoLocked()
   @Post("checkout")
   @HttpCode(200)
   async checkout(@Body(new ZodPipe(CheckoutRequest)) body: CheckoutRequest, @Req() request: Request): Promise<CheckoutResponse> {
@@ -94,6 +96,7 @@ export class BillingController {
 
   /** "Liberar acesso por confiança": assinatura vencida, uma vez por atraso. Qualquer usuário do restaurante libera. */
   @Public()
+  @DemoLocked()
   @Post("trust")
   @HttpCode(204)
   async trust(@Body(new ZodPipe(TrustReleaseRequest)) body: TrustReleaseRequest, @Req() request: Request): Promise<void> {

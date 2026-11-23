@@ -24,6 +24,7 @@ import {
 } from "../automations/automation.js";
 import { ENV, type Env } from "../config/env.js";
 import { DatabaseService } from "../core/database.service.js";
+import { isDemoTenant, withoutDemo } from "../demo/demo.js";
 import { type AiForwardJob, type OutboundJob, QUEUES } from "../queues/queues.module.js";
 import { PresenceService } from "../realtime/presence.service.js";
 import { RealtimeEmitter } from "../realtime/realtime.emitter.js";
@@ -69,9 +70,9 @@ export class AiForwardService implements OnModuleInit {
   }
 
   async sweep(now = new Date()): Promise<void> {
-    for (const tenantId of await this.presence.waitingTenants()) await this.forward(tenantId, now);
+    for (const tenantId of await withoutDemo(this.db, await this.presence.waitingTenants(), (id) => id)) await this.forward(tenantId, now);
     const tenants = await this.db.client.$queryRaw<{ id: string }[]>`SELECT id FROM app.active_tenants()`;
-    for (const { id: tenantId } of tenants) {
+    for (const { id: tenantId } of await withoutDemo(this.db, tenants, (tenant) => tenant.id)) {
       try {
         await this.closedNotices(tenantId, now);
       } catch (error) {
@@ -168,6 +169,7 @@ export class AiForwardService implements OnModuleInit {
 
   /** Com atendente disponível, passa as conversas que esperavam; sem, o restaurante continua na lista da varredura. */
   async forward(tenantId: string, now = new Date()): Promise<void> {
+    if (await isDemoTenant(this.db, tenantId)) return; // conta de demonstração: a IA de verdade não assume conversas
     // Sai da lista antes de ler: uma conversa que começar a esperar durante a leitura põe o restaurante de volta.
     const listed = await this.presence.takeWaiting(tenantId);
     const forwarded = await this.db.withTenants({ tenantIds: [tenantId] }, async (tx) => {

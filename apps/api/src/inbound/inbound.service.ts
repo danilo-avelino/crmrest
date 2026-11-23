@@ -1,6 +1,8 @@
 import { blindIndex, type Contact, encrypt, parseEncryptionKey, type Prisma, type TenantTx } from "@dishdesk/database";
 import type { ChannelType, ConversationStatus, MessageStatus } from "@dishdesk/database/enums";
 import {
+  BOT_RULE,
+  BOT_TAG,
   CANCELLATION_TAG,
   CHANNEL_CAPABILITIES,
   CHANNEL_LABEL,
@@ -36,8 +38,9 @@ export type ContactSource = Pick<NormalizedMessage, "channelType" | "externalCon
 /**
  * Conversa que recebeu a mensagem e o status que ela tinha antes (null = conversa nova).
  * `newAttendance`: a mensagem começa um atendimento (conversa nova ou parada há ATTENDANCE_END_MS, resolvida ou não).
+ * `bot`: veio de um bot (BOT_TAG): a mensagem foi guardada, mas nenhuma automação roda.
  */
-export type OpenedConversation = { id: string; previousStatus: ConversationStatus | null; newAttendance: boolean };
+export type OpenedConversation = { id: string; previousStatus: ConversationStatus | null; newAttendance: boolean; bot?: boolean };
 
 const WINDOW_MS = 24 * 60 * 60 * 1000;
 // Até quanto depois do horário informado pela plataforma a mensagem ainda conta como chegando agora (ver arrivalTime).
@@ -116,7 +119,7 @@ export class InboundService {
       }
       const conversation = await this.handleMessage(channel, await this.withProfile(channel, message));
       // "SAIR" pede para parar de receber mensagens: não é hora de responder com o menu.
-      if (conversation && !(channel.type === "WHATSAPP" && isOptOut(message.text))) {
+      if (conversation && !conversation.bot && !(channel.type === "WHATSAPP" && isOptOut(message.text))) {
         await this.triage.afterInbound({
           channel,
           conversationId: conversation.id,
@@ -198,6 +201,34 @@ export class InboundService {
         },
         select: { id: true },
       });
+      // Bot: a mensagem fica guardada, mas não abre atendimento. Quem completa a sequência de BOT_RULE ganha a tag; a
+      // conversa é resolvida com a IA desligada (a resposta já agendada não sai). Tirar a tag desfaz.
+      const flagged =
+        !contact.tags.includes(BOT_TAG) && typeof message.metadata?.unsupportedType === "string" && (await unsupportedStreak(tx, conversation.id, at));
+      if (flagged || contact.tags.includes(BOT_TAG)) {
+        if (flagged) {
+          await tx.contact.update({ where: { id: contact.id }, data: { tags: [BOT_TAG, ...contact.tags] } });
+          await tx.message.create({
+            data: {
+              tenantId: channel.tenantId,
+              conversationId: conversation.id,
+              channelId: channel.id,
+              direction: "INTERNAL",
+              type: "SYSTEM",
+              content: {
+                event: "bot_detected",
+                text: `Marcado como bot: ${BOT_RULE.unsupportedInARow} mensagens seguidas que o Dish Desk não exibe. As próximas não abrem atendimento; para desfazer, tire a tag ${BOT_TAG}.`,
+              },
+              createdAt: new Date(at.getTime() + 1),
+            },
+          });
+        }
+        await tx.conversation.update({
+          where: { id: conversation.id },
+          data: { status: "RESOLVED", lastMessageAt: at, unreadCount: 0, awaitingAgentSince: null, automationState: {} },
+        });
+        return { ...conversation, bot: true };
+      }
       // Áudio de restaurante com o módulo MENU: o arquivo é guardado e transcrito (F5-01); os demais seguem como antes.
       if (message.type === "AUDIO" && message.media) {
         const menu = await tx.tenantModule.findUnique({
@@ -458,6 +489,17 @@ function isOptOut(text: string | undefined): boolean {
   return word === "SAIR" || word === "PARAR";
 }
 
+/** As últimas BOT_RULE.unsupportedInARow mensagens do cliente, dentro da janela, são todas de tipo que o Dish Desk não exibe? */
+async function unsupportedStreak(tx: TenantTx, conversationId: string, at: Date): Promise<boolean> {
+  const recent = await tx.message.findMany({
+    where: { conversationId, direction: "INBOUND", createdAt: { gte: new Date(at.getTime() - BOT_RULE.windowMinutes * 60_000) } },
+    orderBy: { createdAt: "desc" },
+    take: BOT_RULE.unsupportedInARow,
+    select: { content: true },
+  });
+  return recent.length === BOT_RULE.unsupportedInARow && recent.every((m) => Boolean((m.content as MessageContent).unsupported));
+}
+
 function missingFields(contact: Contact, profile: NonNullable<NormalizedMessage["contactProfile"]>) {
   return {
     ...(!contact.name && profile.name && { name: profile.name }),
@@ -471,9 +513,11 @@ function contentOf(message: NormalizedMessage): MessageContent & Prisma.InputJso
   const location = metadata.location as MessageContent["location"];
   const filename = typeof metadata.filename === "string" ? metadata.filename : undefined;
   const replyId = typeof metadata.replyId === "string" ? metadata.replyId : undefined;
+  const unsupported = typeof metadata.unsupportedType === "string" ? metadata.unsupportedType : undefined;
   return {
     from: message.externalContactId,
     ...(replyId && { replyId }),
+    ...(unsupported && { unsupported }),
     ...(message.text && { text: message.text }),
     ...(message.media && { media: { ...message.media, ...(filename && { filename }) } }),
     ...(location && { location }),

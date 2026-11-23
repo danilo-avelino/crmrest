@@ -6,6 +6,8 @@ import { createHash, createHmac, hkdfSync, randomBytes, randomInt, timingSafeEqu
 import { KEY_PREFIX } from "../auth/login-limits.service.js";
 import { ENV, type Env } from "../config/env.js";
 import { ConnectorsService } from "../connectors/connectors.service.js";
+import { DatabaseService } from "../core/database.service.js";
+import { isDemoTenant } from "../demo/demo.js";
 import { linkedOrdersWhere } from "../orders/customer-history.js";
 import { customerCoupons } from "./benefits.js";
 import { PublicMenuService } from "./public-menu.service.js";
@@ -49,6 +51,7 @@ export class CustomerAuthService implements OnModuleDestroy {
     @Inject(ENV) env: Env,
     private readonly menu: PublicMenuService,
     private readonly connectors: ConnectorsService,
+    private readonly db: DatabaseService,
   ) {
     this.redis = new Redis(env.REDIS_URL, { maxRetriesPerRequest: null });
     this.hmacKey = Buffer.from(hkdfSync("sha256", parseEncryptionKey(env.ENCRYPTION_KEY), Buffer.alloc(0), "dishdesk:menu-otp", 32));
@@ -72,8 +75,9 @@ export class CustomerAuthService implements OnModuleDestroy {
       const channel = channels.map((c) => ({ c, secrets: this.connectors.secrets(c.credentials) })).find((c) => c.secrets.instance);
       return { store, channel, text: automationMessagesOf(store.settings).menuLoginCode };
     });
-    if (!found.channel) return { available: false };
     const { tenantId } = found.store;
+    // Sem WhatsApp por QR Code o código não tem por onde sair; na conta de demonstração, nunca sai.
+    if (!found.channel || (await isDemoTenant(this.db, tenantId))) return { available: false };
 
     if (!(await this.redis.set(cooldownKey(tenantId, phone), "1", "PX", OTP_COOLDOWN_MS, "NX"))) {
       const ttl = await this.redis.pttl(cooldownKey(tenantId, phone));

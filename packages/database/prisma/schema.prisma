@@ -58,6 +58,9 @@ model Tenant {
   contactPhone     String?      @map("contact_phone") // WhatsApp de quem se cadastrou (E.164)
   taxId            String?      @map("tax_id") // CPF ou CNPJ para a nota fiscal, sem pontuação
   stripeCustomerId String?      @unique @map("stripe_customer_id")
+  // Código promocional usado no cadastro pelo site: o vendedor ou parceiro que trouxe o restaurante (docs/vendedores.md).
+  promoCodeId      String?      @map("promo_code_id") @db.Uuid
+  promoCode        PromoCode?   @relation(fields: [promoCodeId], references: [id], onDelete: Restrict)
 
   members             TenantMember[]
   billingPayments     BillingPayment[]
@@ -100,6 +103,7 @@ model Tenant {
   funnelEvents        FunnelEvent[]
   menuImportRequests  MenuImportRequest[]
 
+  @@index([promoCodeId])
   @@map("tenants")
 }
 
@@ -822,6 +826,21 @@ model SiteVisit {
 
   @@index([createdAt])
   @@map("site_visits")
+}
+
+// Código de um vendedor ou parceiro para o cadastro pelo site: dá PROMO_TRIAL_DAYS de teste grátis e liga o restaurante
+// ao código. code sempre em maiúsculas. sellerName fica até existir a área dos vendedores (docs/vendedores.md), que
+// troca o nome por um vínculo com o vendedor. Só a plataforma lê; por enquanto, os códigos são criados direto no banco.
+model PromoCode {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  code       String   @unique
+  sellerName String   @map("seller_name")
+  isActive   Boolean  @default(true) @map("is_active")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  tenants Tenant[]
+
+  @@map("promo_codes")
 }
 
 // ---------- Cardápio digital com IA (módulo MENU, docs/cardapio-ia) ----------

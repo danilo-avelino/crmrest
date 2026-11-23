@@ -14,6 +14,7 @@ import { ZodPipe } from "../common/zod.pipe.js";
 import { AdminNotificationsService } from "../notifications/admin-notifications.service.js";
 import { SettingsService } from "./settings.service.js";
 import { requireTenantAdmin } from "./tenant-admin.js";
+import { DemoLocked } from "../demo/demo.guard.js";
 
 @Controller("settings")
 export class SettingsController {
@@ -64,6 +65,7 @@ export class SettingsController {
   }
 
   /** Botão "Enviar relatório de teste": o relatório semanal agora, para os números salvos. */
+  @DemoLocked()
   @Post(":tenantId/admin-notifications/test")
   @HttpCode(200)
   async testAdminNotifications(@Param("tenantId", ParseUUIDPipe) tenantId: string, @CurrentAuth() auth: RequestAuth): Promise<{ sent: number }> {

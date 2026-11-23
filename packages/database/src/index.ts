@@ -2,6 +2,7 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import { type Prisma, PrismaClient } from "./generated/prisma/client.js";
 
 export * from "./crypto.js";
+export * from "./demo.js";
 export * from "./generated/prisma/client.js";
 
 export type TenantTx = Prisma.TransactionClient;

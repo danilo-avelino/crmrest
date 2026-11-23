@@ -15,7 +15,7 @@ const app = createPrismaClient(requireEnv("DATABASE_URL")); // role da aplicaç�
 // Tabelas da plataforma: RLS com regras próprias (login e escolha de restaurante), sem tenant_isolation.
 // site_visits: tráfego do site institucional, sem restaurante (qualquer um grava, só a plataforma lê).
 // platform_ai_usages: gasto com IA da plataforma (o Jev na defesa da API), com as mesmas regras.
-const PLATFORM_TABLES = ["tenants", "users", "tenant_members", "sessions", "billing_payments", "site_visits", "platform_ai_usages"];
+const PLATFORM_TABLES = ["tenants", "users", "tenant_members", "sessions", "billing_payments", "site_visits", "platform_ai_usages", "promo_codes"];
 const ISOLATION_POLICY =
   "(tenant_id = ANY (app.current_tenant_ids())) WITH CHECK (tenant_id = ANY (app.current_tenant_ids()))";
 

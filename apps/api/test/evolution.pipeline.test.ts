@@ -216,6 +216,39 @@ describe("WhatsApp por QR Code (Evolution API)", () => {
     expect((await admin.conversation.findUniqueOrThrow({ where: { id: conversation.id } })).automationState).toMatchObject({ triage: "done" });
   });
 
+  it("bot: mensagens seguidas que o Dish Desk não exibe marcam o contato, resolvem a conversa e não abrem atendimento", async () => {
+    const customer = "5511922220004";
+    const unknown = (id: string) =>
+      envelope("messages.upsert", {
+        key: { id, remoteJid: `${customer}@s.whatsapp.net`, fromMe: false },
+        pushName: "Robô",
+        messageType: "contactMessage",
+        messageTimestamp: nowSeconds(),
+        message: { contactMessage: {} },
+      });
+    await webhook(unknown("3EB0BOT1")).expect(200);
+    await webhook(unknown("3EB0BOT2")).expect(200);
+    await drainQueues(app);
+    const conversation = await admin.conversation.findFirstOrThrow({ where: { channelId, contact: { phone: `+${customer}` } } });
+    expect(conversation.status).toBe("OPEN"); // duas ainda podem ser de uma pessoa
+    const sent = () => admin.message.count({ where: { conversationId: conversation.id, direction: "OUTBOUND" } });
+    const before = await sent();
+
+    await webhook(unknown("3EB0BOT3")).expect(200);
+    await drainQueues(app);
+    expect(await admin.conversation.findUniqueOrThrow({ where: { id: conversation.id } })).toMatchObject({ status: "RESOLVED", unreadCount: 0, automationState: {} });
+    expect((await admin.contact.findUniqueOrThrow({ where: { id: conversation.contactId } })).tags).toContain("Bot");
+    expect(await admin.message.count({ where: { conversationId: conversation.id, content: { path: ["event"], equals: "bot_detected" } } })).toBe(1);
+
+    // As próximas, mesmo em texto, ficam guardadas sem reabrir a conversa nem receber resposta.
+    await webhook(unknown("3EB0BOT4")).expect(200);
+    await webhook(textFrom(customer, "3EB0BOT5", "Oi")).expect(200);
+    await drainQueues(app);
+    expect((await admin.conversation.findUniqueOrThrow({ where: { id: conversation.id } })).status).toBe("RESOLVED");
+    expect(await admin.message.count({ where: { conversationId: conversation.id, externalMessageId: { in: ["3EB0BOT4", "3EB0BOT5"] } } })).toBe(2);
+    expect(await sent()).toBe(before);
+  });
+
   it("número que não tem WhatsApp: a mensagem falha na hora, com o motivo", async () => {
     const conversation = await admin.conversation.findFirstOrThrow({ where: { channelId, contact: { phone: "+5511922220001" } } });
     evolution.reply((req) =>

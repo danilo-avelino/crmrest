@@ -6,6 +6,7 @@ import { AI_IMPORT_PDF_MAX_BYTES } from "./menu-import-ai.js";
 import { MenuImportAiService } from "./menu-import-ai.service.js";
 import { ImportCommitRequest } from "./menu-import.service.js";
 import { readBody } from "./menu-photo.controller.js";
+import { DemoLocked } from "../demo/demo.guard.js";
 
 /**
  * Importação do cardápio por foto ou PDF com IA (F2-10). `POST /menu/:tenantId/import/ai` com o arquivo no corpo (o
@@ -16,6 +17,7 @@ import { readBody } from "./menu-photo.controller.js";
 export class MenuImportAiController {
   constructor(private readonly imports: MenuImportAiService) {}
 
+  @DemoLocked()
   @Post()
   @HttpCode(202)
   async start(@Param("tenantId", ParseUUIDPipe) tenantId: string, @Req() req: Request, @CurrentAuth() auth: RequestAuth) {
@@ -30,6 +32,7 @@ export class MenuImportAiController {
     return this.imports.start(auth, tenantId, bytes, req.headers["content-type"] ?? "", fileName);
   }
 
+  @DemoLocked()
   @Post("check")
   @HttpCode(200)
   check(

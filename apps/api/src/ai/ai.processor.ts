@@ -3,6 +3,7 @@ import type { Job } from "bullmq";
 import { tenantPaused } from "../automations/automation.js";
 import { ContactDuplicateReviewService } from "../contacts/contact-duplicate-review.service.js";
 import { DatabaseService } from "../core/database.service.js";
+import { isDemoTenant } from "../demo/demo.js";
 import { OrderAgentService } from "../menu-agent/order-agent.service.js";
 import { JobProcessor } from "../queues/job-processor.js";
 import { type AiJob, type DuplicateReviewJob, QUEUES } from "../queues/queues.module.js";
@@ -27,6 +28,8 @@ export class AiProcessor extends JobProcessor {
     const { tenantId } = job.data;
     // Dish Desk pausado: a IA não responde, não avalia nem revisa duplicados (nem o que foi agendado antes da pausa).
     if (await tenantPaused(this.db, tenantId)) return;
+    // Conta de demonstração: a IA de verdade não age (as respostas dela são as do roteiro da simulação).
+    if (await isDemoTenant(this.db, tenantId)) return;
     if (job.name === "duplicate-review") return this.duplicates.review(job.data as DuplicateReviewJob);
     const { conversationId } = job.data as AiJob;
     // Módulo MENU com cardápio ativo, no WhatsApp: o agente de pedidos responde no lugar do atendente (F4-04).

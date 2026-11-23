@@ -7,6 +7,7 @@ import type { Queue } from "bullmq";
 import { IfoodAuthService } from "../connectors/ifood-auth.service.js";
 import { IFOOD_STATUS, type IfoodClient, IfoodError, type IfoodEvent, type IfoodOrder } from "../connectors/ifood.client.js";
 import { DatabaseService } from "../core/database.service.js";
+import { withoutDemo } from "../demo/demo.js";
 import { applyPendingMark, cancelRefused, FraudService } from "../orders/fraud.service.js";
 import { eventDetail } from "../orders/ifood-order.js";
 import { type NoticeStatus, OrderNoticeService } from "../orders/order-notice.service.js";
@@ -40,8 +41,12 @@ export class IfoodService implements OnModuleInit {
   }
 
   async poll(): Promise<void> {
-    const merchants = await this.db.client.$queryRaw<{ id: string; tenant_id: string; external_id: string }[]>`
-      SELECT id, tenant_id, external_id FROM app.ifood_merchants()`;
+    // A loja da demo não existe no iFood: fica fora do polling.
+    const merchants = await withoutDemo(
+      this.db,
+      await this.db.client.$queryRaw<{ id: string; tenant_id: string; external_id: string }[]>`SELECT id, tenant_id, external_id FROM app.ifood_merchants()`,
+      (merchant) => merchant.tenant_id,
+    );
     // O iFood recusa o polling inteiro se um dos ids não for UUID (ex.: canal de exemplo do seed): esses ficam de fora.
     const invalid = merchants.filter((m) => !MERCHANT_ID.test(m.external_id));
     if (invalid.length) this.logger.warn(`Lojas iFood com id inválido ignoradas: ${invalid.map((m) => m.external_id).join(", ")}`);

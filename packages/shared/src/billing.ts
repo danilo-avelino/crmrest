@@ -5,6 +5,8 @@ import { isValidCpf, toE164 } from "./contacts.js";
 // Cadastro pelo site, teste grátis e assinatura.
 
 export const TRIAL_DAYS = 15;
+/** Teste grátis de quem se cadastra com o código promocional de um vendedor ou parceiro. */
+export const PROMO_TRIAL_DAYS = 30;
 
 /** Um canal que passou por um teste grátis só entra em outro teste este tanto de dias depois de o primeiro acabar. */
 export const TRIAL_REUSE_DAYS = 60;
@@ -53,6 +55,13 @@ export const SignupRequest = z.object({
   taxId: TaxId,
   email: z.email({ error: "Informe um e-mail válido." }).transform((email) => email.toLowerCase()),
   password: z.string().min(8, "Use pelo menos 8 caracteres.").max(128, "Use até 128 caracteres."),
+  // Código de um vendedor ou parceiro (opcional): dá PROMO_TRIAL_DAYS de teste e liga o restaurante a ele.
+  promoCode: z
+    .string()
+    .trim()
+    .max(40, "Código inválido.")
+    .transform((code) => code.toUpperCase() || undefined)
+    .optional(),
 });
 export type SignupRequest = z.infer<typeof SignupRequest>;
 

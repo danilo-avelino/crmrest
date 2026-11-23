@@ -99,6 +99,7 @@ describe("cadastro pelo site, teste grátis e assinatura", () => {
   afterAll(async () => {
     await admin.tenant.deleteMany({ where: { members: { some: { user: { email: { in: emails } } } } } });
     await admin.user.deleteMany({ where: { email: { in: emails } } });
+    await admin.promoCode.deleteMany({ where: { code: { startsWith: `TESTE${suffix.toUpperCase()}` } } });
     await app?.close();
     await stripe?.close();
     await infinitepay?.close();
@@ -143,6 +144,36 @@ describe("cadastro pelo site, teste grátis e assinatura", () => {
     const response = await other.post("/api/auth/signup").send({ ...signupBody(email), taxId: "123.456.789-09" }).expect(201);
     segunda = response.body.context.tenants[0].id;
     expect((await tenant(segunda)).slug).toMatch(new RegExp(`^cantina-teste-${suffix}-[0-9a-f]{8}$`));
+  });
+
+  it("código promocional dá 30 dias de teste e liga o restaurante ao código; código errado ou desativado é recusado", async () => {
+    const code = `TESTE${suffix.toUpperCase()}`;
+    const promo = await admin.promoCode.create({ data: { code, sellerName: "Vendedor Teste" } });
+    await admin.promoCode.create({ data: { code: `${code}OFF`, sellerName: "Vendedor Antigo", isActive: false } });
+    const signup = (email: string, promoCode: string) =>
+      request(app.getHttpServer()).post("/api/auth/signup").send({ ...signupBody(email), promoCode });
+
+    for (const wrong of [`${code}X`, `${code}OFF`]) {
+      const refused = await signup(`codigo-errado-${suffix}@teste.local`, wrong).expect(400);
+      expect(refused.body.message).toBe("Código promocional não encontrado. Confira com quem passou.");
+    }
+    expect(await admin.user.count({ where: { email: `codigo-errado-${suffix}@teste.local` } })).toBe(0);
+
+    const email = `vendido-${suffix}@teste.local`;
+    emails.push(email);
+    const response = await signup(email, ` ${code.toLowerCase()} `).expect(201);
+    const created = await tenant(response.body.context.tenants[0].id);
+    expect(created.promoCodeId).toBe(promo.id);
+    const trialMs = created.trialEndsAt!.getTime() - Date.now();
+    expect(trialMs).toBeGreaterThan(30 * DAY_MS - 60_000);
+    expect(trialMs).toBeLessThanOrEqual(30 * DAY_MS);
+
+    // Sem código (ou em branco), segue o teste normal, sem vendedor.
+    expect((await tenant(cantina)).promoCodeId).toBeNull();
+    const blank = `sem-codigo-${suffix}@teste.local`;
+    emails.push(blank);
+    const plain = await signup(blank, "  ").expect(201);
+    expect((await tenant(plain.body.context.tenants[0].id)).promoCodeId).toBeNull();
   });
 
   it("fim do teste sem pagamento: o restaurante aparece bloqueado e não recebe token", async () => {

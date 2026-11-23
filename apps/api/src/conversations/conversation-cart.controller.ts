@@ -9,6 +9,7 @@ import { type AutomationState, setAutomationState } from "../automations/automat
 import { quoteDelivery } from "../menu/delivery.js";
 import { loadMenuCategories, loadMenuItems, pricingCatalogOf } from "../menu/menu-catalog.js";
 import { type LineSelection, priceLine } from "../menu/pricing.js";
+import { DemoLocked } from "../demo/demo.guard.js";
 
 export type CartStage = "building" | "awaiting_confirmation" | "awaiting_pix" | "paid";
 
@@ -125,6 +126,7 @@ export class ConversationCartController {
   }
 
   /** "Assumir conversa" (`on: false`: a IA para) e "Devolver à IA" (`on: true`). */
+  @DemoLocked()
   @Post("ai")
   setAi(@Param("id", ParseUUIDPipe) id: string, @Body(new ZodPipe(SetAi)) body: { on: boolean }, @CurrentAuth() auth: RequestAuth) {
     return this.db.withTenants(auth.scope, async (tx) => {

@@ -42,6 +42,7 @@ export type MessageContent = {
     | "courier_arrival_confirmed"
     | "courier_front_desk"
     | "courier_front_desk_confirmed"
+    | "courier_customer_link"
     | "courier_problem_request"
     | "ifood_observation_ask"
     | "menu_order_confirmed"
@@ -76,6 +77,8 @@ export type MessageContent = {
     /** O agente de pedidos do cardápio mexeu no carrinho (adicionou, trocou, definiu a entrega, resumiu). */
     | "menu_agent"
     | "cancellation_alert"
+    /** Mensagens seguidas que o Dish Desk não exibe: o contato ganhou a tag Bot e a conversa foi resolvida. */
+    | "bot_detected"
     /** Prevenção de fraude: só a equipe vê. */
     | "fraud_alert"
     | "order_kept"
@@ -114,6 +117,8 @@ export type MessageContent = {
   /** Mensagem recebida: id do botão ou do item de lista que o cliente tocou (WhatsApp Cloud API). */
   replyId?: string;
   location?: { latitude: number; longitude: number; name?: string; address?: string };
+  /** Mensagem recebida de um tipo que o Dish Desk não exibe: o tipo na plataforma (ex.: "contactMessage"). */
+  unsupported?: string;
   /**
    * Mensagem recebida: id de quem escreveu no canal (wa_id, IGSID). Um cadastro pode ter mais de um perfil no mesmo
    * canal (cadastros unidos): a resposta vai para o perfil que escreveu por último.

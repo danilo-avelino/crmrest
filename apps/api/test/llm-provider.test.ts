@@ -17,7 +17,8 @@ describe("AnthropicLlmProvider: chat com ferramentas", () => {
   const usages: unknown[] = [];
   const db = {
     withTenants: (_scope: unknown, fn: (tx: unknown) => Promise<unknown>) =>
-      fn({ aiUsage: { create: ({ data }: { data: unknown }) => usages.push(data) } }),
+      // tenant: a guarda da conta de demonstração lê a marca do restaurante (aqui, um restaurante comum).
+      fn({ aiUsage: { create: ({ data }: { data: unknown }) => usages.push(data) }, tenant: { findUnique: async () => null } }),
   } as unknown as DatabaseService;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let requests: any[];

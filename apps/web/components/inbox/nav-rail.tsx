@@ -13,9 +13,10 @@ import {
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/components/auth/auth-provider";
+import { DemoMenu } from "@/components/demo/demo-menu";
 import { InboxWatcher } from "@/components/inbox/inbox-watcher";
 import { useMenu } from "@/components/menu/use-menu";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -54,17 +55,54 @@ export function NavRail({ onHome }: { onHome?: () => void }) {
   const menuOn = useMenu().isSuccess;
   // O tema salvo só existe no navegador. O menu só é desenhado aberto, então o servidor nunca mostra este valor.
   const [theme, setTheme] = useState<Theme>(() => (typeof window === "undefined" ? "system" : readTheme()));
+  // Conta de demonstração: um toque longo no logo abre o menu escondido (simular cliente, resetar).
+  const [demoOpen, setDemoOpen] = useState(false);
+  const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const longPressed = useRef(false);
   if (!session?.context) return null;
   const context = session.context;
+  const demoTenant = context.mode === "tenant" && context.tenants.length === 1 ? (session.tenants.find((tenant) => tenant.id === context.tenants[0]!.id && tenant.demo) ?? null) : null;
+  const cancelPress = () => {
+    if (pressTimer.current) clearTimeout(pressTimer.current);
+    pressTimer.current = null;
+  };
+  const demoPress = demoTenant
+    ? {
+        onPointerDown: () => {
+          longPressed.current = false;
+          cancelPress();
+          pressTimer.current = setTimeout(() => {
+            longPressed.current = true;
+          }, 700);
+        },
+        // Abre ao soltar: aberto ainda com o dedo no logo, a soltura contaria como clique fora e fecharia o menu.
+        onPointerUp: () => {
+          cancelPress();
+          if (longPressed.current) setDemoOpen(true);
+        },
+        onPointerLeave: cancelPress,
+        onContextMenu: (event: React.MouseEvent) => event.preventDefault(),
+      }
+    : {};
   const isAdmin = context.tenants.some((tenant) => tenant.role === "ADMIN");
 
   return (
     <nav className="theme-light flex w-14 shrink-0 flex-col items-center gap-0.5 border-r border-[#2D2A24] bg-ink py-4">
       {/* Na Inbox a lista já cuida dos avisos; nas outras páginas eles continuam por aqui. */}
       {!pathname.startsWith("/inbox") && <InboxWatcher />}
+      {demoTenant && <DemoMenu tenantId={demoTenant.id} open={demoOpen} onOpenChange={setDemoOpen} />}
       <Link
         href="/inbox"
-        onClick={onHome}
+        {...demoPress}
+        onClick={(event) => {
+          // O toque longo abriu o menu da demo: não navega.
+          if (longPressed.current) {
+            event.preventDefault();
+            longPressed.current = false;
+            return;
+          }
+          onHome?.();
+        }}
         aria-label="Início da Inbox"
         title="Início"
         className="mb-5 flex size-8 items-center justify-center rounded-lg bg-tomate"

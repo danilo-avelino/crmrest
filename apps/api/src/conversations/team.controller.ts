@@ -4,6 +4,7 @@ import { CurrentAuth, type RequestAuth } from "../auth/auth.decorators.js";
 import { ZodPipe } from "../common/zod.pipe.js";
 import { ENV, type Env } from "../config/env.js";
 import { DatabaseService } from "../core/database.service.js";
+import { withoutDemo } from "../demo/demo.js";
 import { scopeFor } from "./conversations.service.js";
 import { ifoodWidgetScope } from "./ifood-widget-scope.js";
 
@@ -67,14 +68,16 @@ export class TeamController {
     const channels = await this.db.withTenants(scope, (tx) =>
       tx.channel.findMany({
         where: { type: "IFOOD", status: { not: "DISCONNECTED" } },
-        select: { externalId: true },
+        select: { externalId: true, tenantId: true },
         orderBy: { externalId: "asc" },
         take: 10, // limite do widget
       }),
     );
+    // A loja da demo não existe no iFood: o widget (script do iFood) não carrega para ela.
+    const stores = await withoutDemo(this.db, channels, (channel) => channel.tenantId);
     return {
       widgetId,
-      merchantIds: channels.map((channel) => channel.externalId),
+      merchantIds: stores.map((channel) => channel.externalId),
       chat: this.env.IFOOD_CHAT_BRIDGE,
       extensionUrl: this.env.IFOOD_EXTENSION_URL ?? null,
     };

@@ -76,6 +76,8 @@ import { PlatformController } from "./platform/platform.controller.js";
 import { RealtimeGateway } from "./realtime/realtime.gateway.js";
 import { IfoodReviewsService } from "./reports/ifood-reviews.service.js";
 import { ReportsController } from "./reports/reports.controller.js";
+import { DemoController } from "./demo/demo.controller.js";
+import { DemoService } from "./demo/demo.service.js";
 import { ReportsService } from "./reports/reports.service.js";
 import { IntegrationsController } from "./settings/integrations.controller.js";
 import { IntegrationsService } from "./settings/integrations.service.js";
@@ -110,6 +112,7 @@ import { PagarmeWebhookController } from "./webhooks/pagarme-webhook.controller.
     QuickRepliesController,
     MembersController,
     ReportsController,
+    DemoController,
     OrdersController,
     PlatformController,
     AiAttendanceController,
@@ -172,6 +175,7 @@ import { PagarmeWebhookController } from "./webhooks/pagarme-webhook.controller.
     },
     OrderAgentService,
     AgentSimulatorService,
+    DemoService,
   ],
 })
 export class ApiRoleModule {}
@@ -235,6 +239,8 @@ export class RealtimeRoleModule {}
     StorageService,
     MenuImportAiExtractor,
     MenuImportAiProcessor,
+    // Reset diário da conta de demonstração (job demo-reset da fila de automações).
+    DemoService,
   ],
 })
 export class WorkerRoleModule {}

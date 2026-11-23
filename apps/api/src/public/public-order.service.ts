@@ -22,6 +22,7 @@ import { ENV, type Env } from "../config/env.js";
 import { connectedWhatsApp, openWhatsAppConversation } from "../conversations/open-whatsapp.js";
 import { FunnelService } from "../funnel/funnel.service.js";
 import { DatabaseService } from "../core/database.service.js";
+import { assertNotDemo, withoutDemo } from "../demo/demo.js";
 import { PagarmePixProvider, type PixProvider } from "../payments/pix.js";
 import { applyBenefit, resolveBenefit } from "./benefits.js";
 import { rememberAddress } from "../inbound/orders.js";
@@ -309,6 +310,7 @@ export class PublicOrderService {
     session: { tenantId: string; contactId: string } | null,
     now: Date,
   ): Promise<PixPending> {
+    await assertNotDemo(this.db, pending.tenantId, "Pix");
     const paymentId = randomUUID();
     let charge;
     try {
@@ -408,7 +410,7 @@ export class PublicOrderService {
   async sweepPix(now = new Date()): Promise<void> {
     if (!this.pix.configured) return;
     const rows = await this.db.client.$queryRaw<{ id: string; tenant_id: string }[]>`SELECT * FROM app.pending_pix_payments(${200}::integer)`;
-    for (const row of rows) {
+    for (const row of await withoutDemo(this.db, rows, (payment) => payment.tenant_id)) {
       try {
         await this.settle(row.id, row.tenant_id, now);
       } catch (error) {
@@ -658,7 +660,8 @@ export class PublicOrderService {
         events: {
           create: [
             { tenantId, externalEventId: "PLACED", code: "PLACED", occurredAt: now },
-            { tenantId, externalEventId: "CONFIRMED", code: "CONFIRMED", occurredAt: now },
+            // 1 ms depois: com a mesma hora, a linha do tempo (ordenada por occurredAt) podia trazer a confirmação antes.
+            { tenantId, externalEventId: "CONFIRMED", code: "CONFIRMED", occurredAt: new Date(now.getTime() + 1) },
           ],
         },
       },

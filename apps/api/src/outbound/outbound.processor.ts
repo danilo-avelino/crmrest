@@ -9,6 +9,7 @@ import { type ChannelConnector, ChannelAuthError, interactiveLayout, type Outbou
 import { ConnectorsService } from "../connectors/connectors.service.js";
 import { downloadMedia } from "../conversations/message-media.js";
 import { DatabaseService } from "../core/database.service.js";
+import { isDemoTenant } from "../demo/demo.js";
 import { JobProcessor } from "../queues/job-processor.js";
 import { type AutomationJob, type OutboundJob, QUEUES } from "../queues/queues.module.js";
 import { RealtimeEmitter } from "../realtime/realtime.emitter.js";
@@ -59,6 +60,15 @@ export class OutboundProcessor extends JobProcessor {
       return { message, earlierPending, lastSender: (lastInbound?.content as MessageContent | undefined)?.from };
     });
     if (!message || message.status !== "PENDING") return; // já enviada (job repetido) ou removida
+    // Conta de demonstração: nada sai para os canais. A mensagem aparece como lida, sem revisão da IA nem conector.
+    if (await isDemoTenant(this.db, tenantId)) {
+      const { aiReview: _, ...content } = message.content as MessageContent;
+      await this.db.withTenants(scope, (tx) =>
+        tx.message.update({ where: { id: messageId }, data: { status: "READ", externalMessageId: `demo.${messageId}`, content } }),
+      );
+      this.realtime.inboxChanged(tenantId, message.conversationId);
+      return;
+    }
     // Atendimento com IA: a resposta do atendente é revisada antes de sair (e antes de um painel do iFood pegá-la).
     if ((message.content as MessageContent).aiReview === "pending") {
       await this.review.review(tenantId, messageId);

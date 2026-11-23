@@ -3,6 +3,7 @@ import { menuStoreOf } from "@dishdesk/shared";
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import { ENV, type Env } from "../config/env.js";
 import { DatabaseService } from "../core/database.service.js";
+import { withoutDemo } from "../demo/demo.js";
 import { type CapiSource, capiEvent } from "./meta-capi.js";
 
 /** Etapas na ordem da tabela da saúde; as duas últimas só o servidor manda. */
@@ -56,7 +57,7 @@ export class MetaCapiService {
 
   async sweep(now = new Date()): Promise<void> {
     const tenants = await this.db.client.$queryRaw<{ tenant_id: string }[]>`SELECT tenant_id FROM app.capi_pending_tenants()`;
-    for (const { tenant_id: tenantId } of tenants) {
+    for (const { tenant_id: tenantId } of await withoutDemo(this.db, tenants, (tenant) => tenant.tenant_id)) {
       try {
         await this.sendTenant(tenantId, now);
       } catch (error) {

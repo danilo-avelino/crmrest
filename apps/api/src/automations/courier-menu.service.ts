@@ -282,6 +282,9 @@ export class CourierMenuService {
       const known = found && !found.order ? await this.findOrder(tx, conversation, text, false) : found;
       if (known && !known.order && !state.orderRetried) return this.askAgain(tx, conversation, state, messages, known.code);
       if (known?.order) await systemEvent(tx, conversation, { event: "order", orderId: known.order.id, customerChat: true });
+      // Pedido sem chat do iFood (ex.: Cardápio Web), com o telefone do cliente: o entregador mesmo avisa, pelo link que abre
+      // o WhatsApp do cliente com o aviso já escrito (23/11/2026). Sem telefone, a equipe avisa.
+      if (known?.order?.contact?.phone) return this.sendCustomerLink(tx, conversation, state, messages, known.code, known.order, kind);
       const note =
         kind === "arrival"
           ? known
@@ -313,6 +316,30 @@ export class CourierMenuService {
     await setAutomationState(tx, conversation.id, { ...linkOrder(state, found), triage: "done", courierNoticeAt: new Date().toISOString() });
     if (!keepOpen) await tx.conversation.update({ where: { id: conversation.id }, data: { status: "RESOLVED", unreadCount: 0 } });
     return { send: [id], done: false, alsoSend };
+  }
+
+  /**
+   * O Dish Desk não alcança o cliente do pedido: manda ao entregador o link do WhatsApp do cliente (wa.me) com o aviso
+   * pronto, e o atendimento do entregador se resolve, como no aviso pelo chat do iFood.
+   */
+  private async sendCustomerLink(
+    tx: TenantTx,
+    conversation: Conversation,
+    state: AutomationState,
+    messages: AutomationMessages,
+    code: string,
+    order: { id: string; contact: { phone: string | null } | null; tenant: { name: string } },
+    kind: Notice,
+  ): Promise<Step> {
+    const text = fillMessage(kind === "arrival" ? messages.courierArrivalCustomerText : messages.courierFrontDeskCustomerText, {
+      pedido: code,
+      loja: order.tenant.name,
+    });
+    const link = `https://wa.me/${order.contact!.phone!.replace(/\D/g, "")}?text=${encodeURIComponent(text)}`;
+    const id = await automationMessage(tx, conversation, "courier_customer_link", fillMessage(messages.courierCustomerLink, { pedido: code, link }));
+    await setAutomationState(tx, conversation.id, { ...state, courierOrderId: order.id, triage: "done", courierNoticeAt: new Date().toISOString() });
+    await tx.conversation.update({ where: { id: conversation.id }, data: { status: "RESOLVED", unreadCount: 0 } });
+    return { send: [id], done: false };
   }
 
   /** "Problema com um pedido": com o pedido achado, o card dele fica na conversa e o entregador conta o que houve. */
@@ -348,7 +375,17 @@ export class CourierMenuService {
           placedAt: { gte: startOfYesterday(now) },
           ...(ifoodOnly && { channel: { type: "IFOOD" as const } }),
         },
-        select: { id: true, tenantId: true, contactId: true, channelId: true, conversationId: true, status: true, placedAt: true },
+        select: {
+          id: true,
+          tenantId: true,
+          contactId: true,
+          channelId: true,
+          conversationId: true,
+          status: true,
+          placedAt: true,
+          contact: { select: { phone: true } },
+          tenant: { select: { name: true } },
+        },
         take: 10,
       }),
     );

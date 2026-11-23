@@ -5,6 +5,8 @@ import type { RequestAuth } from "../auth/auth.decorators.js";
 import { IfoodAuthService, type IfoodStore } from "../connectors/ifood-auth.service.js";
 import { IfoodError, type IfoodReview } from "../connectors/ifood.client.js";
 import { DatabaseService } from "../core/database.service.js";
+import { isDemoTenant } from "../demo/demo.js";
+import { demoIfoodReviews } from "../demo/demo-scripts.js";
 import { adminScope, adminScopeOf } from "../settings/tenant-admin.js";
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -32,6 +34,9 @@ export class IfoodReviewsService {
     const stores = await this.stores(adminScopeOf(auth, tenantId));
     const from = new Date(now.getTime() - PERIOD_DAYS[period] * DAY);
     const result: IfoodReviewsDto = { stores: [], unavailable: [], reviews: [] };
+    // Conta de demonstração: a loja não existe no iFood; a tela mostra avaliações de exemplo.
+    const demo = stores.length === 1 && (await isDemoTenant(this.db, stores[0]!.tenantId));
+    if (demo) return demoIfoodReviews(stores[0]!, from, now);
     if (!this.ifood.configured) return result;
 
     await Promise.all(

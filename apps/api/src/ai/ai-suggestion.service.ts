@@ -4,6 +4,8 @@ import { z } from "zod";
 import type { RequestAuth } from "../auth/auth.decorators.js";
 import type { AutomationState } from "../automations/automation.js";
 import { DatabaseService } from "../core/database.service.js";
+import { isDemoTenant } from "../demo/demo.js";
+import { demoSuggestion } from "../demo/demo-scripts.js";
 import { JevClient } from "../defense/jev.client.js";
 import { orderUpdateMessage } from "../orders/forecast.js";
 import { latestOrderOf } from "../orders/latest-order.js";
@@ -92,6 +94,8 @@ export class AiSuggestionService {
     });
 
     const { conversation, settings } = context;
+    // Conta de demonstração: um texto pronto no lugar da chamada à IA.
+    if (await isDemoTenant(this.db, conversation.tenantId)) return { text: demoSuggestion(context.history, conversation.contact.name) };
     const facts = [restaurantFacts(conversation.tenant.name, settings, now), orderFactsOf(context.order, false)].join("\n");
     const dialogue = transcript(context.history);
     let text: string;

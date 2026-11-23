@@ -7,6 +7,7 @@ import type { Queue } from "bullmq";
 import { PermanentSendError } from "../connectors/connector.js";
 import { ConnectorsService } from "../connectors/connectors.service.js";
 import { DatabaseService } from "../core/database.service.js";
+import { isDemoTenant, withoutDemo } from "../demo/demo.js";
 import { type AdminMessageJob, QUEUES } from "../queues/queues.module.js";
 import { ReportsService } from "../reports/reports.service.js";
 
@@ -143,7 +144,7 @@ export class AdminNotificationsService implements OnModuleInit {
   /** Segunda às 9h: o relatório de cada restaurante que quer recebê-lo. */
   async weeklyAll(now = new Date()): Promise<void> {
     const tenants = await this.db.client.$queryRaw<{ id: string }[]>`SELECT id FROM app.active_tenants()`;
-    for (const { id: tenantId } of tenants) {
+    for (const { id: tenantId } of await withoutDemo(this.db, tenants, (tenant) => tenant.id)) {
       try {
         await this.weekly(tenantId, now);
       } catch (error) {
@@ -187,6 +188,7 @@ export class AdminNotificationsService implements OnModuleInit {
 
   /** Job "admin-message": envia pelo WhatsApp do restaurante. Falha permanente (número inválido, canal recusado) não repete. */
   async send({ tenantId, phone, text }: AdminMessageJob): Promise<void> {
+    if (await isDemoTenant(this.db, tenantId)) return; // conta de demonstração: nenhum aviso sai pelo WhatsApp
     const channel = await this.db.withTenants({ tenantIds: [tenantId] }, (tx) => notificationChannelOf(tx, tenantId));
     if (!channel) return; // o WhatsApp foi desconectado depois do agendamento
     const secrets = this.connectors.secrets(channel.credentials);

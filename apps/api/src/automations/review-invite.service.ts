@@ -7,6 +7,7 @@ import type { Queue } from "bullmq";
 import { z } from "zod";
 import { ENV, type Env } from "../config/env.js";
 import { DatabaseService } from "../core/database.service.js";
+import { withoutDemo } from "../demo/demo.js";
 import { promisedAt } from "../orders/forecast.js";
 import { QUEUES } from "../queues/queues.module.js";
 import { tenantSettings } from "./automation.js";
@@ -65,7 +66,7 @@ export class ReviewInviteService implements OnModuleInit {
   async sweep(now = new Date()): Promise<void> {
     if (!this.env.IFOOD_CHAT_BRIDGE) return;
     const tenants = await this.db.client.$queryRaw<{ tenant_id: string }[]>`SELECT DISTINCT tenant_id FROM app.ifood_merchants()`;
-    for (const { tenant_id: tenantId } of tenants) {
+    for (const { tenant_id: tenantId } of await withoutDemo(this.db, tenants, (tenant) => tenant.tenant_id)) {
       try {
         await this.sweepTenant(tenantId, now);
       } catch (error) {

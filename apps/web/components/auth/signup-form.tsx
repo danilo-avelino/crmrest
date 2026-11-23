@@ -1,6 +1,6 @@
 "use client";
 
-import { SignupRequest, TRIAL_DAYS } from "@dishdesk/shared";
+import { PROMO_TRIAL_DAYS, SignupRequest, TRIAL_DAYS } from "@dishdesk/shared";
 import Link from "next/link";
 import { type ComponentProps, useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
@@ -11,7 +11,7 @@ import { Label } from "@/components/ui/label";
 import { usePendingAction } from "@/hooks/use-pending-action";
 import { ApiError } from "@/lib/api";
 
-const EMPTY = { restaurantName: "", name: "", phone: "", taxId: "", email: "", password: "" };
+const EMPTY = { restaurantName: "", name: "", phone: "", taxId: "", email: "", password: "", promoCode: "" };
 type Field = keyof typeof EMPTY;
 
 /**
@@ -33,6 +33,8 @@ export function SignupForm() {
     try {
       await signup(parsed.data);
     } catch (failure) {
+      // Os outros campos já passam pela mesma validação aqui; um 400 com código preenchido é o código não encontrado.
+      if (failure instanceof ApiError && failure.status === 400 && parsed.data.promoCode) return setErrors({ promoCode: failure.message });
       setErrors({ form: failure instanceof ApiError ? failure.message : "Não foi possível criar a conta. Tente novamente." });
     }
   });
@@ -87,6 +89,16 @@ export function SignupForm() {
         </div>
         {field("email", "E-mail", { type: "email", autoComplete: "email" })}
         {field("password", "Senha", { type: "password", maxLength: 128, autoComplete: "new-password", placeholder: "Pelo menos 8 caracteres" })}
+        <div className="flex flex-col gap-[5px]">
+          {field("promoCode", "Código promocional (opcional)", {
+            required: false,
+            maxLength: 40,
+            autoComplete: "off",
+            className: "h-10 uppercase placeholder:normal-case",
+            placeholder: "Recebeu de um vendedor ou parceiro?",
+          })}
+          <p className="text-[11px] text-ink-3">Com o código, o teste grátis vai para {PROMO_TRIAL_DAYS} dias.</p>
+        </div>
 
         {errors.form && (
           <p role="alert" className="text-[11px] text-tomate">

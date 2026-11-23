@@ -14,6 +14,7 @@
     "e2e": "turbo run e2e",
     "db:migrate": "pnpm --filter @dishdesk/database db:migrate",
     "db:seed": "pnpm --filter @dishdesk/database exec prisma db seed",
+    "demo:reset": "pnpm --filter @dishdesk/database demo:reset",
     "simulate:whatsapp": "pnpm --filter @dishdesk/api simulate:whatsapp",
     "simulate:ifood-chat": "pnpm --filter @dishdesk/api simulate:ifood-chat",
     "channel:add": "pnpm --filter @dishdesk/api channel:add",

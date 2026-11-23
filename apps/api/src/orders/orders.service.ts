@@ -29,6 +29,7 @@ import { openIfoodConversation } from "../conversations/ifood-conversation.js";
 import { connectedWhatsApp, openWhatsAppConversation } from "../conversations/open-whatsapp.js";
 import { DatabaseService } from "../core/database.service.js";
 import { JevClient } from "../defense/jev.client.js";
+import { isDemoTenant, rejectDemo } from "../demo/demo.js";
 import { RealtimeEmitter } from "../realtime/realtime.emitter.js";
 import { periodStart } from "../reports/reports.service.js";
 import { addressText } from "./address-key.js";
@@ -230,6 +231,7 @@ export class OrdersService {
     const order = await this.ifoodOrder(auth, orderId);
     const action = nextOrderAction(order);
     if (!action) throw new UnprocessableEntityException("Não há etapa para informar neste pedido.");
+    await rejectDemo(this.db, order.channel.tenantId);
     await this.askIfood(() => order.client.advance(order.externalOrderId, IFOOD_STEP[action]));
     return { action };
   }
@@ -247,7 +249,10 @@ export class OrdersService {
       };
     }
     const order = await this.ifoodOrder(auth, orderId, true);
-    const reasons = await this.askIfood(() => order.client.cancellationReasons(order.externalOrderId));
+    // Conta de demonstração: os motivos são os de exemplo, sem perguntar ao iFood.
+    const reasons = (await isDemoTenant(this.db, order.channel.tenantId))
+      ? DEMO_CANCEL_REASONS
+      : await this.askIfood(() => order.client.cancellationReasons(order.externalOrderId));
     return {
       reasons,
       reasonMode: "list",
@@ -265,6 +270,13 @@ export class OrdersService {
     const markFraud = body.markFraud ?? false;
     if ((await this.channelTypeOf(auth, orderId)) === "IFOOD") {
       const order = await this.ifoodOrder(auth, orderId, true);
+      // Conta de demonstração: o cancelamento fica só no Dish Desk, sem pedir ao iFood.
+      if (await isDemoTenant(this.db, order.channel.tenantId)) {
+        const reason = DEMO_CANCEL_REASONS.find((item) => item.code === body.code);
+        if (!reason) throw new UnprocessableEntityException("Escolha um dos motivos.");
+        await this.fraud.canceledByTeam(auth, orderId, { reason: reason.description, markFraud, confirmed: true });
+        return;
+      }
       const reasons = await this.askIfood(() => order.client.cancellationReasons(order.externalOrderId));
       const reason =reasons.find((item) => item.code === body.code);
       if (!reason) throw new UnprocessableEntityException("O iFood não aceita este motivo para o pedido. Escolha outro.");
@@ -276,8 +288,11 @@ export class OrdersService {
     const reason = body.reason?.trim() || null;
     const token = this.connectors.secrets(order.channel.credentials).accessToken;
     const neemo = order.channel.type === "NEEMO";
+    // Conta de demonstração: o cancelamento fica só no Dish Desk, sem chamar o Cardápio Web nem a Neemo.
+    const demo = await isDemoTenant(this.db, order.tenantId);
     try {
-      if (neemo) await this.neemo.cancel(token, order.externalOrderId);
+      if (demo) this.logger.log(`Cancelamento do pedido ${orderId} só no Dish Desk (conta de demonstração)`);
+      else if (neemo) await this.neemo.cancel(token, order.externalOrderId);
       else await this.cardapioWeb.cancel(token, order.externalOrderId, reason);
     } catch (error) {
       const system = neemo ? "A Neemo" : "O Cardápio Web";
@@ -328,6 +343,7 @@ export class OrdersService {
       throw new UnprocessableEntityException("Escolha um dos motivos que o iFood aceita.");
     }
     if (!answer.accept && !answer.reason) throw new UnprocessableEntityException("Escolha o motivo da recusa.");
+    await rejectDemo(this.db, order.channel.tenantId);
     await this.askIfood(() => order.client.answerDispute(dispute.id, answer.accept ? "accept" : "reject", answer.reason));
   }
 
@@ -466,6 +482,14 @@ export class OrdersService {
 }
 
 const IFOOD_STEP = { CONFIRM: "confirm", READY: "readyToPickup", DISPATCH: "dispatch" } as const;
+
+/** Motivos de cancelamento da conta de demonstração (no lugar dos que o iFood ofereceria). */
+const DEMO_CANCEL_REASONS = [
+  { code: "501", description: "Problemas de sistema na loja" },
+  { code: "503", description: "Item indisponível" },
+  { code: "506", description: "Pedido fora da área de entrega" },
+  { code: "509", description: "Suspeita de golpe ou pedido falso" },
+];
 
 /** Depois de entregue (ou cancelado) não há o que cancelar; antes disso, o iFood decide pelos motivos que oferece. */
 const CANCELABLE = new Set<OrderStatus>(["PLACED", "CONFIRMED", "PREPARING", "READY", "DISPATCHED"]);

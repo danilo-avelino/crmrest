@@ -7,6 +7,7 @@ import { Inject, Injectable, Logger } from "@nestjs/common";
 import { z } from "zod";
 import { ENV, type Env } from "../config/env.js";
 import { DatabaseService } from "../core/database.service.js";
+import { assertNotDemo } from "../demo/demo.js";
 
 export type LlmMessage = { role: "system" | "user"; content: string };
 
@@ -114,6 +115,7 @@ export class LlmClient {
   ): Promise<{ result: T; model: string }> {
     const main = this.env.AI_BASE_URL;
     if (!main) throw new Error("IA desligada: falta AI_BASE_URL.");
+    await assertNotDemo(this.db, tenantId, `Chamada de IA (${name})`);
     const endpoints: Endpoint[] = [
       { provider: "openai", base: main, apiKey: this.env.AI_API_KEY, model: this.env.AI_MODEL, timeoutMs: this.env.AI_TIMEOUT_MS },
       ...(this.fallback ? [this.fallback] : []),

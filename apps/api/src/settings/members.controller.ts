@@ -24,6 +24,7 @@ import { ZodPipe } from "../common/zod.pipe.js";
 import { ENV, type Env } from "../config/env.js";
 import { DatabaseService } from "../core/database.service.js";
 import { adminScope, memberScope } from "./tenant-admin.js";
+import { DemoLocked } from "../demo/demo.guard.js";
 
 /**
  * Usuários do restaurante (Configurações → Usuários): a equipe vê quem tem acesso; o administrador cria acessos (com
@@ -49,6 +50,7 @@ export class MembersController {
    * Quem já tem conta no Dish Desk recebe o convite e fica com o acesso pendente até abrir o link do e-mail: o cadastro
    * não confere o e-mail, então a conta pode ter sido criada por outra pessoa.
    */
+  @DemoLocked()
   @Post()
   async create(
     @Param("tenantId", ParseUUIDPipe) tenantId: string,
@@ -86,6 +88,7 @@ export class MembersController {
   }
 
   /** Manda (de novo) o convite: o link para a pessoa criar ou trocar a senha. */
+  @DemoLocked()
   @Post(":userId/invite")
   @HttpCode(204)
   async invite(

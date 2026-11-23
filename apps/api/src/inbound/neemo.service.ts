@@ -18,6 +18,7 @@ import {
 import { ConnectorsService } from "../connectors/connectors.service.js";
 import { refreshContactTags } from "../contacts/contact-tags.service.js";
 import { DatabaseService } from "../core/database.service.js";
+import { withoutDemo } from "../demo/demo.js";
 import { FraudService } from "../orders/fraud.service.js";
 import { OrderNoticeService } from "../orders/order-notice.service.js";
 import { JobProcessor } from "../queues/job-processor.js";
@@ -75,7 +76,7 @@ export class NeemoService implements OnModuleInit {
     if (!this.client.configured) return;
     const channels = await this.db.client.$queryRaw<{ id: string; tenant_id: string }[]>`
       SELECT id, tenant_id FROM app.neemo_channels()`;
-    for (const { id, tenant_id: tenantId } of channels) {
+    for (const { id, tenant_id: tenantId } of await withoutDemo(this.db, channels, (row) => row.tenant_id)) {
       try {
         await this.pollChannel({ id, tenantId, type: "NEEMO" });
       } catch (error) {

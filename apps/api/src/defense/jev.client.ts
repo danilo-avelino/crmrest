@@ -3,6 +3,7 @@ import { Inject, Injectable, Logger } from "@nestjs/common";
 import { z } from "zod";
 import { ENV, type Env } from "../config/env.js";
 import { DatabaseService } from "../core/database.service.js";
+import { assertNotDemo } from "../demo/demo.js";
 
 const TIMEOUT_MS = 15_000;
 /** Chance de ataque a partir da qual o Jev confirma o caso, e até onde ele o dá como uso legítimo. */
@@ -75,6 +76,7 @@ export class JevClient {
     questions: Record<K, JevQuestion>,
     options: { privateData?: boolean; timeoutMs?: number } = {},
   ): Promise<{ answers: Record<K, JevAnswer>; model: string }> {
+    if (tenantId) await assertNotDemo(this.db, tenantId, "Jev");
     const response = await fetch(this.env.JEV_URL, {
       method: "POST",
       headers: { authorization: `Bearer ${this.env.JEV_API_KEY}`, "content-type": "application/json" },

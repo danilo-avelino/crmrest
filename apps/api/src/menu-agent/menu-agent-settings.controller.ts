@@ -8,6 +8,7 @@ import { DatabaseService } from "../core/database.service.js";
 import { requireModule } from "../menu/menu.service.js";
 import { adminScope, memberScope } from "../settings/tenant-admin.js";
 import { AgentSimulatorService, SIMULATION_DAILY_LIMIT, SimulateAgentRequest } from "./agent-simulator.service.js";
+import { DemoLocked } from "../demo/demo.guard.js";
 
 const uuid = (name: string) => Param(name, ParseUUIDPipe);
 
@@ -48,6 +49,7 @@ export class MenuAgentSettingsController {
     });
   }
 
+  @DemoLocked()
   @Post("agent-simulate")
   @HttpCode(200)
   simulate(@uuid("tenantId") tenantId: string, @Body(new ZodPipe(SimulateAgentRequest)) body: SimulateAgentRequest, @CurrentAuth() auth: RequestAuth) {

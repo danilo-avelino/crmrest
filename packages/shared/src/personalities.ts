@@ -92,6 +92,15 @@ export type AutomationMessages = {
   courierFrontDeskNotice: string;
   /** Para o entregador: o cliente foi avisado da portaria. {pedido} */
   courierFrontDeskConfirmed: string;
+  /**
+   * Para o entregador, quando o pedido não tem chat do iFood (ex.: Cardápio Web) mas o cliente tem telefone: o Dish Desk
+   * não consegue avisar, e o link abre o WhatsApp do cliente com o aviso já escrito. {pedido} {link}
+   */
+  courierCustomerLink: string;
+  /** Texto pronto do link: o entregador (em 1ª pessoa) avisa o cliente que chegou. {pedido} {loja} */
+  courierArrivalCustomerText: string;
+  /** Texto pronto do link: o entregador (em 1ª pessoa) avisa o cliente que deixou o pedido na portaria. {pedido} {loja} */
+  courierFrontDeskCustomerText: string;
   /** Número que não bate com nenhum pedido: o entregador pode mandar de novo (uma vez). {pedido} */
   courierOrderRetry: string;
   /** {pedido} */
@@ -183,6 +192,10 @@ export const PERSONALITY_MESSAGES: Record<Personality, AutomationMessages> = {
     courierArrivalConfirmed: "Pronto! Avisamos o cliente do pedido #{pedido} que você chegou.",
     courierFrontDeskNotice: "📦 O entregador deixou seu pedido na portaria! Bom apetite 😋",
     courierFrontDeskConfirmed: "Pronto! Avisamos o cliente do pedido #{pedido} que o pedido ficou na portaria.",
+    courierCustomerLink:
+      "Não conseguimos avisar o cliente do pedido #{pedido} por aqui, mas você mesmo pode: toque no link abaixo e a conversa com ele abre no WhatsApp com a mensagem pronta, é só enviar 👇\n{link}",
+    courierArrivalCustomerText: "Olá! Sou o entregador do seu pedido #{pedido} ({loja}) e já estou na sua porta 🛵",
+    courierFrontDeskCustomerText: "Olá! Sou o entregador do seu pedido #{pedido} ({loja}) e deixei ele na portaria 📦 Bom apetite!",
     courierOrderNotFound: "Não encontramos o pedido #{pedido}. Um atendente já vai falar com você.",
     courierOrderRetry: "Não encontramos o pedido #{pedido}. Pode conferir o número e mandar de novo?",
     courierProblemRequest: "Encontramos o pedido #{pedido}. O que aconteceu com ele?",
@@ -251,6 +264,10 @@ export const PERSONALITY_MESSAGES: Record<Personality, AutomationMessages> = {
     courierArrivalConfirmed: "O cliente do pedido #{pedido} foi avisado da sua chegada.",
     courierFrontDeskNotice: "Informamos que o entregador deixou o seu pedido na portaria.",
     courierFrontDeskConfirmed: "O cliente do pedido #{pedido} foi avisado de que o pedido ficou na portaria.",
+    courierCustomerLink:
+      "Não é possível avisar o cliente do pedido #{pedido} por este canal. Toque no link abaixo para abrir a conversa com ele no WhatsApp, com a mensagem já escrita, e envie-a.\n{link}",
+    courierArrivalCustomerText: "Olá. Sou o entregador do seu pedido #{pedido} ({loja}) e já me encontro na sua porta.",
+    courierFrontDeskCustomerText: "Olá. Sou o entregador do seu pedido #{pedido} ({loja}) e o deixei na portaria.",
     courierOrderNotFound: "Não localizamos o pedido #{pedido}. Um de nossos atendentes dará continuidade em instantes.",
     courierOrderRetry: "Não localizamos o pedido #{pedido}. Por gentileza, confira o número e envie novamente.",
     courierProblemRequest: "Localizamos o pedido #{pedido}. Por gentileza, descreva o que ocorreu.",
@@ -315,6 +332,10 @@ export const PERSONALITY_MESSAGES: Record<Personality, AutomationMessages> = {
     courierArrivalConfirmed: "Feito! 🙌 Já avisamos o cliente do pedido #{pedido} que você chegou!",
     courierFrontDeskNotice: "Chegou! 🎉 O entregador deixou seu pedido na portaria! Bom apetite! 😋",
     courierFrontDeskConfirmed: "Feito! 🙌 Já avisamos o cliente do pedido #{pedido} que o pedido ficou na portaria!",
+    courierCustomerLink:
+      "Opa! Daqui a gente não consegue avisar o cliente do pedido #{pedido} 😅 Mas é fácil: toca no link abaixo que a conversa com ele abre no WhatsApp com a mensagem prontinha, é só enviar! 👇\n{link}",
+    courierArrivalCustomerText: "Oi! 🎉 Sou o entregador do seu pedido #{pedido} ({loja}) e já cheguei aí na sua porta! 🛵",
+    courierFrontDeskCustomerText: "Oi! 🎉 Sou o entregador do seu pedido #{pedido} ({loja}) e deixei ele na portaria! 📦 Bom apetite! 😋",
     courierOrderNotFound: "Ihh, não achamos o pedido #{pedido} 😕 Mas relaxa: um atendente já vem falar com você!",
     courierOrderRetry: "Ihh, não achamos o pedido #{pedido} 😕 Confere o número e manda de novo!",
     courierProblemRequest: "Achamos o pedido #{pedido}! Conta pra gente: o que rolou com ele?",
@@ -378,6 +399,10 @@ export const PERSONALITY_MESSAGES: Record<Personality, AutomationMessages> = {
     courierArrivalConfirmed: "Fechou! Avisamos o cliente do pedido #{pedido} que você chegou 👊",
     courierFrontDeskNotice: "Opa! O entregador deixou seu pedido aí na portaria 📦 Bom apetite!",
     courierFrontDeskConfirmed: "Fechou! Avisamos o cliente do pedido #{pedido} que ficou na portaria 👊",
+    courierCustomerLink:
+      "Daqui não rola avisar o cliente do pedido #{pedido}, mas dá pra você mandar: toca no link aí embaixo que a conversa abre no WhatsApp com a mensagem pronta, só enviar 👊\n{link}",
+    courierArrivalCustomerText: "E aí! Sou o entregador do seu pedido #{pedido} ({loja}) e tô aqui na sua porta 🛵",
+    courierFrontDeskCustomerText: "E aí! Sou o entregador do seu pedido #{pedido} ({loja}) e deixei ele na portaria 📦 Bom apetite!",
     courierOrderNotFound: "Xi, não achamos o pedido #{pedido}. Mas sossega: alguém da equipe já vem falar com você.",
     courierOrderRetry: "Xi, não achamos o pedido #{pedido}. Dá uma conferida no número e manda de novo?",
     courierProblemRequest: "Achamos o pedido #{pedido}. Manda aí: o que rolou com ele?",
@@ -445,6 +470,10 @@ export const PERSONALITY_MESSAGES: Record<Personality, AutomationMessages> = {
     courierArrivalConfirmed: "Prontinho! Avisamos o cliente do pedido #{pedido} que você chegou. Obrigado pelo cuidado 🧡",
     courierFrontDeskNotice: "Seu pedido chegou! 🧡 O entregador deixou ele na portaria. Bom apetite!",
     courierFrontDeskConfirmed: "Prontinho! Avisamos o cliente do pedido #{pedido} que o pedido ficou na portaria. Obrigado pelo cuidado 🧡",
+    courierCustomerLink:
+      "Não conseguimos avisar o cliente do pedido #{pedido} por aqui, mas você pode avisar com um toque: o link abaixo abre a conversa com ele no WhatsApp com a mensagem pronta, é só enviar 🧡\n{link}",
+    courierArrivalCustomerText: "Olá! Sou o entregador do seu pedido #{pedido} ({loja}) e já estou aqui na sua porta 🧡",
+    courierFrontDeskCustomerText: "Olá! Sou o entregador do seu pedido #{pedido} ({loja}) e deixei ele na portaria com carinho 🧡 Bom apetite!",
     courierOrderNotFound: "Não encontramos o pedido #{pedido}, mas não se preocupe: alguém da nossa equipe já vem falar com você 🧡",
     courierOrderRetry: "Não encontramos o pedido #{pedido}. Pode conferir o número com calma e nos mandar de novo? 🧡",
     courierProblemRequest: "Encontramos o pedido #{pedido}. Pode nos contar com calma o que aconteceu?",
@@ -508,6 +537,9 @@ export const PERSONALITY_MESSAGES: Record<Personality, AutomationMessages> = {
     courierArrivalConfirmed: "Cliente do pedido #{pedido} avisado.",
     courierFrontDeskNotice: "O entregador deixou seu pedido na portaria.",
     courierFrontDeskConfirmed: "Cliente do pedido #{pedido} avisado da portaria.",
+    courierCustomerLink: "Não dá para avisar o cliente do pedido #{pedido} por aqui. Toque no link para mandar a mensagem pronta pelo WhatsApp:\n{link}",
+    courierArrivalCustomerText: "Sou o entregador do seu pedido #{pedido} ({loja}). Estou na sua porta.",
+    courierFrontDeskCustomerText: "Sou o entregador do seu pedido #{pedido} ({loja}). Deixei na portaria.",
     courierOrderNotFound: "Pedido #{pedido} não encontrado. Um atendente vai falar com você.",
     courierOrderRetry: "Pedido #{pedido} não encontrado. Confira o número e envie de novo.",
     courierProblemRequest: "Pedido #{pedido} encontrado. O que aconteceu?",

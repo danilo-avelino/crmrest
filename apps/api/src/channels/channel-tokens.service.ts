@@ -5,6 +5,7 @@ import type { Queue } from "bullmq";
 import { ChannelAuthError } from "../connectors/connector.js";
 import { type ChannelSecrets, ConnectorsService } from "../connectors/connectors.service.js";
 import { DatabaseService } from "../core/database.service.js";
+import { withoutDemo } from "../demo/demo.js";
 import { JobProcessor } from "../queues/job-processor.js";
 import { QUEUES } from "../queues/queues.module.js";
 
@@ -43,10 +44,12 @@ export class ChannelTokensService implements OnModuleInit {
       SELECT id, tenant_id FROM app.instagram_channels()`;
     const whatsapp = await this.db.client.$queryRaw<{ id: string; tenant_id: string }[]>`
       SELECT id, tenant_id FROM app.whatsapp_channels()`;
-    const channels = [
-      ...instagram.map((row) => ({ ...row, channel: "instagram" as const })),
-      ...whatsapp.map((row) => ({ ...row, channel: "whatsapp" as const })),
-    ];
+    // A demo não tem token de verdade: fica fora da renovação.
+    const channels = await withoutDemo(
+      this.db,
+      [...instagram.map((row) => ({ ...row, channel: "instagram" as const })), ...whatsapp.map((row) => ({ ...row, channel: "whatsapp" as const }))],
+      (row) => row.tenant_id,
+    );
     for (const { id, tenant_id: tenantId, channel } of channels) {
       try {
         await (channel === "instagram" ? this.refreshInstagram(tenantId, id) : this.refreshWhatsApp(tenantId, id));

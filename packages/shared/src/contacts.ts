@@ -85,13 +85,21 @@ export const CANCELLATION_TAG = "Cancelamento recorrente";
 export const COURIER_TAG = "Entregador";
 /** Funcionário: conversa comum com a equipe, sem nenhuma automação e sem IA. */
 export const STAFF_TAG = "Funcionário";
+/**
+ * Bot: número automático que manda em sequência mensagens que o Dish Desk não exibe. Posta pelo inbound (BOT_RULE) ou
+ * pela equipe. As mensagens dele são guardadas, mas não abrem atendimento: sem menu, sem IA, conversa resolvida. Tirar a
+ * tag desfaz.
+ */
+export const BOT_TAG = "Bot";
+/** Mensagens seguidas, todas de tipo que o Dish Desk não exibe, dentro da janela, que marcam o contato como bot. */
+export const BOT_RULE = { unsupportedInARow: 3, windowMinutes: 10 } as const;
 /** As únicas tags que a equipe põe e tira à mão; o recálculo das automáticas não mexe nelas. */
-export const MANUAL_TAGS = [CANCELLATION_TAG, COURIER_TAG, STAFF_TAG] as const;
+export const MANUAL_TAGS = [CANCELLATION_TAG, COURIER_TAG, STAFF_TAG, BOT_TAG] as const;
 export type ManualTag = (typeof MANUAL_TAGS)[number];
 
-/** Entregador e funcionário: nenhuma chamada de IA (atendimento, revisão das respostas, sugestão, avaliação). */
+/** Entregador, funcionário e bot: nenhuma chamada de IA (atendimento, revisão das respostas, sugestão, avaliação). */
 export function withoutAi(tags: readonly string[]): boolean {
-  return tags.includes(COURIER_TAG) || tags.includes(STAFF_TAG);
+  return tags.includes(COURIER_TAG) || tags.includes(STAFF_TAG) || tags.includes(BOT_TAG);
 }
 
 export type ContactOrderSummary = {

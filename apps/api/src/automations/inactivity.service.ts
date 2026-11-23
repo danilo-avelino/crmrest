@@ -6,6 +6,7 @@ import type { Queue } from "bullmq";
 import { EVALUATION_DELAY_MS, scheduleEvaluation } from "../ai/ai-evaluation.service.js";
 import { ENV, type Env } from "../config/env.js";
 import { DatabaseService } from "../core/database.service.js";
+import { withoutDemo } from "../demo/demo.js";
 import { NOTICE_LIMIT_MS } from "../orders/order-notice.service.js";
 import { withOrderTenants } from "../orders/order-scope.js";
 import { type AiJob, type OutboundJob, QUEUES } from "../queues/queues.module.js";
@@ -62,7 +63,8 @@ export class InactivityService implements OnModuleInit {
    */
   async resolveIdle(now = new Date()): Promise<void> {
     const tenants = await this.db.client.$queryRaw<{ id: string }[]>`SELECT id FROM app.active_tenants()`;
-    for (const { id: tenantId } of tenants) {
+    // A demo fica como o seed deixou: as conversas abertas não se resolvem sozinhas no meio da apresentação.
+    for (const { id: tenantId } of await withoutDemo(this.db, tenants, (tenant) => tenant.id)) {
       try {
         await this.resolveIdleOf(tenantId, now);
       } catch (error) {

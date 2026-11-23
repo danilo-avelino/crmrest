@@ -4,6 +4,7 @@ import { Injectable, Logger, type OnModuleInit } from "@nestjs/common";
 import * as Sentry from "@sentry/nestjs";
 import type { Queue } from "bullmq";
 import { DatabaseService } from "../core/database.service.js";
+import { withoutDemo } from "../demo/demo.js";
 import { JevClient, type JevQuestion } from "../defense/jev.client.js";
 import { type DuplicateReviewJob, QUEUES } from "../queues/queues.module.js";
 import { RealtimeEmitter } from "../realtime/realtime.emitter.js";
@@ -75,7 +76,7 @@ export class ContactDuplicateReviewService implements OnModuleInit {
   async sweep(): Promise<void> {
     if (!this.jev.enabled) return;
     const tenants = await this.db.client.$queryRaw<{ id: string }[]>`SELECT id FROM app.active_tenants()`;
-    for (const { id: tenantId } of tenants) {
+    for (const { id: tenantId } of await withoutDemo(this.db, tenants, (tenant) => tenant.id)) {
       try {
         await this.enqueue(tenantId);
       } catch (error) {

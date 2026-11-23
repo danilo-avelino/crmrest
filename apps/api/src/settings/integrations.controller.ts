@@ -18,6 +18,7 @@ import { CurrentAuth, Public, type RequestAuth } from "../auth/auth.decorators.j
 import { ZodPipe } from "../common/zod.pipe.js";
 import { ENV, type Env } from "../config/env.js";
 import { type InstagramCallback, IntegrationsService } from "./integrations.service.js";
+import { DemoLocked } from "../demo/demo.guard.js";
 
 const IntegrationsQuery = z.object({ tenantId: z.uuid() });
 // Tentativa de conexão do WhatsApp por QR Code: o id do restaurante e um sufixo aleatório (IntegrationsService.whatsappQrStart).
@@ -39,6 +40,7 @@ export class IntegrationsController {
     return this.integrations.list(auth, query.tenantId);
   }
 
+  @DemoLocked()
   @Post(":tenantId")
   add(
     @Param("tenantId", ParseUUIDPipe) tenantId: string,
@@ -49,6 +51,7 @@ export class IntegrationsController {
   }
 
   /** iFood distribuído: conecta as lojas escolhidas entre as que vieram na autorização. */
+  @DemoLocked()
   @Post(":tenantId/ifood/stores")
   addIfoodStores(
     @Param("tenantId", ParseUUIDPipe) tenantId: string,
@@ -59,12 +62,14 @@ export class IntegrationsController {
   }
 
   /** iFood distribuído: código de vinculação para o responsável pela loja autorizar o Dish Desk. */
+  @DemoLocked()
   @Post(":tenantId/ifood/link-code")
   ifoodLinkCode(@Param("tenantId", ParseUUIDPipe) tenantId: string, @CurrentAuth() auth: RequestAuth): Promise<IfoodLinkCodeDto> {
     return this.integrations.ifoodLinkCode(auth, tenantId);
   }
 
   /** Endereço da tela de login do Instagram, para o painel abrir. */
+  @DemoLocked()
   @Get(":tenantId/instagram/login")
   instagramLogin(
     @Param("tenantId", ParseUUIDPipe) tenantId: string,
@@ -100,6 +105,7 @@ export class IntegrationsController {
     return { url: await this.integrations.finishInstagramLogin(query, nonce) };
   }
 
+  @DemoLocked()
   @Post(":tenantId/:channelId/disconnect")
   disconnect(
     @Param("tenantId", ParseUUIDPipe) tenantId: string,
@@ -121,6 +127,7 @@ export class IntegrationsController {
 
   /** WhatsApp ou Instagram: restaurantes, além deste, cujos pedidos o atendimento da conta também procura. */
   /** Cardápio Web e Neemo: importa em segundo plano os pedidos antigos da loja (clientes, endereços, tags e alerta de fraude). */
+  @DemoLocked()
   @Post(":tenantId/:channelId/order-history")
   @HttpCode(200)
   importOrderHistory(
@@ -141,6 +148,7 @@ export class IntegrationsController {
     return this.integrations.setServedTenants(auth, tenantId, channelId, body.tenantIds);
   }
 
+  @DemoLocked()
   @Delete(":tenantId/:channelId")
   @HttpCode(204)
   remove(
@@ -151,6 +159,7 @@ export class IntegrationsController {
     return this.integrations.remove(auth, tenantId, channelId);
   }
 
+  @DemoLocked()
   @Post(":tenantId/whatsapp/signup")
   whatsappSignup(
     @Param("tenantId", ParseUUIDPipe) tenantId: string,
@@ -161,12 +170,14 @@ export class IntegrationsController {
   }
 
   /** WhatsApp por QR Code: cria a tentativa de conexão e devolve o primeiro QR Code. */
+  @DemoLocked()
   @Post(":tenantId/whatsapp/qr")
   whatsappQrStart(@Param("tenantId", ParseUUIDPipe) tenantId: string, @CurrentAuth() auth: RequestAuth): Promise<WhatsAppQrDto> {
     return this.integrations.whatsappQrStart(auth, tenantId);
   }
 
   /** O QR Code atual ou, se o número já foi conectado, a integração. */
+  @DemoLocked()
   @Get(":tenantId/whatsapp/qr/:session")
   whatsappQrStatus(
     @Param("tenantId", ParseUUIDPipe) tenantId: string,
@@ -176,6 +187,7 @@ export class IntegrationsController {
     return this.integrations.whatsappQrStatus(auth, tenantId, session);
   }
 
+  @DemoLocked()
   @Delete(":tenantId/whatsapp/qr/:session")
   @HttpCode(204)
   whatsappQrCancel(

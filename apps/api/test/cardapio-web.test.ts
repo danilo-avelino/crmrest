@@ -449,8 +449,12 @@ describe("Cardápio Web (pedidos por polling)", () => {
   it("falha de rede no polling só vai ao Sentry se persistir; erro HTTP vai de imediato", async () => {
     const report = vi.mocked(Sentry.captureException);
     report.mockClear();
-    // O polling lê todas as lojas conectadas do banco (outras suítes podem deixar canais): cada uma conta à parte.
-    const stores = await admin.channel.count({ where: { type: "CARDAPIO_WEB", status: "CONNECTED" } });
+    // O polling lê todas as lojas conectadas do banco (outras suítes podem deixar canais): cada uma conta à parte. A da
+    // conta de demonstração (pnpm demo:reset no banco de dev) fica fora do polling.
+    const connected = { type: "CARDAPIO_WEB" as const, status: "CONNECTED" as const };
+    const stores =
+      (await admin.channel.count({ where: connected })) -
+      (await admin.channel.count({ where: { ...connected, tenant: { settings: { path: ["demo"], equals: true } } } }));
     const updated = vi.spyOn(service.client, "updatedOrders");
     try {
       updated.mockRejectedValue(new TypeError("fetch failed", { cause: new Error("connect ETIMEDOUT 104.20.38.142:443") }));

@@ -4,6 +4,8 @@ import type { Job, Queue } from "bullmq";
 import { AiForwardService } from "../ai/ai-forward.service.js";
 import { ContactTagsService } from "../contacts/contact-tags.service.js";
 import { DatabaseService } from "../core/database.service.js";
+import { isDemoTenant } from "../demo/demo.js";
+import { DemoService } from "../demo/demo.service.js";
 import { AdminNotificationsService } from "../notifications/admin-notifications.service.js";
 import { MetaCapiService } from "../funnel/meta-capi.service.js";
 import { PublicOrderService } from "../public/public-order.service.js";
@@ -37,6 +39,7 @@ export class AutomationsProcessor extends JobProcessor implements OnModuleInit {
     private readonly db: DatabaseService,
     private readonly menuOrders: PublicOrderService,
     private readonly capi: MetaCapiService,
+    private readonly demo: DemoService,
     @InjectQueue(QUEUES.automations) private readonly automations: Queue,
   ) {
     super();
@@ -45,6 +48,8 @@ export class AutomationsProcessor extends JobProcessor implements OnModuleInit {
   async onModuleInit(): Promise<void> {
     await this.automations.upsertJobScheduler("menu-pix-sweep", { every: 60_000 }, { name: "menu-pix-sweep" });
     await this.automations.upsertJobScheduler("meta-capi-sweep", { every: 60_000 }, { name: "meta-capi-sweep" });
+    // Conta de demonstração: volta ao estado inicial todo dia, com as datas de hoje.
+    await this.automations.upsertJobScheduler("demo-reset", { pattern: "0 5 * * *", tz: "America/Sao_Paulo" }, { name: "demo-reset" });
   }
 
   async process(job: Job<AutomationJob | AiForwardJob | AdminMessageJob>): Promise<void> {
@@ -56,11 +61,14 @@ export class AutomationsProcessor extends JobProcessor implements OnModuleInit {
     if (job.name === "auto-resolve-sweep") return this.inactivity.resolveIdle();
     if (job.name === "menu-pix-sweep") return this.menuOrders.sweepPix();
     if (job.name === "meta-capi-sweep") return this.capi.sweep();
+    if (job.name === "demo-reset") return this.demo.resetAll();
     if (job.name === "ai-forward") return this.aiForward.forward(job.data.tenantId);
     const data = job.data as AutomationJob;
     const { tenantId, conversationId } = data;
     // Dish Desk pausado: as etapas agendadas (mesmo as de antes da pausa) não rodam.
     if (await tenantPaused(this.db, tenantId)) return;
+    // Conta de demonstração: as automações não rodam, para a conversa seguir só o roteiro da simulação.
+    if (await isDemoTenant(this.db, tenantId)) return;
     if (job.name === "phone-reminder") await this.phoneCollection.remind(tenantId, conversationId);
     if (job.name === "phone-give-up") await this.phoneCollection.giveUp(tenantId, conversationId);
     if (job.name === "phone-at-end") await this.phoneCollection.askAtEnd(tenantId, conversationId);

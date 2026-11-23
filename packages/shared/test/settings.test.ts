@@ -71,6 +71,9 @@ describe("personalidade do atendimento", () => {
     menuPaymentConfirmed: ["pedido", "hora"],
     menuClosedScheduling: ["retorno"],
     menuLoginCode: ["codigo", "loja"],
+    courierCustomerLink: ["link", "pedido"],
+    courierArrivalCustomerText: ["loja", "pedido"],
+    courierFrontDeskCustomerText: ["loja", "pedido"],
     menuItemSoldOut: ["item"],
     menuOrderConfirmed: ["nome", "pedido", "quando", "pagamento"],
   };

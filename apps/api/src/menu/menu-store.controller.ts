@@ -9,6 +9,7 @@ import { adminScope, memberScope } from "../settings/tenant-admin.js";
 import { kindLimits, StorageService, tooBigMessage } from "../storage/storage.service.js";
 import { readBody } from "./menu-photo.controller.js";
 import { requireModule } from "./menu.service.js";
+import { DemoLocked } from "../demo/demo.guard.js";
 
 const uuid = (name: string) => Param(name, ParseUUIDPipe);
 
@@ -38,12 +39,14 @@ export class MenuStoreController {
     return this.merge(auth, tenantId, () => body);
   }
 
+  @DemoLocked()
   @Put("logo")
   @HttpCode(200)
   logo(@uuid("tenantId") tenantId: string, @Req() req: Request, @CurrentAuth() auth: RequestAuth) {
     return this.upload(auth, tenantId, req, "logo");
   }
 
+  @DemoLocked()
   @Put("cover")
   @HttpCode(200)
   cover(@uuid("tenantId") tenantId: string, @Req() req: Request, @CurrentAuth() auth: RequestAuth) {

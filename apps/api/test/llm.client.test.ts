@@ -29,7 +29,8 @@ describe("LlmClient: LLM reserva", () => {
   const usages: { tenantIds: string[]; data: unknown }[] = [];
   const db = {
     withTenants: (scope: { tenantIds: string[] }, fn: (tx: unknown) => Promise<unknown>) =>
-      fn({ aiUsage: { create: ({ data }: { data: unknown }) => usages.push({ tenantIds: scope.tenantIds, data }) } }),
+      // tenant: a guarda da conta de demonstração lê a marca do restaurante (aqui, um restaurante comum).
+      fn({ aiUsage: { create: ({ data }: { data: unknown }) => usages.push({ tenantIds: scope.tenantIds, data }) }, tenant: { findUnique: async () => null } }),
   } as unknown as DatabaseService;
 
   beforeAll(async () => {

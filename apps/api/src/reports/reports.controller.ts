@@ -5,6 +5,7 @@ import { CurrentAuth, type RequestAuth } from "../auth/auth.decorators.js";
 import { ZodPipe } from "../common/zod.pipe.js";
 import { IfoodReviewsService } from "./ifood-reviews.service.js";
 import { ReportsService } from "./reports.service.js";
+import { DemoLocked } from "../demo/demo.guard.js";
 
 /** `all`: todos os restaurantes em que quem pede é administrador. */
 const TenantChoice = z.union([z.uuid(), z.literal("all")]);
@@ -31,6 +32,7 @@ export class ReportsController {
   }
 
   /** `storeId`: o canal da loja do iFood; `reviewId`: o id da avaliação no iFood. */
+  @DemoLocked()
   @Post("ifood-reviews/:storeId/:reviewId/answer")
   @HttpCode(204)
   answerIfoodReview(

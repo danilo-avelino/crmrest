@@ -44,6 +44,8 @@ export type AuthTenant = {
   openConversations: number;
   blockedBy: TenantBlock | null;
   billing: TenantBilling | null;
+  /** Conta de demonstração (apresentações de venda): nada sai do Dish Desk e o painel mostra o menu escondido da demo. */
+  demo: boolean;
 };
 
 /** support: super admin num restaurante de que não é membro (acesso de suporte, auditado); age como admin. */
