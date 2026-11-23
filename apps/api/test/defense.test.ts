@@ -191,19 +191,28 @@ describe("defesa da API em DEFENSE_MODE=watch (o padrão)", () => {
     await app?.close();
   });
 
+  const list = async (): Promise<DefenseEventDto[]> =>
+    (await request(app.getHttpServer()).get("/api/platform/defense").set("Authorization", `Bearer ${superToken}`).expect(200)).body;
+
   it("só registra o que banaria: o IP segue entrando e a plataforma bane à mão", async () => {
     const from = (path: string) => request(app.getHttpServer()).get(path).set("X-Real-IP", "203.0.113.50");
-    const list = async (): Promise<DefenseEventDto[]> =>
-      (await request(app.getHttpServer()).get("/api/platform/defense").set("Authorization", `Bearer ${superToken}`).expect(200)).body;
 
-    await from("/.env").expect(404);
-    await from("/.git/config").expect(404);
+    for (let i = 0; i < NOT_FOUND_LIMIT + 5; i++) await from(`/api/rota-${i}`).expect(404);
     await vi.waitFor(async () => expect((await list()).filter((event) => event.ip === "203.0.113.50")).toHaveLength(1));
     const [event] = (await list()).filter((item) => item.ip === "203.0.113.50");
-    expect(event).toMatchObject({ reason: "sensitive_probe", action: "watched", active: false, bannedUntil: null, analysis: { state: "off" } });
+    expect(event).toMatchObject({ reason: "endpoint_enumeration", action: "watched", active: false, bannedUntil: null, analysis: { state: "off" } });
     await from("/api/health/live").expect(200);
 
     await request(app.getHttpServer()).post(`/api/platform/defense/${event!.id}/ban`).set("Authorization", `Bearer ${superToken}`).expect(201);
     await from("/api/health/live").expect(403);
+  });
+
+  it("a sondagem de arquivo sensível bane mesmo assim", async () => {
+    const from = (path: string) => request(app.getHttpServer()).get(path).set("X-Real-IP", "203.0.113.51");
+
+    await from("/.env").expect(404);
+    await vi.waitFor(() => from("/api/health/live").expect(403));
+    const [event] = (await list()).filter((item) => item.ip === "203.0.113.51");
+    expect(event).toMatchObject({ reason: "sensitive_probe", action: "banned", active: true });
   });
 });

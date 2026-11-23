@@ -208,7 +208,8 @@ export type DefenseAnalysisDto = {
 
 /**
  * Caso da defesa da API (painel da plataforma), do mais recente ao mais antigo. `banned`: a regra baniu o IP na hora,
- * com prazo; `watched`: a regra baniria, mas a defesa só registra (DEFENSE_MODE=watch); `suspected`: só suspeita, o
+ * com prazo; `watched`: a regra baniria, mas a defesa só registra (DEFENSE_MODE=watch, menos na sondagem de arquivo
+ * sensível, que bane sempre); `suspected`: só suspeita, o
  * Jev analisa e a plataforma decide se bane. `active`: o banimento vale agora.
  */
 export type DefenseEventDto = {

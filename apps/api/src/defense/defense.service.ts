@@ -56,7 +56,7 @@ export class DefenseService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(DefenseService.name);
   private readonly redis: Redis;
   private readonly neverBan: BlockList;
-  /** DEFENSE_MODE=watch: as regras só registram o que teriam banido. */
+  /** DEFENSE_MODE=watch: as regras só registram o que teriam banido (menos a sondagem de arquivo sensível). */
   private readonly watchOnly: boolean;
 
   constructor(
@@ -165,8 +165,9 @@ export class DefenseService implements OnModuleInit, OnModuleDestroy {
   }
 
   private async open(ip: string, req: Request, reason: DefenseReason, rule: "banned" | "suspected"): Promise<void> {
-    // Em DEFENSE_MODE=watch, o que a regra banaria fica só registrado ("watched").
-    const action: StoredEvent["action"] = rule === "banned" && this.watchOnly ? "watched" : rule;
+    // Em DEFENSE_MODE=watch, o que a regra banaria fica só registrado ("watched"). A sondagem de arquivo sensível bane
+    // sempre: nenhum visitante de verdade pede um .env ou um .git.
+    const action: StoredEvent["action"] = rule === "banned" && this.watchOnly && reason !== "sensitive_probe" ? "watched" : rule;
     const userAgent = req.headers["user-agent"]?.slice(0, 200) ?? null;
     const event: StoredEvent = {
       id: randomUUID(),

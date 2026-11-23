@@ -39,8 +39,9 @@ export function PlatformDefense() {
             <p className="mt-1 text-ink-2">
               Quem sonda arquivos sensíveis, varre rotas ou insiste no login é banido na hora, com prazo. O Jev analisa cada
               caso depois: com o ataque confirmado, o banimento passa a 7 dias. A suspeita de abuso de login só é banida aqui.
-              Enquanto a defesa estiver só registrando, os casos aparecem como “Seria banido”: confira se os IPs são de
-              visitantes de verdade antes de ligar o banimento.
+              Enquanto a defesa estiver só registrando, a varredura de rotas e o abuso de login aparecem como “Seria
+              banido”: confira se os IPs são de visitantes de verdade antes de ligar o banimento. A sondagem de arquivo
+              sensível bane sempre.
             </p>
           </div>
           {events.data.length === 0 ? (
