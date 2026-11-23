@@ -32,6 +32,8 @@ describe("Transcrição dos áudios do cardápio (F5-02, F5-03)", () => {
   let channelId = "";
   let contactId = "";
 
+  // Cada áudio 1 ms depois do anterior: no mesmo milissegundo, o serviço não sabe qual é o último e não responde.
+  let last = 0;
   const audio = async () =>
     (
       await admin.message.create({
@@ -41,6 +43,7 @@ describe("Transcrição dos áudios do cardápio (F5-02, F5-03)", () => {
           channelId,
           direction: "INBOUND",
           type: "AUDIO",
+          createdAt: new Date((last = Math.max(Date.now(), last + 1))),
           content: { media: { mimeType: "audio/ogg; codecs=opus", storageKey: `tenants/${fx.b.id}/audio/${randomUUID()}.ogg`, seconds: 4 } },
         },
       })
