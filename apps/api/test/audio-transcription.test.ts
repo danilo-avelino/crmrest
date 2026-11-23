@@ -58,7 +58,8 @@ describe("Transcrição dos áudios do cardápio (F5-02, F5-03)", () => {
     provider = new FakeProvider();
     processor.provider = provider;
     for (const storage of app.get(StorageService, { each: true })) vi.spyOn(storage, "get").mockResolvedValue(new Uint8Array([1, 2, 3]));
-    aiAdd = vi.spyOn(app.get<Queue>(getQueueToken(QUEUES.ai)), "add");
+    // Só registra: o job "reply" de verdade faria a IA responder na conversa, e a próxima mensagem deixaria de ser o áudio.
+    aiAdd = vi.spyOn(app.get<Queue>(getQueueToken(QUEUES.ai)), "add").mockResolvedValue(undefined as never);
     fx = await createAuthFixture();
     await admin.tenantModule.create({ data: { tenantId: fx.b.id, module: "MENU" } });
     const menu = await admin.menu.create({ data: { tenantId: fx.b.id, name: "Cardápio" } });
