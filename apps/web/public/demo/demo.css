@@ -121,6 +121,31 @@ button { font: inherit; cursor: pointer; }
   .tour-bar { flex-direction: column; align-items: stretch; }
 }
 
+/* ---------- celular: tela cheia na horizontal (demo.js: enterFull) ---------- */
+.tour-exit { display: none; }
+.tour.full { position: fixed; inset: 0; z-index: 1000; max-width: none; margin: 0; background: #0E0D0B; }
+.tour.full .tour-bar, .tour.full .hd-bar { display: none; }
+.tour.full .tour-box { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); }
+.tour.full.rotated .tour-box { transform: translate(-50%, -50%) rotate(90deg); }
+.tour.full .tour-frame { position: absolute; border-radius: 6px; box-shadow: none; }
+/* o balão vira só o botão "Próximo": a explicação está na narração */
+.tour.full .tour-tip { width: auto; padding: 0; border-radius: 999px; background: none; box-shadow: none; }
+.tour.full .tour-n, .tour.full .tour-t, .tour.full .tour-p, .tour.full #back { display: none; }
+.tour.full .tour-act { margin: 0; }
+.tour.full .tour-tip #next, .tour.full .tour-tip.hot-step #next { display: inline-flex; height: 28px; padding: 0 12px; border-radius: 999px; font-size: 12px;
+  background: var(--ink); color: var(--paper); box-shadow: 0 6px 16px -6px rgba(0,0,0,.6), 0 0 0 1px rgba(247,244,239,.25); }
+.tour.full .tour-hot { width: 20px; height: 20px; margin: -10px 0 0 -10px; }
+.tour.full .tour-hot::after { inset: 6px; }
+.tour.full .tour-end { border-radius: 0; background: rgba(14,13,11,.55); }
+.tour.full .tour-card { padding: 14px 16px; max-width: 360px; }
+.tour.full .tour-card h2 { font-size: 18px; }
+.tour.full .tour-card p { font-size: 13px; }
+.tour.full .pg-mk.big { width: 32px; height: 32px; margin-bottom: 6px; }
+.tour.full .pg-mk.big svg { width: 22px; height: 22px; }
+.tour.full .tour-exit { display: inline-flex; position: absolute; top: 8px; right: 8px; z-index: 9; width: 32px; height: 32px; align-items: center; justify-content: center;
+  padding: 0; border: 0; border-radius: 50%; background: rgba(247,244,239,.16); color: var(--paper); font-size: 15px; }
+.tour.full .tour-exit[hidden] { display: none; }
+
 @media (prefers-reduced-motion: reduce) {
   .tour-hot::before { animation: none; }
   .tour-tip { animation: none; }

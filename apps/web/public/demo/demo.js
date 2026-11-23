@@ -105,9 +105,52 @@
   new ResizeObserver(() => {
     k = screen.clientWidth / W;
     frame.style.setProperty('--k', k);
-    tour.classList.toggle('docked', box.clientWidth < 760);
+    tour.classList.toggle('docked', !full && box.clientWidth < 760);
     place();
   }).observe(frame);
+
+  // ---------------- celular: tela cheia na horizontal ----------------
+  // No celular a demo abre por cima da página, na horizontal: com o aparelho em pé, a caixa gira 90°. O balão vira só
+  // o botão "Próximo" (a explicação fica na narração). O Android ainda entra em tela cheia de verdade e trava na
+  // horizontal; o iPhone não tem tela cheia para a página, e a caixa fixa ocupa a tela.
+  const phone = () => matchMedia('(pointer: coarse)').matches && Math.min(innerWidth, innerHeight) < 600;
+  let full = false;
+  function layoutFull() {
+    if (!full) return;
+    const rotated = innerHeight > innerWidth;
+    const w = rotated ? innerHeight : innerWidth, h = rotated ? innerWidth : innerHeight;
+    tour.classList.toggle('rotated', rotated);
+    box.style.width = w + 'px';
+    box.style.height = h + 'px';
+    const fw = Math.min(w, (h * W) / 900);
+    frame.style.width = fw + 'px';
+    frame.style.left = (w - fw) / 2 + 'px';
+    frame.style.top = (h - (fw * 900) / W) / 2 + 'px';
+  }
+  function enterFull() {
+    full = true;
+    tour.classList.add('full');
+    tour.classList.remove('docked');
+    $('#exit').hidden = false;
+    document.documentElement.style.overflow = 'hidden';
+    layoutFull();
+    const ask = tour.requestFullscreen?.bind(tour) ?? tour.webkitRequestFullscreen?.bind(tour);
+    if (ask) Promise.resolve(ask()).then(() => window.screen.orientation?.lock?.('landscape')).catch(() => {});
+  }
+  function exitFull() {
+    if (!full) return;
+    full = false;
+    tour.classList.remove('full', 'rotated');
+    $('#exit').hidden = true;
+    document.documentElement.style.overflow = '';
+    for (const el of [box, frame]) el.removeAttribute('style');
+    frame.style.setProperty('--k', k);
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+  }
+  $('#exit').addEventListener('click', exitFull);
+  addEventListener('resize', layoutFull);
+  // Saiu da tela cheia pelo sistema (voltar do Android): sai do modo inteiro.
+  document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement && full && !document.webkitFullscreenElement) exitFull(); });
 
   // ---------------- capítulos ----------------
   const chapters = $('#chapters');
@@ -124,8 +167,11 @@
     const doc = frames[beat.state]?.contentDocument;
     const el = doc?.querySelector(`[data-aim="${beat.aim}"]`);
     if (!el) return null;
-    const r = el.getBoundingClientRect(), s = screen.getBoundingClientRect(), b = box.getBoundingClientRect();
-    return { x: s.left - b.left + r.left * k, y: s.top - b.top + r.top * k, w: r.width * k, h: r.height * k };
+    // Posição da tela na caixa pelo layout (offset), não pela tela: com a caixa girada no celular, o retângulo da tela gira junto.
+    const r = el.getBoundingClientRect();
+    let sx = 0, sy = 0;
+    for (let node = screen; node && node !== box; node = node.offsetParent) { sx += node.offsetLeft; sy += node.offsetTop; }
+    return { x: sx + r.left * k, y: sy + r.top * k, w: r.width * k, h: r.height * k };
   }
 
   /** Contorno, área clicável, ponto e balão no alvo do passo atual (também a cada mudança de tamanho). */
@@ -141,7 +187,7 @@
     hot.style.left = r.x + r.w - 2 + 'px';
     hot.style.top = r.y + 2 + 'px';
     if (tour.classList.contains('docked')) { tip.style.left = tip.style.top = ''; return; }
-    const BW = box.clientWidth, BH = frame.offsetHeight, w = tip.offsetWidth, h = tip.offsetHeight, gap = 18;
+    const BW = box.clientWidth, BH = box.clientHeight, w = tip.offsetWidth, h = tip.offsetHeight, gap = 18;
     let x, y;
     if (beat.side === 'right') { x = r.x + r.w + gap; y = r.y + r.h / 2 - h / 2; }
     else if (beat.side === 'left') { x = r.x - gap - w; y = r.y + r.h / 2 - h / 2; }
@@ -207,6 +253,7 @@
   function start(withSound) {
     setSound(withSound);
     $('#start').hidden = true;
+    if (phone()) enterFull();
     go(0);
   }
   $('#go').addEventListener('click', () => start(true));
