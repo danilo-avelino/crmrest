@@ -32,7 +32,7 @@ import type { Queue } from "bullmq";
 import { scheduleEvaluation } from "../ai/ai-evaluation.service.js";
 import { LlmClient } from "../ai/llm.client.js";
 import type { RequestAuth } from "../auth/auth.decorators.js";
-import { AUTOMATIC_ONLY, type AutomationState, channelSends, closedNow, isPaused, localDate, setAutomationState, systemEvent, teamRepliedUpdate, WITH_TEAM } from "../automations/automation.js";
+import { AUTOMATIC_ONLY, type AutomationState, channelSends, closedNow, firstName, isPaused, localDate, setAutomationState, systemEvent, teamRepliedUpdate, WITH_TEAM } from "../automations/automation.js";
 import { PHONE_AT_END_DELAY_MS } from "../automations/phone-collection.service.js";
 import { contactsAwaitingDecision } from "../orders/fraud-alert.js";
 import { ENV, type Env } from "../config/env.js";
@@ -504,6 +504,13 @@ export class ConversationsService {
         });
         if (!member?.isActive) throw new BadRequestException("Esta pessoa não atende neste restaurante.");
       }
+      const resolved = body.status === "RESOLVED" && current.status !== "RESOLVED";
+      if (resolved) {
+        // Fica marcado na conversa quem resolveu e quando (a hora vai na pílula); o cliente não vê. Antes do update, para a
+        // prévia da lista já sair com ele.
+        const user = await tx.user.findUnique({ where: { id: auth.userId }, select: { name: true } });
+        await systemEvent(tx, current, { event: "resolved", text: `Conversa resolvida por ${firstName(user?.name ?? null) ?? "a equipe"}` });
+      }
       const updated = await tx.conversation.update({
         where: { id: conversationId },
         data: {
@@ -523,7 +530,7 @@ export class ConversationsService {
         },
         include: conversationListInclude,
       });
-      return { conversation: updated, resolved: body.status === "RESOLVED" && current.status !== "RESOLVED" };
+      return { conversation: updated, resolved };
     });
     // Fim do atendimento: a pesquisa de satisfação decide no worker se pergunta a nota; o telefone que ficou de fora
     // (a equipe estava na conversa) é pedido agora; a IA avalia o atendimento.

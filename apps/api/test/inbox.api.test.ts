@@ -3,6 +3,7 @@ import type { INestApplication } from "@nestjs/common";
 import { hash } from "@node-rs/argon2";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { firstName } from "../src/automations/automation.js";
 import { InactivityService } from "../src/automations/inactivity.service.js";
 import { accessTokenFor, admin, createAuthFixture, createTestApp, PASSWORD } from "./helpers.js";
 
@@ -215,6 +216,13 @@ describe("API da Inbox", () => {
     expect(done.body.items.map((c: { id: string }) => c.id)).toEqual([mariaChat.id]);
     // Resolvida: o próximo atendimento começa sem a equipe.
     expect((await admin.conversation.findUniqueOrThrow({ where: { id: mariaChat.id } })).teamInvolved).toBe(false);
+    // Fica marcado na conversa quem resolveu (evento interno: o cliente não recebe); resolver de novo não repete a marca.
+    await send("patch", `/conversations/${mariaChat.id}`, { status: "RESOLVED" }).expect(200);
+    const marks = await admin.message.findMany({ where: { conversationId: mariaChat.id, content: { path: ["event"], equals: "resolved" } } });
+    const user = await admin.user.findUniqueOrThrow({ where: { id: fx.user.id }, select: { name: true } });
+    const text = `Conversa resolvida por ${firstName(user.name) ?? "a equipe"}`;
+    expect(marks).toMatchObject([{ direction: "INTERNAL", type: "SYSTEM", status: null, content: { event: "resolved", text } }]);
+    expect(resolved.body.lastMessage.preview).toBe(text);
   });
 
   it("resolve sozinha a conversa só com automação parada há 30 minutos, sem mensagem ao cliente", async () => {

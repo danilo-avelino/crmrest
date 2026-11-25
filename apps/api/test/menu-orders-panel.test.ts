@@ -11,7 +11,7 @@ describe("Pedidos do cardápio no painel (F3-12)", () => {
   let token: string;
   const ids: Record<string, string> = {};
 
-  async function place(tenantId: string, key: string, extra: { source?: "MENU" | "PLATFORM"; channelId?: string; scheduledFor?: Date; paymentMethod?: string; raw?: object; items?: object[] } = {}) {
+  async function place(tenantId: string, key: string, extra: { source?: "MENU" | "PLATFORM"; channelId?: string; scheduledFor?: Date; paymentMethod?: string; raw?: object; items?: object[]; status?: "CANCELED" } = {}) {
     const contact = await admin.contact.create({ data: { tenantId, name: `Cliente ${key}`, phone: `+55119${String(Math.floor(Math.random() * 1e8)).padStart(8, "0")}` } });
     const order = await admin.order.create({
       data: {
@@ -21,7 +21,7 @@ describe("Pedidos do cardápio no painel (F3-12)", () => {
         externalOrderId: randomUUID(),
         displayCode: key,
         source: extra.source ?? "MENU",
-        status: "CONFIRMED",
+        status: extra.status ?? "CONFIRMED",
         scheduledFor: extra.scheduledFor ?? null,
         paymentMethod: extra.paymentMethod ?? null,
         subtotal: 56,
@@ -41,6 +41,8 @@ describe("Pedidos do cardápio no painel (F3-12)", () => {
     (await request(app.getHttpServer()).get(`/api/orders?period=7d${query}`).set("Authorization", `Bearer ${token}`).expect(200)).body as {
       items: { id: string; channelType: string; menu: unknown; items: { name: string }[] }[];
       menuOrigin: boolean;
+      total: number;
+      summary?: { orders: number; sales: string; canceled: number };
     };
 
   beforeAll(async () => {
@@ -91,6 +93,17 @@ describe("Pedidos do cardápio no painel (F3-12)", () => {
     expect(found).toEqual([ids.dinheiro, ids.retirada, ids.pix].sort());
     expect(items.every((order) => order.channelType === "MENU")).toBe(true);
     expect(JSON.stringify(items)).not.toContain(ids.alheio!);
+  });
+
+  it("resumo do período: pedidos, vendas sem os cancelados e cancelados, sem os filtros da lista", async () => {
+    await place(fx.a.id, "cancelado", { status: "CANCELED" });
+    const page = await list("&channel=MENU");
+    expect(page.total).toBe(4);
+    // Os 5 pedidos do restaurante no período (o do iFood entra), 4 × R$ 61 em vendas; o de outro restaurante não entra.
+    expect(page.summary).toEqual({ orders: 5, sales: "244", canceled: 1 });
+    expect((await list()).summary).toEqual(page.summary);
+    // A lista de produção (Inbox) não calcula o resumo.
+    expect((await list("&production=true")).summary).toBeUndefined();
   });
 
   it("filtro Agendados: só os com horário marcado, do que sai primeiro para o último", async () => {

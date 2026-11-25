@@ -16,6 +16,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangleIcon,
   BotIcon,
+  ClockIcon,
   LoaderCircleIcon,
   MessageCircleIcon,
   PlusIcon,
@@ -29,7 +30,7 @@ import { useIfoodWidget } from "@/components/ifood-widget";
 import { ChannelDot, StatusBadge } from "@/components/common/bits";
 import { useDebounced } from "@/components/inbox/conversation-list";
 import { type DayRange, DayRangePicker } from "@/components/inbox/day-range-picker";
-import { OrderStatusBadge } from "@/components/orders/order-status";
+import { ORDER_STATUS, OrderStatusBadge, OrderTrack, orderStep } from "@/components/orders/order-status";
 import { SetupReminder } from "@/components/onboarding/setup-reminder";
 import { OrderDetails } from "@/components/orders/order-list";
 import {
@@ -528,9 +529,9 @@ export function TodayOrders({
   const late = production.data?.items.filter((order) => order.late).length ?? 0;
   // O modal acompanha a lista; o pedido que sai da produção (ex.: despachado) continua aberto como estava.
   const open = selected && (data?.items.find((order) => order.id === selected.id) ?? selected);
+  // Os atrasados saíram da faixa: viram o aviso logo abaixo dela (design: aviso colado no que ele afeta).
   const strip = [
     { label: "Em produção", value: stages.data?.production },
-    { label: "Atrasados", value: production.data && late, alert: late > 0 },
     { label: "Prontos", value: stages.data?.ready },
     { label: "Em rota", value: stages.data?.dispatched },
     { label: "Entregues", value: stages.data?.delivered },
@@ -543,15 +544,25 @@ export function TodayOrders({
 
   const body = (
     <>
-      <div className="grid shrink-0 grid-cols-5 border-b border-rule" aria-label="Pedidos de hoje por etapa">
-        {strip.map((stage) => (
-          <div key={stage.label} className="border-rule-soft px-0.5 pt-2.5 pb-2 text-center [&+&]:border-l">
-            <b className={cn("block text-[15px] leading-tight font-semibold tabular-nums", stage.alert && "text-tomate")}>
-              {stage.value === undefined ? "–" : count(stage.value)}
-            </b>
-            <span className={cn("text-[10px] whitespace-nowrap text-ink-3", stage.alert && "text-tomate")}>{stage.label}</span>
-          </div>
-        ))}
+      <div className="flex shrink-0 flex-col gap-2 border-b border-rule px-3.5 py-3">
+        <div className="grid grid-cols-4 gap-1" aria-label="Pedidos de hoje por etapa">
+          {strip.map((stage) => (
+            <div key={stage.label} className="min-w-0 rounded-lg bg-paper px-1 py-[7px] text-center">
+              <b className="block font-heading text-[18px] leading-tight font-semibold tabular-nums">
+                {stage.value === undefined ? "–" : count(stage.value)}
+              </b>
+              <span className="block text-[10.5px] leading-tight whitespace-nowrap text-ink-3">{stage.label}</span>
+            </div>
+          ))}
+        </div>
+        {late > 0 && (
+          <p role="status" className="flex items-center gap-2 rounded-lg bg-tomate-lt px-2.5 py-2 text-[12.5px] text-tomate-ink">
+            <ClockIcon className="size-3.5 shrink-0" aria-hidden />
+            <span>
+              <strong className="font-semibold tabular-nums">{late === 1 ? "1 atrasado" : `${count(late)} atrasados`}</strong> em produção
+            </span>
+          </p>
+        )}
       </div>
 
       {/* pb-20: o widget do iFood fica fixo no canto de baixo e cobriria o último pedido. */}
@@ -595,20 +606,19 @@ export function TodayOrders({
                       {clock(order.placedAt)} · {ago(order.placedAt, now)}
                     </span>
                   </div>
+                  <OrderTrack status={orderStep(order)} late={order.late} className="mt-1.5 ml-4" />
                   <div className="mt-1 flex items-center justify-between gap-2 pl-4">
                     <span className="truncate text-xs text-ink-3 tabular-nums">
-                      {currency(order.total)} · {order.store}
+                      <span className={cn("font-medium", order.late ? "text-tomate" : "text-ink-2")}>{ORDER_STATUS[orderStep(order)].label}</span>
+                      {` · ${currency(order.total)} · ${order.store}`}
                       {master && ` · ${order.tenant.name}`}
                     </span>
-                    <span className="flex shrink-0 items-center gap-1">
-                      {order.late && (
-                        <StatusBadge tone="open">
-                          <AlertTriangleIcon className="mr-0.5 size-2.5" aria-hidden />
-                          Atrasado
-                        </StatusBadge>
-                      )}
-                      <OrderStatusBadge status={order.status} />
-                    </span>
+                    {order.late && (
+                      <StatusBadge tone="open">
+                        <AlertTriangleIcon className="mr-0.5 size-2.5" aria-hidden />
+                        Atrasado
+                      </StatusBadge>
+                    )}
                   </div>
                   {order.dispute && (
                     <p className="mt-0.5 pl-4 text-[11px] text-warning tabular-nums">

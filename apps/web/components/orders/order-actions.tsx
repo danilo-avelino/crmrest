@@ -23,7 +23,7 @@ import { ApiError } from "@/lib/api";
 import { clock, remaining } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
-const ACTION_LABEL: Record<OrderAction, string> = {
+export const ACTION_LABEL: Record<OrderAction, string> = {
   CONFIRM: "Confirmar pedido",
   READY: "Marcar como pronto",
   DISPATCH: "Despachar",

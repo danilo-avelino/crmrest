@@ -232,6 +232,12 @@ export type OrderPage = {
   pageSize: number;
   /** O restaurante tem o módulo Cardápio ou já recebeu pedido dele: a aba mostra o filtro "Cardápio Dish Desk". */
   menuOrigin?: boolean;
+  /**
+   * Resumo do período (o bloco principal da aba Pedidos), sem os filtros de status, origem e agendados, que mudam só a
+   * lista: pedidos feitos (com os cancelados), vendas sem os cancelados e quantos foram cancelados. Fica de fora na lista
+   * de produção e na busca.
+   */
+  summary?: { orders: number; sales: string; canceled: number };
 };
 
 /** Pedidos de hoje em cada etapa (faixa recolhida da Inbox), sem os cancelados. */

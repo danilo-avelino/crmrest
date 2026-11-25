@@ -83,10 +83,13 @@ export class OrdersService {
   }
 
   async list(auth: RequestAuth, query: OrderListQuery, now = new Date()): Promise<OrderPage> {
-    const where: Prisma.OrderWhereInput = {
+    const period: Prisma.OrderWhereInput = {
       placedAt: { gte: query.period === "today" ? startOfOrderDay(now) : periodStart(query.period, now) },
       // O histórico importado da loja (de antes da conexão) fica no cadastro do cliente, fora desta aba.
       importedAt: null,
+    };
+    const where: Prisma.OrderWhereInput = {
+      ...period,
       ...(query.status && { status: query.status }),
       // "MENU": cardápio próprio, o pedido sem canal.
       ...(query.channel && (query.channel === "MENU" ? { channelId: null } : { channel: { type: query.channel } })),
@@ -100,7 +103,7 @@ export class OrdersService {
       }),
     };
     const sort = query.production || query.scheduled ? "asc" : "desc";
-    const [rows, total, histories, late, alerts, cancellations, menuOrigin] = await this.db.withTenants(scopeFor(auth, query.tenantId), async (tx) => {
+    const [rows, total, histories, late, alerts, cancellations, menuOrigin, summary] = await this.db.withTenants(scopeFor(auth, query.tenantId), async (tx) => {
       const [rows, total] = await Promise.all([
         tx.order.findMany({
           where,
@@ -141,7 +144,16 @@ export class OrdersService {
       }
       // O filtro "Cardápio Dish Desk" só aparece para quem tem o módulo ou já recebeu pedido dele.
       const menuOrigin = (await tx.tenantModule.count({ where: { module: "MENU" } })) > 0 || (await tx.order.count({ where: { source: "MENU" } })) > 0;
-      return [rows, total, histories, late, alerts, cancellations, menuOrigin] as const;
+      // Bloco principal da aba Pedidos: só o período (status, origem e agendados filtram a lista, não o bloco).
+      const summary =
+        query.production || query.q
+          ? undefined
+          : await Promise.all([
+              tx.order.count({ where: period }),
+              tx.order.aggregate({ where: { ...period, status: { not: "CANCELED" } }, _sum: { total: true } }),
+              tx.order.count({ where: { ...period, status: "CANCELED" } }),
+            ]).then(([orders, sum, canceled]) => ({ orders, sales: sum._sum.total?.toString() ?? "0", canceled }));
+      return [rows, total, histories, late, alerts, cancellations, menuOrigin, summary] as const;
     }, LIST_TX);
     return {
       items: rows.map((order) => {
@@ -183,6 +195,7 @@ export class OrdersService {
       page: query.page,
       pageSize: PAGE_SIZE,
       menuOrigin,
+      summary,
     };
   }
 

@@ -79,6 +79,8 @@ export type MessageContent = {
     | "cancellation_alert"
     /** Mensagens seguidas que o Dish Desk não exibe: o contato ganhou a tag Bot e a conversa foi resolvida. */
     | "bot_detected"
+    /** A equipe apertou "Resolver": quem resolveu e a hora ficam marcados na conversa (só a equipe vê). */
+    | "resolved"
     /** Prevenção de fraude: só a equipe vê. */
     | "fraud_alert"
     | "order_kept"

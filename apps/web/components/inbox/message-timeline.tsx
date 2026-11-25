@@ -61,7 +61,7 @@ const AUTOMATION_LABEL: Record<NonNullable<MessageContent["automation"]>, string
   menu_audio_failed: "Automação · áudio não entendido",
 };
 
-const SUCCESS_EVENTS = new Set<MessageContent["event"]>(["phone_collected", "contacts_merged", "rating"]);
+const SUCCESS_EVENTS = new Set<MessageContent["event"]>(["phone_collected", "contacts_merged", "rating", "resolved"]);
 /** Prevenção de fraude: pílula com cadeado, a hora e, no que chama atenção, o tom do alerta. */
 const FRAUD_TEAM_EVENTS = new Set<MessageContent["event"]>(["fraud_alert", "order_kept", "order_canceled_by_team", "order_cancel_refused", "fraud_marked", "fraud_unmarked"]);
 const FRAUD_HOT_EVENTS = new Set<MessageContent["event"]>(["fraud_alert", "order_canceled_by_team", "order_cancel_refused", "fraud_marked"]);
@@ -288,7 +288,7 @@ function SystemEvent({ message }: { message: MessageDto }) {
         {FRAUD_TEAM_EVENTS.has(event) && <LockIcon className="size-3" aria-label="Só a equipe vê" />}
         {text}
         {event === "conversation_opened" && ` · ${weekdayClock(message.createdAt)}`}
-        {FRAUD_TEAM_EVENTS.has(event) && ` · ${clock(message.createdAt)}`}
+        {(FRAUD_TEAM_EVENTS.has(event) || event === "resolved") && ` · ${clock(message.createdAt)}`}
       </span>
     </div>
   );
