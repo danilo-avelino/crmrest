@@ -1,6 +1,6 @@
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { connectIfoodChat, useIfoodChat, useIfoodChatState, useIfoodExtensionMissing } from "./use-ifood-chat";
+import { connectIfoodChat, reconnectIfoodChat, useIfoodChat, useIfoodChatState, useIfoodExtensionMissing } from "./use-ifood-chat";
 
 vi.mock("@/components/auth/auth-provider", () => ({ useAuth: () => ({ request: vi.fn().mockRejectedValue(new Error("sem API")) }) }));
 
@@ -120,7 +120,7 @@ describe("situação do chat do iFood", () => {
     const open = vi.spyOn(window, "open").mockReturnValue(null);
     const state = setupState();
     await pass(4_000);
-    expect(state()).toEqual({ status: "unauthorized", invite: { url: "https://portal.ifood.com.br/apps/code?c=ABCD-EFGH", skip: 1 } });
+    expect(state()).toEqual({ status: "unauthorized", invite: { url: "https://portal.ifood.com.br/apps/code?c=ABCD-EFGH", skip: 1 }, revealed: false });
 
     await act(() => connectIfoodChat());
     expect(open).toHaveBeenCalledWith("https://portal.ifood.com.br/apps/code?c=ABCD-EFGH", "_blank", "noopener");
@@ -128,7 +128,24 @@ describe("situação do chat do iFood", () => {
 
     page = "<div><span>Autorização em andamento</span><span>Não feche esta janela.</span></div>";
     await pass(3_500);
-    expect(state()).toEqual({ status: "authorizing", invite: null });
+    expect(state()).toEqual({ status: "authorizing", invite: null, revealed: false });
+  });
+
+  it("desconectado sem o link do convite: Reconectar mostra o convite do widget até a loja autorizar", async () => {
+    let page = "<div><p>Conheça o widget do iFood!</p><button>Ir para o portal do parceiro</button></div>";
+    widget("0.3.0", () => page);
+    const open = vi.spyOn(window, "open").mockReturnValue(null);
+    const state = setupState();
+    await pass(4_000);
+    expect(state()).toEqual({ status: "unauthorized", invite: null, revealed: false });
+
+    await act(() => reconnectIfoodChat());
+    expect(open).not.toHaveBeenCalled();
+    expect(state().revealed).toBe(true);
+
+    page = PANEL;
+    await pass(3_500);
+    expect(state()).toEqual({ status: "checking", invite: null, revealed: false });
   });
 
   it("desligado quando o motor para", async () => {

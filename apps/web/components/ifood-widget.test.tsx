@@ -7,7 +7,11 @@ const widget = { widgetId: "widget-1", merchantIds: ["loja-1"], chat: false, ext
 vi.mock("@/components/auth/auth-provider", () => ({
   useAuth: () => ({ session: { accessToken: "token" }, request: async () => widget }),
 }));
-vi.mock("@/hooks/use-ifood-chat", () => ({ useIfoodChat: () => "idle" }));
+vi.mock("@/hooks/use-ifood-chat", () => ({
+  useIfoodChat: () => "idle",
+  useIfoodChatState: () => ({ status: "off", invite: null, revealed: false }),
+  ifoodChatDisconnected: () => false,
+}));
 // O next/script vira um marcador: o teste vê se o script do iFood entrou na página.
 vi.mock("next/script", () => ({ default: ({ src }: { src: string }) => <i data-testid="script" data-src={src} /> }));
 

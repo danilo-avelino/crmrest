@@ -7,7 +7,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
-import { useIfoodChat } from "@/hooks/use-ifood-chat";
+import { ifoodChatDisconnected, useIfoodChat, useIfoodChatState } from "@/hooks/use-ifood-chat";
 import { setIfoodWidgetChoice, useIfoodWidgetChoice } from "@/lib/ifood-widget-choice";
 
 /** API JavaScript oficial do widget (https://developer.ifood.com.br → Soluções → Widget). */
@@ -73,6 +73,10 @@ export function IfoodWidget() {
     });
   }, [loaded, key, data]);
   const chat = useIfoodChat(shown && data?.chat === true);
+  const { status, revealed } = useIfoodChatState();
+  // Desconectado, o convite do iFood cobre a tela inteira: fica escondido e o painel segue funcionando, com o aviso
+  // "Reconectar" na Inbox. Só aparece quando a loja pede (revealed) para clicar nele.
+  const hidden = chat === "driving" || (ifoodChatDisconnected(status) && !revealed);
 
   // O script fica na página depois de carregado uma vez (para conseguir esconder o widget ao sair).
   const [needed, setNeeded] = useState(false);
@@ -82,9 +86,9 @@ export function IfoodWidget() {
     <>
       <Script src="https://widgets.ifood.com.br/widget.js" strategy="afterInteractive" onReady={() => setLoaded(true)} />
       {/* O motor do chat mantém o widget aberto na aba Chat: invisível e sem cliques, para não cobrir o painel. */}
-      {chat === "driving" && <style>{'iframe[src^="https://embeddables.ifood.com.br"]{opacity:0!important;pointer-events:none!important}'}</style>}
+      {hidden && <style>{'iframe[src^="https://embeddables.ifood.com.br"]{opacity:0!important;pointer-events:none!important}'}</style>}
       {/* O convite de autorização foi aberto pelo motor, fora das áreas de clique que o widget marca: sem isto, o clique cai no painel. */}
-      {chat === "unauthorized" && <style>{'iframe[src^="https://embeddables.ifood.com.br"]{pointer-events:all!important}'}</style>}
+      {chat === "unauthorized" && revealed && <style>{'iframe[src^="https://embeddables.ifood.com.br"]{pointer-events:all!important}'}</style>}
     </>
   );
 }

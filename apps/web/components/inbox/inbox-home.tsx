@@ -44,7 +44,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { useChannels } from "@/hooks/use-channels";
 import { useConversationCounts } from "@/hooks/use-conversation-counts";
-import { connectIfoodChat, type IfoodChatStatus, useIfoodChatState } from "@/hooks/use-ifood-chat";
+import { type IfoodChatStatus, reconnectIfoodChat, useIfoodChatState } from "@/hooks/use-ifood-chat";
 import { useNow } from "@/hooks/use-now";
 import { useOpenOrderChat, useOrderCustomerChat } from "@/hooks/use-order-customer-chat";
 import { ago, clock, count, currency, remaining, responseTime } from "@/lib/format";
@@ -403,7 +403,7 @@ function IfoodWidgetOffRow() {
  * pela loja. "Conectar" abre o Portal do Parceiro pelo convite do widget; "Instalar", a página da extensão.
  */
 function IfoodChatRow({ storeUrl }: { storeUrl?: string | null }) {
-  const { status, invite } = useIfoodChatState();
+  const { status, revealed } = useIfoodChatState();
   const action =
     status === "missing" && storeUrl
       ? {
@@ -414,8 +414,8 @@ function IfoodChatRow({ storeUrl }: { storeUrl?: string | null }) {
             return new Promise((resolve) => setTimeout(resolve, 1_000));
           },
         }
-      : status === "unauthorized" && invite
-        ? { label: "Conectar", run: () => connectIfoodChat().catch(() => undefined) }
+      : status === "unauthorized" && !revealed
+        ? { label: "Conectar", run: () => reconnectIfoodChat().catch(() => undefined) }
         : null;
 
   return (
@@ -427,7 +427,7 @@ function IfoodChatRow({ storeUrl }: { storeUrl?: string | null }) {
           <IntegrationBadge badge={CHAT_BADGE[status]} />
         </div>
         <p className="mt-0.5 text-[11px] text-ink-3">
-          {status === "unauthorized" && !invite ? "Autorize pelo convite do widget do iFood, no canto da tela." : CHAT_TEXT[status]}
+          {status === "unauthorized" && revealed ? 'Clique em "Ir para o portal do parceiro", no aviso do iFood.' : CHAT_TEXT[status]}
         </p>
       </div>
       {action && (

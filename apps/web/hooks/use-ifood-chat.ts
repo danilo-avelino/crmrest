@@ -61,17 +61,22 @@ const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
  * tela); `checking` = procurando a extensão ou o widget; `missing` = o widget carregou e a extensão do Chrome não
  * respondeu; `unauthorized`/`authorizing` = a loja não autorizou o widget / está autorizando no Portal do Parceiro;
  * `connected` = as conversas chegam à Inbox. `invite` acompanha `unauthorized` quando o convite traz o link do Portal.
+ * `revealed`: a loja pediu para ver o convite do widget (Reconectar sem o link); fora disso, desconectado, o widget fica
+ * escondido para não cobrir o painel.
  */
 export type IfoodChatStatus = "off" | "checking" | "missing" | "unauthorized" | "authorizing" | "connected";
-export type IfoodChatState = { status: IfoodChatStatus; invite: WidgetInvite | null };
+export type IfoodChatState = { status: IfoodChatStatus; invite: WidgetInvite | null; revealed: boolean };
+
+/** O widget pede (ou está recebendo) a autorização da loja: o chat do iFood não chega à Inbox. */
+export const ifoodChatDisconnected = (status: IfoodChatStatus) => status === "unauthorized" || status === "authorizing";
 
 // Fica fora do componente: quem roda o motor é o widget (em todas as telas) e quem mostra a situação é a Inbox.
-const OFF: IfoodChatState = { status: "off", invite: null };
+const OFF: IfoodChatState = { status: "off", invite: null, revealed: false };
 let state = OFF;
 const watchers = new Set<() => void>();
-function publish(status: IfoodChatStatus, invite: WidgetInvite | null = null) {
-  if (state.status === status && state.invite?.url === invite?.url && state.invite?.skip === invite?.skip) return;
-  state = { status, invite };
+function publish(status: IfoodChatStatus, invite: WidgetInvite | null = null, revealed = state.revealed && ifoodChatDisconnected(status)) {
+  if (state.status === status && state.invite?.url === invite?.url && state.invite?.skip === invite?.skip && state.revealed === revealed) return;
+  state = { status, invite, revealed };
   for (const watcher of watchers) watcher();
 }
 function watch(watcher: () => void) {
@@ -105,6 +110,15 @@ export async function connectIfoodChat(): Promise<void> {
   if (!invite) return;
   window.open(invite.url, "_blank", "noopener");
   await bridge("click", { selector: "button", index: invite.skip });
+}
+
+/**
+ * "Reconectar" do aviso: com o link do convite, abre o Portal do Parceiro (connectIfoodChat); sem ele, mostra o convite do
+ * widget, escondido enquanto desconectado, para a loja clicar em "Ir para o portal do parceiro".
+ */
+export async function reconnectIfoodChat(): Promise<void> {
+  if (state.invite) return connectIfoodChat();
+  publish(state.status, state.invite, true);
 }
 
 /**

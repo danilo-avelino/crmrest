@@ -6,7 +6,7 @@ import { useRef, useState } from "react";
 import { ChannelAlert } from "@/components/inbox/channel-alert";
 import { ConversationList, type ListView, useOpenCalling } from "@/components/inbox/conversation-list";
 import { ConversationPane, type SideTab } from "@/components/inbox/conversation-pane";
-import { IfoodExtensionAlert } from "@/components/inbox/ifood-extension-alert";
+import { IfoodExtensionAlert, IfoodWidgetAlert } from "@/components/inbox/ifood-extension-alert";
 import { InboxHome, TodayOrders } from "@/components/inbox/inbox-home";
 import { NavRail } from "@/components/inbox/nav-rail";
 import { PauseAlert } from "@/components/inbox/pause-alert";
@@ -55,6 +55,7 @@ export function InboxView() {
         <PauseAlert />
         <ChannelAlert />
         <IfoodExtensionAlert />
+        <IfoodWidgetAlert />
         <div className="flex min-h-0 flex-1">
           <ConversationList selectedId={selectedId} onSelect={setSelectedId} listedRef={listedRef} view={listView} onView={setListView} />
           {selectedId ? (
