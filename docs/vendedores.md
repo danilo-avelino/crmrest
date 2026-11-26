@@ -3,6 +3,9 @@
 Anotado em 23/11/2026, a pedido do usuário. A área dos vendedores ainda não existe. Este arquivo guarda o que já foi
 decidido e o que falta, para quando ela for feita.
 
+O plano completo da área dos vendedores (CRM de vendas com a IA no primeiro contato) está em
+[docs/crm-vendas/ROADMAP.md](crm-vendas/ROADMAP.md), desde 25/11/2026.
+
 ## O que o usuário pediu
 
 - Vendedores e parceiros do Dish Desk recebem um **código promocional** próprio.

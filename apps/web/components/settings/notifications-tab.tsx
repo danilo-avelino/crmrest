@@ -18,7 +18,7 @@ const OPTIONS = [
   {
     key: "misconduct",
     label: "Alerta de má conduta",
-    hint: "Na hora em que a IA bloqueia uma resposta ofensiva de um atendente ao cliente (módulo Atendimento com IA).",
+    hint: "Na hora em que a IA bloqueia uma resposta ofensiva de um atendente (módulo Atendimento com IA) ou alguém resolve uma conversa com o cliente sem resposta.",
   },
   {
     key: "weeklyReport",

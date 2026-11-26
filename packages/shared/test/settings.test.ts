@@ -5,7 +5,9 @@ import {
   BusinessHours,
   businessHoursOf,
   COURIER_MENU_OPTIONS,
+  closedAt,
   closingTimeAt,
+  closureLabel,
   DEFAULT_BUSINESS_HOURS,
   DEFAULT_MENU_ACCENT,
   DEFAULT_MENU_AGENT,
@@ -18,6 +20,7 @@ import {
   menuMessage,
   pixAvailable,
   reopeningAt,
+  StoreClosure,
   UpdateMenuAgentRequest,
   UpdateMenuStoreRequest,
 } from "../src/settings.js";
@@ -48,6 +51,7 @@ describe("personalidade do atendimento", () => {
     closedWhileWaiting: ["retorno"],
     orderFound: ["pedido", "status"],
     orderNotFound: ["pedido"],
+    courierOrderCanceled: ["pedido"],
     forecast: ["hora"],
     forecastLate: ["hora"],
     queueMany: ["quantidade"],
@@ -170,6 +174,53 @@ describe("horário de funcionamento", () => {
     expect(read.enabled).toBe(true);
     expect(read.days).toEqual([[], ...Array(6).fill([{ open: "18:00", close: "23:00" }])]);
     expect(isOpenAt(read, at("2026-10-05T19:00:00"))).toBe(true);
+  });
+});
+
+describe("pausas no atendimento da loja", () => {
+  // Todos os dias das 11h às 15h e das 16h às 23h, como o Moby Dick.
+  const week = BusinessHours.parse({ enabled: true, days: Array(7).fill([{ open: "11:00", close: "15:00" }, { open: "16:00", close: "23:00" }]), closedMessage: "Fechados" });
+  const pause = (from: string, until: string | null, reason = "Falta de energia"): StoreClosure => ({
+    id: from,
+    from: at(from).toISOString(),
+    until: until ? at(until).toISOString() : null,
+    reason,
+  });
+
+  it("sem energia e sem previsão: fechado até alguém retomar, volta 'em breve'", () => {
+    const hours = { ...week, closures: [pause("2026-10-05T18:00:00", null)] };
+    expect(isOpenAt(hours, at("2026-10-05T19:00:00"))).toBe(false);
+    expect(closedAt(hours, at("2026-10-05T19:00:00"))).toBe(true);
+    expect(reopeningAt(hours, at("2026-10-05T19:00:00"))).toBe("em breve");
+    expect(isOpenAt(hours, at("2026-10-05T17:59:00"))).toBe(true); // antes da pausa
+    expect(closureLabel(hours.closures[0]!)).toBe("desde 05/10 às 18:00, sem previsão de volta");
+  });
+
+  it("volta no fim da pausa, ou no turno seguinte se a pausa acaba com a loja fechada", () => {
+    expect(reopeningAt({ ...week, closures: [pause("2026-10-05T18:00:00", "2026-10-05T20:30:00")] }, at("2026-10-05T19:00:00"))).toBe("hoje às 20:30");
+    expect(isOpenAt({ ...week, closures: [pause("2026-10-05T18:00:00", "2026-10-05T20:30:00")] }, at("2026-10-05T20:30:00"))).toBe(true);
+    // Acaba às 15:30, no intervalo: volta às 16:00.
+    expect(reopeningAt({ ...week, closures: [pause("2026-10-05T12:00:00", "2026-10-05T15:30:00")] }, at("2026-10-05T13:00:00"))).toBe("hoje às 16:00");
+  });
+
+  it("feriado amanhã: o 'volta amanhã' pula o dia da pausa", () => {
+    const hours = { ...week, closures: [pause("2026-10-06T00:00:00", "2026-10-07T00:00:00", "Feriado")] };
+    expect(reopeningAt(hours, at("2026-10-05T23:30:00"))).toBe("na quarta-feira às 11:00");
+    expect(isOpenAt(hours, at("2026-10-06T12:00:00"))).toBe(false);
+    expect(closureLabel(hours.closures[0]!)).toBe("de 06/10 às 00:00 até 07/10 às 00:00");
+  });
+
+  it("vale com o horário desligado e as pausas vêm em businessHoursOf", () => {
+    const settings = { businessHours: { ...week, enabled: false }, closures: [pause("2026-10-05T18:00:00", null)] };
+    const hours = businessHoursOf(settings);
+    expect(hours.closures).toHaveLength(1);
+    expect(closedAt(hours, at("2026-10-05T19:00:00"))).toBe(true);
+    expect(closedAt(hours, at("2026-10-05T03:00:00"))).toBe(false); // horário desligado: aberto fora da pausa
+  });
+
+  it("o fim precisa ser depois do início", () => {
+    expect(StoreClosure.safeParse(pause("2026-10-05T18:00:00", "2026-10-05T17:00:00")).success).toBe(false);
+    expect(StoreClosure.safeParse(pause("2026-10-05T18:00:00", null)).success).toBe(true);
   });
 });
 

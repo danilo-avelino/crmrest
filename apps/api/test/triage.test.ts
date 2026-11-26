@@ -612,20 +612,33 @@ describe("menu de atendimento, busca do pedido e pesquisa de satisfação", () =
     expect(await automations("5511970000021")).toEqual(["courier_menu", "handoff"]);
   });
 
-  it("entregador responde o menu sem número: avisa que não entendeu e repete as opções, sem chamar a equipe", async () => {
+  it("entregador responde o menu sem número: pergunta se ele quer um atendente e, na resposta seguinte, chama a equipe", async () => {
     await tagged("5511970000028", "Entregador");
     await say("5511970000028", "wamid.NU1", "Pedido 2650");
     await say("5511970000028", "wamid.NU2", "Pedir pra derce pega o pedido por favor");
-    const again = `Não consigo te entender dessa forma. Responda apenas com um número. Se quiser falar com um atendente, responda 4.\n${COURIER_MENU}`;
-    expect((await contents("5511970000028")).at(-1)).toEqual({ automation: "courier_menu", text: again });
-    await say("5511970000028", "wamid.NU3", "Me ajuda aí");
-    const conversation = await conversationOf("5511970000028");
-    expect(conversation.messages.at(-1)!.content).toEqual({ automation: "courier_menu", text: again });
-    expect(conversation.automationState).toEqual({ triage: "awaiting_option", courierOrder: "2650" });
-    expect(conversation.awaitingAgentSince).toBeNull();
+    const ask = `Não consegui entender. Quer falar com um atendente? Responda *sim*, ou escolha uma das opções:\n${COURIER_MENU}`;
+    expect((await contents("5511970000028")).at(-1)).toEqual({ automation: "courier_menu", text: ask });
+    expect((await conversationOf("5511970000028")).automationState).toEqual({ triage: "awaiting_option", courierOrder: "2650", courierAskedTeam: true });
 
-    await say("5511970000028", "wamid.NU4", "4");
-    expect(await automations("5511970000028")).toEqual(["courier_menu", "courier_menu", "courier_menu", "handoff"]);
+    await say("5511970000028", "wamid.NU3", "sim");
+    const conversation = await conversationOf("5511970000028");
+    expect(conversation.awaitingAgentSince).not.toBeNull();
+    expect(await automations("5511970000028")).toEqual(["courier_menu", "courier_menu", "handoff"]);
+    expect(conversation.messages.map((m) => m.content)).toContainEqual({ event: "handoff", text: 'Entregador chamando: "sim"' });
+  });
+
+  it("entregador informa um pedido cancelado: é avisado para não entregar e a equipe é chamada (23/11/2026)", async () => {
+    const order = await ifoodOrder("7879", new Date());
+    await admin.order.update({ where: { id: order.id }, data: { status: "CANCELED" } });
+    await tagged("5511970000038", "Entregador");
+    await say("5511970000038", "wamid.CX1", "7879 tá na portaria");
+    const conversation = await conversationOf("5511970000038");
+    expect(conversation.messages.map((m) => m.content)).toContainEqual({
+      automation: "order_lookup",
+      text: "Atenção: o pedido #7879 foi cancelado. Não entregue: um atendente já vai falar com você.",
+    });
+    expect(conversation.awaitingAgentSince).not.toBeNull();
+    expect(conversation.awaitingAgentQuiet).toBe(false);
   });
 
   it("entregador manda só o número de um pedido que existe: o menu avisa que o pedido foi encontrado", async () => {

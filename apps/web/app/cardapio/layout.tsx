@@ -1,14 +1,11 @@
 import { RequireAdminContext } from "@/components/auth/require-context";
-import { NavRail } from "@/components/inbox/nav-rail";
+import { MenuShell } from "@/components/menu/menu-shell";
 
-/** Cardápio do painel (lista, ficha do item e complementos): só administradores, com a navegação lateral. Desktop por enquanto. */
+/** Cardápio do painel (lista, ficha do item, complementos, funil e abandonados): só administradores, com a navegação lateral e a faixa das páginas. Desktop por enquanto. */
 export default function MenuLayout({ children }: LayoutProps<"/cardapio">) {
   return (
     <RequireAdminContext>
-      <div className="flex h-full overflow-hidden bg-paper">
-        <NavRail />
-        {children}
-      </div>
+      <MenuShell>{children}</MenuShell>
     </RequireAdminContext>
   );
 }

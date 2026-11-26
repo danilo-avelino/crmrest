@@ -2,9 +2,9 @@
  * Entrega do cardápio (F2-06): área, taxa, pedido mínimo, frete grátis, prazo e faixas de agendamento. Funções
  * puras sobre `menuStoreOf()` e `businessHoursOf()`; dinheiro em centavos inteiros.
  *
- * Aberto ou fechado segue o `isOpenAt` do shared (o mesmo da IA e da Inbox): horário desligado = sempre aberto.
+ * Aberto ou fechado segue o `closedAt` do shared (o mesmo da IA e da Inbox): horário desligado = sempre aberto, menos nas pausas da loja.
  */
-import { type BusinessHours, isOpenAt, type MenuStoreSettings } from "@dishdesk/shared";
+import { closedAt, type OpeningHours, type MenuStoreSettings } from "@dishdesk/shared";
 
 export type FulfillmentMode = "DELIVERY" | "PICKUP";
 export type DeliveryAddress = { district?: string | null; lat?: number | null; lng?: number | null };
@@ -25,6 +25,8 @@ export type DeliveryQuote =
       missingForMinimumCents: number;
       eta: { minMinutes: number; maxMinutes: number };
       distanceKm?: number;
+      /** Área desenhada que valeu (modo por área): vai para o pedido e conta os pedidos de cada área. */
+      areaId?: string;
     }
   | { ok: false; code: "OUT_OF_AREA" | "ADDRESS_REQUIRED" | "STORE_LOCATION_MISSING" | "PICKUP_DISABLED"; message: string };
 
@@ -42,11 +44,22 @@ export function haversineKm(a: { lat: number; lng: number }, b: { lat: number; l
   return 2 * 6371 * Math.asin(Math.min(1, Math.sqrt(h)));
 }
 
+/** O ponto está dentro do polígono (raio cruzando as bordas; lat/lng como plano, bom para áreas de uma cidade)? */
+export function insidePolygon(point: { lat: number; lng: number }, polygon: { lat: number; lng: number }[]): boolean {
+  let inside = false;
+  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    const a = polygon[i]!;
+    const b = polygon[j]!;
+    if (a.lat > point.lat !== b.lat > point.lat && point.lng < ((b.lng - a.lng) * (point.lat - a.lat)) / (b.lat - a.lat) + a.lng) inside = !inside;
+  }
+  return inside;
+}
+
 /** Taxa da área do endereço, antes do frete grátis. */
 function areaFee(
   store: MenuStoreSettings,
   address: DeliveryAddress,
-): { ok: true; feeCents: number; distanceKm?: number } | Extract<DeliveryQuote, { ok: false }> {
+): { ok: true; feeCents: number; distanceKm?: number; areaId?: string; eta?: { minMinutes: number; maxMinutes: number } } | Extract<DeliveryQuote, { ok: false }> {
   if (store.delivery.mode === "BY_DISTRICT") {
     if (!address.district?.trim()) return { ok: false, code: "ADDRESS_REQUIRED", message: "Informe o bairro." };
     const wanted = normalizeDistrict(address.district);
@@ -58,6 +71,16 @@ function areaFee(
   if (lat == null || lng == null) return { ok: false, code: "STORE_LOCATION_MISSING", message: "A loja ainda não tem localização." };
   if (address.lat == null || address.lng == null) return { ok: false, code: "ADDRESS_REQUIRED", message: "Informe o endereço." };
   const distanceKm = haversineKm({ lat, lng }, { lat: address.lat, lng: address.lng });
+  if (store.delivery.mode === "BY_AREA") {
+    const point = { lat: address.lat, lng: address.lng };
+    // Onde duas áreas se cruzam, vale a de menor taxa.
+    const area = store.delivery.areas
+      .filter((a) => (a.shape.type === "circle" ? distanceKm >= a.shape.minKm && distanceKm <= a.shape.maxKm : insidePolygon(point, a.shape.points)))
+      .sort((a, b) => a.feeCents - b.feeCents)[0];
+    if (!area) return { ok: false, code: "OUT_OF_AREA", message: "Não entregamos neste endereço." };
+    const eta = area.etaMinMinutes != null && area.etaMaxMinutes != null ? { minMinutes: area.etaMinMinutes, maxMinutes: area.etaMaxMinutes } : undefined;
+    return { ok: true, feeCents: area.feeCents, distanceKm, areaId: area.id, ...(eta ? { eta } : {}) };
+  }
   // A faixa menor que cobre a distância.
   const radius = [...store.delivery.radii].sort((a, b) => a.maxKm - b.maxKm).find((r) => distanceKm <= r.maxKm);
   if (!radius) return { ok: false, code: "OUT_OF_AREA", message: "O endereço está fora da nossa área de entrega." };
@@ -100,14 +123,16 @@ export function quoteDelivery(
     missingForFreeCents: threshold == null || freeDelivery ? null : threshold - input.subtotalCents,
     minOrderCents: store.minOrderCents,
     missingForMinimumCents,
-    eta: { minMinutes: store.deliveryMinMinutes, maxMinutes: store.deliveryMaxMinutes },
+    eta: area.eta ?? { minMinutes: store.deliveryMinMinutes, maxMinutes: store.deliveryMaxMinutes },
     ...(area.distanceKm != null ? { distanceKm: area.distanceKm } : {}),
+    ...(area.areaId ? { areaId: area.areaId } : {}),
   };
 }
 
 /** Faixa de taxas para mostrar antes do endereço (R11): menor e maior taxa das áreas. null: sem áreas. */
 export function feeRangeOf(store: MenuStoreSettings): { minCents: number; maxCents: number } | null {
-  const fees = store.delivery.mode === "BY_DISTRICT" ? store.delivery.districts.map((d) => d.feeCents) : store.delivery.radii.map((r) => r.feeCents);
+  const { delivery } = store;
+  const fees = delivery.mode === "BY_DISTRICT" ? delivery.districts.map((d) => d.feeCents) : delivery.mode === "BY_RADIUS" ? delivery.radii.map((r) => r.feeCents) : delivery.areas.map((a) => a.feeCents);
   return fees.length ? { minCents: Math.min(...fees), maxCents: Math.max(...fees) } : null;
 }
 
@@ -139,7 +164,7 @@ const hhmm = (at: Date) =>
  * partir da abertura; vale a faixa que começa depois de `agora + max(antecedência, preparo)` e com a loja aberta. Com
  * a loja fechada agora, a primeira faixa é a da próxima abertura (R2). Agendamento desligado: lista vazia.
  */
-export function scheduleSlots(store: MenuStoreSettings, hours: BusinessHours, now: Date): ScheduleSlot[] {
+export function scheduleSlots(store: MenuStoreSettings, hours: OpeningHours, now: Date): ScheduleSlot[] {
   if (!store.scheduling.enabled) return [];
   const { slotMinutes, minLeadMinutes } = store.scheduling;
   const earliest = now.getTime() + Math.max(minLeadMinutes, store.prepMinutes) * MINUTE;
@@ -166,7 +191,7 @@ export function scheduleSlots(store: MenuStoreSettings, hours: BusinessHours, no
 
   return [...starts]
     .sort((a, b) => a - b)
-    .filter((start) => !hours.enabled || isOpenAt(hours, new Date(start)))
+    .filter((start) => !closedAt(hours, new Date(start)))
     .map((start) => {
       const startDate = new Date(start);
       const endDate = new Date(start + slotMinutes * MINUTE);

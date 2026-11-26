@@ -10,7 +10,7 @@ import {
   orderOriginOf,
   COURIER_TAG,
   fillMessage,
-  isOpenAt,
+  closedAt,
   menuMessage,
   orderLinksMessage,
   orderLinksOf,
@@ -34,6 +34,7 @@ import {
   type AutomationState,
   automationMessage,
   callTeam,
+  flagAllergy,
   dispatch,
   firstName,
   type InboundEvent,
@@ -132,6 +133,10 @@ export class TriageService {
     }
     if (await this.survey.handleAnswer(event)) return;
     if (await this.aiTakes(event)) return;
+    await this.db.withTenants({ tenantIds: [event.channel.tenantId] }, async (tx) => {
+      const conversation = await tx.conversation.findUniqueOrThrow({ where: { id: event.conversationId }, select: { id: true, tenantId: true, channelId: true } });
+      await flagAllergy(tx, conversation, event.text);
+    });
 
     const { tenantId } = event.channel;
     const step = await this.db.withTenants({ tenantIds: [tenantId] }, async (tx) => {
@@ -225,7 +230,7 @@ export class TriageService {
     // Mais mensagens enquanto o restaurante está fechado: a conversa continua pendente até a equipe responder.
     if (state.afterHours) {
       const hours = businessHoursOf(settings);
-      if (hours.enabled && !isOpenAt(hours, new Date())) await this.keepPending(tx, conversation.id);
+      if (closedAt(hours, new Date())) await this.keepPending(tx, conversation.id);
     }
     // Recebeu os links e continuou escrevendo: o menu volta uma vez; outra resposta fora das opções chama a equipe.
     if (state.selfServed) {
@@ -254,7 +259,7 @@ export class TriageService {
   private async startMenu(tx: TenantTx, conversation: Conversation, settings: unknown, messages: AutomationMessages, keep: AutomationState): Promise<Step> {
     // Fora do horário: avisa no lugar do menu (ninguém atenderia a opção escolhida); a coleta de telefone segue.
     const hours = businessHoursOf(settings);
-    if (hours.enabled && !isOpenAt(hours, new Date())) {
+    if (closedAt(hours, new Date())) {
       const text = fillMessage(hours.closedMessage, { retorno: reopeningAt(hours, new Date()) });
       const id = await automationMessage(tx, conversation, "after_hours", text);
       await setAutomationState(tx, conversation.id, { ...keep, triage: "done", afterHours: true });

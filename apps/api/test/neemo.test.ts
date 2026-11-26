@@ -7,7 +7,7 @@ import type { Queue } from "bullmq";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { neemoTime } from "../src/connectors/neemo.client.js";
-import { NeemoService } from "../src/inbound/neemo.service.js";
+import { itemName, NeemoService } from "../src/inbound/neemo.service.js";
 import { QUEUES } from "../src/queues/queues.module.js";
 import { accessTokenFor, admin, createChannelFixture, createTestApp } from "./helpers.js";
 
@@ -105,11 +105,29 @@ const neemoOrder = (id: number, extra: Record<string, unknown> = {}) => ({
         { title: "Escolha o arroz", Complements: [{ quantity: 1, title: "Arroz Yakimeshi", price_un: 0, total: 0 }] },
       ],
     },
-    { title: "Temaki", name: "Temaki", quantity: 2, price: 0, total: 45.8, notes: "", ComplementCategories: [] },
+    // `title` é o produto e `name`, a variação escolhida (como na API real).
+    { title: "Temaki", name: "Salmão", quantity: 2, price: 0, total: 45.8, notes: "", ComplementCategories: [] },
   ],
   PizzaOrders: [],
   ComboOrders: [],
   ...extra,
+});
+
+describe("Neemo: nome do item", () => {
+  // Pares (title, name) vistos nos pedidos reais da loja (24/11/2026): o nome era só a variação ("2x 2 Unidades").
+  it.each([
+    ["Hot Ebi (4 unidades)", "4 Unidades", "Hot Ebi (4 unidades)"],
+    ["Combo de Clássicos (17 unid)", "Combo 17 und.", "Combo de Clássicos (17 unid) (Combo 17 und.)"],
+    ["Salmão Crunchy (4 unidades)", "Item", "Salmão Crunchy (4 unidades)"],
+    ["Tempurá Misto", "Quatro unidades", "Tempurá Misto (Quatro unidades)"],
+    ["Refrigerantes (Lata)", "Coca Cola", "Refrigerantes (Lata) (Coca Cola)"],
+    ["Uramaki Especial  (4 unidades)", "4 Unidades", "Uramaki Especial (4 unidades)"],
+    ["Poke Nippon", "Poke Nippon", "Poke Nippon"],
+    ["", "Temaki", "Temaki"],
+    [null, null, "Item"],
+  ])("%s + %s → %s", (title, variation, expected) => {
+    expect(itemName(title, variation)).toBe(expected);
+  });
 });
 
 describe("Neemo (pedidos por polling)", () => {
@@ -195,7 +213,7 @@ describe("Neemo (pedidos por polling)", () => {
     expect([order.subtotal, order.deliveryFee, order.total].map(String)).toEqual(["81.79", "6", "87.79"]);
     expect(order.items.map((i) => [i.name, i.quantity, i.unitPrice.toString(), i.notes, i.options])).toEqual([
       ["Bentô", 1, "35.99", "sem gergelim", ["1× Chickenkatsu", "1× Arroz Yakimeshi"]],
-      ["Temaki", 2, "22.9", null, []],
+      ["Temaki (Salmão)", 2, "22.9", null, []],
     ]);
     expect(order.contact.id).toBe(whatsappContactId);
     expect(order.contact).toMatchObject({ name: "Matheus", email: "matheus@teste.com" }); // só completa o que falta

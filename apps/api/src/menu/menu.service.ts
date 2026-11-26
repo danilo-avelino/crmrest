@@ -8,6 +8,7 @@ import type {
   AvailabilityRequest,
   CategoryPatch,
   CategoryRequest,
+  BulkItemsRequest,
   ItemPatch,
   ItemRequest,
   OptionGroupPatch,
@@ -37,14 +38,16 @@ const ITEM_INCLUDE = {
 export class MenuService {
   constructor(private readonly db: DatabaseService) {}
 
-  private read<T>(auth: RequestAuth, tenantId: string, fn: (tx: TenantTx) => Promise<T>): Promise<T> {
+  /** Leitura com o módulo MENU (os serviços das abas do Cardápio usam também). */
+  read<T>(auth: RequestAuth, tenantId: string, fn: (tx: TenantTx) => Promise<T>): Promise<T> {
     return this.db.withTenants(memberScope(auth, tenantId), async (tx) => {
       await requireModule(tx, tenantId);
       return fn(tx);
     });
   }
 
-  private write<T>(auth: RequestAuth, tenantId: string, fn: (tx: TenantTx) => Promise<T>): Promise<T> {
+  /** Escrita só do administrador, com o módulo MENU. */
+  write<T>(auth: RequestAuth, tenantId: string, fn: (tx: TenantTx) => Promise<T>): Promise<T> {
     return this.db.withTenants(adminScope(auth, tenantId), async (tx) => {
       await requireModule(tx, tenantId);
       return fn(tx);
@@ -119,6 +122,7 @@ export class MenuService {
   createItem(auth: RequestAuth, tenantId: string, body: Body<typeof ItemRequest>) {
     return this.write(auth, tenantId, async (tx) => {
       await requireRow(tx.menuCategory.findFirst({ where: { id: body.categoryId, tenantId }, select: { id: true } }), "Categoria");
+      assertPromo(body.priceCents ?? null, body.promoPriceCents ?? null);
       const last = await tx.menuItem.aggregate({ where: { tenantId, categoryId: body.categoryId }, _max: { sortOrder: true } });
       return tx.menuItem.create({ data: { tenantId, ...body, sortOrder: (last._max.sortOrder ?? -1) + 1 }, include: ITEM_INCLUDE });
     });
@@ -126,11 +130,17 @@ export class MenuService {
 
   updateItem(auth: RequestAuth, tenantId: string, id: string, body: Body<typeof ItemPatch>) {
     return this.write(auth, tenantId, async (tx) => {
-      await requireRow(tx.menuItem.findFirst({ where: { id, tenantId }, select: { id: true } }), "Item");
+      const current = await tx.menuItem.findFirst({ where: { id, tenantId }, select: { priceCents: true, promoPriceCents: true } });
+      if (!current) throw new NotFoundException("Item não encontrado.");
       if (body.categoryId) {
         await requireRow(tx.menuCategory.findFirst({ where: { id: body.categoryId, tenantId }, select: { id: true } }), "Categoria");
       }
-      return tx.menuItem.update({ where: { id }, data: body, include: ITEM_INCLUDE });
+      // Sem preço (o preço vem dos tamanhos), o promocional cai junto.
+      const priceCents = body.priceCents === undefined ? current.priceCents : body.priceCents;
+      const promoPriceCents = priceCents == null ? null : body.promoPriceCents === undefined ? current.promoPriceCents : body.promoPriceCents;
+      assertPromo(priceCents, promoPriceCents);
+      const data = promoPriceCents !== current.promoPriceCents ? { ...body, promoPriceCents } : body;
+      return tx.menuItem.update({ where: { id }, data, include: ITEM_INCLUDE });
     });
   }
 
@@ -154,6 +164,51 @@ export class MenuService {
     return this.write(auth, tenantId, async (tx) => {
       await requireRow(tx.menuItem.findFirst({ where: { id, tenantId }, select: { id: true } }), "Item");
       return tx.menuItem.update({ where: { id }, data: { active }, select: { id: true, active: true } });
+    });
+  }
+
+  /**
+   * Edição em planilha (N2): status, preço, promocional, custo, destaque e categoria de várias linhas, tudo ou nada.
+   * Status: Disponível (ativo e à venda), Esgotado (`soldOut`) e Pausado (fora do cardápio, `active=false`).
+   */
+  bulkUpdateItems(auth: RequestAuth, tenantId: string, body: Body<typeof BulkItemsRequest>) {
+    return this.write(auth, tenantId, async (tx) => {
+      const ids = body.items.map((i) => i.id);
+      const rows = await tx.menuItem.findMany({
+        where: { tenantId, id: { in: ids } },
+        select: { id: true, name: true, priceCents: true, promoPriceCents: true, tags: true, _count: { select: { sizes: true } } },
+      });
+      if (rows.length !== ids.length) throw new NotFoundException("Item não encontrado.");
+      const categoryIds = [...new Set(body.items.flatMap((i) => (i.categoryId ? [i.categoryId] : [])))];
+      if (categoryIds.length) {
+        await assertAll(categoryIds, tx.menuCategory.findMany({ where: { tenantId, id: { in: categoryIds } }, select: { id: true } }), "Categoria");
+      }
+      const byId = new Map(rows.map((r) => [r.id, r]));
+      for (const change of body.items) {
+        const row = byId.get(change.id)!;
+        const hasSizes = row._count.sizes > 0;
+        if (hasSizes && change.priceCents !== undefined) throw new BadRequestException(`${row.name}: o preço muda na edição do item (tem tamanhos).`);
+        const priceCents = change.priceCents ?? row.priceCents;
+        const promoPriceCents = change.promoPriceCents === undefined ? row.promoPriceCents : change.promoPriceCents;
+        if (promoPriceCents != null && (hasSizes || priceCents == null || promoPriceCents >= priceCents)) {
+          throw new BadRequestException(`${row.name}: o preço promocional precisa ser menor que o preço.`);
+        }
+        const tags = change.featured === undefined ? undefined : withFeatured(row.tags, change.featured);
+        const status =
+          change.status === "AVAILABLE" ? { active: true, soldOut: false } : change.status === "SOLD_OUT" ? { active: true, soldOut: true } : change.status === "PAUSED" ? { active: false } : {};
+        await tx.menuItem.update({
+          where: { id: change.id },
+          data: {
+            ...status,
+            ...(change.priceCents !== undefined ? { priceCents: change.priceCents } : {}),
+            ...(change.promoPriceCents !== undefined ? { promoPriceCents: change.promoPriceCents } : {}),
+            ...(change.costCents !== undefined ? { costCents: change.costCents } : {}),
+            ...(change.categoryId ? { categoryId: change.categoryId } : {}),
+            ...(tags ? { tags } : {}),
+          },
+        });
+      }
+      return { updated: body.items.length };
     });
   }
 
@@ -261,21 +316,60 @@ export class MenuService {
     });
   }
 
+  /**
+   * Põe uma opção no grupo, com o preço do grupo: a da biblioteca (`choiceId`) ou, só com o nome, uma opção nova na
+   * biblioteca (o tipo sai do nome do grupo). Pausa e estoque do corpo valem para a opção da biblioteca.
+   */
   createOption(auth: RequestAuth, tenantId: string, groupId: string, body: Body<typeof OptionRequest>) {
     return this.write(auth, tenantId, async (tx) => {
-      await requireRow(tx.menuOptionGroup.findFirst({ where: { id: groupId, tenantId }, select: { id: true } }), "Grupo");
+      const group = await tx.menuOptionGroup.findFirst({ where: { id: groupId, tenantId }, select: { id: true, name: true, menuId: true } });
+      if (!group) throw new NotFoundException("Grupo não encontrado.");
+      const { choiceId, name, priceCents, active, soldOut } = body;
+      let choice: { id: string; name: string; active: boolean; inStock: boolean };
+      if (choiceId) {
+        const found = await tx.menuChoice.findFirst({ where: { id: choiceId, tenantId }, select: { id: true, name: true, active: true, inStock: true } });
+        if (!found) throw new NotFoundException("Opção não encontrada.");
+        if (await tx.menuOption.findFirst({ where: { tenantId, groupId, choiceId }, select: { id: true } })) {
+          throw new BadRequestException("Esta opção já está no grupo.");
+        }
+        choice = found;
+      } else {
+        choice = await tx.menuChoice.create({
+          data: { tenantId, menuId: group.menuId, name: name!, kind: kindOfGroup(group.name, name!), active: active ?? true, inStock: !(soldOut ?? false) },
+          select: { id: true, name: true, active: true, inStock: true },
+        });
+      }
       const last = await tx.menuOption.aggregate({ where: { tenantId, groupId }, _max: { sortOrder: true } });
-      return tx.menuOption.create({ data: { tenantId, groupId, ...body, sortOrder: (last._max.sortOrder ?? -1) + 1 } });
+      return tx.menuOption.create({
+        data: {
+          tenantId,
+          groupId,
+          choiceId: choice.id,
+          name: choice.name,
+          active: choice.active,
+          soldOut: !choice.inStock,
+          priceCents: priceCents ?? 0,
+          sortOrder: (last._max.sortOrder ?? -1) + 1,
+        },
+      });
     });
   }
 
+  /** Preço no grupo; nome, pausa e estoque mudam a opção da biblioteca e, com ela, todos os grupos onde ela está. */
   updateOption(auth: RequestAuth, tenantId: string, id: string, body: Body<typeof OptionPatch>) {
     return this.write(auth, tenantId, async (tx) => {
-      await requireRow(tx.menuOption.findFirst({ where: { id, tenantId }, select: { id: true } }), "Complemento");
-      return tx.menuOption.update({ where: { id }, data: body });
+      const option = await tx.menuOption.findFirst({ where: { id, tenantId }, select: { id: true, choiceId: true } });
+      if (!option) throw new NotFoundException("Complemento não encontrado.");
+      const { name, active, soldOut, priceCents } = body;
+      if (name !== undefined || active !== undefined || soldOut !== undefined) {
+        await tx.menuChoice.update({ where: { id: option.choiceId }, data: { name, active, inStock: soldOut === undefined ? undefined : !soldOut } });
+        await syncChoice(tx, tenantId, option.choiceId);
+      }
+      return tx.menuOption.update({ where: { id }, data: { priceCents } });
     });
   }
 
+  /** Tira a opção do grupo; ela continua na biblioteca. */
   deleteOption(auth: RequestAuth, tenantId: string, id: string) {
     return this.write(auth, tenantId, async (tx) => {
       await requireRow(tx.menuOption.findFirst({ where: { id, tenantId }, select: { id: true } }), "Complemento");
@@ -319,6 +413,37 @@ export class MenuService {
   top(auth: RequestAuth, tenantId: string, categoryId: string | undefined, days: number, limit: number) {
     return this.read(auth, tenantId, (tx) => topItems(tx, { tenantId, categoryId, days, limit }));
   }
+}
+
+/** O promocional precisa de preço (item sem tamanhos) e ficar abaixo dele. */
+function assertPromo(priceCents: number | null, promoPriceCents: number | null): void {
+  if (promoPriceCents == null) return;
+  if (priceCents == null) throw new BadRequestException("Preço promocional só vale para item sem tamanhos.");
+  if (promoPriceCents >= priceCents) throw new BadRequestException("O preço promocional precisa ser menor que o preço.");
+}
+
+/** A estrela da planilha: a tag "destaque" (a vitrine do cardápio público e a IA já leem). */
+export const FEATURED_TAG = "destaque";
+export function withFeatured(tags: string[], featured: boolean): string[] {
+  const rest = tags.filter((t) => t.trim().toLowerCase() !== FEATURED_TAG);
+  return featured ? [...rest, FEATURED_TAG] : rest;
+}
+
+/** Copia nome, pausa e estoque da opção da biblioteca para os grupos onde ela está. */
+export async function syncChoice(tx: TenantTx, tenantId: string, choiceId: string): Promise<void> {
+  const choice = await tx.menuChoice.findFirst({ where: { id: choiceId, tenantId }, select: { name: true, active: true, inStock: true } });
+  if (!choice) return;
+  await tx.menuOption.updateMany({ where: { tenantId, choiceId }, data: { name: choice.name, active: choice.active, soldOut: !choice.inStock } });
+}
+
+/** Tipo da opção nova pelo nome dela e do grupo (o mesmo critério da migração da biblioteca). */
+export function kindOfGroup(groupName: string, optionName: string): "HALF" | "SIZE" | "DRINK" | "EXTRA" {
+  const group = groupName.toLowerCase();
+  const option = optionName.toLowerCase();
+  if (/^(meia|meio|1\/2|½)/.test(option) || group.includes("sabor") || group.includes("meio a meio")) return "HALF";
+  if (group.includes("tamanho")) return "SIZE";
+  if (group.includes("bebida") || group.includes("refri") || group.includes("suco")) return "DRINK";
+  return "EXTRA";
 }
 
 /** Módulo MENU ligado pela plataforma; sem ele o cardápio inteiro responde 403. */

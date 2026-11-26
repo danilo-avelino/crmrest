@@ -8,7 +8,7 @@ import {
   type UpdateConversationRequest,
 } from "@dishdesk/shared";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { BikeIcon, CheckIcon, ChevronDownIcon, EllipsisIcon, LoaderCircleIcon, SearchIcon, UserRoundIcon } from "lucide-react";
+import { BikeIcon, CheckIcon, ChevronDownIcon, EllipsisIcon, LoaderCircleIcon, SearchIcon, TriangleAlertIcon, UserRoundIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
 import { ClientDetail } from "@/components/clients/client-detail";
@@ -129,6 +129,7 @@ export function ConversationPane({
       <section className="flex min-w-0 flex-1 flex-col border-r border-rule bg-paper">
         <ConversationHeader
           conversation={conversation.data}
+          unanswered={messages.data.unanswered}
           onResolved={onOpenConversation}
           nextConversationId={nextConversationId}
         />
@@ -311,12 +312,15 @@ const STATUS_BADGE = {
   RESOLVED: { tone: "resolved", label: "Resolvida" },
 } as const;
 
-function ConversationHeader({
+export function ConversationHeader({
   conversation,
+  unanswered,
   onResolved,
   nextConversationId,
 }: {
   conversation: ConversationListItem;
+  /** O cliente está sem resposta: "Resolver" avisa antes que conta como má conduta. */
+  unanswered: boolean;
   onResolved: (next: string | null) => void;
   nextConversationId: () => string | null;
 }) {
@@ -342,6 +346,7 @@ function ConversationHeader({
     await update({ status: "RESOLVED" });
     onResolved(next);
   };
+  const [confirmUnanswered, setConfirmUnanswered] = useState(false);
 
   const assigned = conversation.assignedUser;
   const subtitle = [
@@ -406,7 +411,7 @@ function ConversationHeader({
             Reabrir
           </Button>
         ) : (
-          <Button size="sm" onClick={resolve}>
+          <Button size="sm" onClick={unanswered ? () => setConfirmUnanswered(true) : resolve}>
             Resolver
           </Button>
         )}
@@ -425,6 +430,29 @@ function ConversationHeader({
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+
+      <Dialog open={confirmUnanswered} onOpenChange={setConfirmUnanswered}>
+        <DialogContent className="w-[420px]">
+          <div className="border-b border-rule px-5 pt-[18px] pb-3.5">
+            <DialogTitle className="mb-0.5 flex items-center gap-2">
+              <TriangleAlertIcon className="size-4 text-tomate" aria-hidden />
+              O cliente está sem resposta
+            </DialogTitle>
+            <DialogDescription>
+              A última mensagem de {conversation.contact.name ?? "quem escreve nesta conversa"} ainda não foi respondida. Resolver mesmo
+              assim conta como má conduta e avisa o gestor do restaurante.
+            </DialogDescription>
+          </div>
+          <div className="flex justify-end gap-2 px-5 py-3">
+            <Button variant="outline" size="sm" onClick={() => setConfirmUnanswered(false)}>
+              Voltar e responder
+            </Button>
+            <Button variant="accent" size="sm" onClick={resolve}>
+              Resolver mesmo assim
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </header>
   );
 }

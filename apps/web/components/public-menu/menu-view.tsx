@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { track } from "@/lib/attribution";
 import { CartProvider } from "@/lib/public-cart";
+import { NoticesStrip } from "@/components/public-menu/notices-strip";
 import { highlightsOf, priceLabel, type PublicMenu, type PublicMenuItem, visibleCategories } from "@/lib/public-menu";
 import { cn } from "@/lib/utils";
 import { ChevronDownIcon } from "lucide-react";
@@ -160,6 +161,7 @@ export function MenuView({ slug, menu }: { slug: string; menu: PublicMenu }) {
       <div className="mx-auto w-full max-w-6xl px-4 pb-40 lg:flex lg:items-start lg:gap-8 lg:px-8 lg:pb-16">
         <div className="min-w-0 flex-1">
           <ReorderStrip slug={slug} />
+          {(menu.notices?.length ?? 0) > 0 && <NoticesStrip notices={menu.notices!} />}
           {highlights.length > 0 && (
             <section id={HIGHLIGHTS_ID} data-menu-section={HIGHLIGHTS_ID} className="scroll-mt-20 pt-4">
               <h2 className="m-0 mb-3 font-heading text-[22px] font-bold">Destaques</h2>

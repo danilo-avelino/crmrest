@@ -105,6 +105,7 @@ export class IfoodChatService {
           placedAt: true,
           channel: { select: { connectedAt: true } },
           reviewInvite: { select: { text: true } },
+          contact: { select: { name: true } },
         },
       });
       // Filtrado pelo canal iFood: o pedido achado sempre tem canal.
@@ -152,7 +153,7 @@ export class IfoodChatService {
         answeredFromInbox = false;
         // A mensagem padrão do iFood não é a loja falando: não conta como "digitada" nem como resposta (18/11/2026: a
         // "entregue 🥳" do Pablo, no Nippon, parecia a loja atendendo e a IA ficou calada diante da queixa).
-        const template = entry.direction === "OUTBOUND" && (await this.isTemplate(tx, order.channelId, entries, entry, now));
+        const template = entry.direction === "OUTBOUND" && (await this.isTemplate(tx, order.channelId, entries, entry, now, order.contact.name));
         if (entry.direction === "OUTBOUND" && !template) typed.add(entry);
         const storeReply = entry.direction === "OUTBOUND" && !template && isStoreReply(entries, entry);
         storeReplied ||= storeReply;
@@ -365,8 +366,33 @@ export class IfoodChatService {
    * entregador está no local...", repetem em vários chats mas são da equipe: a IA respondeu por cima do Denis, no
    * Aglio Nero, porque o atalho foi tomado por padrão (18/11/2026).
    */
-  private async isTemplate(tx: TenantTx, channelId: string, entries: Entry[], entry: Entry, now: Date): Promise<boolean> {
+  private async isTemplate(tx: TenantTx, channelId: string, entries: Entry[], entry: Entry, now: Date, customer: string | null): Promise<boolean> {
     if (IFOOD_STANDARD.test(entry.text)) return true;
+    // Mensagem automática da loja com o nome do cliente ("Olá Bruna Gicelle! Seu pedido já está com o entregador e ele está
+    // a caminho."): o texto muda de um chat para outro, então a comparação é pelo que vem antes e depois do nome. Ela era
+    // tomada por resposta da equipe, e a IA ficava calada diante do cliente (24/11/2026: Bruna Gicelle, Rayanna, Jefferson).
+    // Atalho digitado pela equipe não tem o nome de cada cliente.
+    const at = customer && customer.trim().length >= 3 ? entry.text.toLocaleLowerCase("pt-BR").indexOf(customer.trim().toLocaleLowerCase("pt-BR")) : -1;
+    if (at >= 0) {
+      const prefix = entry.text.slice(0, at);
+      const suffix = entry.text.slice(at + customer!.trim().length);
+      if (suffix.trim().length >= 10) {
+        const like = await tx.message.findFirst({
+          where: {
+            channelId,
+            direction: "OUTBOUND",
+            createdAt: { gte: new Date(now.getTime() - STORE_TEMPLATE_MS) },
+            AND: [
+              { content: { path: ["text"], string_starts_with: prefix } },
+              { content: { path: ["text"], string_ends_with: suffix } },
+            ],
+            NOT: { content: { path: ["text"], equals: entry.text } },
+          },
+          select: { id: true },
+        });
+        if (like) return true;
+      }
+    }
     const asked = entries.slice(0, entries.indexOf(entry)).some((item) => item.direction === "INBOUND");
     if (asked && !EMOJI.test(entry.text)) return false;
     const same = await tx.message.findFirst({

@@ -9,9 +9,28 @@ import {
   tagBenefitsOf,
 } from "@dishdesk/shared";
 import { formatCents } from "../menu/pricing.js";
+import { type CouponLine, candidateCoupons } from "./menu-coupons.js";
 
-/** O que o pedido grava em `raw.benefit` (e a tela do pedido mostra). */
-export type AppliedBenefit = { kind: "coupon" | "recovery"; tag: string; label: string; discountCents: number; freeDelivery: boolean };
+/**
+ * O que o pedido grava em `raw.benefit` (e a tela do pedido mostra). `menu_coupon`: cupom da aba Cupons (N4), com o
+ * id do cupom em `tag` e o código em `code` (null no automático).
+ */
+export type AppliedBenefit = {
+  kind: "coupon" | "recovery" | "menu_coupon";
+  tag: string;
+  label: string;
+  discountCents: number;
+  freeDelivery: boolean;
+  code?: string | null;
+};
+
+/** Forma de pagamento do checkout como o cupom guarda: pix, card ou cash. */
+export function couponPaymentOf(method: string | null | undefined): string | null {
+  if (!method) return null;
+  if (method === "pix" || method === "pix_on_delivery") return "pix";
+  if (method === "credit" || method === "debit") return "card";
+  return method === "cash" ? "cash" : null;
+}
 
 const RECOVERY_COOLDOWN_MS = 30 * 24 * 60 * 60 * 1000;
 
@@ -73,14 +92,57 @@ export async function customerCoupons(
  */
 export async function resolveBenefit(
   tx: TenantTx,
-  input: { tenantId: string; contactId: string; verified: boolean; couponId: string | null | undefined; settings: unknown; now: Date; subtotalCents: number; deliveryFeeCents: number },
-): Promise<{ benefit: AppliedBenefit | null; couponRefused: string | null }> {
-  if (!input.verified) return { benefit: null, couponRefused: input.couponId ? "Entre com o código do WhatsApp para usar cupons." : null };
+  input: {
+    tenantId: string;
+    contactId: string;
+    verified: boolean;
+    couponId: string | null | undefined;
+    settings: unknown;
+    now: Date;
+    subtotalCents: number;
+    deliveryFeeCents: number;
+    /** Cupom da aba Cupons digitado na sacola; os automáticos entram sozinhos. */
+    couponCode?: string | null;
+    lines?: CouponLine[];
+    mode?: "DELIVERY" | "PICKUP";
+    paymentMethod?: string | null;
+  },
+): Promise<{ benefit: AppliedBenefit | null; couponRefused: string | null; codeRefused: string | null }> {
+  const options: AppliedBenefit[] = [];
+  let couponRefused: string | null = null;
+  let codeRefused: string | null = null;
+
+  // Cupons da aba Cupons: o digitado e os automáticos. Valem também sem o código do WhatsApp, menos os que dependem
+  // de saber quem é o cliente (só novos, um uso por cliente).
+  const menuCoupons = await candidateCoupons(tx, {
+    tenantId: input.tenantId,
+    contactId: input.verified ? input.contactId : null,
+    code: input.couponCode ?? null,
+    ctx: {
+      now: input.now,
+      lines: input.lines ?? [],
+      subtotalCents: input.subtotalCents,
+      mode: input.mode ?? null,
+      paymentMethod: couponPaymentOf(input.paymentMethod),
+      verified: input.verified,
+    },
+  });
+  if (input.couponCode?.trim()) {
+    if (menuCoupons.typedMissing) codeRefused = "Cupom não encontrado. Confira o código.";
+    else if (menuCoupons.typed?.refusal) codeRefused = menuCoupons.typed.refusal;
+  }
+  for (const c of [...(menuCoupons.typed ? [menuCoupons.typed] : []), ...menuCoupons.automatic]) {
+    if (c.refusal || (c.discountCents === 0 && !c.freeDelivery)) continue;
+    options.push({ kind: "menu_coupon", tag: c.id, label: c.code ?? c.name, code: c.code, discountCents: c.discountCents, freeDelivery: c.freeDelivery });
+  }
+
+  if (!input.verified) {
+    const best = bestOf(options, input.subtotalCents, input.deliveryFeeCents);
+    return { benefit: best, couponRefused: input.couponId ? "Entre com o código do WhatsApp para usar cupons." : null, codeRefused: best?.kind === "menu_coupon" && best.code ? null : codeRefused };
+  }
   const contact = await tx.contact.findFirst({ where: { id: input.contactId, tenantId: input.tenantId }, select: { tags: true } });
   const tags = contact?.tags ?? [];
   const config = tagBenefitsOf(input.settings);
-  const options: AppliedBenefit[] = [];
-  let couponRefused: string | null = null;
 
   if (input.couponId) {
     const coupons = await customerCoupons(tx, { tenantId: input.tenantId, contactId: input.contactId, tags, settings: input.settings, now: input.now, subtotalCents: input.subtotalCents });
@@ -97,8 +159,18 @@ export async function resolveBenefit(
     if (!recent) options.push({ kind: "recovery", tag: "recovery", label: "Presente da casa", discountCents: recovery.discountCents, freeDelivery: recovery.freeDelivery });
   }
 
-  const best = options.sort((a, b) => benefitSavings(b, input.subtotalCents, input.deliveryFeeCents) - benefitSavings(a, input.subtotalCents, input.deliveryFeeCents))[0] ?? null;
-  return { benefit: best, couponRefused: best?.kind === "coupon" ? null : couponRefused };
+  const best = bestOf(options, input.subtotalCents, input.deliveryFeeCents);
+  return {
+    benefit: best,
+    couponRefused: best?.kind === "coupon" ? null : couponRefused,
+    // O código digitado perdeu para uma vantagem maior: não é erro, só não entra.
+    codeRefused: best?.kind === "menu_coupon" && best.code ? null : codeRefused,
+  };
+}
+
+/** Vale só a de maior economia, nunca duas. */
+function bestOf(options: AppliedBenefit[], subtotalCents: number, deliveryFeeCents: number): AppliedBenefit | null {
+  return [...options].sort((a, b) => benefitSavings(b, subtotalCents, deliveryFeeCents) - benefitSavings(a, subtotalCents, deliveryFeeCents))[0] ?? null;
 }
 
 /** Desconto efetivo (o desconto não passa do subtotal) e a taxa depois da vantagem. */

@@ -167,8 +167,8 @@ function Attention({ data }: { data: RatingsReportDto }) {
   const items = [
     ai && {
       total: ai.misconduct.length,
-      text: `${plural(ai.misconduct.length, "resposta da equipe bloqueada", "respostas da equipe bloqueadas")} por má conduta`,
-      hint: "A IA achou a resposta ofensiva e não enviou ao cliente.",
+      text: plural(ai.misconduct.length, "alerta de má conduta", "alertas de má conduta"),
+      hint: "Resposta ofensiva que a IA não enviou ou conversa resolvida com o cliente sem resposta.",
       href: "/avaliacoes/equipe",
     },
     ai && {

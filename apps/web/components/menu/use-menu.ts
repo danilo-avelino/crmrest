@@ -3,12 +3,14 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
+import { useMenuTenantId } from "@/components/menu/menu-shell";
 import { ApiError } from "@/lib/api";
 import type { MenuTree } from "@/lib/menu";
 
+/** O restaurante do cardápio: o escolhido na faixa do Cardápio ou, fora dela, o primeiro da sessão. */
 export function useTenantId(): string | null {
   const { session } = useAuth();
-  return session?.context?.tenants[0]?.id ?? null;
+  return useMenuTenantId() ?? session?.context?.tenants[0]?.id ?? null;
 }
 
 /** O cardápio inteiro (`GET /menu/:tenantId`). Responde 403 quando o módulo Cardápio não está ligado. */
@@ -44,7 +46,9 @@ export function useMenuActions() {
   const queryClient = useQueryClient();
   const tenantId = useTenantId();
   const [error, setError] = useState<string | null>(null);
-  const refresh = () => queryClient.invalidateQueries({ queryKey: ["menu", tenantId] });
+  // O cardápio e as abas que leem dele (opções, cupons, avisos, relatório): chaves "menu" e "menu-*" do restaurante.
+  const refresh = () =>
+    queryClient.invalidateQueries({ predicate: (query) => String(query.queryKey[0]).startsWith("menu") && query.queryKey[1] === tenantId });
 
   async function call<T = unknown>(path: string, method: string, body?: unknown): Promise<{ data: T } | undefined> {
     setError(null);
@@ -59,7 +63,12 @@ export function useMenuActions() {
   }
 
   /** `PUT /menu/:tenantId/items/:id/photo`: o arquivo vai no corpo, com o tipo da imagem. */
-  async function uploadPhoto(itemId: string, file: File): Promise<{ photoUrl: string | null } | undefined> {
+  function uploadPhoto(itemId: string, file: File): Promise<{ photoUrl: string | null } | undefined> {
+    return uploadTo(`/items/${itemId}/photo`, file);
+  }
+
+  /** Envia a imagem para `PUT /menu/:tenantId{path}` (item, opção da biblioteca, aviso). */
+  async function uploadTo<T extends { photoUrl: string | null }>(path: string, file: File): Promise<T | undefined> {
     setError(null);
     const problem = photoProblem(file);
     if (problem) {
@@ -67,7 +76,7 @@ export function useMenuActions() {
       return undefined;
     }
     const send = (token: string | null) =>
-      fetch(`/api/menu/${tenantId}/items/${itemId}/photo`, {
+      fetch(`/api/menu/${tenantId}${path}`, {
         method: "PUT",
         headers: { "Content-Type": file.type, ...(token ? { Authorization: `Bearer ${token}` } : {}) },
         body: file,
@@ -86,14 +95,14 @@ export function useMenuActions() {
         );
         return undefined;
       }
-      const item = (await response.json()) as { photoUrl: string | null };
+      const saved = (await response.json()) as T;
       await refresh();
-      return item;
+      return saved;
     } catch {
       setError("Não foi possível enviar a foto. Confira a conexão e tente de novo.");
       return undefined;
     }
   }
 
-  return { call, uploadPhoto, error, setError, tenantId };
+  return { call, uploadPhoto, uploadTo, error, setError, tenantId };
 }

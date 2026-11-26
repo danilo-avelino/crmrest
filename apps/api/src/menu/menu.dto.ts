@@ -35,11 +35,33 @@ export const ItemRequest = z.object({
   tags: tagList.optional(),
   synonyms: tagList.optional(),
   aiNotes: text.transform((value) => value || null).nullish(),
+  costCents: cents.nullish(), // custo por unidade, para a margem do relatório
+  promoPriceCents: cents.nullish(), // preço promocional: só item sem tamanhos e abaixo do preço
 });
 export type ItemRequest = z.infer<typeof ItemRequest>;
 export const ItemPatch = ItemRequest.partial();
 
 export const OrderRequest = z.object({ ids: ids.min(1) });
+
+/** Edição em planilha (N2): várias linhas de uma vez, numa transação só. Campo ausente não muda. */
+export const BulkItemsRequest = z.object({
+  items: z
+    .array(
+      z.object({
+        id: z.uuid(),
+        status: z.enum(["AVAILABLE", "SOLD_OUT", "PAUSED"]).optional(),
+        priceCents: cents.optional(), // só itens sem tamanhos
+        promoPriceCents: cents.nullable().optional(),
+        costCents: cents.nullable().optional(),
+        featured: z.boolean().optional(), // a tag "destaque"
+        categoryId: z.uuid().optional(),
+      }),
+    )
+    .min(1)
+    .max(500)
+    .refine((items) => new Set(items.map((i) => i.id)).size === items.length, "Item repetido."),
+});
+export type BulkItemsRequest = z.infer<typeof BulkItemsRequest>;
 export const SoldOutRequest = z.object({ soldOut: z.boolean() });
 
 export const SizesRequest = z.object({
@@ -60,13 +82,17 @@ export const OptionGroupPatch = z
   .object({ name, minSelect: z.number().int().min(0).max(50), maxSelect: z.number().int().min(1).max(50) })
   .partial();
 
-export const OptionRequest = z.object({
-  name,
-  priceCents: cents.optional(),
-  active: z.boolean().optional(),
-  soldOut: z.boolean().optional(),
-});
-export const OptionPatch = OptionRequest.partial();
+/** No grupo: a opção da biblioteca (`choiceId`) ou um nome, que cria a opção na biblioteca. */
+export const OptionRequest = z
+  .object({
+    choiceId: z.uuid().optional(),
+    name: name.optional(),
+    priceCents: cents.optional(),
+    active: z.boolean().optional(),
+    soldOut: z.boolean().optional(),
+  })
+  .refine((option) => Boolean(option.choiceId) !== Boolean(option.name), { message: "Informe o nome ou a opção da biblioteca.", path: ["name"] });
+export const OptionPatch = z.object({ name, priceCents: cents, active: z.boolean(), soldOut: z.boolean() }).partial();
 
 /** Faixa de horário: weekday 0 (domingo) a 6; minutos desde a meia-noite, fim exclusivo (fim menor que o início vira o dia). */
 export const AvailabilityRequest = z.object({

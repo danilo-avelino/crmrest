@@ -74,12 +74,100 @@ export function couponSummary(coupon: Pick<CustomerCouponDto, "discountCents" | 
   return [coupon.freeDelivery ? "Frete grátis" : null, coupon.discountCents > 0 ? `${money(coupon.discountCents)} de desconto` : null].filter(Boolean).join(" · ");
 }
 
-/** Prévia do pedido com o cupom escolhido (só se ainda vale): desconto, taxa e total. O servidor decide no pedido. */
-export function useCouponPreview(slug: string, subtotalCents: number, deliveryFeeCents: number) {
+// ---------- Cupons da aba Cupons (N4): código digitado na sacola e os automáticos ----------
+
+export type MenuCouponView = { id: string; label: string; code: string | null; discountCents: number; freeDelivery: boolean };
+export type CodePreview = { typed: { ok: true; coupon: MenuCouponView } | { ok: false; message: string } | null; automatic: MenuCouponView | null };
+type PreviewLine = { itemId: string; totalCents: number };
+
+const codeKey = (slug: string) => `dd-coupon-code:${slug}`;
+
+export function couponCode(slug: string): string | null {
+  try {
+    return typeof window === "undefined" ? null : window.localStorage.getItem(codeKey(slug));
+  } catch {
+    return null;
+  }
+}
+
+export function setCouponCode(slug: string, code: string | null): void {
+  try {
+    if (code) window.localStorage.setItem(codeKey(slug), code);
+    else window.localStorage.removeItem(codeKey(slug));
+  } catch {
+    // sem armazenamento: vale só nesta página
+  }
+  window.dispatchEvent(new Event(COUPON_EVENT));
+}
+
+/** Código digitado na sacola, acompanhando a troca em outra parte da página. */
+export function useCouponCode(slug: string): string | null {
+  const [code, setCode] = useState<string | null>(null);
+  useEffect(() => {
+    const sync = () => setCode(couponCode(slug));
+    sync();
+    window.addEventListener(COUPON_EVENT, sync);
+    return () => window.removeEventListener(COUPON_EVENT, sync);
+  }, [slug]);
+  return code;
+}
+
+export async function fetchCodePreview(slug: string, body: { code: string | null; lines: PreviewLine[]; mode: "DELIVERY" | "PICKUP" | null }): Promise<CodePreview | null> {
+  const response = await fetch(`/api/public/menu/${encodeURIComponent(slug)}/coupon-preview`, {
+    method: "POST",
+    credentials: "same-origin",
+    cache: "no-store",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) return null;
+  return (await response.json()) as CodePreview;
+}
+
+/** Prévia do cupom digitado e do melhor automático para estas linhas; `undefined` enquanto carrega. */
+export function useCodePreview(slug: string, lines: PreviewLine[], mode: "DELIVERY" | "PICKUP" | null): CodePreview | null | undefined {
+  const code = useCouponCode(slug);
+  const [data, setData] = useState<CodePreview | null | undefined>(undefined);
+  const key = `${code ?? ""}|${mode ?? ""}|${lines.map((l) => `${l.itemId}:${l.totalCents}`).join(",")}`;
+  useEffect(() => {
+    let alive = true;
+    if (!lines.length) return;
+    fetchCodePreview(slug, { code, lines, mode })
+      .then((found) => alive && setData(found))
+      .catch(() => alive && setData(null));
+    return () => {
+      alive = false;
+    };
+    // `key` resume code, mode e linhas.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slug, key]);
+  return lines.length ? data : null;
+}
+
+/**
+ * Prévia do pedido com a melhor vantagem (vale uma só, como no servidor): o cupom da tag escolhido, o código
+ * digitado ou o automático. Desconto, taxa, total e o que vai no pedido (`couponId` da tag ou `couponCode`).
+ */
+export function useCouponPreview(slug: string, subtotalCents: number, deliveryFeeCents: number, lines: PreviewLine[] = [], mode: "DELIVERY" | "PICKUP" | null = null) {
   const id = useSelectedCoupon(slug);
   const data = useCoupons(slug, subtotalCents);
-  const coupon = data?.coupons.find((c) => c.id === id && c.available) ?? null;
-  const effect = couponEffect(coupon, subtotalCents);
+  const codes = useCodePreview(slug, lines, mode);
+  const tag = data?.coupons.find((c) => c.id === id && c.available) ?? null;
+  const tagEffect = couponEffect(tag, subtotalCents);
+  const menuCoupon = codes?.typed?.ok ? codes.typed.coupon : (codes?.automatic ?? null);
+  const savings = (e: { discountCents: number; freeDelivery: boolean }) => Math.min(e.discountCents, subtotalCents) + (e.freeDelivery ? deliveryFeeCents : 0);
+  const useMenu = menuCoupon != null && (!tag || savings(menuCoupon) > savings(tagEffect));
+  const effect = useMenu ? { discountCents: Math.min(menuCoupon.discountCents, subtotalCents), freeDelivery: menuCoupon.freeDelivery } : tagEffect;
   const feeCents = effect.freeDelivery ? 0 : deliveryFeeCents;
-  return { coupon, couponId: coupon?.id ?? null, discountCents: effect.discountCents, feeCents, totalCents: subtotalCents - effect.discountCents + feeCents };
+  const label = useMenu ? menuCoupon.label : (tag?.title ?? null);
+  return {
+    coupon: useMenu ? null : tag,
+    label,
+    couponId: useMenu ? null : (tag?.id ?? null),
+    couponCode: useMenu && menuCoupon.code ? menuCoupon.code : null,
+    discountCents: effect.discountCents,
+    freeDelivery: effect.freeDelivery,
+    feeCents,
+    totalCents: subtotalCents - effect.discountCents + feeCents,
+  };
 }

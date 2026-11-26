@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import type { MenuStoreSettings } from "@dishdesk/shared";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { CopyIcon, PlusIcon, XIcon } from "lucide-react";
@@ -156,7 +157,7 @@ function MenuStoreForm({ tenantId, data }: { tenantId: string; data: StoreRespon
         title="Áreas de entrega"
         aside={
           <div className="inline-flex overflow-hidden rounded-lg border border-rule" role="group" aria-label="Como cobrar a entrega">
-            {(["BY_DISTRICT", "BY_RADIUS"] as const).map((mode) => (
+            {(["BY_DISTRICT", "BY_RADIUS", "BY_AREA"] as const).map((mode) => (
               <button
                 key={mode}
                 type="button"
@@ -164,13 +165,22 @@ function MenuStoreForm({ tenantId, data }: { tenantId: string; data: StoreRespon
                 onClick={() => set("mode", mode)}
                 className={form.mode === mode ? "h-8 bg-ink px-3 text-[12.5px] font-semibold text-paper" : "h-8 bg-surface px-3 text-[12.5px] text-ink-2"}
               >
-                {mode === "BY_DISTRICT" ? "Por bairro" : "Por raio"}
+                {mode === "BY_DISTRICT" ? "Por bairro" : mode === "BY_RADIUS" ? "Por raio" : "Por área desenhada"}
               </button>
             ))}
           </div>
         }
       >
         <CardBody className="flex flex-col gap-3">
+          {form.mode === "BY_AREA" ? (
+            <p className="text-[13px] text-ink-2">
+              As áreas são desenhadas no mapa, com taxa e prazo de cada uma.{" "}
+              <Link href="/cardapio/areas" className="font-medium text-ink underline">
+                Editar em Áreas de entrega
+              </Link>
+            </p>
+          ) : (
+            <>
           <div className="grid grid-cols-[1fr_8rem_2.5rem] gap-x-3 border-b border-rule pb-1.5 text-[12px] text-ink-3">
             <span>{form.mode === "BY_DISTRICT" ? "Bairro" : "Até (km)"}</span>
             <span>Taxa</span>
@@ -231,6 +241,8 @@ function MenuStoreForm({ tenantId, data }: { tenantId: string; data: StoreRespon
               {form.mode === "BY_DISTRICT" ? "Bairro" : "Raio"}
             </button>
           </div>
+            </>
+          )}
           <div className="grid grid-cols-4 gap-3 border-t border-rule pt-3">
             <Field label="Pedido mínimo (R$)">
               <Input inputMode="decimal" value={form.minOrder} onChange={(e) => set("minOrder", e.target.value)} />

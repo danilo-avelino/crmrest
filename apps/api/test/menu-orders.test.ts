@@ -73,8 +73,9 @@ describe("Pedido do cardápio público com pagamento na entrega (F3-08, F6-07)",
     await admin.tenantModule.create({ data: { tenantId, module: "MENU" } });
     const menu = await admin.menu.create({ data: { tenantId, name: "Cardápio" } });
     const category = await admin.menuCategory.create({ data: { tenantId, menuId: menu.id, name: "Pizzas" } });
+    const bacon = await admin.menuChoice.create({ data: { tenantId, menuId: menu.id, name: "Bacon" } });
     const group = await admin.menuOptionGroup.create({
-      data: { tenantId, menuId: menu.id, name: "Adicionais", minSelect: 0, maxSelect: 3, options: { create: [{ tenantId, name: "Bacon", priceCents: 300 }] } },
+      data: { tenantId, menuId: menu.id, name: "Adicionais", minSelect: 0, maxSelect: 3, options: { create: [{ tenantId, choiceId: bacon.id, name: "Bacon", priceCents: 300 }] } },
       include: { options: true },
     });
     const pizza = await admin.menuItem.create({

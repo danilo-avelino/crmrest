@@ -183,6 +183,29 @@ describe("Chat do iFood na Inbox (trava IFOOD_CHAT_BRIDGE ligada)", () => {
     expect((await timeline(chat.id)).map((m) => m.content)).toContainEqual({ event: "phone_collected", text: "Telefone informado e cadastrado" });
   });
 
+  it("mensagem automática da loja com o nome do cliente não é a loja falando: o cliente que escreve depois é atendido (24/11/2026)", async () => {
+    const before = await ifoodOrder("7781", "Rita Prado");
+    await post("/ifood-chat/sync", {
+      orderCode: "7781",
+      messages: [shown("OUTBOUND", "Olá Rita Prado! Seu pedido já está com o entregador e ele está a caminho.", minutesAgo(30))],
+    }).expect(200);
+    await settle();
+    const { contactId } = await ifoodOrder("7782", "BRUNA GICELLE SOUSA");
+    const messages = [
+      shown("OUTBOUND", "Olá Bruna Gicelle Sousa! Seu pedido já está com o entregador e ele está a caminho.", minutesAgo(4)),
+      shown("INBOUND", "ele tá na portaria?", minutesAgo(1)),
+    ];
+    await post("/ifood-chat/sync", { orderCode: "7782", messages }).expect(200);
+    await settle();
+    const chat = await admin.conversation.findFirstOrThrow({ where: { contactId, channelId: fx.ifood.id } });
+    const contents = (await timeline(chat.id)).map((m) => m.content);
+    expect(contents).toContainEqual({ text: "Olá Bruna Gicelle Sousa! Seu pedido já está com o entregador e ele está a caminho." });
+    expect(contents).toContainEqual({ event: "handoff", text: "Cliente chamando pelo chat do iFood" });
+    expect(chat.awaitingAgentSince).not.toBeNull();
+    await typeOutbox();
+    expect(before.contactId).not.toBe(contactId);
+  });
+
   it("conversa copiada bem depois, ou já respondida pela loja: entra como não lida, sem alarme nem resposta automática", async () => {
     const late = await ifoodOrder("6531", "Bruna Lima", minutesAgo(200));
     const old = [shown("INBOUND", "Cadê meu pedido?", minutesAgo(180))];

@@ -171,6 +171,29 @@ describe("atendimento com IA: resposta, revisão e avaliação", () => {
     expect((await contents("5511980000001")).filter((c) => c.text === "Temos sim!")).toHaveLength(1);
   });
 
+  it("mensagem que chega atrasada, com hora anterior à resposta da IA, também é respondida (23/11/2026)", async () => {
+    answers.atendimento = { reply: "Bom dia, Ana! Em que posso ajudar?", handoff: false, reason: "", order: "none" };
+    const sent = Math.floor(Date.now() / 1000) - 30;
+    await say("5511980000097", "wamid.AI-LATE-1", "Oi,");
+    await settle();
+    const before = llmCalls("atendimento").length;
+    // O WhatsApp entrega agora a pergunta, mandada há 30 s: ela fica antes da resposta pela hora.
+    answers.atendimento = { reply: "Seu pedido foi confirmado, sim!", handoff: false, reason: "", order: "none" };
+    await postMetaWebhook(
+      app,
+      metaPayload(fx.whatsapp.externalId, {
+        contacts: [{ profile: { name: "Ana Souza" }, wa_id: "5511980000097" }],
+        messages: [{ from: "5511980000097", id: "wamid.AI-LATE-2", timestamp: String(sent), type: "text", text: { body: "Meu pedido foi confirmado?" } }],
+      }),
+    ).expect(200);
+    await settle();
+
+    expect(llmCalls("atendimento").length).toBe(before + 1);
+    const user = (llmCalls("atendimento").at(-1)!.body as LlmBody).messages[1]!.content;
+    expect(user).toMatch(/Restaurante \(IA\): Bom dia, Ana! Em que posso ajudar\?\nCliente: Meu pedido foi confirmado\?$/);
+    expect((await contents("5511980000097")).some((c) => c.text === "Seu pedido foi confirmado, sim!")).toBe(true);
+  });
+
   it("a resposta do atendente é revisada pela IA antes do envio, e a IA sai da conversa", async () => {
     const { id } = await conversationOf("5511980000001");
     answers.revisao = { misconduct: false, reason: "", text: "Claro! Seu pedido chega às 20:40." };
@@ -226,6 +249,7 @@ describe("atendimento com IA: resposta, revisão e avaliação", () => {
         .expect(200);
       expect(body.ai.misconduct).toEqual([
         {
+          kind: "blocked",
           messageId: sent.id,
           tenantId: fx.tenant.id,
           conversationId: id,
@@ -849,9 +873,10 @@ describe("atendimento com IA: resposta, revisão e avaliação", () => {
     await dm("mid.AI-IG-1", "Qual a previsão do meu pedido?");
     expect(lastPrompt()).toContain("nenhum pedido de hoje ou de ontem no cadastro nem com um número informado na conversa. O telefone do cliente não está no cadastro.");
 
-    const byNumber = "Pedido que pode ser do cliente (achado pelo número que ele informou; ainda não confirmado por ele):\n#4321 (iFood)";
+    // O número que ele escreveu já identifica o pedido: a IA não pergunta se é dele (25/11/2026).
     await dm("mid.AI-IG-2", "Pedido Nº 4321\nFeito às 13:44");
-    expect(lastPrompt()).toContain(byNumber);
+    expect(lastPrompt()).toContain("Pedido do cliente (ele informou o número deste pedido; não pergunte se é dele):\n#4321, pedido pelo canal iFood");
+    const byNumber = "Pedido do cliente (ele confirmou que é dele):\n#4321, pedido pelo canal iFood";
 
     // O telefone fica no cadastro do Instagram, sem unir ao da Bruna: a equipe vê o aviso e decide em Duplicados.
     await dm("mid.AI-IG-3", "(11) 97654-0001");
@@ -913,7 +938,7 @@ describe("atendimento com IA: resposta, revisão e avaliação", () => {
     await orderFor("7123");
     await retry.promote();
     await settle();
-    expect(promptOf()).toContain("#7123 (iFood)");
+    expect(promptOf()).toContain("Pedido do cliente (ele informou o número deste pedido; não pergunte se é dele):\n#7123, pedido pelo canal iFood");
     expect((await contents("5511980000041")).some((c) => c.event === "handoff")).toBe(false);
   });
 
@@ -925,7 +950,7 @@ describe("atendimento com IA: resposta, revisão e avaliação", () => {
     const order = await orderFor("8765", "+5511980000005");
     // Mostrar o pedido não é confirmar: mesmo que a LLM diga "confirmed", o pedido ainda não tinha sido mostrado ao cliente.
     answers.atendimento = { reply: "É o pedido #8765, com 1 Pizza Margherita (R$ 40,00)?", handoff: false, reason: "", order: "confirmed" };
-    await say("5511980000005", "wamid.AI-C1", "Pedido #8765");
+    await say("5511980000005", "wamid.AI-C1", "Cadê o meu pedido?");
     await settle();
     expect(promptOf()).toContain("Pedido que pode ser do cliente (ligado ao cadastro dele; ainda não confirmado por ele):\n#8765");
     const offered = await conversationOf("5511980000005");
@@ -996,9 +1021,9 @@ describe("atendimento com IA: resposta, revisão e avaliação", () => {
     answers.atendimento = { reply: "É o pedido #5557, com 1 Pizza Margherita?", handoff: false, reason: "", order: "none" };
     await say("5511980000006", "wamid.AI-D3", "Pedido nº 5557");
     await settle();
-    expect(promptOf()).toContain("Pedido que pode ser do cliente (achado pelo número que ele informou; ainda não confirmado por ele):\n#5557");
-
-    // Confirmado: o card entra na conversa, mas o cadastro não é unido ao do pedido (saber o número não prova que é dele).
+    // O número informado já confirma: o card entra na conversa, mas o cadastro não é unido ao do pedido (saber o número
+    // não prova que é dele).
+    expect(promptOf()).toContain("Pedido do cliente (ele informou o número deste pedido; não pergunte se é dele):\n#5557");
     answers.atendimento = { reply: "Certo! Ele está sendo preparado.", handoff: false, reason: "", order: "confirmed" };
     await say("5511980000006", "wamid.AI-D4", "Sim, é esse");
     await settle();
@@ -1012,6 +1037,16 @@ describe("atendimento com IA: resposta, revisão e avaliação", () => {
         text: "O cliente confirmou o pedido #5557 pelo número, mas ele está no cadastro de Cliente 5557. Se for a mesma pessoa, una os cadastros em Clientes → Duplicados",
       },
     ]);
+  });
+
+  it("número de pedido que a IA não acha: a equipe é chamada com a nota para conferir no sistema (25/11/2026)", async () => {
+    answers.atendimento = { reply: "Alguém da equipe vai ver o seu pedido.", handoff: true, reason: "pedido fora dos DADOS", order: "none" };
+    await say("5511980000098", "wamid.AI-NF-1", "Eu pedi um arrumadinho no iFood número 0999");
+    await settle();
+    expect(await contents("5511980000098")).toContainEqual({
+      event: "order_not_found",
+      text: "A IA não encontrou o pedido #0999 que o cliente informou. Verifique no seu sistema.",
+    });
   });
 
   it("o atendente pede uma sugestão de resposta: nada é enviado e um dado inventado não vale", async () => {

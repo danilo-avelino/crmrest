@@ -5,6 +5,7 @@ import {
   PauseSettings,
   ReviewInviteSettings,
   type TenantSettingsDto,
+  UpdateStoreClosuresRequest,
   UpdateOrderLinksRequest,
   UpdatePersonalityRequest,
 } from "@dishdesk/shared";
@@ -53,6 +54,15 @@ export class SettingsController {
     @CurrentAuth() auth: RequestAuth,
   ): Promise<TenantSettingsDto> {
     return this.settings.updateBusinessHours(auth, tenantId, body);
+  }
+
+  @Put(":tenantId/closures")
+  updateClosures(
+    @Param("tenantId", ParseUUIDPipe) tenantId: string,
+    @Body(new ZodPipe(UpdateStoreClosuresRequest)) body: UpdateStoreClosuresRequest,
+    @CurrentAuth() auth: RequestAuth,
+  ): Promise<TenantSettingsDto> {
+    return this.settings.updateClosures(auth, tenantId, body);
   }
 
   @Put(":tenantId/admin-notifications")

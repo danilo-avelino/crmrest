@@ -1,7 +1,9 @@
 import type { MessageType } from "@dishdesk/database/enums";
 import {
+  activeClosureAt,
   automationMessagesOf,
   businessHoursOf,
+  closureLabel,
   dayHoursLabel,
   isOpenAt,
   type MessageContent,
@@ -93,15 +95,31 @@ export function restaurantFacts(name: string, settings: unknown, now: Date): str
   const hours = businessHoursOf(settings);
   const links = orderLinksOf(settings);
   const lines = [`Restaurante: ${name}`, `Agora: ${BRASILIA_NOW.format(now)} (horário de Brasília)`];
+  // Pausa da loja (feriado, falta de energia): vale mais que o horário da semana. 23/11/2026: sem energia das 18h às
+  // 20h56, a IA disse "estamos abertos" a nove clientes que viam a loja fechada no iFood e no site.
+  const closure = activeClosureAt(hours, now);
   if (hours.enabled) {
     const week = hours.days.map((day, index) => `${WEEKDAY_LABELS[index]}: ${dayHoursLabel(day)}`);
     lines.push(`Horário de funcionamento: ${week.join("; ")}`);
+  } else {
+    lines.push("Horário de funcionamento: não informado.");
+  }
+  if (closure) {
+    const reopening = reopeningAt(hours, now);
+    const back = reopening === "em breve" ? "Ainda não há previsão de volta: diga isso, sem inventar horário." : `Volta a atender ${reopening}.`;
+    lines.push(
+      `Está fechado agora: o atendimento da loja está pausado (motivo: ${closure.reason}). ${back} Diga ao cliente que a loja está fechada e o motivo; não diga que está aberto nem mande pedir pelos links até a volta.`,
+    );
+  } else if (hours.enabled) {
     const reopening = reopeningAt(hours, now);
     // Antes de abrir (ou no intervalo), "hoje estamos fechados" soa como se não fosse abrir no dia.
     const today = reopening.startsWith("hoje") ? ' Ele ainda abre hoje: ao falar disso, diga a que horas abre ("abrimos às..."), e não que hoje está fechado.' : "";
     lines.push(isOpenAt(hours, now) ? "Está aberto agora." : `Está fechado agora. Volta a atender ${reopening}.${today}`);
-  } else {
-    lines.push("Horário de funcionamento: não informado.");
+  }
+  // Pausas que ainda vão começar (feriado na semana): o cliente pode perguntar se abre no dia.
+  const upcoming = hours.closures.filter((item) => Date.parse(item.from) > now.getTime() && Date.parse(item.from) - now.getTime() < 14 * 24 * 60 * 60_000);
+  if (upcoming.length) {
+    lines.push(`Pausas programadas (fechado nesses períodos): ${upcoming.map((item) => `${closureLabel(item)} (${item.reason})`).join("; ")}`);
   }
   lines.push(
     links.length

@@ -97,6 +97,10 @@ model Tenant {
   menuItemGroups      MenuItemOptionGroup[]
   menuAvailabilities  MenuAvailability[]
   menuItemPairings    MenuItemPairing[]
+  menuChoices         MenuChoice[]
+  menuCoupons         MenuCoupon[]
+  menuCouponUses      MenuCouponRedemption[]
+  menuNotices         MenuNotice[]
   carts               Cart[]
   cartItems           CartItem[]
   payments            Payment[]
@@ -269,6 +273,7 @@ model Contact {
   reviewedAsA   ContactDuplicateReview[]    @relation("ReviewedA")
   reviewedAsB   ContactDuplicateReview[]    @relation("ReviewedB")
   carts         Cart[]
+  couponUses    MenuCouponRedemption[]
 
   @@index([tenantId, phone])
   @@index([tenantId, cpfHash])
@@ -529,6 +534,7 @@ model Order {
   reviewInvite ReviewInvite?
   cart         Cart?
   payments     Payment[]
+  couponUse    MenuCouponRedemption?
 
   @@unique([channelId, externalOrderId])
   @@index([tenantId, contactId, placedAt])
@@ -884,6 +890,7 @@ model Menu {
   tenant       Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   categories   MenuCategory[]
   optionGroups MenuOptionGroup[]
+  choices      MenuChoice[]
 
   @@map("menus")
 }
@@ -927,6 +934,9 @@ model MenuItem {
   tags         String[] @default([]) // ex.: "vegetariano", "picante", "mais pedido"
   synonyms     String[] @default([]) // como o cliente chama: "calabreza", "linguiça"
   aiNotes      String?  @map("ai_notes") // orientação do restaurante para a IA sobre o item
+  // Planilha e relatório (26/11/2026): custo por unidade (margem) e preço promocional (só itens sem tamanhos).
+  costCents       Int?     @map("cost_cents")
+  promoPriceCents Int?     @map("promo_price_cents")
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
@@ -980,10 +990,13 @@ model MenuOptionGroup {
   @@map("menu_option_groups")
 }
 
+// A opção dentro de um grupo: o preço de venda e a ordem são do grupo. Nome, pausa e estoque vêm da opção da
+// biblioteca (MenuChoice) e são copiados aqui a cada mudança, para quem lê o grupo não precisar do join.
 model MenuOption {
   id         String  @id @default(uuid(7)) @db.Uuid
   tenantId   String  @map("tenant_id") @db.Uuid
   groupId    String  @map("group_id") @db.Uuid
+  choiceId   String  @map("choice_id") @db.Uuid
   name       String
   priceCents Int     @default(0) @map("price_cents")
   sortOrder  Int     @default(0) @map("sort_order")
@@ -992,10 +1005,131 @@ model MenuOption {
 
   tenant Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   group  MenuOptionGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  choice MenuChoice      @relation(fields: [choiceId], references: [id], onDelete: Cascade)
 
   @@index([tenantId, groupId])
+  @@index([tenantId, choiceId])
   @@map("menu_options")
 }
+
+enum MenuChoiceKind {
+  HALF // meias (meio a meio)
+  SIZE // tamanhos
+  DRINK // bebidas
+  EXTRA // extras e adicionais
+}
+
+// Opção da biblioteca (board N1, 26/11/2026): criada uma vez e usada em vários grupos de complementos, com o preço
+// de venda em cada grupo (MenuOption). Pausar ou tirar do estoque tira a opção de todos os grupos.
+model MenuChoice {
+  id          String         @id @default(uuid(7)) @db.Uuid
+  tenantId    String         @map("tenant_id") @db.Uuid
+  menuId      String         @map("menu_id") @db.Uuid
+  name        String
+  kind        MenuChoiceKind @default(EXTRA)
+  code        String? // código do PDV e da importação
+  costCents   Int?           @map("cost_cents")
+  description String?
+  photoUrl    String?        @map("photo_url")
+  active      Boolean        @default(true)
+  inStock     Boolean        @default(true) @map("in_stock")
+  createdAt   DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  tenant  Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  menu    Menu         @relation(fields: [menuId], references: [id], onDelete: Cascade)
+  options MenuOption[]
+
+  @@index([tenantId, menuId])
+  @@map("menu_choices")
+}
+
+enum MenuCouponKind {
+  FIXED // desconto em reais
+  PERCENT // desconto em %
+  FREE_DELIVERY // entrega grátis
+}
+
+// Cupom do cardápio (board N4, 26/11/2026): por código ou automático (sem código), com dia, horário e regras.
+// Diferente das Vantagens por tag (settings.tagBenefits), que valem por tag do cliente.
+model MenuCoupon {
+  id               String         @id @default(uuid(7)) @db.Uuid
+  tenantId         String         @map("tenant_id") @db.Uuid
+  name             String // só a equipe vê
+  code             String? // sempre em maiúsculas; null: automático, vale para todos e entra sozinho no carrinho
+  kind             MenuCouponKind
+  valueCents       Int            @default(0) @map("value_cents") // FIXED
+  percent          Int            @default(0) // PERCENT, 1 a 100
+  maxDiscountCents Int?           @map("max_discount_cents") // teto do desconto por pedido (PERCENT)
+  startsOn         String?        @map("starts_on") // AAAA-MM-DD, em Brasília; null: já vale
+  endsOn           String?        @map("ends_on") // AAAA-MM-DD inclusive; null: sem data para acabar
+  weekdays         Int[]          @default([]) // 0 (domingo) a 6; vazio: todos os dias
+  startMinute      Int?           @map("start_minute") // faixa de horário; null nos dois: o dia todo
+  endMinute        Int?           @map("end_minute")
+  delivery         Boolean        @default(true)
+  pickup           Boolean        @default(true)
+  usageLimit       Int?           @map("usage_limit") // null: sem limite
+  minOrderCents    Int            @default(0) @map("min_order_cents") // antes da taxa de entrega
+  newCustomersOnly Boolean        @default(false) @map("new_customers_only")
+  oncePerCustomer  Boolean        @default(false) @map("once_per_customer")
+  paymentMethods   String[]       @default([]) @map("payment_methods") // pix, cash, credit, debit, pix_on_delivery; vazio: todas
+  categoryIds      String[]       @default([]) @map("category_ids") @db.Uuid // vazio nos dois: o carrinho todo
+  itemIds          String[]       @default([]) @map("item_ids") @db.Uuid
+  active           Boolean        @default(true)
+  createdAt        DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  tenant      Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  redemptions MenuCouponRedemption[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@map("menu_coupons")
+}
+
+// Cada uso de cupom num pedido: conta os usos, o valor descontado e o "um uso por cliente".
+model MenuCouponRedemption {
+  id            String   @id @default(uuid(7)) @db.Uuid
+  tenantId      String   @map("tenant_id") @db.Uuid
+  couponId      String   @map("coupon_id") @db.Uuid
+  orderId       String   @unique @map("order_id") @db.Uuid
+  contactId     String   @map("contact_id") @db.Uuid
+  discountCents Int      @map("discount_cents") // inclui a taxa de entrega que virou grátis
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  tenant  Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  coupon  MenuCoupon @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  order   Order      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  contact Contact    @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, couponId])
+  @@index([tenantId, contactId])
+  @@map("menu_coupon_redemptions")
+}
+
+// Aviso no topo do cardápio público (board N5, 26/11/2026): faixa com imagem nos dias e horários escolhidos.
+model MenuNotice {
+  id          String   @id @default(uuid(7)) @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  title       String
+  body        String?
+  photoUrl    String?  @map("photo_url")
+  weekdays    Int[]    @default([]) // 0 (domingo) a 6; vazio: todos os dias
+  startMinute Int?     @map("start_minute") // null nos dois: o dia todo
+  endMinute   Int?     @map("end_minute")
+  endsOn      String?  @map("ends_on") // AAAA-MM-DD inclusive, em Brasília; null: sem data para acabar
+  active      Boolean  @default(true)
+  pausedBy    String?  @map("paused_by") // nome de quem desligou ("pausado por Ana")
+  sortOrder   Int      @default(0) @map("sort_order")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, sortOrder])
+  @@map("menu_notices")
+}
+
 
 model MenuItemOptionGroup {
   id        String @id @default(uuid(7)) @db.Uuid

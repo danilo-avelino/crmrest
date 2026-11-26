@@ -48,8 +48,9 @@ describe("Agente de pedidos: ferramentas de leitura e do carrinho (F4-01, F4-02)
     const menu = await admin.menu.create({ data: { tenantId, name: "Cardápio" } });
     const pizzas = await admin.menuCategory.create({ data: { tenantId, menuId: menu.id, name: "Pizzas", allowsHalf: true, halfPricing: "SUM" } });
     const drinks = await admin.menuCategory.create({ data: { tenantId, menuId: menu.id, name: "Bebidas", sortOrder: 1 } });
+    const catupiry = await admin.menuChoice.create({ data: { tenantId, menuId: menu.id, name: "Catupiry" } });
     const border = await admin.menuOptionGroup.create({
-      data: { tenantId, menuId: menu.id, name: "Borda", minSelect: 0, maxSelect: 1, options: { create: [{ tenantId, name: "Catupiry", priceCents: 1000 }] } },
+      data: { tenantId, menuId: menu.id, name: "Borda", minSelect: 0, maxSelect: 1, options: { create: [{ tenantId, choiceId: catupiry.id, name: "Catupiry", priceCents: 1000 }] } },
       include: { options: true },
     });
     const pizza = (name: string, grande: number, broto: number | null, extra: object = {}) =>

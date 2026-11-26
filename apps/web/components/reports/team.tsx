@@ -169,7 +169,7 @@ function Misconduct({ alerts, now }: { alerts: Ai["misconduct"]; now: number }) 
         <ShieldCheckIcon className="size-[18px] shrink-0 text-success" aria-hidden />
         <div>
           <div className="text-sm font-semibold">Nenhum alerta de má conduta</div>
-          <div className="mt-0.5 text-[12.5px] text-ink-3">Nenhuma resposta da equipe foi bloqueada pela IA neste período.</div>
+          <div className="mt-0.5 text-[12.5px] text-ink-3">Nenhuma resposta bloqueada pela IA e nenhum cliente deixado sem resposta neste período.</div>
         </div>
       </Card>
     );
@@ -184,13 +184,13 @@ function Misconduct({ alerts, now }: { alerts: Ai["misconduct"]; now: number }) 
         <AlertTriangleIcon className="size-[18px] shrink-0 text-tomate" aria-hidden />
         <div className="flex-1">
           <h2 className="text-[15px] font-bold text-tomate">Alertas de má conduta</h2>
-          <p className="mt-0.5 text-[12.5px] text-tomate-ink">Respostas da equipe que a IA achou ofensivas e não enviou ao cliente.</p>
+          <p className="mt-0.5 text-[12.5px] text-tomate-ink">Respostas que a IA achou ofensivas e não enviou, e conversas resolvidas com o cliente sem resposta.</p>
         </div>
         <span className="font-heading text-[28px] font-semibold text-tomate tabular-nums">{count(alerts.length)}</span>
       </div>
       <div role="table">
         <div role="row" className="grid gap-4 bg-tomate-lt/40 px-5 py-2.5" style={{ gridTemplateColumns: cols }}>
-          {["Atendente", "Cliente", "Mensagem original", "Motivo da IA", "Quando", ""].map((title, index) => (
+          {["Atendente", "Cliente", "Mensagem", "Motivo", "Quando", ""].map((title, index) => (
             <div key={index} role="columnheader" className="text-[10.5px] font-bold tracking-[0.07em] text-tomate-ink/60 uppercase">
               {title}
             </div>
@@ -206,6 +206,7 @@ function Misconduct({ alerts, now }: { alerts: Ai["misconduct"]; now: number }) 
               <RestaurantName tenantId={alert.tenantId} />
             </div>
             <div role="cell" className="font-heading text-sm whitespace-pre-wrap">
+              {alert.kind === "unanswered" && <span className="block font-sans text-[11px] text-ink-3">Cliente, sem resposta:</span>}
               “{alert.original}”
             </div>
             <div role="cell" className="text-ink-2">

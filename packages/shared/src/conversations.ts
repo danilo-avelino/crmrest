@@ -74,6 +74,10 @@ export type MessageContent = {
     | "ai_skip"
     /** A IA acha que quem escreve é um entregador sem a tag: a equipe confirma no modal da conversa. */
     | "courier_check"
+    /** O cliente informou um número de pedido que a IA não achou: a equipe confere no sistema dela. */
+    | "order_not_found"
+    /** O cliente falou de alergia ou restrição de saúde: a equipe precisa ver antes de o pedido sair. */
+    | "allergy_alert"
     /** O agente de pedidos do cardápio mexeu no carrinho (adicionou, trocou, definiu a entrega, resumiu). */
     | "menu_agent"
     | "cancellation_alert"
@@ -81,6 +85,11 @@ export type MessageContent = {
     | "bot_detected"
     /** A equipe apertou "Resolver": quem resolveu e a hora ficam marcados na conversa (só a equipe vê). */
     | "resolved"
+    /**
+     * Má conduta: a equipe resolveu a conversa com o cliente sem resposta. Leva quem resolveu (`sentByUserId`), o motivo
+     * em `misconduct` e a última mensagem do cliente em `original`; vai para as Avaliações e para o WhatsApp do gestor.
+     */
+    | "resolved_unanswered"
     /** Prevenção de fraude: só a equipe vê. */
     | "fraud_alert"
     | "order_kept"
@@ -290,7 +299,13 @@ export type ConversationDayStats = {
   aiScore: number | null;
 };
 /** `evaluations`: avaliações da IA, na ordem em que foram feitas (vazio para quem não é administrador). */
-export type ConversationMessages = { messages: MessageDto[]; orders: Record<string, OrderDto>; evaluations: ConversationEvaluationDto[] };
+export type ConversationMessages = {
+  messages: MessageDto[];
+  orders: Record<string, OrderDto>;
+  evaluations: ConversationEvaluationDto[];
+  /** O cliente está sem resposta: resolver agora conta como má conduta (o painel avisa antes). */
+  unanswered: boolean;
+};
 
 /** Dias (AAAA-MM-DD, Brasília) do cartão "Hoje até agora"; sem eles, só hoje. */
 export const ConversationDayQuery = z.object({

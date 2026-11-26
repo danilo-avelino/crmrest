@@ -1,13 +1,12 @@
 "use client";
 
 import type { AuthContext } from "@dishdesk/shared";
-import { BellIcon, BookOpenIcon, BotIcon, CirclePauseIcon, ClockIcon, CreditCardIcon, LinkIcon, LoaderCircleIcon, MegaphoneIcon, PlugIcon, SparklesIcon, TicketPercentIcon, UsersIcon, ZapIcon } from "lucide-react";
+import { BellIcon, CirclePauseIcon, ClockIcon, CreditCardIcon, LinkIcon, LoaderCircleIcon, PlugIcon, SparklesIcon, UsersIcon, ZapIcon } from "lucide-react";
 import { usePathname } from "next/navigation";
 import { createContext, type ReactNode, useContext, useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
 import { NavRail } from "@/components/inbox/nav-rail";
 import { SideMenu, type SideMenuGroup } from "@/components/layout/side-menu";
-import { useMenu } from "@/components/menu/use-menu";
 
 type SettingsTenant = AuthContext["tenants"][number];
 
@@ -39,18 +38,6 @@ const NAV: SideMenuGroup[] = [
   },
 ];
 
-/** Só com o módulo Cardápio ligado (a mesma checagem do menu lateral). */
-const MENU_NAV: SideMenuGroup = {
-  group: "Cardápio",
-  items: [
-    { href: "/configuracoes/cardapio", label: "Cardápio e entrega", icon: BookOpenIcon },
-    { href: "/configuracoes/pagamentos-cardapio", label: "Pagamentos do cardápio", icon: CreditCardIcon },
-    { href: "/configuracoes/pedidos-ia", label: "Pedidos pela IA", icon: BotIcon },
-    { href: "/configuracoes/vantagens", label: "Vantagens por tag", icon: TicketPercentIcon },
-    { href: "/configuracoes/meta-ads", label: "Meta Ads", icon: MegaphoneIcon },
-  ],
-};
-
 const SettingsTenantContext = createContext<SettingsTenant | null>(null);
 
 /** O restaurante cujas configurações estão na tela (no painel master, o escolhido no seletor). */
@@ -75,7 +62,6 @@ export function SettingsShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const tenants = session?.context?.tenants ?? [];
   const adminTenants = tenants.filter((t) => t.role === "ADMIN");
-  const menuOn = useMenu().isSuccess;
   const [tenantId, setTenantId] = useState(() => adminTenants[0]?.id);
   const tenant = adminTenants.find((t) => t.id === tenantId) ?? adminTenants[0];
   if (!tenant) return null;
@@ -87,14 +73,14 @@ export function SettingsShell({ children }: { children: ReactNode }) {
         title="Configurações"
         label="Seções das configurações"
         root="/configuracoes"
-        nav={menuOn ? [...NAV.slice(0, 2), MENU_NAV, ...NAV.slice(2)] : NAV}
+        nav={NAV}
         tenants={adminTenants}
         tenant={tenant}
         onTenantChange={setTenantId}
       />
       <main className="min-w-0 flex-1 overflow-y-auto px-8 py-7">
-        {/* Integrações e Pedidos pela IA (formulário e simulação lado a lado) usam a largura do board; as outras páginas ficam numa coluna de leitura. */}
-        <div className={pathname.startsWith("/configuracoes/integracoes") || pathname.startsWith("/configuracoes/pedidos-ia") ? "max-w-[1072px]" : "max-w-[760px]"}>
+        {/* Integrações usa a largura do board; as outras páginas ficam numa coluna de leitura. As do cardápio estão na faixa do Cardápio. */}
+        <div className={pathname.startsWith("/configuracoes/integracoes") ? "max-w-[1072px]" : "max-w-[760px]"}>
           <SettingsTenantContext value={tenant}>{children}</SettingsTenantContext>
         </div>
       </main>

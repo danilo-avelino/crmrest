@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
 
 /**
  * Ações do topo do Cardápio no número do board P1 (Ver cardápio público · Importar · Novo item): o "Importar" abre a
- * planilha ou a foto/PDF e o pedido de importação do iFood; "Mais" leva ao funil, aos abandonados e aos complementos.
+ * planilha ou a foto/PDF e o pedido de importação do iFood. Funil, abandonados e complementos ficam na faixa lateral do Cardápio.
  */
 export function MenuHeaderMenus() {
   const router = useRouter();
@@ -19,16 +19,6 @@ export function MenuHeaderMenus() {
   const pending = requests.data?.some((r) => r.status === "OPEN");
   return (
     <>
-      <DropdownMenu>
-        <DropdownMenuTrigger className={cn(buttonVariants({ variant: "ghost" }), "gap-1")}>
-          Mais <ChevronDownIcon className="size-4" aria-hidden />
-        </DropdownMenuTrigger>
-        <DropdownMenuContent className="w-56">
-          <DropdownMenuItem onClick={() => router.push("/cardapio/funil")}>Funil de vendas</DropdownMenuItem>
-          <DropdownMenuItem onClick={() => router.push("/cardapio/abandonados")}>Carrinhos abandonados</DropdownMenuItem>
-          <DropdownMenuItem onClick={() => router.push("/cardapio/complementos")}>Complementos</DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
       <DropdownMenu>
         <DropdownMenuTrigger className={cn(buttonVariants({ variant: "outline" }), "gap-1")}>
           Importar <ChevronDownIcon className="size-4" aria-hidden />

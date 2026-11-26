@@ -105,11 +105,13 @@ export type AutomationMessages = {
   courierOrderRetry: string;
   /** {pedido} */
   courierOrderNotFound: string;
+  /** O pedido que o entregador informou foi cancelado: ele não entrega e a equipe é chamada. {pedido} */
+  courierOrderCanceled: string;
   /** Pedido achado: pede ao entregador para contar o problema. {pedido} */
   courierProblemRequest: string;
   /** O entregador contou o problema: a equipe é chamada. */
   courierProblemForwarded: string;
-  /** Resposta do entregador fora das opções: as opções 1 a 4 vêm logo abaixo. */
+  /** Resposta do entregador fora das opções: pergunta se ele quer um atendente (responder sim); as opções 1 a 4 vêm logo abaixo. */
   courierNotUnderstood: string;
   /** O entregador mandou só o número e o pedido existe: as opções 1 a 4 vêm logo abaixo. {pedido} */
   courierOrderFound: string;
@@ -197,10 +199,11 @@ export const PERSONALITY_MESSAGES: Record<Personality, AutomationMessages> = {
     courierArrivalCustomerText: "Olá! Sou o entregador do seu pedido #{pedido} ({loja}) e já estou na sua porta 🛵",
     courierFrontDeskCustomerText: "Olá! Sou o entregador do seu pedido #{pedido} ({loja}) e deixei ele na portaria 📦 Bom apetite!",
     courierOrderNotFound: "Não encontramos o pedido #{pedido}. Um atendente já vai falar com você.",
+    courierOrderCanceled: "Atenção: o pedido #{pedido} foi cancelado. Não entregue: um atendente já vai falar com você.",
     courierOrderRetry: "Não encontramos o pedido #{pedido}. Pode conferir o número e mandar de novo?",
     courierProblemRequest: "Encontramos o pedido #{pedido}. O que aconteceu com ele?",
     courierProblemForwarded: "Certo! Já estamos encaminhando para um atendente.",
-    courierNotUnderstood: "Não consigo te entender dessa forma. Responda apenas com um número. Se quiser falar com um atendente, responda 4.",
+    courierNotUnderstood: "Não consegui entender. Quer falar com um atendente? Responda *sim*, ou escolha uma das opções:",
     courierOrderFound: "Encontramos o pedido #{pedido}! 👍 Como podemos ajudar?",
     ifoodHandoff: "Olá! 👋 Estamos chamando um atendente.",
     ifoodPhoneRequest:
@@ -269,10 +272,11 @@ export const PERSONALITY_MESSAGES: Record<Personality, AutomationMessages> = {
     courierArrivalCustomerText: "Olá. Sou o entregador do seu pedido #{pedido} ({loja}) e já me encontro na sua porta.",
     courierFrontDeskCustomerText: "Olá. Sou o entregador do seu pedido #{pedido} ({loja}) e o deixei na portaria.",
     courierOrderNotFound: "Não localizamos o pedido #{pedido}. Um de nossos atendentes dará continuidade em instantes.",
+    courierOrderCanceled: "Atenção: o pedido #{pedido} consta como cancelado. Por gentileza, não realize a entrega; um de nossos atendentes falará com você em instantes.",
     courierOrderRetry: "Não localizamos o pedido #{pedido}. Por gentileza, confira o número e envie novamente.",
     courierProblemRequest: "Localizamos o pedido #{pedido}. Por gentileza, descreva o que ocorreu.",
     courierProblemForwarded: "Agradecemos. O caso está sendo encaminhado a um atendente.",
-    courierNotUnderstood: "Não foi possível compreender sua mensagem. Por gentileza, responda apenas com o número da opção. Para falar com um atendente, responda 4.",
+    courierNotUnderstood: "Não foi possível compreender sua mensagem. Deseja falar com um atendente? Responda *sim*, ou escolha uma das opções:",
     courierOrderFound: "Localizamos o pedido #{pedido}. Por gentileza, escolha uma das opções:",
     ifoodHandoff: "Olá. Estamos acionando um de nossos atendentes.",
     ifoodPhoneRequest:
@@ -337,10 +341,11 @@ export const PERSONALITY_MESSAGES: Record<Personality, AutomationMessages> = {
     courierArrivalCustomerText: "Oi! 🎉 Sou o entregador do seu pedido #{pedido} ({loja}) e já cheguei aí na sua porta! 🛵",
     courierFrontDeskCustomerText: "Oi! 🎉 Sou o entregador do seu pedido #{pedido} ({loja}) e deixei ele na portaria! 📦 Bom apetite! 😋",
     courierOrderNotFound: "Ihh, não achamos o pedido #{pedido} 😕 Mas relaxa: um atendente já vem falar com você!",
+    courierOrderCanceled: "Opa, segura aí! ✋ O pedido #{pedido} foi cancelado, não entrega não. Um atendente já vem falar com você!",
     courierOrderRetry: "Ihh, não achamos o pedido #{pedido} 😕 Confere o número e manda de novo!",
     courierProblemRequest: "Achamos o pedido #{pedido}! Conta pra gente: o que rolou com ele?",
     courierProblemForwarded: "Anotado! 🚀 Já estamos passando pra um atendente!",
-    courierNotUnderstood: "Ops, assim não consegui te entender 😅 Responde só com o número, tá? Se quiser falar com alguém da equipe, manda 4.",
+    courierNotUnderstood: "Ops, não consegui te entender 😅 Quer falar com alguém da equipe? Manda *sim*, ou escolhe uma opção:",
     courierOrderFound: "Achamos o pedido #{pedido}! 🎉 O que você precisa?",
     ifoodHandoff: "Oiê! 🤩 Já estamos chamando um atendente pra você!",
     ifoodPhoneRequest:
@@ -404,10 +409,11 @@ export const PERSONALITY_MESSAGES: Record<Personality, AutomationMessages> = {
     courierArrivalCustomerText: "E aí! Sou o entregador do seu pedido #{pedido} ({loja}) e tô aqui na sua porta 🛵",
     courierFrontDeskCustomerText: "E aí! Sou o entregador do seu pedido #{pedido} ({loja}) e deixei ele na portaria 📦 Bom apetite!",
     courierOrderNotFound: "Xi, não achamos o pedido #{pedido}. Mas sossega: alguém da equipe já vem falar com você.",
+    courierOrderCanceled: "Xi, o pedido #{pedido} foi cancelado. Não entrega, beleza? Alguém da equipe já vem falar contigo.",
     courierOrderRetry: "Xi, não achamos o pedido #{pedido}. Dá uma conferida no número e manda de novo?",
     courierProblemRequest: "Achamos o pedido #{pedido}. Manda aí: o que rolou com ele?",
     courierProblemForwarded: "Beleza! Já estamos passando pra alguém da equipe 👊",
-    courierNotUnderstood: "Xi, assim não consigo te entender. Manda só o número 👇 Quer falar com o atendente? Manda 4.",
+    courierNotUnderstood: "Xi, não entendi. Quer falar com o atendente? Manda *sim*, ou escolhe uma opção 👇",
     courierOrderFound: "Achamos o pedido #{pedido} 👊 Qual vai ser?",
     ifoodHandoff: "E aí! Já estamos chamando alguém da equipe pra falar com você 😉",
     ifoodPhoneRequest: "Enquanto isso, passa seu telefone com DDD? A conversa do iFood costuma fechar e aí a gente fica sem ter como te achar.",
@@ -475,10 +481,11 @@ export const PERSONALITY_MESSAGES: Record<Personality, AutomationMessages> = {
     courierArrivalCustomerText: "Olá! Sou o entregador do seu pedido #{pedido} ({loja}) e já estou aqui na sua porta 🧡",
     courierFrontDeskCustomerText: "Olá! Sou o entregador do seu pedido #{pedido} ({loja}) e deixei ele na portaria com carinho 🧡 Bom apetite!",
     courierOrderNotFound: "Não encontramos o pedido #{pedido}, mas não se preocupe: alguém da nossa equipe já vem falar com você 🧡",
+    courierOrderCanceled: "Atenção: o pedido #{pedido} foi cancelado, então não precisa entregar. Alguém da nossa equipe já vem falar com você 🧡",
     courierOrderRetry: "Não encontramos o pedido #{pedido}. Pode conferir o número com calma e nos mandar de novo? 🧡",
     courierProblemRequest: "Encontramos o pedido #{pedido}. Pode nos contar com calma o que aconteceu?",
     courierProblemForwarded: "Obrigado por avisar! Já estamos encaminhando para alguém da nossa equipe 🧡",
-    courierNotUnderstood: "Desculpe, não consigo te entender dessa forma 🧡 Pode responder apenas com um número? Se quiser falar com um atendente, é só responder 4.",
+    courierNotUnderstood: "Desculpe, não consegui te entender 🧡 Quer falar com um atendente? É só responder *sim*, ou escolher uma das opções:",
     courierOrderFound: "Encontramos o pedido #{pedido} 🧡 Como podemos te ajudar com ele?",
     ifoodHandoff: "Olá! 🧡 Já estamos chamando alguém da nossa equipe para cuidar de você.",
     ifoodPhoneRequest:
@@ -541,10 +548,11 @@ export const PERSONALITY_MESSAGES: Record<Personality, AutomationMessages> = {
     courierArrivalCustomerText: "Sou o entregador do seu pedido #{pedido} ({loja}). Estou na sua porta.",
     courierFrontDeskCustomerText: "Sou o entregador do seu pedido #{pedido} ({loja}). Deixei na portaria.",
     courierOrderNotFound: "Pedido #{pedido} não encontrado. Um atendente vai falar com você.",
+    courierOrderCanceled: "Pedido #{pedido} cancelado. Não entregue. Um atendente vai falar com você.",
     courierOrderRetry: "Pedido #{pedido} não encontrado. Confira o número e envie de novo.",
     courierProblemRequest: "Pedido #{pedido} encontrado. O que aconteceu?",
     courierProblemForwarded: "Encaminhado a um atendente.",
-    courierNotUnderstood: "Não entendi. Responda apenas com um número. Para falar com o atendente, responda 4.",
+    courierNotUnderstood: "Não entendi. Quer falar com um atendente? Responda *sim*, ou escolha uma opção:",
     courierOrderFound: "Pedido #{pedido} encontrado. Escolha uma opção:",
     ifoodHandoff: "Olá. Estamos chamando um atendente.",
     ifoodPhoneRequest: "Enquanto isso, informe seu telefone com DDD: a conversa do iFood costuma encerrar e ficamos sem contato.",

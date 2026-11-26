@@ -26,6 +26,20 @@ export const CLAUDE_PRICES: Record<string, { input: number; output: number }> = 
   "claude-opus-5-5": { input: 4, output: 20 },
 };
 
+/**
+ * O pedido à API do Claude, com a saída no formato do schema. Fica fora da classe para a avaliação da IA
+ * (apps/api/eval) chamar o modelo com os mesmos parâmetros da produção.
+ */
+export function claudeRequest<T>(model: string, schema: z.ZodType<T>, messages: LlmMessage[]) {
+  return {
+    model,
+    max_tokens: 16000,
+    system: messages.filter((message) => message.role === "system").map((message) => message.content).join("\n\n") || undefined,
+    messages: messages.filter((message) => message.role === "user").map((message) => ({ role: "user" as const, content: message.content })),
+    output_config: { effort: "low" as const, format: zodOutputFormat(schema) },
+  };
+}
+
 type Endpoint =
   | { provider: "openai"; base: string; apiKey?: string; model: string; timeoutMs: number }
   | { provider: "anthropic"; client: Anthropic; model: string };
@@ -166,13 +180,7 @@ export class LlmClient {
     schema: z.ZodType<T>,
     messages: LlmMessage[],
   ): Promise<string> {
-    const response = await endpoint.client.messages.parse({
-      model: endpoint.model,
-      max_tokens: 16000,
-      system: messages.filter((message) => message.role === "system").map((message) => message.content).join("\n\n") || undefined,
-      messages: messages.filter((message) => message.role === "user").map((message) => ({ role: "user", content: message.content })),
-      output_config: { effort: "low", format: zodOutputFormat(schema) },
-    });
+    const response = await endpoint.client.messages.parse(claudeRequest(endpoint.model, schema, messages));
     await this.recordUsage(tenantId, "CLAUDE", endpoint.model, response.usage); // a recusa também é cobrada
     if (response.stop_reason === "refusal") throw new Error(`O Claude recusou (${response.stop_details?.category ?? "sem categoria"}).`);
     if (response.parsed_output == null) throw new Error("A LLM não respondeu.");

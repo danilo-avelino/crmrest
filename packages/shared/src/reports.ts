@@ -189,8 +189,13 @@ export type RatingsReportDto = {
       churnRisk: number | null;
       createdAt: string;
     }[];
-    /** Respostas que a revisão da IA bloqueou por má conduta (ofensa, grosseria), com o texto que o atendente escreveu. */
+    /**
+     * Alertas de má conduta: "blocked" = resposta que a revisão da IA bloqueou (ofensa, grosseria), com o texto que o
+     * atendente escreveu em `original`; "unanswered" = conversa resolvida com o cliente sem resposta, com a última
+     * mensagem do cliente em `original`.
+     */
     misconduct: {
+      kind: "blocked" | "unanswered";
       messageId: string;
       tenantId: string;
       conversationId: string;

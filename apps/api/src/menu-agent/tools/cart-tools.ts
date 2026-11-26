@@ -1,5 +1,5 @@
 import type { TenantTx } from "@dishdesk/database";
-import { businessHoursOf, effectivePaymentMethods, isOpenAt, menuStoreOf, pausedOf, reopeningAt } from "@dishdesk/shared";
+import { businessHoursOf, effectivePaymentMethods, closedAt, menuStoreOf, pausedOf, reopeningAt } from "@dishdesk/shared";
 import { z } from "zod";
 import { feeRangeOf, quoteDelivery, scheduleSlots } from "../../menu/delivery.js";
 import { type LineSelection, type PricedLine, type PricingError, priceLine } from "../../menu/pricing.js";
@@ -427,7 +427,7 @@ export function cartTools(deps: MenuAgentDeps, session: MenuAgentSession) {
         if (scheduled && !scheduleSlots(store, hours, loaded.now).some((s) => s.start.getTime() === scheduled.getTime()))
           pending.push({ codigo: "SLOT_INVALIDO", dica: "A faixa agendada não vale mais: ofereça outra." });
         if (pausedOf(loaded.settings)) pending.push({ codigo: "LOJA_PAUSADA", dica: "A loja pausou os pedidos agora." });
-        else if (!scheduled && hours.enabled && !isOpenAt(hours, loaded.now))
+        else if (!scheduled && closedAt(hours, loaded.now))
           pending.push({
             codigo: "LOJA_FECHADA",
             dica: `A loja abre ${reopeningAt(hours, loaded.now)}.${store.scheduling.enabled ? " Ofereça agendar." : ""}`,

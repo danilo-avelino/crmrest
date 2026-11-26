@@ -33,6 +33,8 @@ const item = (patch: Partial<MenuItem> = {}): MenuItem => ({
   tags: [],
   synonyms: [],
   aiNotes: null,
+  costCents: null,
+  promoPriceCents: null,
   sizes: [],
   optionGroups: [],
   availabilities: [],

@@ -1,6 +1,6 @@
 import type { Prisma, TenantTx } from "@dishdesk/database";
 import type { ChannelType, ConversationStatus } from "@dishdesk/database/enums";
-import { businessHoursOf, CHANNEL_CAPABILITIES, isOpenAt, type MessageContent, pausedOf } from "@dishdesk/shared";
+import { businessHoursOf, CHANNEL_CAPABILITIES, closedAt, type MessageContent, pausedOf } from "@dishdesk/shared";
 import type { Queue } from "bullmq";
 import type { Env } from "../config/env.js";
 import type { DatabaseService } from "../core/database.service.js";
@@ -23,6 +23,8 @@ export type AutomationState = {
   menuRepeated?: boolean;
   /** Menu do entregador: o número não bateu com nenhum pedido e ele já foi pedido de novo; o próximo erro chama a equipe. */
   orderRetried?: boolean;
+  /** Menu do entregador: a automação não entendeu a resposta e perguntou se ele quer um atendente. */
+  courierAskedTeam?: boolean;
   /** Menu do entregador: número que ele mandou antes de escolher a opção; o aviso usa esse número, sem pedir de novo. */
   courierOrder?: string;
   /** Menu do entregador: o pedido a que ele se ligou neste atendimento (o painel da Inbox mostra esse pedido). */
@@ -101,6 +103,21 @@ export async function callTeam(tx: TenantTx, conversationId: string): Promise<vo
   });
 }
 
+/** Alergia, intolerância ou restrição de saúde na mensagem do cliente. */
+const ALLERGY = /(?:^|[^a-zà-ú])(?:al[ée]rgic[oa]s?|alergia|intoler[âa]n(?:te|cia)|cel[íi]ac[oa]|n[ãa]o\s+posso\s+comer)/i;
+
+/**
+ * O cliente falou de alergia numa conversa que já está com a equipe (a IA não responde mais): o aviso fica na conversa
+ * e o alarme toca, mesmo que já estivesse quieto. 24/11/2026: "Sou extremamente alérgica" a camarão, depois de a IA
+ * passar a troca de itens para a equipe; ninguém respondeu e o pedido saiu.
+ */
+export async function flagAllergy(tx: TenantTx, conversation: ConversationRef, text: string | undefined): Promise<boolean> {
+  if (!text || !ALLERGY.test(text)) return false;
+  await systemEvent(tx, conversation, { event: "allergy_alert", text: `O cliente falou de alergia: "${text.trim().slice(0, 150)}". Veja antes de o pedido sair.` });
+  await tx.conversation.update({ where: { id: conversation.id }, data: { awaitingAgentQuiet: false, awaitingAgentSince: new Date() } });
+  return true;
+}
+
 /**
  * O restaurante está fechado agora (horário de Configurações ligado e fora dele)? Os chamados dele ficam abertos na
  * Inbox, mas fora da contagem do alarme (sem bipe nem voz) até a loja abrir (`ConversationsService.counts`).
@@ -108,7 +125,7 @@ export async function callTeam(tx: TenantTx, conversationId: string): Promise<vo
  */
 export async function closedNow(tx: TenantTx, tenantId: string, now = new Date()): Promise<boolean> {
   const hours = businessHoursOf(await tenantSettings(tx, tenantId));
-  return hours.enabled && !isOpenAt(hours, now);
+  return closedAt(hours, now);
 }
 
 /**

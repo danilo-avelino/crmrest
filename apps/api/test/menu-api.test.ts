@@ -160,7 +160,8 @@ describe("Cardápio: API do painel (F2-05) e mais vendidos (F2-11)", () => {
       const categoryA = await admin.menuCategory.create({ data: { tenantId: fx.a.id, menuId: menuA.id, name: "Categoria de A" } });
       const itemA = await admin.menuItem.create({ data: { tenantId: fx.a.id, categoryId: categoryA.id, name: "Item de A", priceCents: 1000 } });
       const groupA = await admin.menuOptionGroup.create({ data: { tenantId: fx.a.id, menuId: menuA.id, name: "Grupo de A" } });
-      const optionA = await admin.menuOption.create({ data: { tenantId: fx.a.id, groupId: groupA.id, name: "Opção de A" } });
+      const choiceA = await admin.menuChoice.create({ data: { tenantId: fx.a.id, menuId: menuA.id, name: "Opção de A" } });
+      const optionA = await admin.menuOption.create({ data: { tenantId: fx.a.id, groupId: groupA.id, choiceId: choiceA.id, name: "Opção de A" } });
 
       const categoryB = (await call("post", fx.b.id, "/categories").send({ name: "Categoria de B" }).expect(201)).body;
       const itemB = (await call("post", fx.b.id, "/items").send({ categoryId: categoryB.id, name: "Item de B", priceCents: 500 }).expect(201)).body;

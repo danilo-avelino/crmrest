@@ -1,7 +1,7 @@
-import { businessHoursOf, dayHoursLabel, effectivePaymentMethods, isOpenAt, menuStoreOf, pausedOf, reopeningAt } from "@dishdesk/shared";
+import { businessHoursOf, dayHoursLabel, effectivePaymentMethods, closedAt, menuStoreOf, pausedOf, reopeningAt } from "@dishdesk/shared";
 import { z } from "zod";
 import { type DeliveryAddress, feeRangeOf, quoteDelivery, scheduleSlots } from "../../menu/delivery.js";
-import { availableAt, type LoadedMenuItem } from "../../menu/menu-catalog.js";
+import { availableAt, effectivePrice, type LoadedMenuItem } from "../../menu/menu-catalog.js";
 import { topItems } from "../../menu/menu-stats.js";
 import { type Catalog, defineTool, fromPriceCents, Id, loadCatalog, type Loaded, type MenuAgentDeps, money, refuse, withMenu } from "./context.js";
 import { normalizeText, type RecommendCandidate, recommend } from "./recommend.js";
@@ -180,7 +180,7 @@ export function readTools(deps: MenuAgentDeps, subtotalOf: SubtotalOf) {
           const priced = catalog.items instanceof Map ? catalog.items.get(item.id) : undefined;
           if (!priced?.active || priced.soldOut) return [];
           const size = item.sizes.length ? item.sizes.reduce((a, b) => (b.priceCents > a.priceCents ? b : a)) : null;
-          const unitCents = size?.priceCents ?? item.priceCents;
+          const unitCents = size?.priceCents ?? effectivePrice(item);
           if (unitCents == null) return [];
           return [
             {
@@ -230,7 +230,7 @@ export function readTools(deps: MenuAgentDeps, subtotalOf: SubtotalOf) {
         const store = menuStoreOf(settings);
         const hours = businessHoursOf(settings);
         const paused = pausedOf(settings);
-        const closed = hours.enabled && !isOpenAt(hours, now);
+        const closed = closedAt(hours, now);
         const status = paused ? "pausada" : closed ? "fechada" : "aberta";
         const slots = scheduleSlots(store, hours, now).slice(0, 4);
         const range = feeRangeOf(store);

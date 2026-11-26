@@ -200,7 +200,12 @@ export function ItemSheet({
               )}
               <h1 className="m-0 font-heading text-[24px] leading-tight font-bold tracking-[-0.5px]">{item.name}</h1>
               {item.description && <p className="m-0 text-ink-2">{item.description}</p>}
-              {priceLabel(item) && <p className="m-0 font-semibold tabular-nums">{priceLabel(item)}</p>}
+              {priceLabel(item) && (
+                <p className="m-0 flex items-baseline gap-2 font-semibold tabular-nums">
+                  {priceLabel(item)}
+                  {item.regularPriceCents != null && <s className="text-[13px] font-normal text-ink-3">{money(item.regularPriceCents)}</s>}
+                </p>
+              )}
             </div>
 
             {item.sizes.length > 0 && (

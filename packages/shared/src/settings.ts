@@ -32,6 +32,8 @@ export type TenantSettingsDto = {
   orderForecast: OrderForecastSettings;
   reviewInvite: ReviewInviteSettings;
   adminNotifications: AdminNotifications;
+  /** Pausas no atendimento da loja (feriado, falta de energia), em Configurações → Horário. */
+  closures: StoreClosure[];
   /** Dish Desk pausado: sem automações nem IA (ver PauseSettings). */
   paused: boolean;
   /** WhatsApp do restaurante por onde as notificações saem (null: nenhum conectado). */
@@ -192,16 +194,63 @@ export const DEFAULT_BUSINESS_HOURS: BusinessHours = {
   closedMessage: PERSONALITY_MESSAGES.cordial.closedMessage,
 };
 
-/** Sem horário salvo, a mensagem de fora do horário é a da personalidade. */
-export function businessHoursOf(settings: unknown): BusinessHours {
+/**
+ * Pausa no atendimento da loja, fora do horário da semana: feriado, férias, falta de energia. Durante ela o restaurante
+ * está fechado para a IA, para o aviso de fora do horário e para o cardápio digital. Sem `until`, vale até alguém
+ * encerrar a pausa ("sem energia, sem previsão"). Fica em `tenant.settings.closures`, fora do `businessHours`: salvar o
+ * horário da semana não apaga as pausas.
+ */
+export const StoreClosure = z
+  .object({
+    id: z.string().min(1).max(40),
+    from: z.iso.datetime({ offset: true }),
+    until: z.iso.datetime({ offset: true }).nullable(),
+    reason: z.string().trim().min(1, "Escreva o motivo.").max(120, "Use até 120 caracteres."),
+  })
+  .refine((closure) => !closure.until || Date.parse(closure.until) > Date.parse(closure.from), "O fim da pausa precisa ser depois do início.");
+export type StoreClosure = z.infer<typeof StoreClosure>;
+
+export const MAX_STORE_CLOSURES = 30;
+export const UpdateStoreClosuresRequest = z.object({
+  closures: z.array(StoreClosure).max(MAX_STORE_CLOSURES, `Use até ${MAX_STORE_CLOSURES} pausas.`),
+});
+export type UpdateStoreClosuresRequest = z.infer<typeof UpdateStoreClosuresRequest>;
+
+export function closuresOf(settings: unknown): StoreClosure[] {
+  return z.looseObject({ closures: z.array(StoreClosure).optional() }).safeParse(settings).data?.closures ?? [];
+}
+
+/** Horário da semana com as pausas da loja: o que decide se o restaurante está aberto. */
+export type OpeningHours = BusinessHours & { closures?: StoreClosure[] };
+
+/** Sem horário salvo, a mensagem de fora do horário é a da personalidade. Vem com as pausas da loja. */
+export function businessHoursOf(settings: unknown): BusinessHours & { closures: StoreClosure[] } {
   const saved = z.looseObject({ businessHours: BusinessHours.optional() }).safeParse(settings).data?.businessHours;
-  return saved ?? { ...DEFAULT_BUSINESS_HOURS, closedMessage: PERSONALITY_MESSAGES[personalityOf(settings)].closedMessage };
+  const hours = saved ?? { ...DEFAULT_BUSINESS_HOURS, closedMessage: PERSONALITY_MESSAGES[personalityOf(settings)].closedMessage };
+  return { ...hours, closures: closuresOf(settings) };
 }
 
 // ---------- Loja do cardápio digital ----------
 
 const Cents = z.number().int().min(0);
 const text = (max: number) => z.string().trim().max(max);
+
+const LatLng = z.object({ lat: z.number().min(-90).max(90), lng: z.number().min(-180).max(180) });
+
+/** Área de entrega desenhada no mapa (N6): círculo a partir da loja (de `minKm` a `maxKm`) ou polígono. */
+export const DeliveryArea = z.object({
+  id: z.string().min(1).max(40),
+  name: text(60).min(1),
+  shape: z.discriminatedUnion("type", [
+    z.object({ type: z.literal("circle"), minKm: z.number().min(0).max(200), maxKm: z.number().positive().max(200) }),
+    z.object({ type: z.literal("polygon"), points: z.array(LatLng).min(3).max(100) }),
+  ]),
+  feeCents: Cents,
+  /** Prazo da área; sem ele vale o prazo padrão da loja. */
+  etaMinMinutes: z.number().int().min(0).max(600).optional(),
+  etaMaxMinutes: z.number().int().min(0).max(600).optional(),
+});
+export type DeliveryArea = z.infer<typeof DeliveryArea>;
 
 /**
  * Configurações da loja do cardápio digital (em `tenant.settings.menuStore`). O horário de funcionamento é o
@@ -221,10 +270,14 @@ export const MenuStoreSettings = z.object({
   pickupEnabled: z.boolean(),
   /** Tempo de preparo para retirada, em minutos. */
   prepMinutes: z.number().int().min(0).max(600),
-  /** Entrega por bairro (taxa de cada um) ou por raio (taxa até cada distância, em km). */
+  /**
+   * Entrega por bairro (taxa de cada um), por raio (taxa até cada distância, em km) ou por área desenhada no mapa
+   * (círculos e polígonos, board N6; onde duas se cruzam vale a de menor taxa).
+   */
   delivery: z.discriminatedUnion("mode", [
     z.object({ mode: z.literal("BY_DISTRICT"), districts: z.array(z.object({ district: text(80).min(1), feeCents: Cents })).max(500) }),
     z.object({ mode: z.literal("BY_RADIUS"), radii: z.array(z.object({ maxKm: z.number().positive().max(200), feeCents: Cents })).max(50) }),
+    z.object({ mode: z.literal("BY_AREA"), areas: z.array(DeliveryArea).max(50) }),
   ]),
   minOrderCents: Cents,
   /** Pedido com subtotal a partir deste valor não paga frete (vazio: nunca). */
@@ -366,8 +419,23 @@ function brasiliaClock(at: Date): { day: number; now: number } {
   return { day: WEEKDAYS_EN.indexOf(parts.weekday ?? ""), now: Number(parts.hour) * 60 + Number(parts.minute) };
 }
 
-/** O restaurante está aberto neste instante (horário de Brasília)? */
-export function isOpenAt(hours: BusinessHours, at: Date): boolean {
+/** A pausa da loja que vale neste instante, se houver. */
+export function activeClosureAt(hours: OpeningHours, at: Date): StoreClosure | null {
+  const time = at.getTime();
+  return hours.closures?.find((closure) => Date.parse(closure.from) <= time && (!closure.until || time < Date.parse(closure.until))) ?? null;
+}
+
+/**
+ * O restaurante está fechado neste instante: numa pausa da loja ou, com o horário ligado, fora dele. É a pergunta que
+ * as automações fazem (horário desligado = sempre aberto, mas a pausa vale mesmo assim).
+ */
+export function closedAt(hours: OpeningHours, at: Date): boolean {
+  return !!activeClosureAt(hours, at) || (hours.enabled && !isOpenAt(hours, at));
+}
+
+/** O restaurante está aberto neste instante (horário de Brasília)? Numa pausa da loja, não. */
+export function isOpenAt(hours: OpeningHours, at: Date): boolean {
+  if (activeClosureAt(hours, at)) return false;
   const { day, now } = brasiliaClock(at);
   const today = hours.days[day] ?? [];
   const yesterday = hours.days[(day + 6) % 7] ?? [];
@@ -400,16 +468,66 @@ const WEEKDAY_RETURN = ["no domingo", "na segunda-feira", "na terça-feira", "na
  * Quando o atendimento volta, para o {retorno} da mensagem de fora do horário: "hoje às 18:00", "amanhã às 11:00",
  * "na segunda-feira às 11:00". Sem nenhum dia aberto, "em breve".
  */
-export function reopeningAt(hours: BusinessHours, at: Date): string {
-  const { day, now } = brasiliaClock(at);
+export function reopeningAt(hours: OpeningHours, at: Date): string {
+  const next = nextOpeningAt(hours, at);
+  if (!next) return "em breve";
+  const ahead = Math.round((brasiliaMidnight(next) - brasiliaMidnight(at)) / DAY_MS);
+  const { day } = brasiliaClock(next);
+  const when = ahead === 0 ? "hoje" : ahead === 1 ? "amanhã" : ahead <= 7 ? WEEKDAY_RETURN[day] : `em ${BRASILIA_DATE.format(next).slice(0, 5)}`;
+  return `${when} às ${BRASILIA_TIME.format(next)}`;
+}
+
+/** "de 24/12 às 18:00 até 26/12 às 11:00", ou "desde 23/11 às 18:00, sem previsão de volta" (horário de Brasília). */
+export function closureLabel(closure: StoreClosure): string {
+  const moment = (iso: string) => {
+    const at = new Date(iso);
+    return `${BRASILIA_DATE.format(at).slice(0, 5)} às ${BRASILIA_TIME.format(at)}`;
+  };
+  return closure.until ? `de ${moment(closure.from)} até ${moment(closure.until)}` : `desde ${moment(closure.from)}, sem previsão de volta`;
+}
+
+const DAY_MS = 24 * 60 * 60_000;
+// Brasília não tem horário de verão desde 2019: o fuso é sempre -03:00.
+const BRASILIA_OFFSET_MS = -3 * 60 * 60_000;
+const BRASILIA_DATE = new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "numeric" });
+const BRASILIA_TIME = new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+
+/** Meia-noite (em Brasília) do dia deste instante, em ms. */
+function brasiliaMidnight(at: Date): number {
+  return Math.floor((at.getTime() + BRASILIA_OFFSET_MS) / DAY_MS) * DAY_MS - BRASILIA_OFFSET_MS;
+}
+
+/** Próximo começo de turno da semana depois deste instante (sem olhar as pausas). */
+function nextShiftStart(hours: BusinessHours, from: Date): Date | null {
+  const { day, now } = brasiliaClock(from);
+  const midnight = brasiliaMidnight(from);
   for (let ahead = 0; ahead <= 7; ahead++) {
     // Hoje só vale o turno que ainda não começou.
     const shift = (hours.days[(day + ahead) % 7] ?? []).find((item) => ahead > 0 || minutesOf(item.open) > now);
-    if (!shift) continue;
-    const when = ahead === 0 ? "hoje" : ahead === 1 ? "amanhã" : WEEKDAY_RETURN[(day + ahead) % 7];
-    return `${when} às ${shift.open}`;
+    if (shift) return new Date(midnight + ahead * DAY_MS + minutesOf(shift.open) * 60_000);
   }
-  return "em breve";
+  return null;
+}
+
+/**
+ * Quando o restaurante volta a abrir: o fim da pausa (se o horário da semana estiver aberto nessa hora) ou o turno
+ * seguinte, pulando as pausas no caminho (feriado amanhã: volta depois de amanhã). null = sem previsão.
+ */
+function nextOpeningAt(hours: OpeningHours, at: Date): Date | null {
+  let from = at;
+  for (let step = 0; step < 10; step++) {
+    const closure = activeClosureAt(hours, from);
+    if (closure) {
+      if (!closure.until) return null;
+      from = new Date(closure.until);
+      continue;
+    }
+    if (from !== at && (!hours.enabled || isOpenAt(hours, from))) return from;
+    const start = nextShiftStart(hours, from);
+    if (!start || !activeClosureAt(hours, start)) return start;
+    from = start;
+  }
+  return null;
 }
 
 // ---------- Atendimento com IA (E27) ----------

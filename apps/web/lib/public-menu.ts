@@ -41,6 +41,8 @@ export type PublicMenuItem = {
   name: string;
   description: string | null;
   priceCents: number | null;
+  /** Preço cheio quando o item está em promoção (aparece riscado); null sem promoção. */
+  regularPriceCents?: number | null;
   photoUrl: string | null;
   soldOut: boolean;
   availableNow: boolean;
@@ -69,7 +71,10 @@ export type PublicMenuCategory = {
   items: PublicMenuItem[];
 };
 
-export type PublicMenu = { store: PublicMenuStore; categories: PublicMenuCategory[] };
+/** Aviso no topo do cardápio (aba Avisos, N5): só os que estão no ar agora. */
+export type PublicNotice = { id: string; title: string; body: string | null; photoUrl: string | null };
+
+export type PublicMenu = { store: PublicMenuStore; categories: PublicMenuCategory[]; notices?: PublicNotice[] };
 
 /** Segundos que a página fica em cache (ISR) e que a API deixa no Cache-Control. */
 export const MENU_REVALIDATE_SECONDS = 30;

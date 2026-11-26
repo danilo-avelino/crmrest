@@ -1,9 +1,10 @@
 import type { TenantTx } from "@dishdesk/database";
-import { businessHoursOf, closingTimeAt, DEFAULT_MENU_ACCENT, effectivePaymentMethods, isOpenAt, menuStoreOf, pausedOf, reopeningAt, tenantBlock } from "@dishdesk/shared";
+import { businessHoursOf, closingTimeAt, DEFAULT_MENU_ACCENT, effectivePaymentMethods, closedAt, menuStoreOf, pausedOf, reopeningAt, tenantBlock } from "@dishdesk/shared";
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { DatabaseService } from "../core/database.service.js";
 import { type DeliveryAddress, type FulfillmentMode, feeRangeOf, quoteDelivery, scheduleSlots } from "../menu/delivery.js";
-import { availableAt, loadMenuCategories, loadMenuItems, pricingCatalogOf } from "../menu/menu-catalog.js";
+import { liveNotices } from "../menu/menu-notices.js";
+import { availableAt, effectivePrice, loadMenuCategories, loadMenuItems, pricingCatalogOf } from "../menu/menu-catalog.js";
 import { addButtonOf, type LineSelection, priceLine } from "../menu/pricing.js";
 
 type Store = { tenantId: string; name: string; settings: unknown };
@@ -50,6 +51,8 @@ export class PublicMenuService {
       ]);
       return {
         store: storeInfo(store, now),
+        // Avisos no ar agora (N5): faixas no topo, em sequência.
+        notices: await liveNotices(tx, store.tenantId, now),
         categories: categories.map((category) => {
           const categoryNow = availableAt(category.availabilities, now);
           return {
@@ -105,7 +108,7 @@ export class PublicMenuService {
 function storeInfo(store: Store, now: Date) {
   const menuStore = menuStoreOf(store.settings);
   const hours = businessHoursOf(store.settings);
-  const closed = hours.enabled && !isOpenAt(hours, now);
+  const closed = closedAt(hours, now);
   const status = pausedOf(store.settings) ? "paused" : closed ? "closed" : "open";
   return {
     name: store.name,
@@ -144,7 +147,9 @@ function publicItem(item: LoadedItem, categoryAllowsHalf: boolean, categoryNow: 
     categoryId: item.categoryId,
     name: item.name,
     description: item.description,
-    priceCents: item.priceCents,
+    priceCents: effectivePrice(item),
+    /** Preço cheio, quando o item está em promoção (o cardápio mostra riscado); null sem promoção. */
+    regularPriceCents: effectivePrice(item) !== item.priceCents ? item.priceCents : null,
     photoUrl: item.photoUrl,
     soldOut: item.soldOut,
     availableNow: categoryNow && availableAt(item.availabilities, now),

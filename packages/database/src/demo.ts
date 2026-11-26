@@ -2,7 +2,7 @@
 // dia de hoje movimentado. Tudo é recriado a cada execução, com as datas contadas a partir de agora: a demo sempre
 // parece atual. Nomes, telefones e endereços são inventados; os telefones ficam na faixa +55 11 90000-xxxx.
 // Quem usa: o script `pnpm demo:reset` (com a conexão de administrador) e o botão escondido da demo na API (sob a RLS).
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { blindIndex, encrypt } from "./crypto.js";
 import type { ChannelType, OrderStatus, Prisma } from "./generated/prisma/client.js";
 
@@ -214,7 +214,11 @@ export async function wipeDemoData(tx: Tx, tenantId: string): Promise<void> {
   await tx.menuItemPairing.deleteMany(where);
   await tx.menuAvailability.deleteMany(where);
   await tx.menuItemOptionGroup.deleteMany(where);
+  await tx.menuCouponRedemption.deleteMany(where);
+  await tx.menuCoupon.deleteMany(where);
+  await tx.menuNotice.deleteMany(where);
   await tx.menuOption.deleteMany(where);
+  await tx.menuChoice.deleteMany(where);
   await tx.menuOptionGroup.deleteMany(where);
   await tx.menuItemSize.deleteMany(where);
   await tx.menuItem.deleteMany(where);
@@ -1506,18 +1510,24 @@ function fakeCpf(phone: string): string {
 async function seedMenu(tx: Tx, tenantId: string, now: Date): Promise<Map<string, string>> {
   const ids = new Map<string, string>();
   const menu = await tx.menu.create({ data: { tenantId, name: "Cardápio Vila Brasa" }, select: { id: true } });
-  const group = (name: string, minSelect: number, maxSelect: number, options: [string, number, boolean?][]) =>
-    tx.menuOptionGroup.create({
+  // Cada opção nasce na biblioteca (MenuChoice) e entra no grupo com o preço do grupo.
+  const group = async (name: string, minSelect: number, maxSelect: number, options: [string, number, boolean?][]) => {
+    const choices = options.map(([option, , soldOut]) => ({ id: randomUUID(), tenantId, menuId: menu.id, name: option, inStock: !soldOut }));
+    await tx.menuChoice.createMany({ data: choices });
+    return tx.menuOptionGroup.create({
       data: {
         tenantId,
         menuId: menu.id,
         name,
         minSelect,
         maxSelect,
-        options: { create: options.map(([option, priceCents, soldOut], sortOrder) => ({ tenantId, name: option, priceCents, sortOrder, soldOut: soldOut ?? false })) },
+        options: {
+          create: options.map(([option, priceCents, soldOut], sortOrder) => ({ tenantId, choiceId: choices[sortOrder]!.id, name: option, priceCents, sortOrder, soldOut: soldOut ?? false })),
+        },
       },
       select: { id: true },
     });
+  };
   const borda = await group("Borda recheada", 0, 1, [["Catupiry", 1000], ["Cheddar", 1000], ["Chocolate", 1200], ["Doce de leite", 1200, true]]);
   const comboDrink = await group("Refrigerante do combo", 1, 1, [["Guaraná 2 L", 0], ["Coca-Cola 2 L", 200]]);
   const extras = await group("Adicionais", 0, 3, [["Bacon", 600], ["Azeitona extra", 300], ["Cebola caramelizada", 500]]);

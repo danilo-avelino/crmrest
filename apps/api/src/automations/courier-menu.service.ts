@@ -213,6 +213,7 @@ export class CourierMenuService {
     }
     // Só o número: o menu pergunta o aviso, e a opção escolhida usa este número. Com o pedido achado, o menu diz isso.
     const found = await this.findOrder(tx, conversation, asked.code, false);
+    if (found?.order?.status === "CANCELED") return this.canceledOrder(tx, conversation, state, messages, found.code, found.order);
     const next = linkOrder({ ...state, triage: "awaiting_option", courierOrder: asked.code }, found);
     if (found?.order) return this.sendMenu(tx, conversation, next, messages, fillMessage(messages.courierOrderFound, { pedido: found.code }));
     return this.sendMenu(tx, conversation, next, messages);
@@ -242,13 +243,19 @@ export class CourierMenuService {
     if (state.courierOrder && option === "3") return this.findProblemOrder(tx, conversation, state, messages, state.courierOrder);
     if (next) {
       const id = await automationMessage(tx, conversation, "order_number_request", messages.courierOrderNumberRequest);
-      await setAutomationState(tx, conversation.id, { ...state, triage: next });
+      await setAutomationState(tx, conversation.id, { ...state, triage: next, courierAskedTeam: undefined });
       return { send: [id], done: false };
     }
-    // Resposta fora das opções: o aviso de que não deu para entender e as opções de novo, quantas vezes for preciso.
-    // A equipe só é chamada pela opção 4 (ou por um pedido escrito que a automação entenda).
+    // Resposta fora das opções: a automação pergunta se ele quer um atendente, com as opções embaixo. Na resposta
+    // seguinte que ela também não entende ("sim", uma pergunta, uma foto), a equipe é chamada: o "não consigo te
+    // entender" repetido deixava o entregador sem ninguém (37 vezes de 19 a 24/11/2026).
     if (!option) {
+      if (state.courierAskedTeam) {
+        const note = text?.trim() ? `Entregador chamando: "${text.trim().slice(0, 150)}"` : "Entregador chamando";
+        return this.callTeam(tx, conversation, { ...state, courierAskedTeam: undefined }, await automationMessage(tx, conversation, "handoff", messages.handoff), note);
+      }
       const id = await automationMessage(tx, conversation, "courier_menu", menuMessage(messages.courierNotUnderstood, undefined, COURIER_MENU_OPTIONS));
+      await setAutomationState(tx, conversation.id, { ...state, courierAskedTeam: true });
       return { send: [id], done: false };
     }
     return this.callTeam(tx, conversation, state, await automationMessage(tx, conversation, "handoff", messages.handoff), "Entregador chamando");
@@ -268,6 +275,9 @@ export class CourierMenuService {
     { keepOpen = false } = {},
   ): Promise<Step> {
     const found = await this.findOrder(tx, conversation, text, true);
+    // Pedido cancelado: o entregador não entrega (23/11/2026: o #0582 foi cancelado às 12:47 e o entregador seguiu com ele).
+    const placed = found && (found.order ?? (await this.findOrder(tx, conversation, text, false))?.order);
+    if (found && placed?.status === "CANCELED") return this.canceledOrder(tx, conversation, state, messages, found.code, placed);
     // Sem o pedido (ou sem o chat do iFood na Inbox), é a equipe que avisa o cliente. O pedido pode ser de outra
     // plataforma (só o iFood recebe o aviso automático); achado, o card dele traz o botão para falar com o cliente.
     // Com a equipe já na conversa, sem o pedido no iFood quem cuida é ela: nada de pedir o número de novo.
@@ -404,6 +414,24 @@ export class CourierMenuService {
     return found && !found.order
       ? automationMessage(tx, conversation, "order_lookup", fillMessage(messages.courierOrderNotFound, { pedido: found.code }))
       : automationMessage(tx, conversation, "handoff", messages.handoff);
+  }
+
+  /**
+   * O pedido que o entregador informou foi cancelado: ele é avisado para não entregar, o card do pedido entra na conversa e
+   * a equipe é chamada com o alarme (o entregador pode estar na porta do cliente).
+   */
+  private async canceledOrder(
+    tx: TenantTx,
+    conversation: Conversation,
+    state: AutomationState,
+    messages: AutomationMessages,
+    code: string,
+    order: { id: string },
+  ): Promise<Step> {
+    await systemEvent(tx, conversation, { event: "order", orderId: order.id, customerChat: true });
+    const id = await automationMessage(tx, conversation, "order_lookup", fillMessage(messages.courierOrderCanceled, { pedido: code }));
+    await setAutomationState(tx, conversation.id, { ...state, courierOrderId: order.id, triage: "done", courierNoticeAt: new Date().toISOString() });
+    return { send: [id], done: false, handoff: true, quiet: false, handoffText: `Entregador com o pedido #${code}, que foi cancelado` };
   }
 
   /** A equipe assume, sem urgência: o painel avisa com o som discreto, não com o alarme. */

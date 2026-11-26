@@ -54,6 +54,10 @@ import { PlatformPixController } from "./menu/platform-pix.controller.js";
 import { MenuImportRequestController, PlatformMenuImportController } from "./menu/menu-import-request.controller.js";
 import { MenuImportRequestService } from "./menu/menu-import-request.service.js";
 import { MenuPhotoController } from "./menu/menu-photo.controller.js";
+import { MenuChoicesController, MenuChoicesService } from "./menu/menu-choices.js";
+import { MenuCouponsController, MenuCouponsService } from "./menu/menu-coupons.js";
+import { MenuNoticesController, MenuNoticesService } from "./menu/menu-notices.js";
+import { MenuAreaStatsController, MenuAreaStatsService, MenuReportController, MenuReportService } from "./menu/menu-report.js";
 import { StorageController } from "./storage/storage.controller.js";
 import { MenuStoreController } from "./menu/menu-store.controller.js";
 import { MenuService } from "./menu/menu.service.js";
@@ -131,6 +135,11 @@ import { PagarmeWebhookController } from "./webhooks/pagarme-webhook.controller.
     MenuDescribeController,
     MenuImportAiController,
     MenuPhotoController,
+    MenuChoicesController,
+    MenuCouponsController,
+    MenuNoticesController,
+    MenuReportController,
+    MenuAreaStatsController,
     StorageController,
     MenuStoreController,
     MenuAgentSettingsController,
@@ -161,6 +170,11 @@ import { PagarmeWebhookController } from "./webhooks/pagarme-webhook.controller.
     MenuImportAiService,
     MenuDescribeService,
     MenuService,
+    MenuChoicesService,
+    MenuCouponsService,
+    MenuNoticesService,
+    MenuReportService,
+    MenuAreaStatsService,
     StorageService,
     PublicMenuService,
     CustomerAuthService,

@@ -5,7 +5,7 @@ import {
   CHANNEL_CAPABILITIES,
   COURIER_TAG,
   fillMessage,
-  isOpenAt,
+  closedAt,
   pausedOf,
   reopeningAt,
   STAFF_TAG,
@@ -41,7 +41,7 @@ export type Attendance = { available: true } | { available: false; reason: "clos
 
 export async function attendanceOf(presence: PresenceService, tenantId: string, settings: unknown, now: Date): Promise<Attendance> {
   const hours = businessHoursOf(settings);
-  if (hours.enabled && !isOpenAt(hours, now)) return { available: false, reason: "closed", reopening: reopeningAt(hours, now) };
+  if (closedAt(hours, now)) return { available: false, reason: "closed", reopening: reopeningAt(hours, now) };
   if (aiFullAutoOf(settings)) return { available: false, reason: "full_auto" };
   if (!(await presence.online(tenantId, now.getTime()))) return { available: false, reason: "offline" };
   return { available: true };
@@ -92,7 +92,7 @@ export class AiForwardService implements OnModuleInit {
     const sent = await this.db.withTenants({ tenantIds: [tenantId] }, async (tx) => {
       const tenant = await tx.tenant.findUniqueOrThrow({ where: { id: tenantId }, select: { settings: true } });
       const hours = businessHoursOf(tenant.settings);
-      if (!hours.enabled || isOpenAt(hours, now) || pausedOf(tenant.settings) || !(await this.llm.activeFor(tx, tenantId))) return [];
+      if (!closedAt(hours, now) || pausedOf(tenant.settings) || !(await this.llm.activeFor(tx, tenantId))) return [];
       const waiting = await tx.conversation.findMany({
         where: { tenantId, awaitingAgentSince: { not: null }, status: { not: "RESOLVED" }, teamOnly: false },
         select: {

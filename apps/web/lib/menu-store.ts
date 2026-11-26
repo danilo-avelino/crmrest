@@ -15,7 +15,8 @@ export type StoreForm = {
   zip: string;
   pickupEnabled: boolean;
   prepMinutes: string;
-  mode: "BY_DISTRICT" | "BY_RADIUS";
+  /** BY_AREA: áreas desenhadas no mapa (aba Áreas de entrega); esta tela só mostra e mantém. */
+  mode: "BY_DISTRICT" | "BY_RADIUS" | "BY_AREA";
   districts: { district: string; fee: string }[];
   radii: { maxKm: string; fee: string }[];
   minOrder: string;
@@ -97,7 +98,10 @@ export function formToPayload(form: StoreForm, base: MenuStoreSettings): { ok: t
   if (!/^#[0-9a-fA-F]{6}$/.test(form.accentColor)) return { ok: false, error: "Cor: use o formato #RRGGBB." };
 
   let delivery: UpdateMenuStoreRequest["delivery"];
-  if (form.mode === "BY_DISTRICT") {
+  if (form.mode === "BY_AREA") {
+    // As áreas desenhadas mudam só na aba Áreas de entrega: aqui ficam como estão.
+    delivery = base.delivery.mode === "BY_AREA" ? base.delivery : { mode: "BY_AREA", areas: [] };
+  } else if (form.mode === "BY_DISTRICT") {
     const districts = [];
     for (const row of form.districts) {
       const fee = parseCents(row.fee);
