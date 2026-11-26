@@ -509,7 +509,8 @@ export class ConversationsService {
         // Fica marcado na conversa quem resolveu e quando (a hora vai na pílula); o cliente não vê. Antes do update, para a
         // prévia da lista já sair com ele.
         const user = await tx.user.findUnique({ where: { id: auth.userId }, select: { name: true } });
-        await systemEvent(tx, current, { event: "resolved", text: `Conversa resolvida por ${firstName(user?.name ?? null) ?? "a equipe"}` });
+        const name = firstName(user?.name ?? null);
+        await systemEvent(tx, current, { event: "resolved", text: name ? `Conversa resolvida por ${name}` : "Conversa resolvida pela equipe" });
       }
       const updated = await tx.conversation.update({
         where: { id: conversationId },

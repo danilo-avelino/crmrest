@@ -220,7 +220,8 @@ describe("API da Inbox", () => {
     await send("patch", `/conversations/${mariaChat.id}`, { status: "RESOLVED" }).expect(200);
     const marks = await admin.message.findMany({ where: { conversationId: mariaChat.id, content: { path: ["event"], equals: "resolved" } } });
     const user = await admin.user.findUniqueOrThrow({ where: { id: fx.user.id }, select: { name: true } });
-    const text = `Conversa resolvida por ${firstName(user.name) ?? "a equipe"}`;
+    const name = firstName(user.name);
+    const text = name ? `Conversa resolvida por ${name}` : "Conversa resolvida pela equipe";
     expect(marks).toMatchObject([{ direction: "INTERNAL", type: "SYSTEM", status: null, content: { event: "resolved", text } }]);
     expect(resolved.body.lastMessage.preview).toBe(text);
   });

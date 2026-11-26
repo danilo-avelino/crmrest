@@ -555,13 +555,23 @@ export function TodayOrders({
             </div>
           ))}
         </div>
-        {late > 0 && (
+        {/* Sem atrasados, a contagem continua na tela (o "0" da antiga célula "Atrasados"), sem o fundo de alerta. */}
+        {late > 0 ? (
           <p role="status" className="flex items-center gap-2 rounded-lg bg-tomate-lt px-2.5 py-2 text-[12.5px] text-tomate-ink">
             <ClockIcon className="size-3.5 shrink-0" aria-hidden />
             <span>
               <strong className="font-semibold tabular-nums">{late === 1 ? "1 atrasado" : `${count(late)} atrasados`}</strong> em produção
             </span>
           </p>
+        ) : (
+          production.data && (
+            <p role="status" className="flex items-center gap-2 px-2.5 text-[12px] text-ink-3">
+              <ClockIcon className="size-3.5 shrink-0" aria-hidden />
+              <span>
+                <span className="tabular-nums">0</span> atrasados em produção
+              </span>
+            </p>
+          )
         )}
       </div>
 

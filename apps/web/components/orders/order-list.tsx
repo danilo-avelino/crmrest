@@ -1,10 +1,17 @@
 "use client";
 
-import { type OrderListItem, type OrderPage, type OrderStageCounts, type ReportPeriod, ORDER_ORIGIN_LABEL } from "@dishdesk/shared";
+import {
+  type OrderListItem,
+  type OrderPage,
+  type OrderStageCounts,
+  type ReportPeriod,
+  ORDER_ORIGIN_ARTICLE,
+  ORDER_ORIGIN_LABEL,
+} from "@dishdesk/shared";
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertCircleIcon, ChevronDownIcon, ClockIcon, ShieldAlertIcon } from "lucide-react";
 import Link from "next/link";
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
 import { CHANNEL_DOT, StatusBadge } from "@/components/common/bits";
 import { ORDER_STATUS, OrderTrack, orderStep } from "@/components/orders/order-status";
@@ -198,7 +205,9 @@ export function OrderList() {
                 </div>
               </div>
             ) : data!.items.length === 0 ? (
-              <p className="px-7 py-16 text-center text-[13px] text-ink-3">Nenhum pedido no período.</p>
+              <p className="px-7 py-16 text-center text-[13px] text-ink-3">
+                {status || channel || scheduled ? "Nenhum pedido com estes filtros." : "Nenhum pedido no período."}
+              </p>
             ) : (
               <table className="w-full border-collapse">
                 <thead>
@@ -295,7 +304,8 @@ export function OrderList() {
                           </Td>
                           {/* O clique no botão não abre o pedido. */}
                           <td className="px-3 py-2.5 text-right last:pr-4" onClick={(event) => event.stopPropagation()}>
-                            <NextStep order={order} />
+                            {/* Aberto, a próxima etapa fica no botão do pedido (OrderActions), sem dois botões iguais. */}
+                            {!open && <NextStep order={order} />}
                           </td>
                         </tr>
                         {!open && (alert || order.late) && (
@@ -304,10 +314,17 @@ export function OrderList() {
                               {alert ? (
                                 <ItemNote tone="danger" icon={<ShieldAlertIcon className="size-3.5" aria-hidden />} action="Ver e decidir" onAction={toggle}>
                                   <strong className="font-semibold">Alerta de fraude.</strong>{" "}
-                                  <span className="tabular-nums">
-                                    {count(alert.cancellations.canceledCount)} de {count(alert.cancellations.ordersCount)}
-                                  </span>{" "}
-                                  pedidos deste cliente foram cancelados.
+                                  {alert.cancellations.canceledCount > 0 ? (
+                                    <>
+                                      <span className="tabular-nums">
+                                        {count(alert.cancellations.canceledCount)} de {count(alert.cancellations.ordersCount)}
+                                      </span>{" "}
+                                      pedidos deste cliente foram cancelados
+                                      {alert.addressMatches.length > 0 ? ", e o endereço já teve pedido marcado como fraude." : "."}
+                                    </>
+                                  ) : (
+                                    "O endereço de entrega já teve pedido marcado como fraude."
+                                  )}
                                 </ItemNote>
                               ) : (
                                 <ItemNote tone="warn" icon={<ClockIcon className="size-3.5" aria-hidden />} action="Ver pedido" onAction={toggle}>
@@ -543,19 +560,37 @@ function KitchenNow() {
 
 /**
  * Próxima etapa na própria linha (design: "a próxima etapa em um botão na própria linha"), a mesma do botão do pedido
- * aberto. O iFood só aceita o pedido de mudança: até o status mudar, o botão dá lugar a "Enviado ao iFood".
+ * aberto. O canal só aceita o pedido de mudança: até o status mudar, o botão dá lugar a "Enviado ao iFood"; sem
+ * resposta em 90 s, ele volta (como no OrderActions). No cardápio próprio a mudança é na hora.
  */
 function NextStep({ order }: { order: OrderListItem }) {
   const { request } = useAuth();
   const queryClient = useQueryClient();
   const toast = useToast();
   const [sentAt, setSentAt] = useState<string | null>(null);
-  if (sentAt === order.status) return <span className="text-[11px] whitespace-nowrap text-ink-3">Enviado ao iFood</span>;
+  const waiting = sentAt === order.status;
+  useEffect(() => {
+    if (!waiting) return;
+    const refresh = setInterval(() => void queryClient.invalidateQueries({ queryKey: ["orders"] }), 5_000);
+    const giveUp = setTimeout(() => setSentAt(null), 90_000);
+    return () => {
+      clearInterval(refresh);
+      clearTimeout(giveUp);
+    };
+  }, [waiting, queryClient]);
+  if (waiting) {
+    const origin = order.channelType;
+    return (
+      <span className="text-[11px] whitespace-nowrap text-ink-3">
+        Enviado {ORDER_ORIGIN_ARTICLE[origin] === "a" ? "à" : "ao"} {ORDER_ORIGIN_LABEL[origin]}
+      </span>
+    );
+  }
   if (!order.nextAction) return null;
   const advance = async () => {
     try {
       await request(`/orders/${order.id}/advance`, { method: "POST" });
-      setSentAt(order.status);
+      if (order.channelType !== "MENU") setSentAt(order.status);
       void queryClient.invalidateQueries({ queryKey: ["orders"] });
     } catch (failure) {
       toast(failure instanceof ApiError ? failure.message : "Não foi possível falar com o iFood.");
@@ -591,9 +626,9 @@ function ItemNote({
     >
       <span className="shrink-0 self-start pt-px">{icon}</span>
       <span className="min-w-0 flex-1">{children}</span>
-      <button type="button" onClick={onAction} className="text-[12.5px] font-medium underline underline-offset-2">
+      <Button variant="link" size="xs" onClick={onAction} className="h-auto px-0 text-[12.5px] text-current underline">
         {action}
-      </button>
+      </Button>
     </div>
   );
 }
