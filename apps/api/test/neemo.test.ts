@@ -3,6 +3,7 @@ import type { AddressInfo } from "node:net";
 import { encrypt, parseEncryptionKey } from "@dishdesk/database";
 import { getQueueToken } from "@nestjs/bullmq";
 import type { INestApplication } from "@nestjs/common";
+import * as Sentry from "@sentry/nestjs";
 import type { Queue } from "bullmq";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -10,6 +11,8 @@ import { neemoTime } from "../src/connectors/neemo.client.js";
 import { NeemoService } from "../src/inbound/neemo.service.js";
 import { QUEUES } from "../src/queues/queues.module.js";
 import { accessTokenFor, admin, createChannelFixture, createTestApp } from "./helpers.js";
+
+vi.mock("@sentry/nestjs", async (original) => ({ ...(await original<typeof import("@sentry/nestjs")>()), captureException: vi.fn(() => "") }));
 
 const TOKEN = "token-da-loja-neemo-0001";
 /** Código da loja na Neemo, único por execução (o banco é o mesmo de outras execuções e do dev). */
@@ -339,5 +342,40 @@ describe("Neemo (pedidos por polling)", () => {
     expect(page.items.some((o: { id: string }) => imported.some((i) => i.id === o.id))).toBe(false);
     // As tags do cliente já contam o histórico.
     expect((await admin.contact.findUniqueOrThrow({ where: { id: whatsappContactId } })).tags).toContain("VIP");
+  });
+
+  it("falha de rede no polling só vai ao Sentry se persistir; erro HTTP vai de imediato", async () => {
+    const report = vi.mocked(Sentry.captureException);
+    report.mockClear();
+    // O polling lê todas as lojas conectadas do banco (outras suítes podem deixar canais): cada uma conta à parte. A da
+    // conta de demonstração fica fora do polling.
+    const connected = { type: "NEEMO" as const, status: "CONNECTED" as const };
+    const stores =
+      (await admin.channel.count({ where: connected })) -
+      (await admin.channel.count({ where: { ...connected, tenant: { settings: { path: ["demo"], equals: true } } } }));
+    const orders = vi.spyOn(service.client, "orders");
+    try {
+      // O erro do Sentry (DISHDESK-API-2): a Neemo passou dos 15 s numa rodada.
+      orders.mockRejectedValue(new DOMException("The operation was aborted due to timeout", "TimeoutError"));
+      await service.poll();
+      expect(report).not.toHaveBeenCalled();
+      await service.poll(); // 2ª seguida
+      expect(report).toHaveBeenCalledTimes(stores);
+
+      orders.mockRejectedValue(new Error("Neemo /v1/order: HTTP 500"));
+      await service.poll();
+      expect(report).toHaveBeenCalledTimes(stores * 2);
+
+      // Uma leitura boa zera a contagem.
+      orders.mockRejectedValue(new TypeError("fetch failed"));
+      await service.poll();
+      orders.mockResolvedValue({ orders: [], total: 0, store: null });
+      await service.poll();
+      orders.mockRejectedValue(new TypeError("fetch failed"));
+      await service.poll();
+      expect(report).toHaveBeenCalledTimes(stores * 2);
+    } finally {
+      orders.mockRestore();
+    }
   });
 });
