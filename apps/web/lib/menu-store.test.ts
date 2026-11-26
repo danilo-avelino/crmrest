@@ -36,6 +36,12 @@ describe("Cardápio e entrega: conversão do formulário", () => {
     expect(formToPayload({ ...form, districts: [{ district: "", fee: "3" }] }, base)).toMatchObject({ ok: false });
   });
 
+  it("o tema completo vai e volta (desligado quando nunca foi salvo)", () => {
+    expect(storeToForm(base, "#8E2F1B").brandTheme).toBe(false);
+    const result = formToPayload({ ...storeToForm({ ...base, brandTheme: true }, "#8E2F1B") }, base);
+    expect(result.ok && result.body.brandTheme).toBe(true);
+  });
+
   it("monta o link público", () => {
     expect(publicMenuUrl("https://app.dishdesk.com.br", "pizzaria-x")).toBe("https://app.dishdesk.com.br/c/pizzaria-x");
   });

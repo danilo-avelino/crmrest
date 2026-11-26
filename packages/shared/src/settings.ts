@@ -299,6 +299,8 @@ export const MenuStoreSettings = z.object({
   coverUrl: z.string().max(500).optional(),
   /** Cor de destaque da página pública (hex `#RRGGBB`); sem ela vale `DEFAULT_MENU_ACCENT`. */
   accentColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+  /** Tema completo: a cor de destaque também tinge o fundo, as faixas e as bordas do cardápio público. */
+  brandTheme: z.boolean().optional(),
   city: text(80).optional(),
   phone: text(20).optional(),
   cnpj: text(18).optional(),

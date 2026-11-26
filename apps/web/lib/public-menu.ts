@@ -10,6 +10,8 @@ export type PublicMenuStore = {
   coverUrl: string | null;
   /** Cor de destaque (hex) do restaurante. */
   accentColor: string;
+  /** Tema completo: a cor de destaque também tinge o fundo e as bordas (lib/menu-theme.ts). */
+  brandTheme: boolean;
   city: string | null;
   address: string | null;
   phone: string | null;

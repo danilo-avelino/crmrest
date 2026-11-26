@@ -29,6 +29,7 @@ export type StoreForm = {
   showcaseItemIds: string[];
   showcaseHours: string;
   accentColor: string;
+  brandTheme: boolean;
   phone: string;
   cnpj: string;
   about: string;
@@ -58,6 +59,7 @@ export function storeToForm(store: MenuStoreSettings, accentDefault: string): St
     showcaseItemIds: store.promoShowcase.itemIds,
     showcaseHours: String(store.promoShowcase.frequencyHours),
     accentColor: store.accentColor ?? accentDefault,
+    brandTheme: store.brandTheme ?? false,
     phone: store.phone ?? "",
     cnpj: store.cnpj ?? "",
     about: store.about ?? "",
@@ -135,6 +137,7 @@ export function formToPayload(form: StoreForm, base: MenuStoreSettings): { ok: t
       scheduling: { enabled: form.schedulingEnabled, minLeadMinutes: lead as number, slotMinutes: slot },
       promoShowcase: { itemIds: form.showcaseItemIds.slice(0, 50), frequencyHours: showcaseHours },
       accentColor: form.accentColor,
+      brandTheme: form.brandTheme,
       city: form.city,
       phone: form.phone,
       cnpj: form.cnpj,

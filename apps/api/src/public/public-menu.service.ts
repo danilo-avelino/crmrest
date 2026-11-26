@@ -115,6 +115,7 @@ function storeInfo(store: Store, now: Date) {
     logoUrl: menuStore.logoUrl ?? null,
     coverUrl: menuStore.coverUrl ?? null,
     accentColor: menuStore.accentColor ?? DEFAULT_MENU_ACCENT,
+    brandTheme: menuStore.brandTheme ?? false,
     city: menuStore.city || menuStore.address.city || null,
     address: addressLine(menuStore.address),
     phone: menuStore.phone || null,

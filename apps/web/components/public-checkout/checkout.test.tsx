@@ -16,6 +16,7 @@ const store: PublicMenuStore = {
   logoUrl: null,
   coverUrl: null,
   accentColor: "#8E2F1B",
+  brandTheme: false,
   city: "São Paulo",
   address: "Rua Aspicuelta, 120",
   phone: "(11) 3456-7890",
