@@ -204,7 +204,7 @@ function BagPanel({
           <div className="-mr-4 flex gap-2 overflow-x-auto pr-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {suggestions.map(({ item, completes }) => (
               <button key={item.id} type="button" onClick={() => onSuggest(item)} className="flex w-30 shrink-0 flex-col gap-1 text-left">
-                <span className="block h-20 w-full overflow-hidden rounded-lg bg-[#E9E3D9]">
+                <span className="block aspect-[4/3] w-full overflow-hidden rounded-lg bg-[#E9E3D9]">
                   {item.photoUrl && (
                     // eslint-disable-next-line @next/next/no-img-element -- ver ItemCard.
                     <img src={item.photoUrl} alt="" loading="lazy" decoding="async" className="size-full object-cover" />

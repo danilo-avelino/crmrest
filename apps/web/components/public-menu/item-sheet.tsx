@@ -173,11 +173,14 @@ export function ItemSheet({
   return (
     <Sheet title={editing ? `Editar ${item.name}` : item.name} item onClose={onClose}>
       <div className="flex h-full flex-col lg:flex-row">
-        <div className="hidden bg-[#E9E3D9] lg:block lg:w-[44%] lg:shrink-0">{photo}</div>
+        {/* Foto em 4:3 (o formato do recorte no envio), centralizada no painel: aparece inteira, como foi enquadrada. */}
+        <div className="hidden bg-[#E9E3D9] lg:flex lg:w-[44%] lg:shrink-0 lg:items-center">
+          {photo && <div className="aspect-[4/3] w-full">{photo}</div>}
+        </div>
 
         <div className="flex min-h-0 flex-1 flex-col">
           <div ref={bodyRef} className="min-h-0 flex-1 overflow-y-auto pb-4">
-            <div className="relative h-55 bg-[#E9E3D9] lg:h-0">
+            <div className={cn("relative bg-[#E9E3D9] lg:aspect-auto lg:h-0", photo ? "aspect-[4/3]" : "h-55")}>
               <div className="size-full lg:hidden">{photo}</div>
               <button
                 type="button"
