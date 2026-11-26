@@ -187,9 +187,13 @@ function demoSettings(): Prisma.InputJsonObject {
 
 // ---------- Limpeza ----------
 
-/** Apaga os dados do restaurante da demo (o restaurante, os usuários e os módulos ficam). Ordem: dos filhos aos pais. */
-export async function wipeDemoData(tx: Tx, tenantId: string): Promise<void> {
+/**
+ * Apaga os dados do restaurante da demo (o restaurante, os usuários e os módulos ficam). Ordem: dos filhos aos pais.
+ * Devolve as fotos dos itens do cardápio, por nome: quem envia uma foto pelo painel não a perde no reset (passar ao seed).
+ */
+export async function wipeDemoData(tx: Tx, tenantId: string): Promise<Record<string, string>> {
   const where = { where: { tenantId } };
+  const photos = await tx.menuItem.findMany({ where: { tenantId, photoUrl: { not: null } }, select: { name: true, photoUrl: true } });
   await tx.funnelEvent.deleteMany(where);
   await tx.payment.deleteMany(where);
   await tx.cartItem.deleteMany(where);
@@ -225,6 +229,7 @@ export async function wipeDemoData(tx: Tx, tenantId: string): Promise<void> {
   await tx.menuCategory.deleteMany(where);
   await tx.menu.deleteMany(where);
   await tx.channel.deleteMany(where);
+  return Object.fromEntries(photos.map((item) => [item.name, item.photoUrl!]));
 }
 
 // ---------- Seed ----------
@@ -250,7 +255,7 @@ type Line = { name: string; quantity: number; unitCents: number; options?: strin
  * Recria os dados da demo no restaurante `tenantId`, com `now` como o "agora". O chamador apaga antes (wipeDemoData) e
  * roda tudo numa transação. Devolve o que foi criado.
  */
-export async function seedDemoData(tx: Tx, input: { tenantId: string; users: Users; key: Buffer; now?: Date }): Promise<DemoSummary> {
+export async function seedDemoData(tx: Tx, input: { tenantId: string; users: Users; key: Buffer; now?: Date; photos?: Record<string, string> }): Promise<DemoSummary> {
   const { tenantId, users, key } = input;
   const now = input.now ?? new Date();
   const rand = prng(20261123);
@@ -307,7 +312,7 @@ export async function seedDemoData(tx: Tx, input: { tenantId: string; users: Use
     ].map(([shortcut, content]) => ({ tenantId, shortcut: shortcut!, content: content! })),
   });
 
-  const menuIds = await seedMenu(tx, tenantId, now);
+  const menuIds = await seedMenu(tx, tenantId, now, input.photos ?? {});
 
   // ---------- Clientes ----------
   const contacts: ContactSeed[] = [];
@@ -1507,7 +1512,7 @@ function fakeCpf(phone: string): string {
 
 // ---------- Cardápio ----------
 
-async function seedMenu(tx: Tx, tenantId: string, now: Date): Promise<Map<string, string>> {
+async function seedMenu(tx: Tx, tenantId: string, now: Date, photos: Record<string, string>): Promise<Map<string, string>> {
   const ids = new Map<string, string>();
   const menu = await tx.menu.create({ data: { tenantId, name: "Cardápio Vila Brasa" }, select: { id: true } });
   // Cada opção nasce na biblioteca (MenuChoice) e entra no grupo com o preço do grupo.
@@ -1569,6 +1574,7 @@ async function seedMenu(tx: Tx, tenantId: string, now: Date): Promise<Map<string
         priceCents: entry.sizes ? null : entry.cents,
         sortOrder,
         servesPeople: entry.sizes ? 3 : null,
+        photoUrl: photos[entry.name] ?? null,
         ...details[entry.name],
         sizes: entry.sizes && { create: (["Broto", "Média", "Grande"] as const).map((name, i) => ({ tenantId, name, priceCents: entry.sizes![i]!, sortOrder: i })) },
         optionGroups: entry.category === "Pizzas salgadas"

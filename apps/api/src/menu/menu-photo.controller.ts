@@ -3,7 +3,6 @@ import type { Request } from "express";
 import { CurrentAuth, type RequestAuth } from "../auth/auth.decorators.js";
 import { kindLimits, StorageService, tooBigMessage } from "../storage/storage.service.js";
 import { MenuService } from "./menu.service.js";
-import { DemoLocked } from "../demo/demo.guard.js";
 
 const uuid = (name: string) => Param(name, ParseUUIDPipe);
 
@@ -36,7 +35,7 @@ export class MenuPhotoController {
     private readonly storage: StorageService,
   ) {}
 
-  @DemoLocked()
+  // Liberado na conta de demonstração: as fotos enviadas sobrevivem ao reset (wipeDemoData devolve e o seed regrava).
   @Put()
   @HttpCode(200)
   async upload(@uuid("tenantId") tenantId: string, @uuid("id") id: string, @Req() req: Request, @CurrentAuth() auth: RequestAuth) {

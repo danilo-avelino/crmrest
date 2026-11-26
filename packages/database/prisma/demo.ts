@@ -60,8 +60,8 @@ async function main() {
 
   const summary = await prisma.$transaction(
     async (tx) => {
-      await wipeDemoData(tx, tenant.id);
-      return seedDemoData(tx, { tenantId: tenant.id, users, key });
+      const photos = await wipeDemoData(tx, tenant.id);
+      return seedDemoData(tx, { tenantId: tenant.id, users, key, photos });
     },
     { timeout: 180_000, maxWait: 20_000 },
   );
