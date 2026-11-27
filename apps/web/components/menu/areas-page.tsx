@@ -521,7 +521,7 @@ function AreasMap({
       group.addLayer(
         leaflet
           .polygon(zone.points, { color: BLOCK_COLOR, weight: 2, dashArray: "6 4", fillColor: BLOCK_COLOR, fillOpacity: 0.28 })
-          .bindTooltip(`${zone.name} · sem entrega`, { permanent: true, direction: "center", className: "dd-area-label" }),
+          .bindTooltip(zone.name, { sticky: true, className: "dd-area-label" }),
       );
     });
     if (drawing?.type === "polygon" && drawing.points.length) {
