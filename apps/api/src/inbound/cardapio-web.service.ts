@@ -48,7 +48,7 @@ const HISTORY_RECENT_MS = 24 * 60 * 60 * 1000;
 const NETWORK_FAILURES_TO_REPORT = 4;
 
 /** `fetch failed` (ETIMEDOUT, ENETUNREACH, ECONNRESET...) ou estouro do timeout de 15 s: erro de rede, não da API. */
-function isNetworkError(error: unknown): boolean {
+export function isNetworkError(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
   return error.name === "TimeoutError" || error.name === "AbortError" || (error instanceof TypeError && error.message === "fetch failed");
 }

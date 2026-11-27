@@ -23,6 +23,7 @@ import { FraudService } from "../orders/fraud.service.js";
 import { OrderNoticeService } from "../orders/order-notice.service.js";
 import { JobProcessor } from "../queues/job-processor.js";
 import { type NeemoHistoryJob, type NeemoImportJob, QUEUES } from "../queues/queues.module.js";
+import { isNetworkError } from "./cardapio-web.service.js";
 import { InboundService, type ResolvedChannel } from "./inbound.service.js";
 import { rememberAddress } from "./orders.js";
 
@@ -42,6 +43,8 @@ const HISTORY_RECENT_MS = 24 * 60 * 60 * 1000;
  * dá a cada uma (no banco de produção, a cada consulta soma a ida e volta pela rede).
  */
 const CUSTOMERS_PER_TRANSACTION = 50;
+/** Pollings seguidos (60 s cada) com falha de rede antes de avisar o Sentry: ~2 minutos sem ler. */
+const NETWORK_FAILURES_TO_REPORT = 2;
 
 /**
  * Pedidos da Neemo (Linx Delivery App, cardápio digital do restaurante). Como no Cardápio Web, eles trazem o telefone,
@@ -53,6 +56,8 @@ export class NeemoService implements OnModuleInit {
   readonly client: NeemoClient;
   /** Até onde cada canal já foi lido. Em memória: depois de reiniciar, relê as últimas 24 h. */
   private readonly readUntil = new Map<string, Date>();
+  /** Pollings seguidos que falharam por rede, por canal. */
+  private readonly networkFailures = new Map<string, number>();
 
   constructor(
     private readonly db: DatabaseService,
@@ -82,8 +87,15 @@ export class NeemoService implements OnModuleInit {
       } catch (error) {
         // Segue para as outras lojas; esta relê o mesmo período na próxima rodada.
         this.logger.warn({ tenantId, channelId: id, err: error }, "Pedidos da Neemo não lidos");
-        Sentry.captureException(error, { tags: { tenantId, channel: "neemo" } });
+        // Falha de rede avulsa (conexão caiu, timeout) o próximo polling, 60 s depois, já refaz: só vai ao Sentry se persistir.
+        const failures = isNetworkError(error) ? (this.networkFailures.get(id) ?? 0) + 1 : 0;
+        this.networkFailures.set(id, failures);
+        if (failures === 0 || failures >= NETWORK_FAILURES_TO_REPORT) {
+          Sentry.captureException(error, { tags: { tenantId, channel: "neemo" } });
+        }
+        continue;
       }
+      this.networkFailures.delete(id);
     }
   }
 
