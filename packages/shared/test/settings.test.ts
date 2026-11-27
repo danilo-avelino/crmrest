@@ -225,10 +225,9 @@ describe("pausas no atendimento da loja", () => {
 });
 
 describe("loja do cardápio digital", () => {
-  it("sem configuração salva, valem os padrões (vitrine a cada 24 h)", () => {
+  it("sem configuração salva, valem os padrões", () => {
     expect(menuStoreOf({})).toEqual(DEFAULT_MENU_STORE);
     expect(menuStoreOf(null)).toEqual(DEFAULT_MENU_STORE);
-    expect(DEFAULT_MENU_STORE.promoShowcase.frequencyHours).toBe(24);
   });
 
   it("configuração válida é devolvida como está", () => {
@@ -271,38 +270,48 @@ describe("formas de pagamento do cardápio", () => {
 describe("agente de pedidos pela IA", () => {
   it("sem configuração salva, o agente fica ligado e sugere complementos", () => {
     for (const settings of [{}, null, undefined, "x", { menuAgent: "x" }]) expect(menuAgentOf(settings)).toEqual(DEFAULT_MENU_AGENT);
-    expect(DEFAULT_MENU_AGENT).toEqual({ enabled: true, houseRules: "", suggestAddons: true, maxSuggestionsPerConversation: 2 });
+    expect(DEFAULT_MENU_AGENT).toEqual({ enabled: true, houseRules: "", suggestAddons: true, maxSuggestionsPerConversation: 2, salesRules: [], usePairings: true });
   });
 
   it("configuração parcial ou antiga completa os campos que faltam", () => {
-    expect(menuAgentOf({ menuAgent: { enabled: false } })).toEqual({ enabled: false, houseRules: "", suggestAddons: true, maxSuggestionsPerConversation: 2 });
+    expect(menuAgentOf({ menuAgent: { enabled: false } })).toEqual({ enabled: false, houseRules: "", suggestAddons: true, maxSuggestionsPerConversation: 2, salesRules: [], usePairings: true });
     expect(menuAgentOf({ personality: "formal", menuAgent: { attendantName: "Vila", houseRules: "Sem borda no broto.", dailyTokensPerConversation: 50_000 } })).toEqual({
       enabled: true,
       attendantName: "Vila",
       houseRules: "Sem borda no broto.",
       suggestAddons: true,
       maxSuggestionsPerConversation: 2,
-      dailyTokensPerConversation: 50_000,
+      salesRules: [],
+      usePairings: true,
     });
   });
 
   it("valor fora do formato volta aos padrões", () => {
     expect(menuAgentOf({ menuAgent: { houseRules: "x".repeat(MENU_AGENT_RULES_MAX + 1) } })).toEqual(DEFAULT_MENU_AGENT);
-    expect(menuAgentOf({ menuAgent: { dailyTokensPerConversation: 5 } })).toEqual(DEFAULT_MENU_AGENT);
     expect(menuAgentOf({ menuAgent: { enabled: "sim" } })).toEqual(DEFAULT_MENU_AGENT);
     expect(menuAgentOf({ menuAgent: { maxSuggestionsPerConversation: 4 } })).toEqual(DEFAULT_MENU_AGENT);
     expect(menuAgentOf({ menuAgent: { maxSuggestionsPerConversation: 0 } }).maxSuggestionsPerConversation).toBe(0);
   });
 
-  it("o pedido do painel apara os textos e recusa regras longas ou teto fora da faixa", () => {
+  it("o pedido do painel apara os textos e recusa regras longas", () => {
     expect(UpdateMenuAgentRequest.parse({ attendantName: "  Vila ", houseRules: "  Sem meio a meio no broto.  " })).toMatchObject({
       attendantName: "Vila",
       houseRules: "Sem meio a meio no broto.",
     });
     expect(UpdateMenuAgentRequest.safeParse({ houseRules: "x".repeat(MENU_AGENT_RULES_MAX + 1) }).success).toBe(false);
-    expect(UpdateMenuAgentRequest.safeParse({ dailyTokensPerConversation: 1_000 }).success).toBe(false);
-    expect(UpdateMenuAgentRequest.safeParse({ dailyTokensPerConversation: 12.5 }).success).toBe(false);
     expect(UpdateMenuAgentRequest.safeParse({ attendantName: "x".repeat(31) }).success).toBe(false);
+  });
+
+  it("regras de venda: ao pedir oferece itens ou complementos; no fim, só itens", () => {
+    const categoryId = "0190a000-0000-7000-8000-000000000001";
+    const groupId = "0190a000-0000-7000-8000-000000000002";
+    const combo = { id: "r1", trigger: "ON_ADD", categoryId, groupIds: [groupId], pitch: "  refri e batata  " };
+    expect(UpdateMenuAgentRequest.parse({ salesRules: [combo] }).salesRules).toEqual([{ ...combo, itemIds: [], pitch: "refri e batata" }]);
+    expect(UpdateMenuAgentRequest.safeParse({ salesRules: [{ id: "r2", trigger: "AT_END", categoryId }] }).success).toBe(true);
+    // Ao pedir sem nada para oferecer, ou complemento no fim do pedido: recusado.
+    expect(UpdateMenuAgentRequest.safeParse({ salesRules: [{ id: "r3", trigger: "ON_ADD", categoryId }] }).success).toBe(false);
+    expect(UpdateMenuAgentRequest.safeParse({ salesRules: [{ id: "r4", trigger: "AT_END", categoryId, groupIds: [groupId] }] }).success).toBe(false);
+    expect(UpdateMenuAgentRequest.safeParse({ salesRules: [combo, combo] }).success).toBe(false);
   });
 });
 

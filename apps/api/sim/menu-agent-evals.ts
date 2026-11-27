@@ -117,7 +117,6 @@ export const EVAL_SETTINGS = {
     deliveryMaxMinutes: 60,
     paymentMethods: ["pix", "cash", "credit"],
     scheduling: { enabled: true, minLeadMinutes: 60, slotMinutes: 30 },
-    promoShowcase: { itemIds: [], frequencyHours: 24 },
   },
 };
 

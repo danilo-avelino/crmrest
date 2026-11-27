@@ -10,9 +10,27 @@ import { cn } from "@/lib/utils";
 
 export type AvailabilityDraft = { restricted: boolean; ranges: Range[] };
 
+/** Os textos mudam conforme o que está sendo configurado: um item ou uma categoria inteira. */
+const COPY = {
+  item: {
+    title: "Quando este item aparece",
+    modes: ["O padrão de todos os itens", "Ex.: prato executivo, café da manhã"],
+    never: "A loja não abre nesse horário, então este item nunca aparece no cardápio.",
+    outside: "Fora da faixa, o item some do cardápio e a IA responde que ele só sai nesses horários.",
+    row: "Item",
+  },
+  category: {
+    title: "Quando esta categoria aparece",
+    modes: ["O padrão das categorias", "Ex.: almoço executivo, café da manhã"],
+    never: "A loja não abre nesse horário, então esta categoria nunca aparece no cardápio.",
+    outside: "Fora da faixa, os itens da categoria somem do cardápio e a IA responde que eles só saem nesses horários.",
+    row: "Categoria",
+  },
+};
+
 const MODES = [
-  { restricted: false, name: "Sempre que a loja estiver aberta", note: "O padrão de todos os itens" },
-  { restricted: true, name: "Só em dias e horários escolhidos", note: "Ex.: prato executivo, café da manhã" },
+  { restricted: false, name: "Sempre que a loja estiver aberta" },
+  { restricted: true, name: "Só em dias e horários escolhidos" },
 ];
 
 const newRange = (): Range => ({ key: `n${Date.now()}${Math.random()}`, days: [1, 2, 3, 4, 5], from: "11:00", to: "15:00" });
@@ -20,7 +38,18 @@ const newRange = (): Range => ({ key: `n${Date.now()}${Math.random()}`, days: [1
 const storeLabel = (shifts: StoreDay | undefined) => (!shifts?.length ? "Fechado" : shifts.map((shift) => `${shift.open.replace(":00", "")}–${shift.close.replace(":00", "")}`).join(" "));
 
 /** P4: dias da semana e faixas de horário do item, com o aviso quando ele nunca aparece no horário da loja. */
-export function AvailabilityEditor({ value, onChange, store }: { value: AvailabilityDraft; onChange: (value: AvailabilityDraft) => void; store: StoreDay[] | null }) {
+export function AvailabilityEditor({
+  value,
+  onChange,
+  store,
+  subject = "item",
+}: {
+  value: AvailabilityDraft;
+  onChange: (value: AvailabilityDraft) => void;
+  store: StoreDay[] | null;
+  subject?: keyof typeof COPY;
+}) {
+  const copy = COPY[subject];
   const parsed = rangesToSlots(value.ranges);
   const slots = "slots" in parsed ? parsed.slots : null;
   const minutes = slots && value.restricted ? weeklyMinutes(slots, store) : null;
@@ -30,9 +59,9 @@ export function AvailabilityEditor({ value, onChange, store }: { value: Availabi
   return (
     <div className="flex flex-col gap-4">
       <section className={cn(BLOCK, "flex flex-col gap-3 p-5")}>
-        <h2 className="font-heading text-title font-semibold">Quando este item aparece</h2>
-        <div role="radiogroup" aria-label="Quando este item aparece" className="grid grid-cols-2 gap-3">
-          {MODES.map((mode) => {
+        <h2 className="font-heading text-title font-semibold">{copy.title}</h2>
+        <div role="radiogroup" aria-label={copy.title} className="grid grid-cols-2 gap-3">
+          {MODES.map((mode, index) => {
             const on = value.restricted === mode.restricted;
             return (
               <button
@@ -46,7 +75,7 @@ export function AvailabilityEditor({ value, onChange, store }: { value: Availabi
                 <span className={cn("mt-0.5 size-[18px] shrink-0 rounded-full", on ? "border-[6px] border-ink" : "border-2 border-[#C4BDB2]")} />
                 <span>
                   <span className="block font-medium">{mode.name}</span>
-                  <span className="block text-xs text-ink-3">{mode.note}</span>
+                  <span className="block text-xs text-ink-3">{copy.modes[index]}</span>
                 </span>
               </button>
             );
@@ -100,7 +129,7 @@ export function AvailabilityEditor({ value, onChange, store }: { value: Availabi
                       </Link>
                     }
                   >
-                    A loja não abre nesse horário, então este item nunca aparece no cardápio.
+                    {copy.never}
                   </WarnNote>
                 </div>
               )}
@@ -109,13 +138,13 @@ export function AvailabilityEditor({ value, onChange, store }: { value: Availabi
           <Button variant="outline" className="self-start" onClick={() => onChange({ ...value, ranges: [...value.ranges, newRange()] })}>
             <PlusIcon aria-hidden /> Nova faixa
           </Button>
-          <div className="text-xs text-ink-3">Fora da faixa, o item some do cardápio e a IA responde que ele só sai nesses horários.</div>
+          <div className="text-xs text-ink-3">{copy.outside}</div>
         </section>
       )}
 
       <section className={cn(BLOCK, "flex flex-col gap-3 p-5")}>
         <h2 className="font-heading text-title font-semibold">Na semana</h2>
-        <div className="grid grid-cols-[56px_repeat(7,minmax(0,1fr))] gap-1 text-center text-xs tabular-nums">
+        <div className="grid grid-cols-[64px_repeat(7,minmax(0,1fr))] gap-1 text-center text-xs tabular-nums">
           <span />
           {WEEK_ORDER.map((day) => (
             <span key={day} className="font-medium text-ink-2">
@@ -131,7 +160,7 @@ export function AvailabilityEditor({ value, onChange, store }: { value: Availabi
               </span>
             );
           })}
-          <span className="self-center text-left text-ink-3">Item</span>
+          <span className="self-center text-left text-ink-3">{copy.row}</span>
           {WEEK_ORDER.map((day) => {
             const mine = slots && value.restricted ? slots.filter((slot) => slot.weekday === day) : null;
             const label = mine === null ? "Sempre" : mine.length ? mine.map((slot) => `${clockText(slot.startMinute).replace(":00", "")}–${clockText(slot.endMinute).replace(":00", "")}`).join(" ") : "—";

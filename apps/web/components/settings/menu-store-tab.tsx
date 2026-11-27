@@ -9,7 +9,7 @@ import { useAuth } from "@/components/auth/auth-provider";
 import { ImageCropDialog } from "@/components/common/image-crop-dialog";
 import { photoProblem } from "@/components/menu/use-menu";
 import { TabLoading, useSettingsTenant } from "@/components/settings/settings-shell";
-import { Card, CardBody, CardFooter, Eyebrow, TEXTAREA } from "@/components/settings/settings-ui";
+import { Card, CardBody, CardFooter, TEXTAREA } from "@/components/settings/settings-ui";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,7 +17,6 @@ import { useToast } from "@/components/ui/toast";
 import { usePendingAction } from "@/hooks/use-pending-action";
 import { ApiError } from "@/lib/api";
 import { CROP_PRESETS } from "@/lib/image-compress";
-import type { MenuTree } from "@/lib/menu";
 import { paletteFromImage } from "@/lib/menu-theme";
 import { formToPayload, publicMenuUrl, type StoreForm, type StoreResponse, storeToForm } from "@/lib/menu-store";
 
@@ -301,15 +300,6 @@ function MenuStoreForm({ tenantId, data }: { tenantId: string; data: StoreRespon
             <p className="m-0 text-[12px] text-ink-3">Com a loja fechada, o cliente agenda para depois que abrir.</p>
           </CardBody>
         </Card>
-
-        <Card title="Vitrine de promoções">
-          <CardBody className="flex flex-col gap-3">
-            <ShowcasePicker tenantId={tenantId} selected={form.showcaseItemIds} onChange={(ids) => set("showcaseItemIds", ids)} />
-            <Field label="Mostrar para o mesmo cliente no máximo 1 vez a cada (horas)">
-              <Input inputMode="numeric" className="max-w-32" value={form.showcaseHours} onChange={(e) => set("showcaseHours", e.target.value)} />
-            </Field>
-          </CardBody>
-        </Card>
       </div>
 
       <Card title="Marca" description="Logo, capa e cores da página pública. Ao enviar a logo, o cardápio já ganha a cor principal dela; troque por uma das outras cores ou escolha à mão.">
@@ -428,39 +418,6 @@ function ImagePick({ label, preset, url, onPick }: { label: string; preset: "log
       </Button>
       <p className="m-0 text-[12px] text-ink-3">{imageSizeHint(preset)}</p>
     </Field>
-  );
-}
-
-/** Itens da vitrine (W3): marque os itens, na ordem do cardápio. Até 50. */
-function ShowcasePicker({ tenantId, selected, onChange }: { tenantId: string; selected: string[]; onChange: (ids: string[]) => void }) {
-  const { request } = useAuth();
-  const menu = useQuery({ queryKey: ["menu", tenantId], queryFn: () => request<MenuTree>(`/menu/${tenantId}`) });
-  if (!menu.data) return <p className="text-ink-3">{menu.isError ? "Não foi possível carregar os itens do cardápio." : "Carregando os itens…"}</p>;
-  const categories = menu.data.categories.filter((category) => category.items.some((item) => item.active));
-  if (!categories.length) return <p className="text-ink-3">Cadastre itens no Cardápio para montar a vitrine.</p>;
-  const toggle = (id: string) => onChange(selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id].slice(0, 50));
-  return (
-    <div className="flex flex-col gap-2">
-      <p className="text-ink-2 tabular-nums">{selected.length === 0 ? "Nenhum item: a vitrine não aparece." : `${selected.length} ${selected.length === 1 ? "item" : "itens"} na vitrine.`}</p>
-      <div className="grid max-h-72 grid-cols-2 gap-x-4 gap-y-1 overflow-auto rounded-lg border border-rule p-3">
-        {categories.map((category) => (
-          <div key={category.id} className="col-span-2 grid grid-cols-2 gap-x-4 gap-y-1">
-            <Eyebrow className="col-span-2 mt-1">{category.name}</Eyebrow>
-            {category.items
-              .filter((item) => item.active)
-              .map((item) => (
-                <label key={item.id} className="flex items-center gap-2 text-[13px]">
-                  <input type="checkbox" className="size-4 accent-ink" checked={selected.includes(item.id)} onChange={() => toggle(item.id)} />
-                  <span className={item.soldOut ? "text-ink-3" : undefined}>
-                    {item.name}
-                    {item.soldOut && " (esgotado)"}
-                  </span>
-                </label>
-              ))}
-          </div>
-        ))}
-      </div>
-    </div>
   );
 }
 

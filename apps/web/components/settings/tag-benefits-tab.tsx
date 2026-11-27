@@ -6,7 +6,9 @@ import {
   BENEFIT_FREQUENCY_LABEL,
   BENEFIT_TAGS,
   BENEFIT_TITLE,
+  type BenefitFrequency,
   type BenefitTag,
+  type TagBenefit,
   type TagBenefitsSettings,
 } from "@dishdesk/shared";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -25,50 +27,51 @@ import { centsText, type MenuTree, parseCents } from "@/lib/menu";
 type RecoveryContact = { contactId: string; name: string | null; phone: string | null; tags: string[]; conversationId: string | null; windowOpen: boolean; lastOfferAt: string | null };
 
 /**
- * Campos em texto (R$) para o corpo do PUT; devolve a mensagem do primeiro valor inválido. `on` diz quais caixas de
- * cupom em R$ (`VIP.discount`) estão marcadas; desmarcada, o cupom vai zerado.
+ * Campos em texto (R$) para o corpo do PUT; devolve a mensagem do primeiro valor inválido. Cada tag tem os campos
+ * `VIP.discount`, `VIP.discountMin`, `VIP.freeDeliveryMin` e `VIP.giftMin`.
  */
-export function benefitsPayload(
-  form: TagBenefitsSettings,
-  money: Record<string, string>,
-  on: Record<string, boolean> = {},
-): { ok: true; body: TagBenefitsSettings } | { ok: false; error: string } {
+export function benefitsPayload(form: TagBenefitsSettings, money: Record<string, string>): { ok: true; body: TagBenefitsSettings } | { ok: false; error: string } {
   const cents = (field: string, label: string) => {
     const value = (money[field] ?? "").trim() === "" ? 0 : parseCents(money[field] ?? "");
     return value === null ? `${label}: informe um valor em R$, como 10,00.` : value;
   };
   const tags = { ...form.tags };
   for (const tag of BENEFIT_TAGS) {
-    const discountOn = on[`${tag}.discount`] ?? true;
-    const discount = discountOn ? cents(`${tag}.discount`, `${BENEFIT_TITLE[tag]} · cupom`) : 0;
-    const min = cents(`${tag}.min`, `${BENEFIT_TITLE[tag]} · pedido mínimo`);
-    if (typeof discount === "string") return { ok: false, error: discount };
-    if (typeof min === "string") return { ok: false, error: min };
-    if (form.tags[tag].enabled && discountOn && discount === 0) return { ok: false, error: `${BENEFIT_TITLE[tag]} · cupom: informe o valor ou desmarque a caixa.` };
-    tags[tag] = { ...form.tags[tag], discountCents: discount, minOrderCents: min };
+    const rule = form.tags[tag];
+    const title = BENEFIT_TITLE[tag];
+    const discount = rule.discount.enabled ? cents(`${tag}.discount`, `${title} · cupom`) : 0;
+    const discountMin = cents(`${tag}.discountMin`, `${title} · cupom · pedido mínimo`);
+    const freeMin = cents(`${tag}.freeDeliveryMin`, `${title} · entrega grátis · pedido mínimo`);
+    const giftMin = cents(`${tag}.giftMin`, `${title} · brinde · pedido mínimo`);
+    for (const value of [discount, discountMin, freeMin, giftMin]) if (typeof value === "string") return { ok: false, error: value };
+    if (rule.enabled && rule.discount.enabled && discount === 0) return { ok: false, error: `${title} · cupom: informe o valor ou desmarque a caixa.` };
+    if (rule.enabled && rule.gift.enabled && !rule.gift.itemId) return { ok: false, error: `${title} · brinde: escolha o item ou desmarque a caixa.` };
+    tags[tag] = {
+      ...rule,
+      freeDelivery: { ...rule.freeDelivery, minOrderCents: freeMin as number },
+      discount: { ...rule.discount, cents: discount as number, minOrderCents: discountMin as number },
+      gift: { ...rule.gift, minOrderCents: giftMin as number },
+    };
   }
   const rDiscount = cents("recovery.discount", "Recuperação · presente");
   const rMin = cents("recovery.min", "Recuperação · pedido mínimo");
   if (typeof rDiscount === "string") return { ok: false, error: rDiscount };
   if (typeof rMin === "string") return { ok: false, error: rMin };
-  const giftMin = cents("vipGift.min", "Brinde do VIP · pedido mínimo");
-  if (typeof giftMin === "string") return { ok: false, error: giftMin };
-  if (form.tags.VIP.enabled && form.vipGift.enabled && !form.vipGift.itemId) return { ok: false, error: "Brinde do VIP: escolha o item ou desmarque a caixa." };
-  return {
-    ok: true,
-    body: { tags, recovery: { ...form.recovery, discountCents: rDiscount, minOrderCents: rMin }, vipGift: { ...form.vipGift, minOrderCents: giftMin } },
-  };
+  return { ok: true, body: { tags, recovery: { ...form.recovery, discountCents: rDiscount, minOrderCents: rMin } } };
 }
 
 function moneyOf(config: TagBenefitsSettings): Record<string, string> {
   const out: Record<string, string> = {};
+  const text = (value: number) => (value ? centsText(value) : "");
   for (const tag of BENEFIT_TAGS) {
-    out[`${tag}.discount`] = config.tags[tag].discountCents ? centsText(config.tags[tag].discountCents) : "";
-    out[`${tag}.min`] = config.tags[tag].minOrderCents ? centsText(config.tags[tag].minOrderCents) : "";
+    const rule = config.tags[tag];
+    out[`${tag}.discount`] = text(rule.discount.cents);
+    out[`${tag}.discountMin`] = text(rule.discount.minOrderCents);
+    out[`${tag}.freeDeliveryMin`] = text(rule.freeDelivery.minOrderCents);
+    out[`${tag}.giftMin`] = text(rule.gift.minOrderCents);
   }
-  out["recovery.discount"] = config.recovery.discountCents ? centsText(config.recovery.discountCents) : "";
-  out["recovery.min"] = config.recovery.minOrderCents ? centsText(config.recovery.minOrderCents) : "";
-  out["vipGift.min"] = config.vipGift.minOrderCents ? centsText(config.vipGift.minOrderCents) : "";
+  out["recovery.discount"] = text(config.recovery.discountCents);
+  out["recovery.min"] = text(config.recovery.minOrderCents);
   return out;
 }
 
@@ -96,13 +99,11 @@ function BenefitsForm({ tenantId, data }: { tenantId: string; data: TagBenefitsS
   const [form, setForm] = useState<TagBenefitsSettings>(data);
   const [money, setMoney] = useState<Record<string, string>>(() => moneyOf(data));
   const [failure, setFailure] = useState<string | null>(null);
-  const setTag = (tag: BenefitTag, change: Partial<TagBenefitsSettings["tags"][BenefitTag]>) => setForm((f) => ({ ...f, tags: { ...f.tags, [tag]: { ...f.tags[tag], ...change } } }));
+  const setTag = (tag: BenefitTag, change: Partial<TagBenefit>) => setForm((f) => ({ ...f, tags: { ...f.tags, [tag]: { ...f.tags[tag], ...change } } }));
+  /** Muda uma parte da tag (entrega grátis, cupom ou brinde). */
+  const setPerk = <K extends "freeDelivery" | "discount" | "gift">(tag: BenefitTag, perk: K, change: Partial<TagBenefit[K]>) =>
+    setForm((f) => ({ ...f, tags: { ...f.tags, [tag]: { ...f.tags[tag], [perk]: { ...f.tags[tag][perk], ...change } } } }));
   const setRecovery = (change: Partial<TagBenefitsSettings["recovery"]>) => setForm((f) => ({ ...f, recovery: { ...f.recovery, ...change } }));
-  const setGift = (change: Partial<TagBenefitsSettings["vipGift"]>) => setForm((f) => ({ ...f, vipGift: { ...f.vipGift, ...change } }));
-  // Caixa do cupom em R$: marcada enquanto houver valor salvo; desmarcada, o cupom vai zerado.
-  const [discountOn, setDiscountOn] = useState<Record<BenefitTag, boolean>>(
-    () => Object.fromEntries(BENEFIT_TAGS.map((tag) => [tag, data.tags[tag].discountCents > 0])) as Record<BenefitTag, boolean>,
-  );
   const menu = useQuery({ queryKey: ["menu", tenantId], queryFn: () => request<MenuTree>(`/menu/${tenantId}`) });
   const moneyInput = (field: string, placeholder: string, disabled = false) => (
     <Input
@@ -117,7 +118,7 @@ function BenefitsForm({ tenantId, data }: { tenantId: string; data: TagBenefitsS
 
   const [save, saving] = usePendingAction(async () => {
     setFailure(null);
-    const result = benefitsPayload(form, money, Object.fromEntries(BENEFIT_TAGS.map((tag) => [`${tag}.discount`, discountOn[tag]])));
+    const result = benefitsPayload(form, money);
     if (!result.ok) return setFailure(result.error);
     try {
       const saved = await request<TagBenefitsSettings>(`/menu/${tenantId}/tag-benefits`, { method: "PUT", body: result.body });
@@ -142,12 +143,24 @@ function BenefitsForm({ tenantId, data }: { tenantId: string; data: TagBenefitsS
       </div>
 
       <Card
-        title="Cupons por tag"
-        description="O cliente que entrou no cardápio com o código do WhatsApp vê os cupons das tags dele e escolhe um por pedido (vale só o melhor, não acumula). Marque uma ou mais vantagens em cada tag."
+        title="Vantagens por tag"
+        description="O cliente que entrou no cardápio com o código do WhatsApp vê os cupons das tags dele e escolhe um por pedido (vale só o melhor, não acumula). Em cada tag, a entrega grátis, o cupom e o brinde têm o seu próprio pedido mínimo e a sua frequência."
       >
         <CardBody className="flex flex-col divide-y divide-rule-soft">
           {BENEFIT_TAGS.map((tag) => {
             const rule = form.tags[tag];
+            const frequency = (value: BenefitFrequency, onChange: (value: BenefitFrequency) => void) => (
+              <label className="flex items-center gap-2 text-[13px]">
+                Usar
+                <select className={select} value={value} onChange={(e) => onChange(e.target.value as BenefitFrequency)}>
+                  {BENEFIT_FREQUENCIES.map((f) => (
+                    <option key={f} value={f}>
+                      {BENEFIT_FREQUENCY_LABEL[f]}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            );
             return (
               <div key={tag} className="flex flex-col gap-2.5 py-3.5 first:pt-0 last:pb-0">
                 <label className="flex items-center gap-2.5">
@@ -157,104 +170,92 @@ function BenefitsForm({ tenantId, data }: { tenantId: string; data: TagBenefitsS
                 </label>
                 <p className="m-0 text-[12px] text-ink-3">{AUTO_TAG_INFO[tag]}</p>
                 {rule.enabled && (
-                  <>
-                    <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
-                      <label className={box(rule.freeDelivery)}>
-                        <span className="flex items-center gap-2 font-medium">
-                          <input type="checkbox" className={check} checked={rule.freeDelivery} onChange={(e) => setTag(tag, { freeDelivery: e.target.checked })} />
-                          Entrega grátis
-                        </span>
-                        <span className="text-[12px] text-ink-3">A taxa de entrega sai do pedido.</span>
+                  <div className="grid grid-cols-1 gap-2.5 lg:grid-cols-3">
+                    <div className={box(rule.freeDelivery.enabled)}>
+                      <label className="flex items-center gap-2 font-medium">
+                        <input type="checkbox" className={check} checked={rule.freeDelivery.enabled} onChange={(e) => setPerk(tag, "freeDelivery", { enabled: e.target.checked })} />
+                        Entrega grátis
                       </label>
-                      <div className={box(discountOn[tag])}>
-                        <label className="flex items-center gap-2 font-medium">
-                          <input type="checkbox" className={check} checked={discountOn[tag]} onChange={(e) => setDiscountOn((d) => ({ ...d, [tag]: e.target.checked }))} />
-                          Cupom de desconto
-                        </label>
-                        <label className="flex items-center gap-2 text-[13px]">R$ {moneyInput(`${tag}.discount`, "0,00", !discountOn[tag])}</label>
-                      </div>
+                      <span className="text-[12px] text-ink-3">A taxa de entrega sai do pedido.</span>
+                      {rule.freeDelivery.enabled && (
+                        <>
+                          <label className="flex items-center gap-2 text-[13px]">Pedido mínimo R$ {moneyInput(`${tag}.freeDeliveryMin`, "sem mínimo")}</label>
+                          {frequency(rule.freeDelivery.frequency, (value) => setPerk(tag, "freeDelivery", { frequency: value }))}
+                        </>
+                      )}
                     </div>
-                    <div className="flex flex-wrap items-center gap-x-5 gap-y-2.5">
-                      <label className="flex items-center gap-2 text-[13px]">
-                        Pedido mínimo R$ {moneyInput(`${tag}.min`, "sem mínimo")}
+
+                    <div className={box(rule.discount.enabled)}>
+                      <label className="flex items-center gap-2 font-medium">
+                        <input type="checkbox" className={check} checked={rule.discount.enabled} onChange={(e) => setPerk(tag, "discount", { enabled: e.target.checked })} />
+                        Cupom de desconto
                       </label>
-                      <label className="flex items-center gap-2 text-[13px]">
-                        Usar
-                        <select
-                          className={select}
-                          value={rule.frequency}
-                          onChange={(e) => setTag(tag, { frequency: e.target.value as (typeof BENEFIT_FREQUENCIES)[number] })}
-                        >
-                          {BENEFIT_FREQUENCIES.map((f) => (
-                            <option key={f} value={f}>
-                              {BENEFIT_FREQUENCY_LABEL[f]}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
+                      <span className="text-[12px] text-ink-3">Valor em R$ que sai do pedido.</span>
+                      {rule.discount.enabled && (
+                        <>
+                          <label className="flex items-center gap-2 text-[13px]">Desconto R$ {moneyInput(`${tag}.discount`, "0,00")}</label>
+                          <label className="flex items-center gap-2 text-[13px]">Pedido mínimo R$ {moneyInput(`${tag}.discountMin`, "sem mínimo")}</label>
+                          {frequency(rule.discount.frequency, (value) => setPerk(tag, "discount", { frequency: value }))}
+                        </>
+                      )}
                     </div>
-                    {tag === "VIP" && (
-                      <div className={box(form.vipGift.enabled)}>
-                        <label className="flex items-center gap-2 font-medium">
-                          <input type="checkbox" className={check} checked={form.vipGift.enabled} onChange={(e) => setGift({ enabled: e.target.checked })} />
-                          Brinde do cardápio
-                        </label>
-                        <span className="text-[12px] text-ink-3">
-                          Entra sozinho no carrinho do VIP, de graça, quando o pedido alcança o mínimo. Soma com o cupom.
-                        </span>
-                        {form.vipGift.enabled && (
-                          <div className="flex flex-wrap items-center gap-x-5 gap-y-2.5">
+
+                    <div className={box(rule.gift.enabled)}>
+                      <label className="flex items-center gap-2 font-medium">
+                        <input type="checkbox" className={check} checked={rule.gift.enabled} onChange={(e) => setPerk(tag, "gift", { enabled: e.target.checked })} />
+                        Brinde do cardápio
+                      </label>
+                      <span className="text-[12px] text-ink-3">Entra sozinho no carrinho, de graça. Soma com o cupom; um brinde por pedido.</span>
+                      {rule.gift.enabled && (
+                        <>
+                          <label className="flex items-center gap-2 text-[13px]">
+                            Item
+                            <select className={`${select} min-w-0 flex-1`} value={rule.gift.itemId ?? ""} onChange={(e) => setPerk(tag, "gift", { itemId: e.target.value || null })}>
+                              <option value="">Escolha o item</option>
+                              {menu.data?.categories.map((category) => (
+                                <optgroup key={category.id} label={category.name}>
+                                  {category.items
+                                    .filter((item) => item.active || item.id === rule.gift.itemId)
+                                    .map((item) => (
+                                      <option key={item.id} value={item.id}>
+                                        {item.name}
+                                        {item.soldOut ? " (esgotado)" : ""}
+                                      </option>
+                                    ))}
+                                </optgroup>
+                              ))}
+                            </select>
+                          </label>
+                          <label className="flex items-center gap-2 text-[13px]">Pedido mínimo R$ {moneyInput(`${tag}.giftMin`, "sem mínimo")}</label>
+                          <label className="flex items-center gap-2 text-[13px]">
+                            Limite
+                            <select
+                              className={select}
+                              value={rule.gift.perMonth == null ? "none" : rule.gift.perMonth === 1 ? "once" : "many"}
+                              onChange={(e) => setPerk(tag, "gift", { perMonth: e.target.value === "none" ? null : e.target.value === "once" ? 1 : 2 })}
+                            >
+                              <option value="none">Sem limite</option>
+                              <option value="once">Uma vez por mês</option>
+                              <option value="many">Algumas vezes por mês</option>
+                            </select>
+                          </label>
+                          {rule.gift.perMonth != null && rule.gift.perMonth > 1 && (
                             <label className="flex items-center gap-2 text-[13px]">
-                              Item
-                              <select className={`${select} max-w-64`} value={form.vipGift.itemId ?? ""} onChange={(e) => setGift({ itemId: e.target.value || null })}>
-                                <option value="">Escolha o item</option>
-                                {menu.data?.categories.map((category) => (
-                                  <optgroup key={category.id} label={category.name}>
-                                    {category.items
-                                      .filter((item) => item.active || item.id === form.vipGift.itemId)
-                                      .map((item) => (
-                                        <option key={item.id} value={item.id}>
-                                          {item.name}
-                                          {item.soldOut ? " (esgotado)" : ""}
-                                        </option>
-                                      ))}
-                                  </optgroup>
-                                ))}
-                              </select>
+                              <Input
+                                type="number"
+                                min={2}
+                                max={31}
+                                className="w-20 tabular-nums"
+                                value={rule.gift.perMonth}
+                                onChange={(e) => setPerk(tag, "gift", { perMonth: Math.min(31, Math.max(2, Number(e.target.value) || 2)) })}
+                              />
+                              vezes por mês
                             </label>
-                            <label className="flex items-center gap-2 text-[13px]">
-                              Pedido mínimo R$ {moneyInput("vipGift.min", "sem mínimo")}
-                            </label>
-                            <label className="flex items-center gap-2 text-[13px]">
-                              Limite
-                              <select
-                                className={select}
-                                value={form.vipGift.perMonth == null ? "none" : form.vipGift.perMonth === 1 ? "once" : "many"}
-                                onChange={(e) => setGift({ perMonth: e.target.value === "none" ? null : e.target.value === "once" ? 1 : 2 })}
-                              >
-                                <option value="none">Sem limite</option>
-                                <option value="once">Uma vez por mês</option>
-                                <option value="many">Algumas vezes por mês</option>
-                              </select>
-                            </label>
-                            {form.vipGift.perMonth != null && form.vipGift.perMonth > 1 && (
-                              <label className="flex items-center gap-2 text-[13px]">
-                                <Input
-                                  type="number"
-                                  min={2}
-                                  max={31}
-                                  className="w-20 tabular-nums"
-                                  value={form.vipGift.perMonth}
-                                  onChange={(e) => setGift({ perMonth: Math.min(31, Math.max(2, Number(e.target.value) || 2)) })}
-                                />
-                                vezes por mês
-                              </label>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  </div>
                 )}
               </div>
             );

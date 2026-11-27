@@ -31,8 +31,6 @@ export type PublicMenuStore = {
   deliveryEta: { minMinutes: number; maxMinutes: number };
   paymentMethods: PublicPaymentMethod[];
   schedulingEnabled: boolean;
-  /** Vitrine de promoções (W3); ausente em API antiga. */
-  promoShowcase?: { itemIds: string[]; frequencyHours: number };
   /** Pixel da Meta (F7-03); null sem Pixel. Ausente em API antiga. */
   metaPixelId?: string | null;
 };
@@ -172,17 +170,6 @@ export function highlightsOf(categories: PublicMenuCategory[], limit = 6): Publi
     }
   }
   return picked.slice(0, limit);
-}
-
-/** Itens da vitrine de promoções na ordem escolhida pela loja, só os que estão à venda agora (R4: nada esgotado). */
-export function showcaseItems(categories: PublicMenuCategory[], itemIds: string[]): PublicMenuItem[] {
-  const byId = new Map(categories.flatMap((category) => category.items).map((item) => [item.id, item]));
-  return itemIds.map((id) => byId.get(id)).filter((item): item is PublicMenuItem => Boolean(item && orderable(item)));
-}
-
-/** A vitrine aparece de novo? No máximo uma vez a cada `frequencyHours` (R4). */
-export function showcaseDue(lastShownAt: number | null, now: number, frequencyHours: number): boolean {
-  return lastShownAt === null || !Number.isFinite(lastShownAt) || now - lastShownAt >= frequencyHours * 3_600_000;
 }
 
 /** Categorias que têm item: uma categoria vazia não aparece nas abas nem na lista. */

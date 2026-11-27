@@ -14,7 +14,6 @@ import { LoginBenefitsCard } from "./login-benefits-card";
 import { ItemCard } from "./item-card";
 import { ItemSheet } from "./item-sheet";
 import { ConsentBanner, MetaPixel } from "./ads-consent";
-import { PromoShowcase } from "./promo-showcase";
 import { storeContactLink } from "@/lib/public-checkout";
 import { ContextFromChat } from "./context-from-chat";
 import { ReorderFromOrder } from "./reorder-from-order";
@@ -124,8 +123,6 @@ export function MenuView({ slug, menu }: { slug: string; menu: PublicMenu }) {
 
   const sections = [...(highlights.length > 0 ? [{ id: HIGHLIGHTS_ID, label: "Destaques", dom: HIGHLIGHTS_ID }] : []), ...categories.map((c) => ({ id: c.id, label: c.name, dom: categoryDomId(c.id) }))];
   const activeLabel = sections.find((section) => section.id === active)?.label ?? "Lista de categorias";
-  const hasPromos = (menu.store.promoShowcase?.itemIds.length ?? 0) > 0;
-
   return (
     <CartProvider slug={slug}>
       <VipWelcome slug={slug} />
@@ -233,7 +230,7 @@ export function MenuView({ slug, menu }: { slug: string; menu: PublicMenu }) {
           </ul>
         </Sheet>
       )}
-      <BottomNav slug={slug} hasPromos={hasPromos} />
+      <BottomNav slug={slug} />
       {searching && (
         <Sheet title="Buscar no cardápio" full onClose={closeSearch}>
           <SearchPanel
@@ -248,7 +245,6 @@ export function MenuView({ slug, menu }: { slug: string; menu: PublicMenu }) {
         </Sheet>
       )}
       {selected && <ItemSheet slug={slug} item={selected} category={categories.find((c) => c.id === selected.categoryId)} onClose={closeItem} />}
-      <PromoShowcase slug={slug} store={menu.store} categories={categories} onPick={setSelected} />
       <ReorderFromOrder slug={slug} categories={categories} />
       <ContextFromChat slug={slug} categories={categories} />
       <MetaPixel pixelId={menu.store.metaPixelId} />

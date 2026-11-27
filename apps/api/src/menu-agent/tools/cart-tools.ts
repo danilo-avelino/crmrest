@@ -40,7 +40,7 @@ const CART_INCLUDE = {
   },
 } as const;
 
-function findOpenCart(tx: TenantTx, tenantId: string, session: MenuAgentSession) {
+export function findOpenCart(tx: TenantTx, tenantId: string, session: MenuAgentSession) {
   return tx.cart.findFirst({
     where: { tenantId, conversationId: session.conversationId, status: { in: [...OPEN] } },
     orderBy: { createdAt: "desc" },
@@ -49,7 +49,7 @@ function findOpenCart(tx: TenantTx, tenantId: string, session: MenuAgentSession)
 }
 type OpenCart = NonNullable<Awaited<ReturnType<typeof findOpenCart>>>;
 
-const optionIdsOf = (options: unknown) => (Array.isArray(options) ? (options as StoredOption[]).map((o) => o.id) : []);
+export const optionIdsOf = (options: unknown) => (Array.isArray(options) ? (options as StoredOption[]).map((o) => o.id) : []);
 
 const selectionOf = (row: OpenCart["items"][number]): LineSelection => ({
   itemId: row.itemId,

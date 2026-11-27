@@ -27,7 +27,6 @@ const STORE = {
   deliveryMaxMinutes: 50,
   paymentMethods: ["pix", "cash", "credit", "debit", "pix_on_delivery"],
   scheduling: { enabled: true, minLeadMinutes: 30, slotMinutes: 30 },
-  promoShowcase: { itemIds: [], frequencyHours: 24 },
   phone: "(11) 3333-4444",
 };
 

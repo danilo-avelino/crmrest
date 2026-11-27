@@ -64,6 +64,20 @@ describe("AnthropicLlmProvider: chat com ferramentas", () => {
     expect(requests.map((request) => request.model)).toEqual(Array(3).fill("claude-sonnet-5-5"));
   });
 
+  it("conta de demonstração: recusa, exceto a simulação do painel (allowDemo)", async () => {
+    const DEMO = "019a0000-0000-7000-8000-0000000000de";
+    const demoDb = {
+      withTenants: (_scope: unknown, fn: (tx: unknown) => Promise<unknown>) =>
+        fn({ aiUsage: { create: ({ data }: { data: unknown }) => usages.push(data) }, tenant: { findUnique: async () => ({ settings: { demo: true } }) } }),
+    } as unknown as DatabaseService;
+    const demoProvider = new AnthropicLlmProvider({} as Env, demoDb, api);
+    const params = { ...base, tenantId: DEMO, messages: [{ role: "user" as const, content: "oi" }], tools: [buscar] };
+    await expect(demoProvider.chatWithTools(params)).rejects.toThrow("Indisponível na conta de demonstração.");
+    expect(requests).toHaveLength(0);
+    replies = [text("Olá!")];
+    await expect(demoProvider.chatWithTools({ ...params, allowDemo: true })).resolves.toMatchObject({ outcome: "done", text: "Olá!" });
+  });
+
   it("entrada inválida e erro do handler voltam como is_error", async () => {
     const quebra: LlmTool<z.ZodObject<{}>> = { name: "quebra", description: "", inputSchema: z.object({}), handler: () => { throw new Error("fora"); } };
     replies = [

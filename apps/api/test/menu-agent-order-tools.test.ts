@@ -38,7 +38,6 @@ const STORE = {
   paymentMethods: ["pix", "cash"],
   pixRecipientId: "re_agente12345",
   scheduling: { enabled: false, minLeadMinutes: 30, slotMinutes: 30 },
-  promoShowcase: { itemIds: [], frequencyHours: 24 },
 };
 
 // O agente fecha o pedido (F4-03): pagar na entrega ou Pix, com as mesmas regras do site.

@@ -21,6 +21,7 @@ import { handoffTool } from "./tools/handoff-tool.js";
 import { menuAgentTools } from "./tools/index.js";
 import { type OfferedOptions, offerTool } from "./tools/offer-tool.js";
 import { type AgentOrders, orderTools } from "./tools/order-tools.js";
+import { salesRemaining, salesTool } from "./tools/sales-tool.js";
 
 /** O provedor de LLM com ferramentas do agente de pedidos (AnthropicLlmProvider; o teste troca por um com o SDK falso). */
 export const ORDER_AGENT_LLM = Symbol("ORDER_AGENT_LLM");
@@ -95,7 +96,7 @@ async function pixMessages(
 /** As regras fixas do agente (o que muda a cada turno vai em DADOS, no fim do system). */
 export function orderAgentRules(restaurant: string, settings: unknown): string {
   const { attendantName, houseRules, suggestAddons, maxSuggestionsPerConversation } = menuAgentOf(settings);
-  const suggestions = suggestAddons ? maxSuggestionsPerConversation : 0;
+  const offers = suggestAddons ? maxSuggestionsPerConversation : 0;
   const who = attendantName ? `o atendente virtual ${attendantName}, do restaurante ${restaurant},` : `o atendente virtual do restaurante ${restaurant}`;
   return `Você é ${who} e anota pedidos pelo WhatsApp com o cardápio do sistema.${attendantName ? " Apresente-se por esse nome quando cumprimentar." : ""}
 ${toneOf(settings)}
@@ -123,8 +124,8 @@ Regras obrigatórias:
 - Loja fechada ou pausada: diga quando abre (verificar_funcionamento) e, se a loja agenda, ofereça agendar.
 - Em DADOS, "Carrinho agora" é o carrinho real desta conversa: confie nele, e não no que a conversa diz que foi pedido.
 - ${
-    suggestions > 0
-      ? `Complementos: faça no máximo ${suggestions} ${suggestions === 1 ? "sugestão" : "sugestões"} de complemento por conversa (use recomendar), uma por vez, depois de adicionar um item. Conte as que você já fez na conversa: chegou ao limite, não sugira mais. Se o cliente recusar, não insista.`
+    offers > 0
+      ? 'Venda: o restaurante escolhe o que oferecer, e o sistema calcula. Logo depois de adicionar um item, chame ofertas_de_venda com momento "depois_de_adicionar"; quando o cliente disser que terminou de escolher, chame com momento "fim" antes de perguntar entrega ou retirada. Faça só a oferta que voltar, uma por resposta; sem oferta, não ofereça nada por conta própria. Se o cliente recusar, não insista.'
       : "Não sugira complementos, acompanhamentos nem itens extras por conta própria. Só ofereça outro item se o cliente pedir ou se o escolhido estiver esgotado."
   }${
     houseRules
@@ -240,6 +241,8 @@ export function moneyMentions(text: string): number[] {
 export function knownCents(values: unknown[]): Set<number> {
   const found = new Set<number>();
   const walk = (value: unknown, key?: string): void => {
+    // O argumento de uma oferta de venda é texto do restaurante: um "R$" nele não vale como preço do sistema.
+    if (key === "argumento") return;
     if (typeof value === "number" && key === "centavos") found.add(value);
     else if (typeof value === "string") for (const cents of moneyMentions(value)) found.add(cents);
     else if (Array.isArray(value)) for (const item of value) walk(item);
@@ -272,7 +275,7 @@ export type AgentTurnInput = {
   conversationId: string;
   contactId: string | null;
   contactName: string | null;
-  state: Pick<AutomationState, "aiReplies" | "offered">;
+  state: Pick<AutomationState, "aiReplies" | "offered" | "salesOffers">;
   history: HistoryMessage[];
   lastContent: MessageContent;
   now: Date;
@@ -280,6 +283,8 @@ export type AgentTurnInput = {
   onUsage: (usage: { inputTokens: number; outputTokens: number }) => unknown;
   /** Fecha o pedido e cobra o Pix (F4-03); sem isto (simulação do painel), as ferramentas não criam nada. */
   orders?: AgentOrders | null;
+  /** A simulação do painel roda também na conta de demonstração. */
+  allowDemo?: boolean;
 };
 
 export type AgentTurnResult =
@@ -294,6 +299,8 @@ export type AgentTurnResult =
       toolCalls: LlmToolCall[];
       /** Pix gerado neste turno: o QR Code e o código saem logo depois da resposta (F6-04). */
       pix: PixPending | null;
+      /** Ofertas de venda feitas neste turno (E48), para o estado da conversa. */
+      salesOffered: string[];
     };
 
 /**
@@ -386,7 +393,7 @@ export class OrderAgentService implements OnModuleDestroy {
     const settings = conversation.tenant.settings;
 
     const used = Number((await this.redis.get(budgetKey(conversationId, now))) ?? 0);
-    const dailyTokens = menuAgentOf(settings).dailyTokensPerConversation ?? this.env.MENU_AGENT_DAILY_TOKENS;
+    const dailyTokens = this.env.MENU_AGENT_DAILY_TOKENS;
     if (used >= dailyTokens) {
       return this.stop(tenantId, context, `o limite diário de uso da IA nesta conversa (${dailyTokens} tokens) acabou`);
     }
@@ -416,7 +423,7 @@ export class OrderAgentService implements OnModuleDestroy {
         : null,
     });
     if (outcome.kind === "stop") return this.stop(tenantId, context, outcome.why, outcome.events);
-    const { text, question, offer: offerNow, handoff: reason, events, pix } = outcome;
+    const { text, question, offer: offerNow, handoff: reason, events, pix, salesOffered } = outcome;
 
     const ids = await this.db.withTenants(scope, async (tx) => {
       for (const event of events) await systemEvent(tx, conversation, { event: "menu_agent", text: event });
@@ -455,6 +462,7 @@ export class OrderAgentService implements OnModuleDestroy {
         aiReplies: (current.aiReplies ?? 0) + 1,
         aiReopened: undefined,
         offered: text && offerNow ? { options: offerNow.options, at: now.toISOString() } : undefined,
+        ...(text && salesOffered.length && { salesOffers: [...(current.salesOffers ?? []), ...salesOffered] }),
       });
       if (reason) {
         await systemEvent(tx, conversation, { event: "handoff", text: `IA passou o atendimento para a equipe: ${reason}` });
@@ -474,12 +482,15 @@ export class OrderAgentService implements OnModuleDestroy {
     let handoff: string | null = null;
     let offer: OfferedOptions | null = null;
     let pix: PixPending | null = null;
+    const salesOffered: string[] = [];
     const session = { conversationId: input.conversationId, contactId: input.contactId };
     const { now, settings, tenantId } = input;
     const deps = { db: input.db, now: () => now };
     const menuTools = menuAgentTools(deps, session);
+    const salesDone = input.state.salesOffers ?? [];
     const tools = [
       ...menuTools,
+      ...(salesRemaining(settings, salesDone) > 0 ? [salesTool(deps, session, salesDone, (id) => salesOffered.push(id))] : []),
       ...orderTools(deps, session, input.orders ?? null, (generated) => (pix = generated)),
       handoffTool((reason) => (handoff = reason || "sem motivo informado")),
       offerTool((offered) => (offer = offered)),
@@ -507,6 +518,7 @@ export class OrderAgentService implements OnModuleDestroy {
       maxIterations: AGENT_MAX_ITERATIONS,
       maxTokens: AGENT_MAX_TOKENS,
       timeoutMs: AGENT_TIMEOUT_MS,
+      allowDemo: input.allowDemo,
     };
     let result: Awaited<ReturnType<LlmProvider["chatWithTools"]>>;
     try {
@@ -557,7 +569,7 @@ export class OrderAgentService implements OnModuleDestroy {
       }
     }
 
-    return { kind: "reply", text, question, offer: offerNow, handoff: reason, events, toolCalls: result.toolCalls, pix: pix as PixPending | null };
+    return { kind: "reply", text, question, offer: offerNow, handoff: reason, events, toolCalls: result.toolCalls, pix: pix as PixPending | null, salesOffered };
   }
 
   /** O agente para (teto, falha ou resposta inválida): a mensagem no tom do restaurante sai e a equipe é chamada. */

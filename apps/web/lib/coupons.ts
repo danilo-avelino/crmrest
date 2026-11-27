@@ -1,7 +1,7 @@
 // Cupons das tags do cliente no cardápio público. Só quem entrou com o código do WhatsApp vê; o cliente escolhe um
 // (vale só um por pedido) e o servidor confere de novo ao fazer o pedido. O presente de recuperação não aparece aqui.
 
-import type { CustomerCouponDto, VipGiftDto } from "@dishdesk/shared";
+import { BENEFIT_TITLE, type CustomerCouponDto, type VipGiftDto } from "@dishdesk/shared";
 import { useEffect, useState } from "react";
 
 export type CouponsResponse = { name: string | null; coupons: CustomerCouponDto[]; vipGift?: VipGiftDto | null; vip?: boolean };
@@ -169,6 +169,10 @@ export function useCouponPreview(slug: string, subtotalCents: number, deliveryFe
     freeDelivery: effect.freeDelivery,
     /** Brinde do VIP que entra neste pedido (soma com o cupom); o servidor confere de novo e põe o item a R$ 0. */
     vipGift: data?.vipGift?.available && subtotalCents >= data.vipGift.minOrderCents ? data.vipGift.name : null,
+    /** "Brinde VIP" só para o VIP; o das outras tags é só "Brinde" (o cliente nunca vê o nome da tag). */
+    giftLabel: data?.vipGift?.tag === "VIP" ? "Brinde VIP" : "Brinde",
+    /** Frase da sacola: "Você é VIP!" ou o nome amigável da tag ("Boas-vindas!"). */
+    giftTitle: data?.vipGift ? (data.vipGift.tag === "VIP" ? "Você é VIP!" : `${BENEFIT_TITLE[data.vipGift.tag]}!`) : null,
     feeCents,
     totalCents: subtotalCents - effect.discountCents + feeCents,
   };

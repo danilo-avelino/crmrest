@@ -156,7 +156,7 @@ export function readTools(deps: MenuAgentDeps, subtotalOf: SubtotalOf) {
         const top = await topItems(loaded.tx, { tenantId: loaded.tenantId, limit: 20, now: loaded.now });
         let ranked = top.map((t) => byId.get(t.itemId)).filter((i) => !!i);
         const fonte = ranked.length ? "vendas" : "destaques";
-        if (!ranked.length) ranked = items.filter((i) => isHighlight(i, loaded.settings));
+        if (!ranked.length) ranked = items.filter((i) => isHighlight(i));
         return { fonte, itens: ranked.slice(0, input.limite).map((i) => brief(i, catalog, categoryName.get(i.categoryId))) };
       }),
   });
@@ -191,7 +191,7 @@ export function readTools(deps: MenuAgentDeps, subtotalOf: SubtotalOf) {
               unitCents,
               servesPeople: item.servesPeople,
               keywords: normalizeText([item.name, ...item.tags, ...item.ingredients].join(" ")),
-              popularity: (sales.get(item.id) ?? 0) + (isHighlight(item, loaded.settings) ? 5 : 0),
+              popularity: (sales.get(item.id) ?? 0) + (isHighlight(item) ? 5 : 0),
             },
           ];
         });
@@ -277,10 +277,10 @@ export function readTools(deps: MenuAgentDeps, subtotalOf: SubtotalOf) {
   return [buscar_cardapio, detalhar_item, mais_vendidos, recomendar, verificar_funcionamento, calcular_entrega];
 }
 
-/** Destaque: tag do restaurante ou item da vitrine de promoções. */
-function isHighlight(item: LoadedMenuItem, settings: unknown): boolean {
+/** Destaque: tag do restaurante. */
+function isHighlight(item: LoadedMenuItem): boolean {
   const tags = item.tags.map(normalizeText);
-  return HIGHLIGHT_TAGS.some((t) => tags.includes(t)) || menuStoreOf(settings).promoShowcase.itemIds.includes(item.id);
+  return HIGHLIGHT_TAGS.some((t) => tags.includes(t));
 }
 
 export function formatQuote(quote: ReturnType<typeof quoteDelivery>, subtotalCents: number, byDistrict: boolean) {

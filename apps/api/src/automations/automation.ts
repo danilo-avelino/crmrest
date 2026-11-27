@@ -71,6 +71,8 @@ export type AutomationState = {
   ifoodObservationAskedAt?: string;
   /** Agente de pedidos do cardápio: as opções fechadas que ele ofereceu na última resposta; valem por 30 min (F4-05). */
   offered?: { options: { id: string; title: string }[]; at: string };
+  /** Agente de pedidos: as ofertas de venda (E48) já feitas neste atendimento, pelo id; não se repetem e contam no limite. */
+  salesOffers?: string[];
 };
 
 /**

@@ -36,6 +36,8 @@ export type ChatWithToolsParams = {
   timeoutMs: number;
   toolChoice?: "auto" | "any" | "none" | { name: string };
   model?: string;
+  /** Só a "Simular conversa" do painel: roda também na conta de demonstração (nada é gravado nem enviado). */
+  allowDemo?: boolean;
 };
 
 export type ChatWithToolsResult = {
@@ -87,7 +89,7 @@ export class AnthropicLlmProvider implements LlmProvider {
 
   async chatWithTools(params: ChatWithToolsParams): Promise<ChatWithToolsResult> {
     if (!this.messagesApi) throw new Error("IA desligada: falta a chave da API do Claude.");
-    await assertNotDemo(this.db, params.tenantId, "Agente com ferramentas");
+    if (!params.allowDemo) await assertNotDemo(this.db, params.tenantId, "Agente com ferramentas");
     const model = params.model ?? LLM_PROVIDER_MODEL;
     const byName = new Map(params.tools.map((tool) => [tool.name, tool]));
     const tools: Anthropic.Tool[] = params.tools.map((tool, index) => {

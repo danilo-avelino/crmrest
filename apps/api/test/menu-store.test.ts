@@ -22,7 +22,6 @@ describe("Dados da loja do cardápio (F2-13)", () => {
     deliveryMaxMinutes: 50,
     paymentMethods: ["pix", "cash"],
     scheduling: { enabled: true, minLeadMinutes: 60, slotMinutes: 30 },
-    promoShowcase: { itemIds: [], frequencyHours: 24 },
     accentColor: "#112233",
     city: "Recife",
     phone: "(81) 99999-0000",

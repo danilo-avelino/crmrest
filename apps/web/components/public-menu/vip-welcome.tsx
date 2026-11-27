@@ -46,7 +46,7 @@ export function VipWelcome({ slug }: { slug: string }) {
   }, [slug]);
 
   const coupon = data?.coupons.find((c) => c.id === "VIP") ?? null;
-  const gift = data?.vipGift ?? null;
+  const gift = data?.vipGift?.tag === "VIP" ? data.vipGift : null;
   if (!pending || closed || !data?.vip || (!coupon && !gift)) return null;
 
   const first = data.name?.split(/\s+/)[0];
@@ -64,21 +64,22 @@ export function VipWelcome({ slug }: { slug: string }) {
           </p>
         </div>
 
-        {coupon && (
-          <section className="flex flex-col gap-2 rounded-xl border border-rule bg-surface p-3.5">
+        {/* Entrega grátis e desconto com mínimo e frequência próprios: um bloco para cada. */}
+        {coupon?.parts.map((part) => (
+          <section key={part.kind} className="flex flex-col gap-2 rounded-xl border border-rule bg-surface p-3.5">
             <p className="m-0 font-semibold">Cupom {coupon.title}</p>
             <p className="m-0 text-[13px] text-ink-2">
-              {couponSummary(coupon, money)}
-              {minText(coupon.minOrderCents)}.
+              {couponSummary({ freeDelivery: part.kind === "freeDelivery", discountCents: part.cents }, money)}
+              {minText(part.minOrderCents)}.
             </p>
-            {coupon.frequency === "EVERY_ORDER" ? (
+            {part.frequency === "EVERY_ORDER" ? (
               <p className="m-0 text-[12.5px] text-ink-2">Vale em todo pedido.</p>
             ) : (
-              <Uses total={1} used={coupon.available ? 0 : 1} icon={TicketPercentIcon} label="cupons" />
+              <Uses total={1} used={part.available ? 0 : 1} icon={TicketPercentIcon} label="cupons" />
             )}
-            {coupon.frequency === "ONCE" && <p className="m-0 text-[12px] text-ink-3">Vale uma vez só.</p>}
+            {part.frequency === "ONCE" && <p className="m-0 text-[12px] text-ink-3">Vale uma vez só.</p>}
           </section>
-        )}
+        ))}
 
         {gift && (
           <section className="flex flex-col gap-2 rounded-xl border border-rule bg-surface p-3.5">

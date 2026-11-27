@@ -292,8 +292,6 @@ export const MenuStoreSettings = z.object({
     /** Tamanho de cada faixa de horário, em minutos. */
     slotMinutes: z.number().int().min(5).max(240),
   }),
-  /** Vitrine de promoções: itens do cardápio e de quantas em quantas horas o cliente a vê de novo. */
-  promoShowcase: z.object({ itemIds: z.array(z.string()).max(50), frequencyHours: z.number().int().min(1).max(720) }),
   /** Marca e contato da loja (F2-13). Tudo opcional: quem não preencheu fica com os padrões da página pública. */
   logoUrl: z.string().max(500).optional(),
   coverUrl: z.string().max(500).optional(),
@@ -331,7 +329,6 @@ export const DEFAULT_MENU_STORE: MenuStoreSettings = {
   deliveryMaxMinutes: 60,
   paymentMethods: ["cash", "credit", "debit", "pix_on_delivery"],
   scheduling: { enabled: false, minLeadMinutes: 60, slotMinutes: 30 },
-  promoShowcase: { itemIds: [], frequencyHours: 24 },
 };
 
 /**
@@ -372,9 +369,33 @@ export function menuStoreOf(settings: unknown): MenuStoreSettings {
 export const MENU_AGENT_RULES_MAX = 1000;
 export const MENU_AGENT_NAME_MAX = 30;
 export const MENU_AGENT_SUGGESTIONS_MAX = 3;
-/** Limites do teto de tokens por conversa por dia que o painel aceita (o padrão vem do ambiente, `MENU_AGENT_DAILY_TOKENS`). */
-export const MENU_AGENT_TOKENS_MIN = 10_000;
-export const MENU_AGENT_TOKENS_MAX = 2_000_000;
+export const SALES_RULES_MAX = 20;
+/** Itens ou complementos que uma regra oferece. */
+export const SALES_RULE_OFFERS_MAX = 3;
+export const SALES_PITCH_MAX = 120;
+
+/**
+ * Regra de venda da IA (E48, Configurações → Pedidos pela IA → Venda pela IA). `ON_ADD`: depois que o cliente põe um
+ * item da categoria, a IA oferece os itens (ex.: refri 2L na pizza) ou um grupo de complementos dos itens dessa
+ * categoria (ex.: "Transformar em combo", borda). `AT_END`: antes de fechar, se o carrinho não tem item da categoria, a
+ * IA oferece os itens escolhidos ou, sem itens, os mais vendidos dela (ex.: bebida, sobremesa). O preço é sempre o do
+ * cardápio: o argumento é só o mote da oferta.
+ */
+export const SalesRule = z
+  .object({
+    id: z.string().trim().min(1).max(40),
+    trigger: z.enum(["ON_ADD", "AT_END"]),
+    categoryId: z.uuid(),
+    itemIds: z.array(z.uuid()).max(SALES_RULE_OFFERS_MAX).default([]),
+    groupIds: z.array(z.uuid()).max(SALES_RULE_OFFERS_MAX).default([]),
+    pitch: text(SALES_PITCH_MAX).default(""),
+  })
+  .refine((rule) => rule.trigger === "ON_ADD" || rule.groupIds.length === 0, { message: "No fim do pedido a regra oferece itens, não complementos.", path: ["groupIds"] })
+  .refine((rule) => rule.trigger === "AT_END" || rule.itemIds.length + rule.groupIds.length > 0, {
+    message: "Escolha o que a IA oferece ao pedir um item da categoria.",
+    path: ["itemIds"],
+  });
+export type SalesRule = z.infer<typeof SalesRule>;
 
 /**
  * Configurações do agente de pedidos (em `tenant.settings.menuAgent`). Sem nada salvo valem os padrões: ligado e
@@ -387,11 +408,17 @@ export const MenuAgentSettings = z.object({
   /** Como o agente se apresenta ("Vila"); vazio: sem nome. */
   attendantName: text(MENU_AGENT_NAME_MAX).optional(),
   houseRules: text(MENU_AGENT_RULES_MAX).default(""),
+  /** Venda pela IA ligada (as regras e o "Combina com"). */
   suggestAddons: z.boolean().default(true),
-  /** Quantas sugestões de complemento o agente faz por conversa (0 a 3; 0: não sugere). */
+  /** Quantas ofertas o agente faz por conversa (0 a 3; 0: não oferece). */
   maxSuggestionsPerConversation: z.number().int().min(0).max(MENU_AGENT_SUGGESTIONS_MAX).default(2),
-  /** Teto de tokens por conversa por dia; vazio: o padrão do ambiente. */
-  dailyTokensPerConversation: z.number().int().min(MENU_AGENT_TOKENS_MIN).max(MENU_AGENT_TOKENS_MAX).optional(),
+  salesRules: z
+    .array(SalesRule)
+    .max(SALES_RULES_MAX)
+    .default([])
+    .refine((rules) => new Set(rules.map((rule) => rule.id)).size === rules.length, "Cada regra de venda precisa de um id diferente."),
+  /** Também oferece o "Combina com" de cada item (depois das regras). */
+  usePairings: z.boolean().default(true),
 });
 export type MenuAgentSettings = z.infer<typeof MenuAgentSettings>;
 

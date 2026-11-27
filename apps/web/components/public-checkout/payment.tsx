@@ -708,7 +708,9 @@ function ReviewStep({
           )}
           {preview.vipGift && (
             <div className="flex justify-between text-success-ink">
-              <span>Brinde VIP: {preview.vipGift}</span>
+              <span>
+                {preview.giftLabel}: {preview.vipGift}
+              </span>
               <span>Grátis</span>
             </div>
           )}

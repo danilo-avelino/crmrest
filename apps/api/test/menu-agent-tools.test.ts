@@ -31,7 +31,6 @@ describe("Agente de pedidos: ferramentas de leitura e do carrinho (F4-01, F4-02)
       deliveryMaxMinutes: 60,
       paymentMethods: ["pix", "cash"],
       scheduling: { enabled: true, minLeadMinutes: 60, slotMinutes: 30 },
-      promoShowcase: { itemIds: [], frequencyHours: 24 },
     },
   };
 

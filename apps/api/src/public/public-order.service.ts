@@ -575,7 +575,7 @@ export class PublicOrderService {
     if (input.couponId && couponRefused) fail("COUPON_INVALID", couponRefused);
     if (input.couponCode?.trim() && codeRefused) fail("COUPON_INVALID", codeRefused);
     const applied = applyBenefit(benefit, subtotalCents, quote.feeCents);
-    // 4c. Brinde do VIP: soma com o cupom; só com o código do WhatsApp, o pedido mínimo e o limite do mês.
+    // 4c. Brinde da tag: soma com o cupom; só com o código do WhatsApp, o pedido mínimo e o limite do mês.
     const vip = contact.verified
       ? await vipGiftFor(tx, {
           tenantId,
@@ -659,7 +659,7 @@ export class PublicOrderService {
           ...(quote.mode === "DELIVERY" && quote.areaId ? { deliveryAreaId: quote.areaId } : {}),
           payment: { method, changeForCents },
           ...(benefit ? { benefit: { ...benefit, discountCents: applied.discountCents } } : {}),
-          ...(vipGift ? { vipGift: { ...vipGift, given: true } } : {}),
+          ...(vipGift ? { gift: { tag: vipGift.tag, itemId: vipGift.itemId, name: vipGift.name, given: true } } : {}),
           // As escolhas de cada linha, para o "Pedir de novo" (W15/W16).
           lines: input.lines.map((l) => ({ itemId: l.itemId, sizeId: l.sizeId ?? null, optionIds: l.optionIds ?? [], halves: l.halves ?? [], quantity: l.quantity, note: l.note?.trim() || null })),
           customerName: contact.name,
@@ -678,8 +678,10 @@ export class PublicOrderService {
               options: optionsText(line),
               menuItemId: line.itemId,
             })),
-            // Brinde do VIP: vai para a cozinha como item, a R$ 0.
-            ...(vipGift ? [{ tenantId, name: vipGift.name, quantity: 1, unitPrice: reais(0), notes: "Brinde VIP", menuItemId: vipGift.itemId }] : []),
+            // Brinde da tag: vai para a cozinha como item, a R$ 0.
+            ...(vipGift
+              ? [{ tenantId, name: vipGift.name, quantity: 1, unitPrice: reais(0), notes: vipGift.tag === "VIP" ? "Brinde VIP" : "Brinde", menuItemId: vipGift.itemId }]
+              : []),
           ],
         },
         events: {

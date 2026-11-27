@@ -34,7 +34,6 @@ const STORE = {
   deliveryMaxMinutes: 50,
   paymentMethods: ["pix", "cash"],
   scheduling: { enabled: false, minLeadMinutes: 30, slotMinutes: 30 },
-  promoShowcase: { itemIds: [], frequencyHours: 24 },
 };
 
 describe("Pix do cardápio (F6): o pedido só nasce pago", () => {

@@ -133,8 +133,6 @@ function storeInfo(store: Store, now: Date) {
     deliveryEta: { minMinutes: menuStore.deliveryMinMinutes, maxMinutes: menuStore.deliveryMaxMinutes },
     paymentMethods: effectivePaymentMethods(menuStore),
     schedulingEnabled: menuStore.scheduling.enabled,
-    /** Vitrine de promoções (W3): o cardápio público mostra só os itens ativos, disponíveis e não esgotados (R4). */
-    promoShowcase: { itemIds: menuStore.promoShowcase.itemIds, frequencyHours: menuStore.promoShowcase.frequencyHours },
     /** Pixel da Meta (F7-03): o navegador só carrega com o consentimento do visitante. */
     metaPixelId: menuStore.metaPixelId ?? null,
   };

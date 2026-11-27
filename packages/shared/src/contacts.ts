@@ -49,10 +49,12 @@ export const AUTO_TAG_RULES = {
   vipTopPercent: 10,
   /** Quem pediu uma vez só não é VIP, mesmo numa base pequena. */
   vipMinOrders: 2,
-  recurringOrders: 3,
+  recurringOrders: 6,
   recurringDays: 90,
   newDays: 30,
-  goneDays: 60,
+  goneDays: 30,
+  /** Em risco: o Recorrente que está há estes dias sem pedir (quem deixou de ser Recorrente entra na hora). */
+  atRiskDays: 30,
   upsetMaxScore: 2,
   /** Em recuperação: a IA deu esta nota (em %) ou menos ao atendimento, ou esta chance ou mais de perder o cliente. */
   recoveryMaxScore: LOW_AI_SCORE,
@@ -69,7 +71,8 @@ export const RECOVERY_TAG = "Em recuperação";
 export const AUTO_TAG_INFO = {
   VIP: `Está entre os ${AUTO_TAG_RULES.vipTopPercent}% de clientes com mais pedidos.`,
   Recorrente: `Fez ${AUTO_TAG_RULES.recurringOrders} pedidos ou mais nos últimos ${AUTO_TAG_RULES.recurringDays} dias.`,
-  Novo: `Fez o primeiro pedido nos últimos ${AUTO_TAG_RULES.newDays} dias.`,
+  "Em risco": `Já foi Recorrente e deixou de ser, ou é Recorrente e está há ${AUTO_TAG_RULES.atRiskDays} dias ou mais sem pedir.`,
+  Novo: `Fez 1 pedido só, nos últimos ${AUTO_TAG_RULES.newDays} dias.`,
   Sumido: `Já pediu, mas está há ${AUTO_TAG_RULES.goneDays} dias ou mais sem pedir.`,
   Insatisfeito: `Deu nota ${AUTO_TAG_RULES.upsetMaxScore} ou menos na última avaliação.`,
   [RECOVERY_TAG]: "Saiu insatisfeito de um atendimento, segundo a avaliação da IA, e ainda não fez outro pedido.",

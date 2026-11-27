@@ -49,9 +49,7 @@ export function StoreHero({ store, slug }: { store: PublicMenuStore; slug: strin
     <header>
       <nav aria-label="Navegação da loja" className="hidden bg-(--menu-accent) lg:block">
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-around px-8">
-          <a href="#topo" className={cn(nav, "bg-white text-(--menu-accent) hover:bg-white")}>Início</a>
-          {(store.promoShowcase?.itemIds.length ?? 0) > 0 && <a href="?promocoes=1" className={nav}>Promoções</a>}
-          <a href={account} className={nav}>Pedidos</a>
+          <a href="#topo" className={cn(nav, "bg-white text-(--menu-accent) hover:bg-white")}>Início</a>          <a href={account} className={nav}>Pedidos</a>
           <a href={account} className={nav}>Entrar</a>
         </div>
       </nav>

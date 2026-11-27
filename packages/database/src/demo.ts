@@ -160,7 +160,6 @@ function demoSettings(): Prisma.InputJsonObject {
       deliveryMaxMinutes: 55,
       paymentMethods: ["cash", "credit", "debit", "pix_on_delivery"],
       scheduling: { enabled: true, minLeadMinutes: 60, slotMinutes: 30 },
-      promoShowcase: { itemIds: [], frequencyHours: 24 },
       accentColor: "#B4341A",
       city: "São Paulo",
       phone: "(11) 90000-9000",
@@ -175,8 +174,10 @@ function demoSettings(): Prisma.InputJsonObject {
     },
     tagBenefits: {
       tags: {
+        // Formato antigo (um mínimo e uma frequência por tag): tagBenefitsOf converte na leitura.
         VIP: { enabled: true, freeDelivery: true, discountCents: 1000, minOrderCents: 6000, frequency: "MONTHLY" },
         Recorrente: { enabled: true, freeDelivery: true, discountCents: 0, minOrderCents: 8000, frequency: "EVERY_ORDER" },
+        "Em risco": { enabled: true, freeDelivery: true, discountCents: 1500, minOrderCents: 6000, frequency: "ONCE" },
         Novo: { enabled: true, freeDelivery: false, discountCents: 800, minOrderCents: 5000, frequency: "ONCE" },
         Sumido: { enabled: true, freeDelivery: false, discountCents: 1500, minOrderCents: 6000, frequency: "ONCE" },
       },
@@ -1381,9 +1382,13 @@ export async function seedDemoData(tx: Tx, input: { tenantId: string; users: Use
     const firstOrder = list.reduce<Date | null>((min, o) => (!min || o.placedAt < min ? o.placedAt : min), null);
     const tags = new Set(contact.tags);
     if (vip.has(contact.id)) tags.add("VIP");
-    if (list.filter((o) => o.placedAt > brtMidnight(90)).length >= 3) tags.add("Recorrente");
-    if (firstOrder && firstOrder > brtMidnight(30) && list.length <= 2) tags.add("Novo");
-    if (lastOrder && lastOrder < brtMidnight(60)) tags.add("Sumido");
+    const recent = list.filter((o) => o.placedAt > brtMidnight(90)).length;
+    if (recent >= 6) tags.add("Recorrente");
+    // Já foi Recorrente: 6 pedidos ou mais nos 90 dias que terminam em algum pedido.
+    const wasRecurring = list.some((end) => list.filter((o) => o.placedAt <= end.placedAt && end.placedAt.getTime() - o.placedAt.getTime() <= 90 * 86_400_000).length >= 6);
+    if (wasRecurring && (recent < 6 || (lastOrder && lastOrder < brtMidnight(30)))) tags.add("Em risco");
+    if (firstOrder && firstOrder > brtMidnight(30) && list.length === 1) tags.add("Novo");
+    if (lastOrder && lastOrder < brtMidnight(30)) tags.add("Sumido");
     if (tags.has("Em recuperação") && lastOrder && contact.lastSeenAt && lastOrder >= contact.lastSeenAt) tags.delete("Em recuperação");
     contact.tags = [...tags];
     if (firstOrder && firstOrder < contact.firstSeenAt) contact.firstSeenAt = firstOrder;

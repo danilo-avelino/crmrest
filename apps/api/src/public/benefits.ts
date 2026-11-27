@@ -4,6 +4,7 @@ import {
   BENEFIT_TITLE,
   type BenefitTag,
   benefitSavings,
+  type CouponPartDto,
   type CustomerCouponDto,
   RECOVERY_TAGS,
   tagBenefitsOf,
@@ -67,23 +68,57 @@ export async function customerCoupons(
   const coupons: CustomerCouponDto[] = [];
   for (const tag of BENEFIT_TAGS) {
     const rule = config.tags[tag];
-    if (!rule.enabled || !input.tags.includes(tag) || (!rule.freeDelivery && rule.discountCents === 0)) continue;
-    let reason: string | null = null;
-    if (rule.frequency === "ONCE" && (await usedSince(tx, input.tenantId, input.contactId, "tag", tag, null))) reason = "Você já usou este cupom.";
-    else if (rule.frequency === "MONTHLY" && (await usedSince(tx, input.tenantId, input.contactId, "tag", tag, monthStartBrt(input.now)))) reason = "Já usado este mês. Volta no mês que vem.";
-    else if (input.subtotalCents != null && input.subtotalCents < rule.minOrderCents) reason = `Vale a partir de ${formatCents(rule.minOrderCents)}.`;
+    if (!rule.enabled || !input.tags.includes(tag)) continue;
+    const parts: CouponPartDto[] = [];
+    // Cada parte com o seu mínimo e a sua frequência (26/11/2026).
+    const perks = [
+      rule.freeDelivery.enabled ? { kind: "freeDelivery" as const, cents: 0, minOrderCents: rule.freeDelivery.minOrderCents, frequency: rule.freeDelivery.frequency } : null,
+      rule.discount.enabled && rule.discount.cents > 0
+        ? { kind: "discount" as const, cents: rule.discount.cents, minOrderCents: rule.discount.minOrderCents, frequency: rule.discount.frequency }
+        : null,
+    ];
+    for (const perk of perks) {
+      if (!perk) continue;
+      let reason: string | null = null;
+      const since = perk.frequency === "ONCE" ? null : monthStartBrt(input.now);
+      if (perk.frequency !== "EVERY_ORDER" && (await partUsedSince(tx, input, tag, perk.kind, since)))
+        reason = perk.frequency === "ONCE" ? "Você já usou este cupom." : "Já usado este mês. Volta no mês que vem.";
+      else if (input.subtotalCents != null && input.subtotalCents < perk.minOrderCents) reason = `Vale a partir de ${formatCents(perk.minOrderCents)}.`;
+      parts.push({ ...perk, available: reason === null, reason });
+    }
+    if (parts.length === 0) continue;
+    const valid = parts.filter((p) => p.available);
     coupons.push({
       id: tag,
       title: BENEFIT_TITLE[tag],
-      freeDelivery: rule.freeDelivery,
-      discountCents: rule.discountCents,
-      minOrderCents: rule.minOrderCents,
-      frequency: rule.frequency,
-      available: reason === null,
-      reason,
+      freeDelivery: valid.some((p) => p.kind === "freeDelivery"),
+      discountCents: valid.find((p) => p.kind === "discount")?.cents ?? 0,
+      parts,
+      available: valid.length > 0,
+      reason: valid.length > 0 ? null : parts[0]!.reason,
     });
   }
   return coupons;
+}
+
+/** A parte do cupom da tag já foi usada desde `since` (null = alguma vez)? O pedido grava em `raw.benefit` o que valeu. */
+async function partUsedSince(tx: TenantTx, input: { tenantId: string; contactId: string }, tag: string, kind: CouponPartDto["kind"], since: Date | null): Promise<boolean> {
+  const found = await tx.order.findFirst({
+    where: {
+      tenantId: input.tenantId,
+      contactId: input.contactId,
+      source: "MENU",
+      status: { not: "CANCELED" },
+      AND: [
+        { raw: { path: ["benefit", "kind"], equals: "coupon" } },
+        { raw: { path: ["benefit", "tag"], equals: tag } },
+        kind === "freeDelivery" ? { raw: { path: ["benefit", "freeDelivery"], equals: true } } : { NOT: { raw: { path: ["benefit", "discountCents"], equals: 0 } } },
+      ],
+      ...(since ? { placedAt: { gte: since } } : {}),
+    },
+    select: { id: true },
+  });
+  return Boolean(found);
 }
 
 /**
@@ -179,20 +214,32 @@ export function applyBenefit(benefit: AppliedBenefit | null, subtotalCents: numb
   return { discountCents: Math.min(benefit.discountCents, subtotalCents), deliveryFeeCents: benefit.freeDelivery ? 0 : deliveryFeeCents };
 }
 
-/** Brinde do VIP gravado no pedido (`raw.vipGift`, com `given: true` para contar o limite do mês); o item vai na lista do pedido a R$ 0. */
-export type AppliedVipGift = { itemId: string; name: string };
+/**
+ * Brinde gravado no pedido (`raw.gift`, com a tag, para contar o limite do mês; até 26/11/2026 era `raw.vipGift`, só do
+ * VIP); o item vai na lista do pedido a R$ 0.
+ */
+export type AppliedVipGift = { itemId: string; name: string; tag: BenefitTag };
 
 /**
- * Brinde do VIP para este cliente, sem olhar o subtotal: null quando está desligado, o cliente não é VIP, o item saiu
- * do cardápio (ou esgotou) ou não entrou com o código do WhatsApp. `available: false` quando já usou o limite do mês.
+ * Brinde deste cliente (um só por pedido: o da primeira tag de BENEFIT_TAGS que valer), sem olhar o subtotal: null
+ * quando está desligado, o cliente não tem a tag, o item saiu do cardápio (ou esgotou) ou não entrou com o código do
+ * WhatsApp. `available: false` quando já usou o limite do mês.
  */
 export async function vipGiftFor(
   tx: TenantTx,
   input: { tenantId: string; contactId: string; tags: string[]; settings: unknown; now: Date },
 ): Promise<{ item: AppliedVipGift; minOrderCents: number; perMonth: number | null; usedThisMonth: number; available: boolean; reason: string | null } | null> {
   const config = tagBenefitsOf(input.settings);
-  const gift = config.vipGift;
-  if (!config.tags.VIP.enabled || !gift.enabled || !gift.itemId || !input.tags.includes("VIP")) return null;
+  for (const tag of BENEFIT_TAGS) {
+    const found = await giftOf(tx, input, config, tag);
+    if (found) return found;
+  }
+  return null;
+}
+
+async function giftOf(tx: TenantTx, input: { tenantId: string; contactId: string; tags: string[]; now: Date }, config: ReturnType<typeof tagBenefitsOf>, tag: BenefitTag) {
+  const gift = config.tags[tag].gift;
+  if (!config.tags[tag].enabled || !gift.enabled || !gift.itemId || !input.tags.includes(tag)) return null;
   const item = await tx.menuItem.findFirst({
     where: { id: gift.itemId, tenantId: input.tenantId, active: true, soldOut: false, category: { active: true } },
     select: { id: true, name: true },
@@ -207,13 +254,16 @@ export async function vipGiftFor(
         contactId: input.contactId,
         source: "MENU",
         status: { not: "CANCELED" },
-        raw: { path: ["vipGift", "given"], equals: true },
+        OR: [
+          { raw: { path: ["gift", "tag"], equals: tag } },
+          ...(tag === "VIP" ? [{ raw: { path: ["vipGift", "given"], equals: true } }] : []),
+        ],
         placedAt: { gte: monthStartBrt(input.now) },
       },
     });
     if (used >= gift.perMonth) reason = gift.perMonth === 1 ? "Você já ganhou o brinde este mês." : `Você já ganhou o brinde ${gift.perMonth} vezes este mês.`;
   }
-  return { item: { itemId: item.id, name: item.name }, minOrderCents: gift.minOrderCents, perMonth: gift.perMonth, usedThisMonth: used, available: reason === null, reason };
+  return { item: { itemId: item.id, name: item.name, tag }, minOrderCents: gift.minOrderCents, perMonth: gift.perMonth, usedThisMonth: used, available: reason === null, reason };
 }
 
 export type { BenefitTag };

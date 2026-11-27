@@ -49,6 +49,8 @@ export const SimulateAgentRequest = z.object({
     .max(SIMULATION_MAX_MESSAGES)
     .refine((messages) => messages.at(-1)?.role === "user", "A última mensagem precisa ser do cliente."),
   cart: SimulationCart.nullish(),
+  /** As ofertas de venda já feitas nesta simulação (E48): voltam a cada turno, como o carrinho. */
+  salesOffers: z.array(z.string().max(80)).max(20).optional(),
 });
 export type SimulateAgentRequest = z.infer<typeof SimulateAgentRequest>;
 
@@ -70,6 +72,7 @@ export type SimulationResult = {
   events: string[];
   toolCalls: { name: string; input: unknown; output: unknown; isError: boolean }[];
   cart: SimulationCart | null;
+  salesOffers: string[];
 };
 
 /**
@@ -154,18 +157,20 @@ export class AgentSimulatorService implements OnModuleDestroy {
       conversationId: conversation.id,
       contactId: contact.id,
       contactName: null,
-      state: { aiReplies: request.messages.filter((message) => message.role === "assistant").length },
+      state: { aiReplies: request.messages.filter((message) => message.role === "assistant").length, salesOffers: request.salesOffers ?? [] },
       history,
       lastContent: { text: request.messages.at(-1)!.text },
       now,
       onUsage: () => undefined, // o uso da IA vai para AiUsage (pelo provedor); o teto por conversa não vale na simulação
+      allowDemo: true, // nada sai da transação: a demo das apresentações também simula com a IA de verdade
     });
     const cart = await this.snapshotCart(tx, tenantId, conversation.id);
+    const salesOffers = [...(request.salesOffers ?? []), ...(outcome.kind === "reply" ? outcome.salesOffered : [])];
     const toolCalls = outcome.kind === "reply" ? outcome.toolCalls.map(({ name, input, output, isError }) => ({ name, input, output, isError })) : [];
     const result: SimulationResult =
       outcome.kind === "reply"
-        ? { reply: outcome.text || automationMessagesOf(tenant.settings).menuAgentHandoff, stopped: null, handoff: outcome.handoff, events: outcome.events, toolCalls, cart }
-        : { reply: null, stopped: outcome.why, handoff: null, events: outcome.events, toolCalls, cart };
+        ? { reply: outcome.text || automationMessagesOf(tenant.settings).menuAgentHandoff, stopped: null, handoff: outcome.handoff, events: outcome.events, toolCalls, cart, salesOffers }
+        : { reply: null, stopped: outcome.why, handoff: null, events: outcome.events, toolCalls, cart, salesOffers };
     throw new Rollback(result);
   }
 

@@ -230,7 +230,7 @@ export class CustomerAuthService implements OnModuleDestroy {
       const vip = await vipGiftFor(tx, input);
       // Brinde do VIP: o nome do item e o mínimo; a sacola mostra a mensagem quando o subtotal alcança.
       const vipGift: VipGiftDto | null = vip
-        ? { name: vip.item.name, minOrderCents: vip.minOrderCents, perMonth: vip.perMonth, usedThisMonth: vip.usedThisMonth, available: vip.available, reason: vip.reason }
+        ? { tag: vip.item.tag, name: vip.item.name, minOrderCents: vip.minOrderCents, perMonth: vip.perMonth, usedThisMonth: vip.usedThisMonth, available: vip.available, reason: vip.reason }
         : null;
       // `vip`: o cardápio mostra a janela de boas-vindas do VIP logo depois do login.
       return { name: contact.name, coupons, vipGift, vip: contact.tags.includes("VIP") };

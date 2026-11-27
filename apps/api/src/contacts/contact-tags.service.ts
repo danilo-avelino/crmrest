@@ -17,15 +17,25 @@ export async function refreshContactTags(tx: TenantTx, now = new Date()): Promis
   const rules = AUTO_TAG_RULES;
   const since = (days: number) => new Date(now.getTime() - days * DAY);
   await tx.$executeRaw`
-    WITH stats AS (
-      SELECT o.contact_id,
-        count(*) AS orders,
-        count(*) FILTER (WHERE o.placed_at >= ${since(rules.recurringDays)}) AS recent_orders,
-        min(o.placed_at) AS first_order,
-        max(o.placed_at) AS last_order
+    -- window_orders: pedidos nos 90 dias que terminam em cada pedido; chegar a 6 em algum deles = já foi Recorrente.
+    WITH windows AS (
+      SELECT o.contact_id, o.placed_at,
+        count(*) OVER (
+          PARTITION BY o.contact_id ORDER BY o.placed_at
+          RANGE BETWEEN ${rules.recurringDays}::int * interval '1 day' PRECEDING AND CURRENT ROW
+        ) AS window_orders
       FROM orders o
       WHERE o.status <> 'CANCELED'
-      GROUP BY o.contact_id
+    ),
+    stats AS (
+      SELECT w.contact_id,
+        count(*) AS orders,
+        count(*) FILTER (WHERE w.placed_at >= ${since(rules.recurringDays)}) AS recent_orders,
+        max(w.window_orders) AS best_window,
+        min(w.placed_at) AS first_order,
+        max(w.placed_at) AS last_order
+      FROM windows w
+      GROUP BY w.contact_id
     ),
     -- at_least: quantos clientes do restaurante têm tantos pedidos quanto este, ou mais (os empatados contam juntos).
     ranked AS (
@@ -54,7 +64,9 @@ export async function refreshContactTags(tx: TenantTx, now = new Date()): Promis
         ) || array_remove(ARRAY[
           CASE WHEN k.orders >= ${rules.vipMinOrders} AND k.at_least <= ceil(k.customers * ${rules.vipTopPercent} / 100.0) THEN 'VIP' END,
           CASE WHEN k.recent_orders >= ${rules.recurringOrders} THEN 'Recorrente' END,
-          CASE WHEN k.first_order >= ${since(rules.newDays)} THEN 'Novo' END,
+          CASE WHEN k.best_window >= ${rules.recurringOrders}
+            AND (k.recent_orders < ${rules.recurringOrders} OR k.last_order < ${since(rules.atRiskDays)}) THEN 'Em risco' END,
+          CASE WHEN k.orders = 1 AND k.first_order >= ${since(rules.newDays)} THEN 'Novo' END,
           CASE WHEN k.last_order < ${since(rules.goneDays)} THEN 'Sumido' END,
           CASE WHEN r.score <= ${rules.upsetMaxScore} THEN 'Insatisfeito' END,
           -- Sai com o primeiro pedido feito depois do atendimento ruim.
@@ -73,7 +85,7 @@ export async function refreshContactTags(tx: TenantTx, now = new Date()): Promis
     WHERE contacts.id = computed.id AND contacts.tags IS DISTINCT FROM computed.tags`;
 }
 
-/** Mantém as tags automáticas em dia: as regras dependem do tempo (Novo, Sumido) e dos outros clientes (VIP). */
+/** Mantém as tags automáticas em dia: as regras dependem do tempo (Novo, Sumido, Em risco) e dos outros clientes (VIP). */
 @Injectable()
 export class ContactTagsService implements OnModuleInit {
   private readonly logger = new Logger(ContactTagsService.name);

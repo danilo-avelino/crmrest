@@ -1,13 +1,12 @@
-import { MENU_AGENT_NAME_MAX, MENU_AGENT_TOKENS_MAX, MENU_AGENT_TOKENS_MIN, type MenuAgentSettings } from "@dishdesk/shared";
+import { MENU_AGENT_NAME_MAX, type MenuAgentSettings, SALES_RULE_OFFERS_MAX, SALES_RULES_MAX, type SalesRule } from "@dishdesk/shared";
 import { ApiError } from "@/lib/api";
+import type { MenuTree } from "@/lib/menu";
 
 // Tela Configurações → Pedidos pela IA (C4): conversão do formulário e da conversa de teste. Sem React, para testar sozinho.
 
 export type AgentSettingsResponse = {
   settings: MenuAgentSettings;
   personality: { id: string; label: string };
-  /** O teto por conversa quando o restaurante não define o seu. */
-  defaultDailyTokens: number;
   rulesMax: number;
   /** Há chave do Claude neste ambiente. */
   aiConfigured: boolean;
@@ -21,8 +20,8 @@ export type AgentForm = {
   suggestAddons: boolean;
   /** "0" a "3" (o select). */
   maxSuggestions: string;
-  /** Tokens por conversa por dia, em texto ("400.000"); vazio: o padrão. */
-  dailyTokens: string;
+  salesRules: SalesRule[];
+  usePairings: boolean;
 };
 
 export function settingsToForm(settings: MenuAgentSettings): AgentForm {
@@ -32,7 +31,8 @@ export function settingsToForm(settings: MenuAgentSettings): AgentForm {
     houseRules: settings.houseRules,
     suggestAddons: settings.suggestAddons,
     maxSuggestions: String(settings.maxSuggestionsPerConversation),
-    dailyTokens: settings.dailyTokensPerConversation ? settings.dailyTokensPerConversation.toLocaleString("pt-BR") : "",
+    salesRules: settings.salesRules,
+    usePairings: settings.usePairings,
   };
 }
 
@@ -41,19 +41,17 @@ export function formToPayload(form: AgentForm, rulesMax: number): { ok: true; bo
   if (name.length > MENU_AGENT_NAME_MAX) return { ok: false, error: `O nome do atendente tem no máximo ${MENU_AGENT_NAME_MAX} caracteres.` };
   const rules = form.houseRules.trim();
   if (rules.length > rulesMax) return { ok: false, error: `As regras da casa têm no máximo ${rulesMax.toLocaleString("pt-BR")} caracteres.` };
-  const body: MenuAgentSettings = { enabled: form.enabled, houseRules: rules, suggestAddons: form.suggestAddons, maxSuggestionsPerConversation: Number(form.maxSuggestions) };
+  const salesError = salesRulesError(form.salesRules);
+  if (salesError) return { ok: false, error: salesError };
+  const body: MenuAgentSettings = {
+    enabled: form.enabled,
+    houseRules: rules,
+    suggestAddons: form.suggestAddons,
+    maxSuggestionsPerConversation: Number(form.maxSuggestions),
+    salesRules: form.salesRules.map((rule) => ({ ...rule, pitch: rule.pitch.trim() })),
+    usePairings: form.usePairings,
+  };
   if (name) body.attendantName = name;
-  const tokens = form.dailyTokens.replace(/[.\s]/g, "");
-  if (tokens) {
-    const value = Number(tokens);
-    if (!/^\d+$/.test(tokens) || value < MENU_AGENT_TOKENS_MIN || value > MENU_AGENT_TOKENS_MAX) {
-      return {
-        ok: false,
-        error: `O limite por conversa vai de ${MENU_AGENT_TOKENS_MIN.toLocaleString("pt-BR")} a ${MENU_AGENT_TOKENS_MAX.toLocaleString("pt-BR")} tokens por dia. Deixe vazio para o padrão.`,
-      };
-    }
-    body.dailyTokensPerConversation = value;
-  }
   return { ok: true, body };
 }
 
@@ -65,7 +63,53 @@ export function rulesCounter(text: string, max: number): string {
 /** Mudou algo em relação ao que está salvo? */
 export function formChanged(form: AgentForm, saved: MenuAgentSettings): boolean {
   const base = settingsToForm(saved);
-  return (Object.keys(base) as (keyof AgentForm)[]).some((key) => form[key] !== base[key]);
+  return (Object.keys(base) as (keyof AgentForm)[]).some((key) => JSON.stringify(form[key]) !== JSON.stringify(base[key]));
+}
+
+// ---------- Venda pela IA (E48) ----------
+
+export type SalesOfferRef = { kind: "item" | "group"; id: string };
+
+/** As ofertas de uma regra como uma lista só (itens e complementos), na ordem de exibição. */
+export const offersOf = (rule: SalesRule): SalesOfferRef[] => [...rule.groupIds.map((id) => ({ kind: "group" as const, id })), ...rule.itemIds.map((id) => ({ kind: "item" as const, id }))];
+
+/** Grupos de complementos ligados a algum item da categoria (o que a regra "ao pedir" pode oferecer, como o combo). */
+export function groupsOfCategory(menu: MenuTree, categoryId: string) {
+  const linked = new Set(menu.categories.find((c) => c.id === categoryId)?.items.flatMap((item) => item.optionGroups.map((g) => g.groupId)) ?? []);
+  return menu.optionGroups.filter((group) => linked.has(group.id));
+}
+
+const plain = (text: string) => text.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+const categoryLike = (menu: MenuTree, pattern: RegExp) => menu.categories.find((c) => pattern.test(plain(c.name)));
+
+export type SalesPreset = "drink" | "dessert" | "combo" | "blank";
+
+/**
+ * Regra nova pelos atalhos: bebida e sobremesa no fim (pela categoria com esse nome) e combo ao pedir um hambúrguer (com
+ * o grupo de complementos que tem "combo" no nome). Sem categoria parecida, a primeira do cardápio.
+ */
+export function newSalesRule(menu: MenuTree, preset: SalesPreset, id: string): SalesRule {
+  const first = menu.categories[0]?.id ?? "";
+  const rule = (trigger: SalesRule["trigger"], categoryId: string, groupIds: string[] = []): SalesRule => ({ id, trigger, categoryId, itemIds: [], groupIds, pitch: "" });
+  if (preset === "drink") return rule("AT_END", categoryLike(menu, /bebida|drink|refri/)?.id ?? first);
+  if (preset === "dessert") return rule("AT_END", categoryLike(menu, /sobremesa|doce/)?.id ?? first);
+  if (preset === "combo") {
+    const category = categoryLike(menu, /hamb|burger|lanche/)?.id ?? first;
+    const combo = groupsOfCategory(menu, category).find((group) => /combo/.test(plain(group.name)));
+    return rule("ON_ADD", category, combo ? [combo.id] : []);
+  }
+  return rule("ON_ADD", first);
+}
+
+/** O erro que impede salvar as regras (null: tudo certo). */
+export function salesRulesError(rules: SalesRule[]): string | null {
+  if (rules.length > SALES_RULES_MAX) return `São no máximo ${SALES_RULES_MAX} regras de venda.`;
+  const index = rules.findIndex((rule) => !rule.categoryId);
+  if (index >= 0) return `Regra ${index + 1}: escolha a categoria.`;
+  const empty = rules.findIndex((rule) => rule.trigger === "ON_ADD" && rule.itemIds.length + rule.groupIds.length === 0);
+  if (empty >= 0) return `Regra ${empty + 1}: escolha o que a IA oferece ao pedir um item da categoria.`;
+  const many = rules.findIndex((rule) => rule.itemIds.length > SALES_RULE_OFFERS_MAX || rule.groupIds.length > SALES_RULE_OFFERS_MAX);
+  return many >= 0 ? `Regra ${many + 1}: no máximo ${SALES_RULE_OFFERS_MAX} itens e ${SALES_RULE_OFFERS_MAX} complementos.` : null;
 }
 
 // ---------- Simular conversa ----------
@@ -77,6 +121,8 @@ export type SimulationCart = {
 };
 
 export type SimulationResponse = {
+  /** As ofertas de venda já feitas na simulação: voltam no próximo turno. */
+  salesOffers: string[];
   reply: string | null;
   stopped: string | null;
   handoff: string | null;
@@ -89,10 +135,11 @@ export type SimulationResponse = {
 export type SimulationLine = { kind: "user" | "assistant" | "note"; text: string };
 
 /** O que a API recebe: só as mensagens do cliente e do agente (os avisos ficam de fora) e o carrinho da volta anterior. */
-export function simulationBody(lines: SimulationLine[], cart: SimulationCart | null) {
+export function simulationBody(lines: SimulationLine[], cart: SimulationCart | null, salesOffers: string[] = []) {
   return {
     messages: lines.filter((line) => line.kind !== "note").map((line) => ({ role: line.kind as "user" | "assistant", text: line.text })),
     ...(cart && { cart }),
+    ...(salesOffers.length && { salesOffers }),
   };
 }
 

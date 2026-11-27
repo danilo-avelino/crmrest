@@ -26,8 +26,6 @@ export type StoreForm = {
   schedulingEnabled: boolean;
   minLeadMinutes: string;
   slotMinutes: string;
-  showcaseItemIds: string[];
-  showcaseHours: string;
   accentColor: string;
   brandTheme: boolean;
   phone: string;
@@ -56,8 +54,6 @@ export function storeToForm(store: MenuStoreSettings, accentDefault: string): St
     schedulingEnabled: scheduling.enabled,
     minLeadMinutes: String(scheduling.minLeadMinutes),
     slotMinutes: String(scheduling.slotMinutes),
-    showcaseItemIds: store.promoShowcase.itemIds,
-    showcaseHours: String(store.promoShowcase.frequencyHours),
     accentColor: store.accentColor ?? accentDefault,
     brandTheme: store.brandTheme ?? false,
     phone: store.phone ?? "",
@@ -95,8 +91,6 @@ export function formToPayload(form: StoreForm, base: MenuStoreSettings): { ok: t
   for (const value of [prep, dMin, dMax, lead, minOrder, free]) if (typeof value === "string") return { ok: false, error: value };
   if (slot === null || slot < 5 || slot > 240) return { ok: false, error: "Faixa de horário: informe de 5 a 240 minutos." };
   if ((dMin as number) > (dMax as number)) return { ok: false, error: "O prazo mínimo não pode passar do máximo." };
-  const showcaseHours = whole(form.showcaseHours);
-  if (showcaseHours === null || showcaseHours < 1 || showcaseHours > 720) return { ok: false, error: "Vitrine: informe de 1 a 720 horas." };
   if (!/^#[0-9a-fA-F]{6}$/.test(form.accentColor)) return { ok: false, error: "Cor: use o formato #RRGGBB." };
 
   let delivery: UpdateMenuStoreRequest["delivery"];
@@ -141,7 +135,6 @@ export function formToPayload(form: StoreForm, base: MenuStoreSettings): { ok: t
       deliveryMinMinutes: dMin as number,
       deliveryMaxMinutes: dMax as number,
       scheduling: { enabled: form.schedulingEnabled, minLeadMinutes: lead as number, slotMinutes: slot },
-      promoShowcase: { itemIds: form.showcaseItemIds.slice(0, 50), frequencyHours: showcaseHours },
       accentColor: form.accentColor,
       brandTheme: form.brandTheme,
       city: form.city,
