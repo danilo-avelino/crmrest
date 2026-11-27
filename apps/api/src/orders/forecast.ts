@@ -5,15 +5,29 @@ import { z } from "zod";
 import type { JevClient, JevQuestion } from "../defense/jev.client.js";
 
 /**
- * Base da previsão: os últimos pedidos do restaurante que saíram, dos últimos 14 dias. Saída marcada mais de 2 h depois
- * da confirmação é esquecimento (o restaurante marcou depois) e fica de fora. Com menos de MIN_SAMPLE, não há previsão.
+ * Base da previsão: os últimos pedidos que saíram, dos últimos 14 dias, da mesma integração do pedido (no Nippon, o
+ * Neemo leva o dobro do iFood: misturados, o iFood ficava atrasado e o Neemo adiantado). Com menos de
+ * CHANNEL_MIN_SAMPLE na integração, vale a base do restaurante todo. Saída marcada mais de 2 h depois da confirmação é
+ * esquecimento (o restaurante marcou depois) e fica de fora. Com menos de MIN_SAMPLE, não há previsão.
  */
 const SAMPLE = 60;
 const SAMPLE_WINDOW_MS = 14 * 24 * 60 * 60_000;
 const MIN_SAMPLE = 5;
+const CHANNEL_MIN_SAMPLE = 15;
 const MAX_PREP_MS = 2 * 60 * 60_000;
 /** Pedido que já passou de quase todos os tempos conhecidos: a previsão é agora + esta margem. */
-const LATE_MARGIN_MS = 5 * 60_000;
+const LATE_MARGIN_MS = 3 * 60_000;
+/**
+ * Fila: cada pedido na cozinha na frente deste, além dos QUEUE_FREE primeiros, soma QUEUE_STEP_MS à previsão. Os
+ * tempos da base já trazem a fila de costume; a soma pega a noite cheia (22/11, Nippon: iFood saindo em 1 h).
+ */
+const QUEUE_FREE = 2;
+const QUEUE_STEP_MS = 60_000;
+/**
+ * Tempo normal: 4 em 5 pedidos da base saem em até este quantil. Sem horário prometido pela plataforma, a previsão
+ * pede desculpas só depois dele (antes era a mediana da loja toda: um pedido do Neemo de 17 min já era "demora").
+ */
+const NORMAL_QUANTILE = 0.8;
 /**
  * Pedido sem sair há mais que isto: a plataforma não avisou a saída (ex.: status não atualizado no Cardápio Web). Fica
  * sem previsão.
@@ -36,7 +50,7 @@ export type Forecast = {
   departAt: Date;
   /**
    * Atrasado: a previsão passa do horário prometido ao cliente pela plataforma (iFood); sem promessa (ex.: Cardápio
-   * Web), o pedido já passou do tempo normal de saída. A mensagem pede desculpas só quando atrasado.
+   * Web), o pedido já passou do tempo normal de saída (NORMAL_QUANTILE). A mensagem pede desculpas só quando atrasado.
    */
   late: boolean;
   /**
@@ -68,22 +82,25 @@ function quantile(values: number[], q: number): number {
 }
 
 /**
- * Que quantil dos tempos do restaurante prever. Calibrado em 11/11/2026 nos pedidos reais de todos os restaurantes
- * (previsão em cada pedido comparada com a saída de fato): a base 0,4 compensa o arredondamento para cima de 5 em 5
- * minutos; pedido de valor alto demora mais (`valueRank`: posição do valor dele entre os da base, de 0 a 1); o Jev
- * (`pace`, de 0 = bem mais rápido a 4 = bem mais demorado) pega o que os itens e a cozinha dizem. Erro médio: de 9,5
- * para 8,6 min só com o valor (2.267 previsões); numa amostra de 150 com o Jev, de 9,8 para 8,1 min.
+ * Que quantil dos tempos da base prever. Calibrado em 11/11/2026 e refeito em 25/11/2026 nos pedidos reais de todos os
+ * restaurantes (previsão de 5 em 5 minutos, da confirmação à saída, comparada com a saída de fato; ajuste nos pedidos
+ * de 21/10 a 14/11, conferência nos de 15/11 a 25/11): a base 0,3 compensa o arredondamento para cima de 5 em 5 minutos
+ * e a fila, que agora soma à parte (QUEUE_STEP_MS); pedido de valor alto demora mais (`valueRank`: posição do valor
+ * dele entre os da base, de 0 a 1); o Jev (`pace`, de 0 = bem mais rápido a 4 = bem mais demorado) pega o que os itens
+ * e a cozinha dizem (o peso dele é o de 11/11: as respostas do Jev não se refazem no histórico). Erro médio na
+ * conferência (13.889 previsões): de 9,2 para 8,0 min; dentro de 10 min, de 68% para 73%.
  */
 export function quantileFor(valueRank: number, pace: number | null): number {
-  const q = 0.4 + 0.5 * (valueRank - 0.5) + 0.1 * ((pace ?? 2) - 2);
+  const q = 0.3 + 0.25 * (valueRank - 0.5) + 0.1 * ((pace ?? 2) - 2);
   return Math.min(0.9, Math.max(0.1, q));
 }
 
 /**
  * Previsão de saída (E26), a partir dos tempos "confirmado → saída" da base (SAMPLE). O pedido que já está na cozinha
  * há algum tempo é comparado só aos que demoraram mais que isso. O quantil vem de `quantileFor`, com o Jev quando `jev`
- * é passado (o cliente ou o atendente vai ler a previsão). Devolve null se o pedido já saiu, se é retirada e já ficou
- * pronto (não há saída), se está parado há mais de STALE_MS ou se ainda não há base.
+ * é passado (o cliente ou o atendente vai ler a previsão); a fila acima de QUEUE_FREE pedidos soma QUEUE_STEP_MS por
+ * pedido. Devolve null se o pedido já saiu, se é retirada e já ficou pronto (não há saída), se está parado há mais de
+ * STALE_MS ou se ainda não há base.
  */
 export async function forecastOrder(tx: TenantTx, orderId: string, now = new Date(), jev?: JevClient): Promise<Forecast | null> {
   const confirmed = { where: { code: "CONFIRMED" }, orderBy: { occurredAt: "asc" as const }, take: 1, select: { occurredAt: true } };
@@ -106,20 +123,24 @@ export async function forecastOrder(tx: TenantTx, orderId: string, now = new Dat
   if (order.status === "READY" && isTakeout(order.raw)) return null;
   if (now.getTime() - order.placedAt.getTime() > STALE_MS) return null;
 
-  const done = (
-    await tx.order.findMany({
-      where: {
-        tenantId: order.tenantId,
-        id: { not: order.id },
-        dispatchedAt: { not: null, gte: new Date(now.getTime() - SAMPLE_WINDOW_MS), lte: now },
-      },
-      orderBy: { dispatchedAt: "desc" },
-      take: SAMPLE,
-      select: { placedAt: true, dispatchedAt: true, total: true, events: confirmed },
-    })
-  )
-    .map((o) => ({ took: o.dispatchedAt!.getTime() - startOf(o), total: Number(o.total) }))
-    .filter((o) => o.took > 0 && o.took <= MAX_PREP_MS);
+  const sample = async (channelId?: string) =>
+    (
+      await tx.order.findMany({
+        where: {
+          tenantId: order.tenantId,
+          id: { not: order.id },
+          ...(channelId ? { channelId } : {}),
+          dispatchedAt: { not: null, gte: new Date(now.getTime() - SAMPLE_WINDOW_MS), lte: now },
+        },
+        orderBy: { dispatchedAt: "desc" },
+        take: SAMPLE,
+        select: { placedAt: true, dispatchedAt: true, total: true, events: confirmed },
+      })
+    )
+      .map((o) => ({ took: o.dispatchedAt!.getTime() - startOf(o), total: Number(o.total) }))
+      .filter((o) => o.took > 0 && o.took <= MAX_PREP_MS);
+  const onChannel = order.channelId ? await sample(order.channelId) : [];
+  const done = onChannel.length >= CHANNEL_MIN_SAMPLE ? onChannel : await sample();
   if (done.length < MIN_SAMPLE) return null;
   const durations = done.map((o) => o.took);
 
@@ -168,9 +189,10 @@ export async function forecastOrder(tx: TenantTx, orderId: string, now = new Dat
   }
 
   const longer = durations.filter((ms) => ms > elapsed);
-  const departAt = Math.max(longer.length >= 3 ? start + quantile(longer, q) : now.getTime() + LATE_MARGIN_MS, now.getTime());
+  const queue = QUEUE_STEP_MS * Math.max(0, ahead.length - QUEUE_FREE);
+  const departAt = Math.max((longer.length >= 3 ? start + quantile(longer, q) : now.getTime() + LATE_MARGIN_MS) + queue, now.getTime());
   const promised = promisedAt(order.raw);
-  const late = promised ? departAt > promised.getTime() : elapsed >= quantile(durations, 0.5);
+  const late = promised ? departAt > promised.getTime() : elapsed >= quantile(durations, NORMAL_QUANTILE);
   return { departAt: new Date(departAt), late, probablyOut: false, ahead: ahead.length };
 }
 

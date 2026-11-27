@@ -1,13 +1,6 @@
-"use client";
+import { redirect } from "next/navigation";
 
-import { MenuPaymentsTab } from "@/components/settings/menu-payments-tab";
-import { SettingsHeader } from "@/components/settings/settings-ui";
-
-export default function MenuPaymentsPage() {
-  return (
-    <>
-      <SettingsHeader title="Pagamentos do cardápio" description="Como o cliente paga o pedido feito pelo cardápio digital" />
-      <MenuPaymentsTab />
-    </>
-  );
+/** A página passou para a faixa do Cardápio (26/11/2026): o endereço antigo continua valendo. */
+export default function Page() {
+  redirect("/cardapio/pagamentos");
 }

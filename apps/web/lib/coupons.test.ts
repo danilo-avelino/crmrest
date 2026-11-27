@@ -13,8 +13,8 @@ describe("cupons do cliente", () => {
   });
 
   it("configuração: R$ em texto vira centavos; valor inválido volta a mensagem", () => {
-    const ok = benefitsPayload(DEFAULT_TAG_BENEFITS, { "VIP.discount": "12,50", "VIP.min": "", "recovery.discount": "15" });
-    expect(ok.ok && ok.body.tags.VIP).toMatchObject({ discountCents: 1250, minOrderCents: 0 });
+    const ok = benefitsPayload(DEFAULT_TAG_BENEFITS, { "VIP.discount": "12,50", "VIP.discountMin": "", "VIP.freeDeliveryMin": "40", "recovery.discount": "15" });
+    expect(ok.ok && ok.body.tags.VIP).toMatchObject({ discount: { cents: 1250, minOrderCents: 0 }, freeDelivery: { minOrderCents: 4000 } });
     expect(ok.ok && ok.body.recovery.discountCents).toBe(1500);
     const bad = benefitsPayload(DEFAULT_TAG_BENEFITS, { "VIP.discount": "dez" });
     expect(bad).toEqual({ ok: false, error: "Cliente VIP · cupom: informe um valor em R$, como 10,00." });

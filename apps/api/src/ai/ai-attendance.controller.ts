@@ -1,5 +1,5 @@
 import type { Prisma, TenantTx } from "@dishdesk/database";
-import { type AiAttendanceDto, aiFullAutoOf, businessHoursOf, isOpenAt, UpdateAiFullAutoRequest } from "@dishdesk/shared";
+import { type AiAttendanceDto, aiFullAutoOf, businessHoursOf, closedAt, UpdateAiFullAutoRequest } from "@dishdesk/shared";
 import { InjectQueue } from "@nestjs/bullmq";
 import { Body, Controller, ForbiddenException, Get, NotFoundException, Param, ParseUUIDPipe, Put } from "@nestjs/common";
 import type { Queue } from "bullmq";
@@ -71,7 +71,7 @@ export class AiAttendanceController {
       tenantId: tenant.id,
       tenantName: tenant.name,
       fullAuto: aiFullAutoOf(tenant.settings),
-      closed: hours.enabled && !isOpenAt(hours, new Date()),
+      closed: closedAt(hours, new Date()),
       agentsOnline: await this.presence.online(tenant.id),
       waiting: tenant.waiting,
     };

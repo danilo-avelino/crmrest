@@ -4,7 +4,6 @@ import { ZodPipe } from "../common/zod.pipe.js";
 import { AiFieldsRequest } from "./menu-ai-fields.js";
 import { DescribeRequest } from "./menu-describe.js";
 import { MenuDescribeService } from "./menu-describe.service.js";
-import { DemoLocked } from "../demo/demo.guard.js";
 
 /**
  * IA no formulário do item (F2-15), sempre só sugestão, com os campos do formulário (serve para item novo, ainda não
@@ -15,14 +14,12 @@ import { DemoLocked } from "../demo/demo.guard.js";
 export class MenuDescribeController {
   constructor(private readonly describer: MenuDescribeService) {}
 
-  @DemoLocked()
   @Post("describe")
   @HttpCode(200)
   describe(@Param("tenantId", ParseUUIDPipe) tenantId: string, @Body(new ZodPipe(DescribeRequest)) body: DescribeRequest, @CurrentAuth() auth: RequestAuth) {
     return this.describer.describe(auth, tenantId, body);
   }
 
-  @DemoLocked()
   @Post("ai-fields")
   @HttpCode(200)
   aiFields(@Param("tenantId", ParseUUIDPipe) tenantId: string, @Body(new ZodPipe(AiFieldsRequest)) body: AiFieldsRequest, @CurrentAuth() auth: RequestAuth) {

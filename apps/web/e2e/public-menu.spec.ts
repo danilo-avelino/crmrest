@@ -27,7 +27,6 @@ test.beforeAll(async () => {
         deliveryMaxMinutes: 50,
         paymentMethods: ["cash", "credit"],
         scheduling: { enabled: false, minLeadMinutes: 30, slotMinutes: 30 },
-        promoShowcase: { itemIds: [], frequencyHours: 24 },
       },
     }),
   ]);

@@ -1,7 +1,7 @@
 import type { TenantScope, TenantTx } from "@dishdesk/database";
 import { z } from "zod";
 import type { LlmTool, LlmToolContext } from "../../ai/llm-provider.js";
-import { loadMenuCategories, loadMenuItems, pricingCatalogOf } from "../../menu/menu-catalog.js";
+import { effectivePrice, loadMenuCategories, loadMenuItems, pricingCatalogOf } from "../../menu/menu-catalog.js";
 import { formatCents, type PricingCatalog } from "../../menu/pricing.js";
 
 /** Só o que as ferramentas usam do DatabaseService (o teste passa o `withTenants` do pacote). */
@@ -65,9 +65,9 @@ export async function loadCatalog({ tx, tenantId, menuId, now }: Loaded) {
 export type Catalog = Awaited<ReturnType<typeof loadCatalog>>;
 
 /** Menor preço do item: o do item ou o do menor tamanho. */
-export function fromPriceCents(item: { priceCents: number | null; sizes: { priceCents: number }[] }): number | null {
+export function fromPriceCents(item: { priceCents: number | null; promoPriceCents?: number | null; sizes: { priceCents: number }[] }): number | null {
   if (item.sizes.length) return Math.min(...item.sizes.map((s) => s.priceCents));
-  return item.priceCents;
+  return effectivePrice({ priceCents: item.priceCents, promoPriceCents: item.promoPriceCents ?? null });
 }
 
 /** O item está à venda agora (ativo, no horário dele e da categoria, sem esgotar)? */

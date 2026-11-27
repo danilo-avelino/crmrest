@@ -57,6 +57,15 @@ describe("conta de demonstração", () => {
     expect(await admin.contact.count({ where: { tenantId: demo.tenant.id, tags: { has: "Entregador" } } })).toBe(5);
   });
 
+  it("a foto enviada a um item do cardápio continua depois do reset", async () => {
+    const url = "https://cdn.exemplo.com/tenants/demo/photo/margherita.jpg";
+    await admin.menuItem.updateMany({ where: { tenantId: demo.tenant.id, name: "Margherita" }, data: { photoUrl: url } });
+    await reset().expect(200);
+    const items = await admin.menuItem.findMany({ where: { tenantId: demo.tenant.id }, select: { name: true, photoUrl: true } });
+    expect(items.find((item) => item.name === "Margherita")?.photoUrl).toBe(url);
+    expect(items.filter((item) => item.photoUrl).length).toBe(1);
+  });
+
   it("a resposta da equipe aparece como lida e nada chega ao WhatsApp", async () => {
     const conversation = await admin.conversation.findFirstOrThrow({
       where: { tenantId: demo.tenant.id, status: "OPEN", teamOnly: false, channel: { type: "WHATSAPP" }, contact: { NOT: { tags: { hasSome: ["Entregador", "Funcionário"] } } } },

@@ -58,7 +58,7 @@ describe("tags automáticas dos clientes", () => {
   it("calcula VIP, Recorrente, Novo, Sumido e Insatisfeito, mantém as manuais e tira o resto", async () => {
     // 9 clientes com pedido: os 10% com mais pedidos são 1 cliente.
     fiel = await contact("Fiel");
-    for (const days of [200, 80, 40, 10]) await order(fiel.id, daysAgo(days));
+    for (const days of [200, 80, 70, 60, 40, 20, 10]) await order(fiel.id, daysAgo(days));
     const novo = await contact("Novo");
     await order(novo.id, daysAgo(5));
     const sumido = await contact("Sumido");
@@ -66,7 +66,8 @@ describe("tags automáticas dos clientes", () => {
     // O pedido cancelado não conta: não é a primeira compra nem tira o cliente de Sumido.
     await order(sumido.id, daysAgo(2), "CANCELED");
     const comuns = await Promise.all(["A", "B", "C", "D", "E", "F"].map((letter) => contact(`Comum ${letter}`)));
-    for (const comum of comuns) await order(comum.id, daysAgo(45));
+    // Dois pedidos, o último há 20 dias: nem Novo, nem Recorrente, nem Sumido.
+    for (const comum of comuns) for (const days of [45, 20]) await order(comum.id, daysAgo(days));
 
     const soCancelou = await contact("Só cancelou");
     await order(soCancelou.id, daysAgo(1), "CANCELED");
@@ -95,15 +96,30 @@ describe("tags automáticas dos clientes", () => {
 
   it("VIP nunca passa dos 10%: clientes empatados entram todos ou nenhum", async () => {
     const empatado = await contact("Empatado");
-    for (const days of [300, 250, 200, 150]) await order(empatado.id, daysAgo(days));
+    // 6 pedidos em 50 dias e mais um depois: foi Recorrente, deixou de ser.
+    for (const days of [300, 290, 280, 270, 260, 250, 200]) await order(empatado.id, daysAgo(days));
     await refresh();
-    // 10 clientes com pedido: cabe 1 VIP, e dois têm 4 pedidos.
+    // 10 clientes com pedido: cabe 1 VIP, e dois têm 7 pedidos.
     expect(await tagsOf(fiel.id)).toEqual(["Recorrente"]);
-    expect(await tagsOf(empatado.id)).toEqual(["Sumido"]);
+    expect(await tagsOf(empatado.id)).toEqual(["Em risco", "Sumido"]);
 
     await order(fiel.id, daysAgo(1));
     await refresh();
     expect(await tagsOf(fiel.id)).toEqual(["VIP", "Recorrente"]);
+  });
+
+  it("Em risco: Recorrente há 30 dias sem pedir, ou quem deixou de ser Recorrente; sai ao voltar a ser", async () => {
+    const parado = await contact("Parado");
+    for (const days of [80, 70, 60, 50, 40, 35]) await order(parado.id, daysAgo(days));
+    const quase = await contact("Quase recorrente");
+    for (const days of [80, 60, 40, 20, 10]) await order(quase.id, daysAgo(days));
+    await refresh();
+    expect(await tagsOf(parado.id)).toEqual(["Recorrente", "Em risco", "Sumido"]);
+    expect(await tagsOf(quase.id)).toEqual([]); // nunca chegou a 6 pedidos em 90 dias
+
+    await order(parado.id, daysAgo(1));
+    await refresh();
+    expect(await tagsOf(parado.id)).toEqual(["Recorrente"]);
   });
 
   it("a nota da pesquisa põe e tira Insatisfeito na hora", async () => {
@@ -129,7 +145,7 @@ describe("tags automáticas dos clientes", () => {
         }),
       );
     const notaBaixa = await contact("Nota baixa");
-    await order(notaBaixa.id, daysAgo(45));
+    for (const days of [25, 20]) await order(notaBaixa.id, daysAgo(days));
     await evaluate(notaBaixa.id, { score: 35 }, daysAgo(3));
     const emRisco = await contact("Em risco"); // nunca pediu
     await evaluate(emRisco.id, { score: 75, churnRisk: 0.7 }, daysAgo(3));
@@ -139,9 +155,9 @@ describe("tags automáticas dos clientes", () => {
     await evaluate(tranquilo.id, { score: 75, satisfied: true, churnRisk: 0.2 }, daysAgo(3));
     // Já voltou a pedir depois do atendimento ruim.
     const voltou = await contact("Voltou");
-    await order(voltou.id, daysAgo(45));
-    await evaluate(voltou.id, { score: 10, satisfied: false }, daysAgo(40));
-    await order(voltou.id, daysAgo(35));
+    await order(voltou.id, daysAgo(25));
+    await evaluate(voltou.id, { score: 10, satisfied: false }, daysAgo(20));
+    await order(voltou.id, daysAgo(15));
     // Avaliação de antes da nota em porcentagem (1 a 5): ignorada.
     const antiga = await contact("Avaliação antiga");
     await evaluate(antiga.id, { score: 2, satisfied: false, legacy: true }, daysAgo(3));

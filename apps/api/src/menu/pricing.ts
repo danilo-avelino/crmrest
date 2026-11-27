@@ -9,7 +9,8 @@ export type HalfRule = "MAX" | "AVERAGE" | "SUM";
 
 export type PricingOption = { id: string; name: string; priceCents: number; active: boolean; soldOut: boolean };
 export type PricingGroup = { id: string; name: string; minSelect: number; maxSelect: number; options: PricingOption[] };
-export type PricingSize = { id: string; name: string; priceCents: number; active: boolean };
+/** `allowsHalf` ausente vale como ligado (o tamanho aceita meio a meio). */
+export type PricingSize = { id: string; name: string; priceCents: number; active: boolean; allowsHalf?: boolean };
 export type PricingCategory = { id: string; allowsHalf: boolean; halfPricing: HalfRule };
 export type PricingItem = {
   id: string;
@@ -133,6 +134,9 @@ export function priceLine(catalog: PricingCatalog, selection: LineSelection): Re
     const category = pick(catalog.categories, item.categoryId);
     if (!category?.allowsHalf || !item.allowsHalf)
       return fail("HALF_NOT_ALLOWED", `${item.name} não pode ser meio a meio.`, { itemId: item.id });
+    // Meio a meio por tamanho (27/11/2026): o tamanho escolhido precisa aceitar (ex.: broto não aceita).
+    if (base.value.size?.allowsHalf === false)
+      return fail("HALF_NOT_ALLOWED", `O tamanho ${base.value.size.name} não aceita meio a meio.`, { itemId: item.id });
     const prices = [base.value.cents];
     for (const halfId of halves) {
       const other = pick(catalog.items, halfId);
@@ -146,6 +150,7 @@ export function priceLine(catalog: PricingCatalog, selection: LineSelection): Re
       if (size) {
         const match = other.sizes.find((s) => s.active && normalizeName(s.name) === normalizeName(size.name));
         if (!match) return fail("HALF_SIZE_MISSING", `${other.name} não tem o tamanho ${size.name}.`, { itemId: other.id });
+        if (match.allowsHalf === false) return fail("HALF_NOT_ALLOWED", `${other.name} ${match.name} não pode ser meio a meio.`, { itemId: other.id });
         prices.push(match.priceCents);
       } else {
         const otherBase = basePriceOf(other, null);

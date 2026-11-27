@@ -65,7 +65,7 @@ const SUCCESS_EVENTS = new Set<MessageContent["event"]>(["phone_collected", "con
 /** Prevenção de fraude: pílula com cadeado, a hora e, no que chama atenção, o tom do alerta. */
 const FRAUD_TEAM_EVENTS = new Set<MessageContent["event"]>(["fraud_alert", "order_kept", "order_canceled_by_team", "order_cancel_refused", "fraud_marked", "fraud_unmarked"]);
 const FRAUD_HOT_EVENTS = new Set<MessageContent["event"]>(["fraud_alert", "order_canceled_by_team", "order_cancel_refused", "fraud_marked"]);
-const WARNING_EVENTS = new Set<MessageContent["event"]>(["phone_pending", "opt_out", "merge_conflict", "possible_duplicate", "order_ambiguous", "awaiting_agent", "ai_fallback", "bot_detected"]);
+const WARNING_EVENTS = new Set<MessageContent["event"]>(["phone_pending", "opt_out", "merge_conflict", "possible_duplicate", "order_ambiguous", "awaiting_agent", "ai_fallback", "bot_detected", "order_not_found", "allergy_alert"]);
 
 const weekday = new Intl.DateTimeFormat("pt-BR", { weekday: "long" });
 const fullDate = new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
@@ -268,7 +268,7 @@ function SystemEvent({ message }: { message: MessageDto }) {
   const { event, text } = message.content;
   const tone = SUCCESS_EVENTS.has(event)
     ? "border border-success-line bg-success-lt text-success-ink"
-    : event === "cancellation_alert"
+    : event === "cancellation_alert" || event === "resolved_unanswered"
       ? "border border-tomate-line bg-tomate-lt font-semibold text-tomate"
       : FRAUD_HOT_EVENTS.has(event)
       ? "border border-tomate-line bg-tomate-lt text-tomate-ink"
@@ -284,11 +284,11 @@ function SystemEvent({ message }: { message: MessageDto }) {
       <span className={cn("flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px]", tone)}>
         {SUCCESS_EVENTS.has(event) && <CheckCircle2Icon className="size-3" aria-hidden />}
         {event === "menu_agent" && <SparklesIcon className="size-3" aria-hidden />}
-        {event === "cancellation_alert" && <TriangleAlertIcon className="size-3" aria-hidden />}
+        {(event === "cancellation_alert" || event === "resolved_unanswered") && <TriangleAlertIcon className="size-3" aria-hidden />}
         {FRAUD_TEAM_EVENTS.has(event) && <LockIcon className="size-3" aria-label="Só a equipe vê" />}
         {text}
         {event === "conversation_opened" && ` · ${weekdayClock(message.createdAt)}`}
-        {(FRAUD_TEAM_EVENTS.has(event) || event === "resolved") && ` · ${clock(message.createdAt)}`}
+        {(FRAUD_TEAM_EVENTS.has(event) || event === "resolved" || event === "resolved_unanswered") && ` · ${clock(message.createdAt)}`}
       </span>
     </div>
   );

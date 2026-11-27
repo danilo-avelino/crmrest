@@ -137,7 +137,7 @@ describe("textos das notificações", () => {
           { reason: "problema_pedido", count: 3 },
           { reason: "outro", count: 1 },
         ],
-        misconduct: [{ messageId: "m", tenantId: "t", conversationId: "c", contactName: null, agentName: null, original: "", reason: "", createdAt: "" }],
+        misconduct: [{ kind: "blocked", messageId: "m", tenantId: "t", conversationId: "c", contactName: null, agentName: null, original: "", reason: "", createdAt: "" }],
       }),
       from,
       to,

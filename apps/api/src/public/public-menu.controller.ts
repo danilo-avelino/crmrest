@@ -114,8 +114,15 @@ export const PlaceOrderRequest = z.object({
   attribution: AttributionSchema.optional(),
   /** Cupom da tag escolhido pelo cliente (só com a sessão do código). */
   couponId: z.string().trim().min(1).max(40).nullish(),
+  couponCode: z.string().trim().max(40).nullish(),
   /** Link com contexto do WhatsApp (F3-11). */
   contextToken: z.string().trim().max(200).nullish(),
+});
+
+const CouponPreviewRequest = z.object({
+  code: z.string().trim().max(40).nullish(),
+  lines: z.array(z.object({ itemId: z.uuid(), totalCents: z.number().int().min(0).max(100_000_00) })).max(100),
+  mode: z.enum(["DELIVERY", "PICKUP"]).nullish(),
 });
 
 /** Sessão do cliente: cookie httpOnly (o painel do cardápio) ou `Authorization: Bearer`. */
@@ -235,6 +242,13 @@ export class PublicMenuController {
   }
 
   /** Link com contexto (F3-11): as escolhas do carrinho da conversa do WhatsApp, para a sacola do site. */
+  /** Cupom digitado na sacola (prévia; o pedido confere de novo). */
+  @Post("coupon-preview")
+  @HttpCode(200)
+  couponPreview(@Param("slug", new ZodPipe(Slug)) slug: string, @Req() request: Request, @Body(new ZodPipe(CouponPreviewRequest)) body: z.output<typeof CouponPreviewRequest>) {
+    return this.customers.couponPreview(slug, sessionToken(request), { code: body.code ?? null, lines: body.lines, mode: body.mode ?? null });
+  }
+
   @Get("context")
   @Header("Cache-Control", "no-store")
   context(@Param("slug", new ZodPipe(Slug)) slug: string, @Query("c") token: string | undefined) {

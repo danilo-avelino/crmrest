@@ -1,7 +1,7 @@
-import { businessHoursOf, dayHoursLabel, effectivePaymentMethods, isOpenAt, menuStoreOf, pausedOf, reopeningAt } from "@dishdesk/shared";
+import { businessHoursOf, dayHoursLabel, effectivePaymentMethods, closedAt, menuStoreOf, pausedOf, reopeningAt } from "@dishdesk/shared";
 import { z } from "zod";
 import { type DeliveryAddress, feeRangeOf, quoteDelivery, scheduleSlots } from "../../menu/delivery.js";
-import { availableAt, type LoadedMenuItem } from "../../menu/menu-catalog.js";
+import { availableAt, effectivePrice, type LoadedMenuItem } from "../../menu/menu-catalog.js";
 import { topItems } from "../../menu/menu-stats.js";
 import { type Catalog, defineTool, fromPriceCents, Id, loadCatalog, type Loaded, type MenuAgentDeps, money, refuse, withMenu } from "./context.js";
 import { normalizeText, type RecommendCandidate, recommend } from "./recommend.js";
@@ -136,7 +136,14 @@ export function readTools(deps: MenuAgentDeps, subtotalOf: SubtotalOf) {
             maximo: group.maxSelect,
             opcoes: group.options.map((o) => ({ complementoId: o.id, nome: o.name, preco: money(o.priceCents), ...(o.soldOut ? { esgotado: true } : {}) })),
           })),
-          meioAMeio: halfOk ? { permitido: true, regra: HALF_RULE_TEXT[category.halfPricing] } : { permitido: false },
+          meioAMeio: halfOk
+            ? {
+                permitido: true,
+                regra: HALF_RULE_TEXT[category.halfPricing],
+                // Tamanhos que não aceitam meio a meio (ex.: broto): nesses, só sabor inteiro.
+                ...(item.sizes.some((s) => !s.allowsHalf) ? { tamanhosSemMeioAMeio: item.sizes.filter((s) => !s.allowsHalf).map((s) => s.name) } : {}),
+              }
+            : { permitido: false },
           ...(pairs.length ? { combinaCom: pairs.map((p) => ({ itemId: p.id, nome: p.name })) } : {}),
           // Instrução do restaurante para a IA (não é do cliente): seguir, sem repetir ao cliente palavra por palavra.
           ...(extra?.aiNotes ? { notaDoRestaurante: extra.aiNotes } : {}),
@@ -156,7 +163,7 @@ export function readTools(deps: MenuAgentDeps, subtotalOf: SubtotalOf) {
         const top = await topItems(loaded.tx, { tenantId: loaded.tenantId, limit: 20, now: loaded.now });
         let ranked = top.map((t) => byId.get(t.itemId)).filter((i) => !!i);
         const fonte = ranked.length ? "vendas" : "destaques";
-        if (!ranked.length) ranked = items.filter((i) => isHighlight(i, loaded.settings));
+        if (!ranked.length) ranked = items.filter((i) => isHighlight(i));
         return { fonte, itens: ranked.slice(0, input.limite).map((i) => brief(i, catalog, categoryName.get(i.categoryId))) };
       }),
   });
@@ -180,7 +187,7 @@ export function readTools(deps: MenuAgentDeps, subtotalOf: SubtotalOf) {
           const priced = catalog.items instanceof Map ? catalog.items.get(item.id) : undefined;
           if (!priced?.active || priced.soldOut) return [];
           const size = item.sizes.length ? item.sizes.reduce((a, b) => (b.priceCents > a.priceCents ? b : a)) : null;
-          const unitCents = size?.priceCents ?? item.priceCents;
+          const unitCents = size?.priceCents ?? effectivePrice(item);
           if (unitCents == null) return [];
           return [
             {
@@ -191,7 +198,7 @@ export function readTools(deps: MenuAgentDeps, subtotalOf: SubtotalOf) {
               unitCents,
               servesPeople: item.servesPeople,
               keywords: normalizeText([item.name, ...item.tags, ...item.ingredients].join(" ")),
-              popularity: (sales.get(item.id) ?? 0) + (isHighlight(item, loaded.settings) ? 5 : 0),
+              popularity: (sales.get(item.id) ?? 0) + (isHighlight(item) ? 5 : 0),
             },
           ];
         });
@@ -230,7 +237,7 @@ export function readTools(deps: MenuAgentDeps, subtotalOf: SubtotalOf) {
         const store = menuStoreOf(settings);
         const hours = businessHoursOf(settings);
         const paused = pausedOf(settings);
-        const closed = hours.enabled && !isOpenAt(hours, now);
+        const closed = closedAt(hours, now);
         const status = paused ? "pausada" : closed ? "fechada" : "aberta";
         const slots = scheduleSlots(store, hours, now).slice(0, 4);
         const range = feeRangeOf(store);
@@ -277,10 +284,10 @@ export function readTools(deps: MenuAgentDeps, subtotalOf: SubtotalOf) {
   return [buscar_cardapio, detalhar_item, mais_vendidos, recomendar, verificar_funcionamento, calcular_entrega];
 }
 
-/** Destaque: tag do restaurante ou item da vitrine de promoções. */
-function isHighlight(item: LoadedMenuItem, settings: unknown): boolean {
+/** Destaque: tag do restaurante. */
+function isHighlight(item: LoadedMenuItem): boolean {
   const tags = item.tags.map(normalizeText);
-  return HIGHLIGHT_TAGS.some((t) => tags.includes(t)) || menuStoreOf(settings).promoShowcase.itemIds.includes(item.id);
+  return HIGHLIGHT_TAGS.some((t) => tags.includes(t));
 }
 
 export function formatQuote(quote: ReturnType<typeof quoteDelivery>, subtotalCents: number, byDistrict: boolean) {

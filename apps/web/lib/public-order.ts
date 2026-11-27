@@ -208,6 +208,7 @@ export type OrderRequest = {
   attribution?: import("./attribution").Attribution;
   /** Cupom da tag escolhido (só com o código); null sem cupom. */
   couponId?: string | null;
+  couponCode?: string | null;
   /** Link com contexto do WhatsApp (F3-11): fecha o carrinho da conversa. */
   contextToken?: string | null;
   lines: { lineId: string; itemId: string; sizeId?: string | null; optionIds?: string[]; halves?: string[]; quantity: number; note: string | null; expectedTotalCents: number }[];

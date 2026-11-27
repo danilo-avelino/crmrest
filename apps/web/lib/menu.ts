@@ -1,7 +1,7 @@
 // Cardápio no painel (F2-08): tipos da resposta de `GET /menu/:tenantId` e as regras de tela que não dependem do React.
 
 export type Slot = { weekday: number; startMinute: number; endMinute: number };
-export type MenuSize = { id: string; name: string; priceCents: number; sortOrder: number; active: boolean };
+export type MenuSize = { id: string; name: string; priceCents: number; sortOrder: number; active: boolean; allowsHalf?: boolean };
 export type MenuItem = {
   id: string;
   categoryId: string;
@@ -19,6 +19,9 @@ export type MenuItem = {
   tags: string[];
   synonyms: string[];
   aiNotes: string | null;
+  /** Custo por unidade (margem do relatório) e preço promocional (só sem tamanhos); planilha, 26/11/2026. */
+  costCents: number | null;
+  promoPriceCents: number | null;
   sizes: MenuSize[];
   optionGroups: { groupId: string; sortOrder: number }[];
   availabilities: Slot[];
@@ -36,7 +39,7 @@ export type MenuCategory = {
   availabilities: Slot[];
   items: MenuItem[];
 };
-export type MenuOption = { id: string; groupId: string; name: string; priceCents: number; sortOrder: number; active: boolean; soldOut: boolean };
+export type MenuOption = { id: string; groupId: string; choiceId: string; name: string; priceCents: number; sortOrder: number; active: boolean; soldOut: boolean };
 export type MenuOptionGroup = { id: string; name: string; minSelect: number; maxSelect: number; sortOrder: number; options: MenuOption[] };
 export type MenuTree = {
   menu: { id: string; name: string; active: boolean } | null;

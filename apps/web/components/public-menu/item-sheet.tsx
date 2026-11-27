@@ -18,6 +18,7 @@ import {
   groupKind,
   halfCandidates,
   halfRuleText,
+  sizeAllowsHalf,
   type ItemSelection,
   MAX_QUANTITY,
   missingChoice,
@@ -173,11 +174,15 @@ export function ItemSheet({
   return (
     <Sheet title={editing ? `Editar ${item.name}` : item.name} item onClose={onClose}>
       <div className="flex h-full flex-col lg:flex-row">
-        <div className="hidden bg-[#E9E3D9] lg:block lg:w-[44%] lg:shrink-0">{photo}</div>
+        {/* Foto em 4:3 (o formato do recorte no envio), centralizada no painel: aparece inteira, como foi enquadrada. */}
+        <div className="hidden bg-[#E9E3D9] lg:flex lg:w-[44%] lg:shrink-0 lg:items-center">
+          {photo && <div className="aspect-[4/3] w-full">{photo}</div>}
+        </div>
 
-        <div className="flex min-h-0 flex-1 flex-col">
-          <div ref={bodyRef} className="min-h-0 flex-1 overflow-y-auto pb-4">
-            <div className="relative h-55 bg-[#E9E3D9] lg:h-0">
+        {/* min-w-0 e overflow-x-hidden: texto comprido quebra a linha, nunca alarga o modal nem cria rolagem lateral. */}
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <div ref={bodyRef} className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto pb-4">
+            <div className={cn("relative bg-[#E9E3D9] lg:aspect-auto lg:h-0", photo ? "aspect-[4/3]" : "h-55")}>
               <div className="size-full lg:hidden">{photo}</div>
               <button
                 type="button"
@@ -200,7 +205,12 @@ export function ItemSheet({
               )}
               <h1 className="m-0 font-heading text-[24px] leading-tight font-bold tracking-[-0.5px]">{item.name}</h1>
               {item.description && <p className="m-0 text-ink-2">{item.description}</p>}
-              {priceLabel(item) && <p className="m-0 font-semibold tabular-nums">{priceLabel(item)}</p>}
+              {priceLabel(item) && (
+                <p className="m-0 flex items-baseline gap-2 font-semibold tabular-nums">
+                  {priceLabel(item)}
+                  {item.regularPriceCents != null && <s className="text-[13px] font-normal text-ink-3">{money(item.regularPriceCents)}</s>}
+                </p>
+              )}
             </div>
 
             {item.sizes.length > 0 && (
@@ -217,11 +227,13 @@ export function ItemSheet({
                     kind="radio"
                     on={selection.sizeId === s.id}
                     onClick={() => {
-                      // A 2ª metade precisa ter o mesmo tamanho; se não tiver, sai.
-                      const keepHalf = half && flavorPrice(half, s.name) != null;
+                      // Tamanho sem meio a meio (ex.: broto): volta a 1 sabor. A 2ª metade precisa ter o mesmo tamanho; se não tiver, sai.
+                      if (!sizeAllowsHalf(item, s.id)) return update({ ...selection, sizeId: s.id, halfMode: false, halfId: null });
+                      const keepHalf = half && flavorPickable(half, s.name);
                       update({ ...selection, sizeId: s.id, halfId: keepHalf ? selection.halfId : null });
                     }}
                     label={s.name}
+                    note={candidates.length > 0 && s.allowsHalf === false ? "Sem meio a meio" : undefined}
                     price={money(s.priceCents)}
                     strong
                   />
@@ -229,7 +241,7 @@ export function ItemSheet({
               </Section>
             )}
 
-            {candidates.length > 0 && (
+            {candidates.length > 0 && sizeAllowsHalf(item, selection.sizeId) && (
               <Section title="Sabores" hint="Inteira ou meio a meio" badge="Opcional" badgeTone="optional">
                 <ChoiceRow kind="radio" on={!selection.halfMode} onClick={() => update({ ...selection, halfMode: false, halfId: null })} label="1 sabor" note="Pizza inteira" />
                 <ChoiceRow kind="radio" on={selection.halfMode} onClick={() => update({ ...selection, halfMode: true })} label="2 sabores" note="Meio a meio" />
@@ -591,10 +603,10 @@ function ChoiceRow({
         ))}
       <span className="min-w-0 flex-1">
         <span className="block font-medium">{label}</span>
-        {note && <span className="block truncate text-[12px] text-ink-3">{note}</span>}
+        {note && <span className="block text-[12px] break-words text-ink-3">{note}</span>}
       </span>
       {(price || tag) && (
-        <span className="text-right tabular-nums">
+        <span className="shrink-0 text-right tabular-nums">
           {price && <span className={cn("block", strong ? "font-semibold" : "text-ink-2")}>{price}</span>}
           {tag && <span className="block text-[11px] text-ink-3">{tag}</span>}
         </span>

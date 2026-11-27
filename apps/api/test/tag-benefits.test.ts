@@ -17,17 +17,25 @@ const STORE = {
   deliveryMaxMinutes: 50,
   paymentMethods: ["cash"],
   scheduling: { enabled: false, minLeadMinutes: 30, slotMinutes: 30 },
-  promoShowcase: { itemIds: [], frequencyHours: 24 },
 };
+const NO_GIFT = { enabled: false, itemId: null, minOrderCents: 0, perMonth: 1 };
+const tagRule = (over: { free?: object; discount?: object; gift?: object } = {}, enabled = true) => ({
+  enabled,
+  freeDelivery: { enabled: false, minOrderCents: 0, frequency: "MONTHLY", ...over.free },
+  discount: { enabled: false, cents: 0, minOrderCents: 0, frequency: "MONTHLY", ...over.discount },
+  gift: { ...NO_GIFT, ...over.gift },
+});
 const BENEFITS = {
   tags: {
-    VIP: { enabled: true, freeDelivery: true, discountCents: 1000, minOrderCents: 3000, frequency: "MONTHLY" },
-    Recorrente: { enabled: true, freeDelivery: false, discountCents: 500, minOrderCents: 0, frequency: "EVERY_ORDER" },
-    Novo: { enabled: false, freeDelivery: false, discountCents: 0, minOrderCents: 0, frequency: "ONCE" },
-    Sumido: { enabled: false, freeDelivery: false, discountCents: 0, minOrderCents: 0, frequency: "ONCE" },
+    VIP: tagRule({ free: { enabled: true, minOrderCents: 3000 }, discount: { enabled: true, cents: 1000, minOrderCents: 3000 } }),
+    Recorrente: tagRule({ discount: { enabled: true, cents: 500, frequency: "EVERY_ORDER" } }),
+    "Em risco": tagRule({}, false),
+    Novo: tagRule({}, false),
+    Sumido: tagRule({}, false),
   },
   recovery: { enabled: true, discountCents: 1500, freeDelivery: false, minOrderCents: 0, sendMessage: true },
 };
+const withTag = (tag: keyof typeof BENEFITS.tags, rule: object) => ({ ...BENEFITS, tags: { ...BENEFITS.tags, [tag]: rule } });
 
 describe("Vantagens por tag no cardápio", () => {
   let app: INestApplication;
@@ -93,7 +101,71 @@ describe("Vantagens por tag no cardápio", () => {
     await request(app.getHttpServer()).put(`/api/menu/${fx.b.id}/tag-benefits`).set(auth).send({ ...BENEFITS, recovery: { ...BENEFITS.recovery, discountCents: -1 } }).expect(400);
     await request(app.getHttpServer()).put(`/api/menu/${fx.b.id}/tag-benefits`).set(auth).send(BENEFITS).expect(200);
     const saved = await request(app.getHttpServer()).get(`/api/menu/${fx.b.id}/tag-benefits`).set(auth).expect(200);
-    expect(saved.body.tags.VIP).toMatchObject({ freeDelivery: true, discountCents: 1000 });
+    expect(saved.body.tags.VIP).toMatchObject({ freeDelivery: { enabled: true }, discount: { enabled: true, cents: 1000 } });
+  });
+
+  it("configuração salva no formato antigo (um mínimo por tag, brinde só do VIP) é lida no formato novo", async () => {
+    const legacy = {
+      tags: {
+        VIP: { enabled: true, freeDelivery: true, discountCents: 1000, minOrderCents: 3000, frequency: "MONTHLY" },
+        Recorrente: { enabled: false, freeDelivery: false, discountCents: 0, minOrderCents: 0, frequency: "ONCE" },
+        Novo: { enabled: false, freeDelivery: false, discountCents: 0, minOrderCents: 0, frequency: "ONCE" },
+        Sumido: { enabled: false, freeDelivery: false, discountCents: 0, minOrderCents: 0, frequency: "ONCE" },
+      },
+      recovery: BENEFITS.recovery,
+      vipGift: { enabled: true, itemId: "item-1", minOrderCents: 4000, perMonth: 2 },
+    };
+    const settings = (await admin.tenant.findUniqueOrThrow({ where: { id: fx.b.id } })).settings as object;
+    await admin.tenant.update({ where: { id: fx.b.id }, data: { settings: { ...settings, tagBenefits: legacy } } });
+    const saved = await request(app.getHttpServer()).get(`/api/menu/${fx.b.id}/tag-benefits`).set({ Authorization: `Bearer ${adminToken}` }).expect(200);
+    expect(saved.body.tags.VIP).toEqual({
+      enabled: true,
+      freeDelivery: { enabled: true, minOrderCents: 3000, frequency: "MONTHLY", perMonth: 2 },
+      discount: { enabled: true, cents: 1000, minOrderCents: 3000, frequency: "MONTHLY", perMonth: 2 },
+      gift: { enabled: true, itemId: "item-1", minOrderCents: 4000, perMonth: 2 },
+    });
+    expect(saved.body.tags["Em risco"]).toMatchObject({ enabled: false });
+    expect(saved.body).not.toHaveProperty("vipGift");
+    await request(app.getHttpServer()).put(`/api/menu/${fx.b.id}/tag-benefits`).set({ Authorization: `Bearer ${adminToken}` }).send(BENEFITS).expect(200);
+  });
+
+  it("entrega grátis e cupom com mínimo e frequência próprios: cada parte vale sozinha", async () => {
+    const auth = { Authorization: `Bearer ${adminToken}` };
+    const novo = tagRule({ free: { enabled: true, minOrderCents: 0, frequency: "ONCE" }, discount: { enabled: true, cents: 800, minOrderCents: 6000, frequency: "EVERY_ORDER" } });
+    await request(app.getHttpServer()).put(`/api/menu/${fx.b.id}/tag-benefits`).set(auth).send(withTag("Novo", novo)).expect(200);
+    const { cookie } = await customer(["Novo"]);
+    // R$ 50: só a entrega grátis (o desconto pede R$ 60).
+    const res = await request(app.getHttpServer()).get(url("/me/coupons?subtotal=5000")).set("Cookie", cookie).expect(200);
+    expect(res.body.coupons[0]).toMatchObject({ id: "Novo", freeDelivery: true, discountCents: 0, available: true });
+    expect(res.body.coupons[0].parts).toMatchObject([
+      { kind: "freeDelivery", available: true },
+      { kind: "discount", cents: 800, available: false, reason: "Vale a partir de R$ 60,00." },
+    ]);
+    const first = await post("/orders", order({ couponId: "Novo" }), cookie).expect(200);
+    const saved = await admin.order.findUniqueOrThrow({ where: { id: first.body.id } });
+    expect([Number(saved.deliveryFee), Number(saved.total)]).toEqual([0, 50]);
+    // A entrega grátis era uma vez só: no segundo pedido o cupom não tem mais nada que valha a R$ 50.
+    const again = await post("/orders", order({ couponId: "Novo" }), cookie).expect(422);
+    expect(again.body).toMatchObject({ code: "COUPON_INVALID", message: "Você já usou este cupom." });
+    // Com R$ 100, o desconto (todo pedido) vale sozinho.
+    const big = await post("/orders", order({ couponId: "Novo", lines: [{ lineId: "l1", itemId: pizza, sizeId: size, quantity: 2 }] }), cookie).expect(200);
+    const bigSaved = await admin.order.findUniqueOrThrow({ where: { id: big.body.id } });
+    expect([Number(bigSaved.deliveryFee), Number(bigSaved.total)]).toEqual([7, 100 - 8 + 7]);
+    await request(app.getHttpServer()).put(`/api/menu/${fx.b.id}/tag-benefits`).set(auth).send(BENEFITS).expect(200);
+  });
+
+  it("em X pedidos por mês: o cupom vale X vezes no mês e mostra quantas já foram usadas", async () => {
+    const auth = { Authorization: `Bearer ${adminToken}` };
+    const novo = tagRule({ discount: { enabled: true, cents: 500, minOrderCents: 0, frequency: "MONTHLY_TIMES", perMonth: 2 } });
+    await request(app.getHttpServer()).put(`/api/menu/${fx.b.id}/tag-benefits`).set(auth).send(withTag("Novo", novo)).expect(200);
+    const { cookie } = await customer(["Novo"]);
+    await post("/orders", order({ couponId: "Novo" }), cookie).expect(200);
+    const after = await request(app.getHttpServer()).get(url("/me/coupons")).set("Cookie", cookie).expect(200);
+    expect(after.body.coupons[0].parts[0]).toMatchObject({ frequency: "MONTHLY_TIMES", allowed: 2, used: 1, available: true });
+    await post("/orders", order({ couponId: "Novo" }), cookie).expect(200);
+    const third = await post("/orders", order({ couponId: "Novo" }), cookie).expect(422);
+    expect(third.body).toMatchObject({ code: "COUPON_INVALID", message: "Já usado 2 vezes este mês. Volta no mês que vem." });
+    await request(app.getHttpServer()).put(`/api/menu/${fx.b.id}/tag-benefits`).set(auth).send(BENEFITS).expect(200);
   });
 
   it("cupons: só com o código e só das tags positivas ligadas (a negativa nunca aparece)", async () => {
@@ -124,6 +196,57 @@ describe("Vantagens por tag no cardápio", () => {
     expect((saved.raw as { benefit: object }).benefit).toMatchObject({ kind: "recovery", label: "Presente da casa" });
     const second = await post("/orders", order(), cookie).expect(200);
     expect((await admin.order.findUniqueOrThrow({ where: { id: second.body.id } })).raw).not.toHaveProperty("benefit");
+  });
+
+  it("brinde do VIP: entra a R$ 0 com o pedido mínimo, soma com o cupom e respeita o limite do mês", async () => {
+    const auth = { Authorization: `Bearer ${adminToken}` };
+    const gift = { enabled: true, itemId: pizza, minOrderCents: 4000, perMonth: 2 };
+    await request(app.getHttpServer()).put(`/api/menu/${fx.b.id}/tag-benefits`).set(auth).send(withTag("VIP", { ...BENEFITS.tags.VIP, gift })).expect(200);
+    const { cookie } = await customer(["VIP"]);
+    const coupons = await request(app.getHttpServer()).get(url("/me/coupons")).set("Cookie", cookie).expect(200);
+    expect(coupons.body).toMatchObject({ vip: true, vipGift: { name: "Calabresa", minOrderCents: 4000, perMonth: 2, usedThisMonth: 0, available: true, reason: null } });
+
+    const first = await post("/orders", order({ couponId: "VIP" }), cookie).expect(200);
+    const saved = await admin.order.findUniqueOrThrow({ where: { id: first.body.id }, include: { items: true } });
+    expect(Number(saved.total)).toBe(40); // o cupom VIP continua valendo junto
+    expect(saved.items.find((i) => i.notes === "Brinde VIP")).toMatchObject({ name: "Calabresa", menuItemId: pizza });
+    expect(Number(saved.items.find((i) => i.notes === "Brinde VIP")!.unitPrice)).toBe(0);
+
+    await post("/orders", order(), cookie).expect(200);
+    const third = await post("/orders", order(), cookie).expect(200);
+    expect((await admin.order.findUniqueOrThrow({ where: { id: third.body.id }, include: { items: true } })).items).toHaveLength(1);
+    const after = await request(app.getHttpServer()).get(url("/me/coupons")).set("Cookie", cookie).expect(200);
+    expect(after.body.vipGift).toMatchObject({ usedThisMonth: 2, available: false, reason: "Você já ganhou o brinde 2 vezes este mês." });
+    await request(app.getHttpServer()).put(`/api/menu/${fx.b.id}/tag-benefits`).set(auth).send(BENEFITS).expect(200);
+  });
+
+  it("brinde de outra tag (Em risco): configurado à parte; quem também é VIP ganha o do VIP; um brinde por pedido", async () => {
+    const auth = { Authorization: `Bearer ${adminToken}` };
+    const body = {
+      ...BENEFITS,
+      tags: {
+        ...BENEFITS.tags,
+        VIP: { ...BENEFITS.tags.VIP, gift: { enabled: true, itemId: pizza, minOrderCents: 0, perMonth: null } },
+        "Em risco": tagRule({ gift: { enabled: true, itemId: pizza, minOrderCents: 0, perMonth: 1 } }),
+      },
+    };
+    await request(app.getHttpServer()).put(`/api/menu/${fx.b.id}/tag-benefits`).set(auth).send(body).expect(200);
+
+    const { cookie } = await customer(["Em risco"]);
+    const coupons = await request(app.getHttpServer()).get(url("/me/coupons")).set("Cookie", cookie).expect(200);
+    expect(coupons.body).toMatchObject({ vip: false, vipGift: { tag: "Em risco", name: "Calabresa", perMonth: 1, available: true } });
+    const first = await post("/orders", order(), cookie).expect(200);
+    const saved = await admin.order.findUniqueOrThrow({ where: { id: first.body.id }, include: { items: true } });
+    expect(saved.items.find((i) => i.notes === "Brinde")).toMatchObject({ name: "Calabresa", menuItemId: pizza });
+    expect(saved.raw).toMatchObject({ gift: { tag: "Em risco", given: true } });
+    // Limite de 1 por mês só do brinde do Em risco.
+    const second = await post("/orders", order(), cookie).expect(200);
+    expect((await admin.order.findUniqueOrThrow({ where: { id: second.body.id }, include: { items: true } })).items).toHaveLength(1);
+
+    const both = await customer(["VIP", "Em risco"]);
+    const res = await request(app.getHttpServer()).get(url("/me/coupons")).set("Cookie", both.cookie).expect(200);
+    expect(res.body.vipGift).toMatchObject({ tag: "VIP", perMonth: null });
+    await request(app.getHttpServer()).put(`/api/menu/${fx.b.id}/tag-benefits`).set(auth).send(BENEFITS).expect(200);
   });
 
   it("visitante sem código não usa cupom", async () => {

@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { type FormEvent, useRef, useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
+import { SalesRules } from "@/components/settings/sales-rules";
 import { TabLoading, useSettingsTenant } from "@/components/settings/settings-shell";
 import { SettingsHeader, TEXTAREA } from "@/components/settings/settings-ui";
 import { Button } from "@/components/ui/button";
@@ -11,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
 import { usePendingAction } from "@/hooks/use-pending-action";
 import { ApiError } from "@/lib/api";
+import type { MenuTree } from "@/lib/menu";
 import {
   type AgentForm,
   type AgentSettingsResponse,
@@ -27,7 +29,7 @@ import {
 } from "@/lib/menu-agent";
 import { cn } from "@/lib/utils";
 
-/** Página "Pedidos pela IA" (C4): liga e desliga, nome, regras da casa, complementos, teto e a simulação de conversa. */
+/** Página "Pedidos pela IA" (C4): liga e desliga, nome, regras da casa, Venda pela IA e a simulação de conversa. */
 export function MenuAgentTab() {
   const { request } = useAuth();
   const tenant = useSettingsTenant();
@@ -71,6 +73,8 @@ function MenuAgentPage({ tenantId, data }: { tenantId: string; data: AgentSettin
   const [failure, setFailure] = useState<string | null>(null);
   const set = <K extends keyof AgentForm>(key: K, value: AgentForm[K]) => setForm((current) => ({ ...current, [key]: value }));
   const changed = formChanged(form, saved);
+  const menu = useQuery({ queryKey: ["menu", tenantId], queryFn: () => request<MenuTree>(`/menu/${tenantId}`) });
+  const selling = form.suggestAddons && form.maxSuggestions !== "0";
 
   const [save, saving] = usePendingAction(async () => {
     setFailure(null);
@@ -135,41 +139,36 @@ function MenuAgentPage({ tenantId, data }: { tenantId: string; data: AgentSettin
             />
             <span className="text-xs text-ink-3">Instruções suas para o atendimento. Preço, taxa e status do pedido nunca mudam por aqui.</span>
           </div>
-          <div className="flex items-center gap-2.5 border-t border-rule-soft pt-2.5">
-            <span className="flex-1">
-              <span className="block font-medium">Sugerir complementos</span>
-              <span className="text-xs text-ink-3">{'Depois de um item, a IA sugere um acompanhamento (usa o "Combina com" de cada item).'}</span>
-            </span>
-            <Toggle checked={form.suggestAddons} onChange={(value) => set("suggestAddons", value)} on="Ligado" off="Desligado" label="Sugerir complementos" />
-            <label htmlFor="agent-suggestions" className="font-medium">
-              Até
+          <div className="flex flex-col gap-2.5 border-t border-rule-soft pt-2.5">
+            <div className="flex items-center gap-2.5">
+              <span className="flex-1">
+                <span className="block font-medium">Venda pela IA</span>
+                <span className="text-xs text-ink-3">
+                  A IA oferece mais itens pelas regras abaixo: ao pedir algo de uma categoria ou no fim, se faltar uma categoria. O preço é sempre o do cardápio.
+                </span>
+              </span>
+              <Toggle checked={form.suggestAddons} onChange={(value) => set("suggestAddons", value)} on="Ligada" off="Desligada" label="Venda pela IA" />
+              <label htmlFor="agent-suggestions" className="font-medium">
+                Até
+              </label>
+              <select
+                id="agent-suggestions"
+                className="h-9 rounded-lg border border-input bg-surface px-2 text-[13px] outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/8 disabled:opacity-55"
+                value={form.maxSuggestions}
+                disabled={!form.suggestAddons}
+                onChange={(event) => set("maxSuggestions", event.target.value)}
+              >
+                <option value="0">0 ofertas (não oferecer)</option>
+                <option value="1">1 oferta por conversa</option>
+                <option value="2">2 ofertas por conversa</option>
+                <option value="3">3 ofertas por conversa</option>
+              </select>
+            </div>
+            <SalesRules menu={menu.data} rules={form.salesRules} disabled={!selling} onChange={(rules) => set("salesRules", rules)} />
+            <label className={cn("flex items-center gap-2 text-[13px]", !selling && "opacity-55")}>
+              <input type="checkbox" checked={form.usePairings} disabled={!selling} onChange={(event) => set("usePairings", event.target.checked)} />
+              {'Também oferecer o "Combina com" de cada item (nas categorias sem regra ao pedir)'}
             </label>
-            <select
-              id="agent-suggestions"
-              className="h-9 rounded-lg border border-input bg-surface px-2 text-[13px] outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/8 disabled:opacity-55"
-              value={form.maxSuggestions}
-              disabled={!form.suggestAddons}
-              onChange={(event) => set("maxSuggestions", event.target.value)}
-            >
-              <option value="0">0 sugestões (não sugerir)</option>
-              <option value="1">1 sugestão por conversa</option>
-              <option value="2">2 sugestões por conversa</option>
-              <option value="3">3 sugestões por conversa</option>
-            </select>
-          </div>
-          <div className="flex items-center gap-2.5 border-t border-rule-soft pt-2.5">
-            <label htmlFor="agent-tokens" className="flex-1">
-              <span className="block font-medium">Limite de uso por conversa</span>
-              <span className="text-xs text-ink-3">Tokens da IA por conversa por dia. Passou disso, a equipe assume. Vazio: o padrão.</span>
-            </label>
-            <Input
-              id="agent-tokens"
-              className="w-44"
-              inputMode="numeric"
-              value={form.dailyTokens}
-              placeholder={`${data.defaultDailyTokens.toLocaleString("pt-BR")} (padrão)`}
-              onChange={(event) => set("dailyTokens", event.target.value)}
-            />
           </div>
           <div className="text-ink-2">
             Tom: usa a personalidade <span className="font-semibold">{data.personality.label}</span>.{" "}
@@ -189,6 +188,7 @@ function Simulator({ tenantId, data }: { tenantId: string; data: AgentSettingsRe
   const { request } = useAuth();
   const [lines, setLines] = useState<SimulationLine[]>([]);
   const [cart, setCart] = useState<SimulationCart | null>(null);
+  const [salesOffers, setSalesOffers] = useState<string[]>([]);
   const [text, setText] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [unavailable, setUnavailable] = useState(!data.aiConfigured);
@@ -202,8 +202,9 @@ function Simulator({ tenantId, data }: { tenantId: string; data: AgentSettingsRe
     setLines(next);
     setText("");
     try {
-      const response = await request<SimulationResponse>(`/menu/${tenantId}/agent-simulate`, { method: "POST", body: simulationBody(next, cart) });
+      const response = await request<SimulationResponse>(`/menu/${tenantId}/agent-simulate`, { method: "POST", body: simulationBody(next, cart, salesOffers) });
       setCart(response.cart);
+      setSalesOffers(response.salesOffers ?? []);
       setLines([...next, ...linesOfResponse(response)]);
     } catch (failure) {
       // A mensagem volta para o campo: nada foi respondido.
@@ -235,6 +236,7 @@ function Simulator({ tenantId, data }: { tenantId: string; data: AgentSettingsRe
             onClick={() => {
               setLines([]);
               setCart(null);
+              setSalesOffers([]);
               setError(null);
             }}
           >

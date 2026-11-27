@@ -1,5 +1,5 @@
 import type { TenantTx } from "@dishdesk/database";
-import { businessHoursOf, effectivePaymentMethods, isOpenAt, menuStoreOf, pausedOf, reopeningAt } from "@dishdesk/shared";
+import { businessHoursOf, effectivePaymentMethods, closedAt, menuStoreOf, pausedOf, reopeningAt } from "@dishdesk/shared";
 import { z } from "zod";
 import { feeRangeOf, quoteDelivery, scheduleSlots } from "../../menu/delivery.js";
 import { type LineSelection, type PricedLine, type PricingError, priceLine } from "../../menu/pricing.js";
@@ -40,7 +40,7 @@ const CART_INCLUDE = {
   },
 } as const;
 
-function findOpenCart(tx: TenantTx, tenantId: string, session: MenuAgentSession) {
+export function findOpenCart(tx: TenantTx, tenantId: string, session: MenuAgentSession) {
   return tx.cart.findFirst({
     where: { tenantId, conversationId: session.conversationId, status: { in: [...OPEN] } },
     orderBy: { createdAt: "desc" },
@@ -49,7 +49,7 @@ function findOpenCart(tx: TenantTx, tenantId: string, session: MenuAgentSession)
 }
 type OpenCart = NonNullable<Awaited<ReturnType<typeof findOpenCart>>>;
 
-const optionIdsOf = (options: unknown) => (Array.isArray(options) ? (options as StoredOption[]).map((o) => o.id) : []);
+export const optionIdsOf = (options: unknown) => (Array.isArray(options) ? (options as StoredOption[]).map((o) => o.id) : []);
 
 const selectionOf = (row: OpenCart["items"][number]): LineSelection => ({
   itemId: row.itemId,
@@ -427,7 +427,7 @@ export function cartTools(deps: MenuAgentDeps, session: MenuAgentSession) {
         if (scheduled && !scheduleSlots(store, hours, loaded.now).some((s) => s.start.getTime() === scheduled.getTime()))
           pending.push({ codigo: "SLOT_INVALIDO", dica: "A faixa agendada não vale mais: ofereça outra." });
         if (pausedOf(loaded.settings)) pending.push({ codigo: "LOJA_PAUSADA", dica: "A loja pausou os pedidos agora." });
-        else if (!scheduled && hours.enabled && !isOpenAt(hours, loaded.now))
+        else if (!scheduled && closedAt(hours, loaded.now))
           pending.push({
             codigo: "LOJA_FECHADA",
             dica: `A loja abre ${reopeningAt(hours, loaded.now)}.${store.scheduling.enabled ? " Ofereça agendar." : ""}`,

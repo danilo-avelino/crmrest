@@ -61,6 +61,10 @@ const tenantTables: Record<string, (db: TenantTx) => Promise<Row[]>> = {
   payments: (db) => db.payment.findMany({ select: { id: true, tenantId: true } }),
   funnel_events: (db) => db.funnelEvent.findMany({ select: { id: true, tenantId: true } }),
   menu_import_requests: (db) => db.menuImportRequest.findMany({ select: { id: true, tenantId: true } }),
+  menu_choices: (db) => db.menuChoice.findMany({ select: { id: true, tenantId: true } }),
+  menu_coupons: (db) => db.menuCoupon.findMany({ select: { id: true, tenantId: true } }),
+  menu_coupon_redemptions: (db) => db.menuCouponRedemption.findMany({ select: { id: true, tenantId: true } }),
+  menu_notices: (db) => db.menuNotice.findMany({ select: { id: true, tenantId: true } }),
 };
 
 type Seeded = { tenantId: string; userId: string; email: string; contactId: string };
@@ -171,9 +175,13 @@ async function seedTenant(label: string): Promise<Seeded> {
   });
   const drink = await admin.menuItem.create({ data: { tenantId, categoryId: category.id, name: "Guaraná", priceCents: 800 } });
   await admin.menuItemPairing.create({ data: { tenantId, itemId: pizza.id, pairedItemId: drink.id } });
+  const choice = await admin.menuChoice.create({ data: { tenantId, menuId: menu.id, name: "Catupiry" } });
   const group = await admin.menuOptionGroup.create({
-    data: { tenantId, menuId: menu.id, name: "Borda", options: { create: { tenantId, name: "Catupiry", priceCents: 1000 } } },
+    data: { tenantId, menuId: menu.id, name: "Borda", options: { create: { tenantId, choiceId: choice.id, name: "Catupiry", priceCents: 1000 } } },
   });
+  const coupon = await admin.menuCoupon.create({ data: { tenantId, name: "Primeira compra", code: `PIZZA${suffix.toUpperCase()}`, kind: "PERCENT", percent: 10 } });
+  await admin.menuCouponRedemption.create({ data: { tenantId, couponId: coupon.id, orderId: order.id, contactId: contact.id, discountCents: 500 } });
+  await admin.menuNotice.create({ data: { tenantId, title: "Chegou a Diavola" } });
   await admin.menuItemOptionGroup.create({ data: { tenantId, itemId: pizza.id, groupId: group.id } });
   const cart = await admin.cart.create({
     data: { tenantId, contactId: contact.id, items: { create: { tenantId, itemId: pizza.id, sizeId: pizza.sizes[0]!.id } } },

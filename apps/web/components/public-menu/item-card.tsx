@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { type Badge, badgesOf, orderable, priceLabel, type PublicMenuItem } from "@/lib/public-menu";
+import { type Badge, badgesOf, money, orderable, priceLabel, type PublicMenuItem } from "@/lib/public-menu";
 import { cn } from "@/lib/utils";
 
 const TONES: Record<Badge["tone"], string> = {
@@ -17,8 +17,10 @@ export function BadgePill({ badge }: { badge: Badge }) {
 /** Foto do item: <img> simples, preguiçosa e com tamanho fixo (sem salto de layout no navegador do WhatsApp). */
 export function Photo({ url, size, className }: { url: string | null; size: number; className?: string }) {
   if (!url) return null;
+  // 4:3, o mesmo formato do recorte no envio (CROP_PRESETS.photo): a foto aparece inteira, como o restaurante enquadrou.
+  const height = Math.round((size * 3) / 4);
   // eslint-disable-next-line @next/next/no-img-element -- fotos vêm de URL do restaurante; sem otimizador no domínio.
-  return <img src={url} alt="" width={size} height={size} loading="lazy" decoding="async" className={cn("shrink-0 rounded-xl object-cover", className)} style={{ width: size, height: size }} />;
+  return <img src={url} alt="" width={size} height={height} loading="lazy" decoding="async" className={cn("shrink-0 rounded-xl object-cover", className)} style={{ width: size, height }} />;
 }
 
 /** Faixa diagonal "Esgotado" no canto da foto (formato do Cardápio Web): o item fica no lugar, esmaecido. */
@@ -60,11 +62,16 @@ export function ItemCard({ item, onSelect, children }: { item: PublicMenuItem; o
         )}
         <span className="text-[15px] leading-snug font-semibold">{item.name}</span>
         {item.description && <span className="line-clamp-3 text-[13px] leading-relaxed text-ink-2">{item.description}</span>}
-        {price && <span className="mt-auto pt-1 text-[14px] font-medium tabular-nums">{price}</span>}
+        {price && (
+          <span className="mt-auto flex items-baseline gap-2 pt-1 text-[14px] font-medium tabular-nums">
+            {price}
+            {item.regularPriceCents != null && <s className="text-[12.5px] font-normal text-ink-3">{money(item.regularPriceCents)}</s>}
+          </span>
+        )}
       </span>
       {item.photoUrl && (
         <span className="relative shrink-0 self-start">
-          <Photo url={item.photoUrl} size={112} className={cn("rounded-lg lg:size-32", item.soldOut && "opacity-50 grayscale")} />
+          <Photo url={item.photoUrl} size={112} className={cn("rounded-lg lg:h-30! lg:w-40!", item.soldOut && "opacity-50 grayscale")} />
           {item.soldOut && <SoldOutRibbon />}
         </span>
       )}

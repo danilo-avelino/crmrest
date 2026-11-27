@@ -7,7 +7,7 @@ import {
   pixAvailable,
   pixExpiresMinutesOf,
   fillMessage,
-  isOpenAt,
+  closedAt,
   menuStoreOf,
   pausedOf,
   reopeningAt,
@@ -24,7 +24,7 @@ import { FunnelService } from "../funnel/funnel.service.js";
 import { DatabaseService } from "../core/database.service.js";
 import { assertNotDemo, withoutDemo } from "../demo/demo.js";
 import { PagarmePixProvider, type PixProvider } from "../payments/pix.js";
-import { applyBenefit, resolveBenefit } from "./benefits.js";
+import { applyBenefit, resolveBenefit, vipGiftFor } from "./benefits.js";
 import { rememberAddress } from "../inbound/orders.js";
 import { quoteDelivery, scheduleSlots } from "../menu/delivery.js";
 import { loadMenuCategories, loadMenuItems, pricingCatalogOf } from "../menu/menu-catalog.js";
@@ -67,6 +67,8 @@ export type PlaceOrderInput = {
   sessionId?: string;
   attribution?: Record<string, string | undefined>;
   couponId?: string | null;
+  /** Código de cupom da aba Cupons (N4) digitado na sacola. */
+  couponCode?: string | null;
   /** Só do agente de pedidos (F4-03), nunca do corpo público: o carrinho da conversa que vira o pedido. */
   cartId?: string;
   /** Link com contexto (F3-11): o `?c=` que o agente mandou; o pedido feito no site fecha o carrinho da conversa. */
@@ -483,7 +485,7 @@ export class PublicOrderService {
     let scheduled: { start: Date; end: Date } | null = null;
     if (input.when.kind === "now") {
       if (pausedOf(store.settings)) fail("STORE_CLOSED", "A loja pausou os pedidos por enquanto.", { paused: true, nextSlot: null, nextOpening: null });
-      if (hours.enabled && !isOpenAt(hours, now)) {
+      if (closedAt(hours, now)) {
         fail("STORE_CLOSED", "A loja fechou enquanto você finalizava o pedido.", { paused: false, nextSlot, nextOpening: reopeningAt(hours, now) });
       }
     } else {
@@ -556,7 +558,7 @@ export class PublicOrderService {
       });
     }
     // 4b. Vantagem da tag (cupom escolhido) ou presente de recuperação: vale só a melhor; só com o código do WhatsApp.
-    const { benefit, couponRefused } = await resolveBenefit(tx, {
+    const { benefit, couponRefused, codeRefused } = await resolveBenefit(tx, {
       tenantId,
       contactId: contact.id,
       verified: contact.verified,
@@ -565,9 +567,25 @@ export class PublicOrderService {
       now,
       subtotalCents,
       deliveryFeeCents: quote.feeCents,
+      couponCode: input.couponCode ?? null,
+      lines: priced.map((p) => ({ itemId: p.line.itemId, categoryId: itemById.get(p.line.itemId)?.categoryId ?? "", totalCents: p.line.totalCents })),
+      mode: fulfillment.mode,
+      paymentMethod: input.payment.method,
     });
     if (input.couponId && couponRefused) fail("COUPON_INVALID", couponRefused);
+    if (input.couponCode?.trim() && codeRefused) fail("COUPON_INVALID", codeRefused);
     const applied = applyBenefit(benefit, subtotalCents, quote.feeCents);
+    // 4c. Brinde da tag: soma com o cupom; só com o código do WhatsApp, o pedido mínimo e o limite do mês.
+    const vip = contact.verified
+      ? await vipGiftFor(tx, {
+          tenantId,
+          contactId: contact.id,
+          tags: (await tx.contact.findFirst({ where: { id: contact.id, tenantId }, select: { tags: true } }))?.tags ?? [],
+          settings: store.settings,
+          now,
+        })
+      : null;
+    const vipGift = vip?.available && subtotalCents >= vip.minOrderCents ? vip.item : null;
     const feeCents = applied.deliveryFeeCents;
     const totalCents = subtotalCents - applied.discountCents + feeCents;
 
@@ -637,8 +655,11 @@ export class PublicOrderService {
           extraInfo: notes,
           ...(takeout ? { takeout: { takeoutDateTime: promised.toISOString() } } : { delivery: { deliveryDateTime: promised.toISOString() } }),
           eta: quote.eta,
+          // Área desenhada que valeu (N6): o painel conta os pedidos de cada área.
+          ...(quote.mode === "DELIVERY" && quote.areaId ? { deliveryAreaId: quote.areaId } : {}),
           payment: { method, changeForCents },
           ...(benefit ? { benefit: { ...benefit, discountCents: applied.discountCents } } : {}),
+          ...(vipGift ? { gift: { tag: vipGift.tag, itemId: vipGift.itemId, name: vipGift.name, given: true } } : {}),
           // As escolhas de cada linha, para o "Pedir de novo" (W15/W16).
           lines: input.lines.map((l) => ({ itemId: l.itemId, sizeId: l.sizeId ?? null, optionIds: l.optionIds ?? [], halves: l.halves ?? [], quantity: l.quantity, note: l.note?.trim() || null })),
           customerName: contact.name,
@@ -647,15 +668,21 @@ export class PublicOrderService {
           accessTokenHash: createHash("sha256").update(this.tokenOf(tenantId, input.idempotencyKey)).digest("hex"),
         } satisfies Prisma.InputJsonObject,
         items: {
-          create: priced.map(({ line, note }) => ({
-            tenantId,
-            name: nameOf(line),
-            quantity: line.quantity,
-            unitPrice: reais(line.unitCents),
-            notes: note,
-            options: optionsText(line),
-            menuItemId: line.itemId,
-          })),
+          create: [
+            ...priced.map(({ line, note }) => ({
+              tenantId,
+              name: nameOf(line),
+              quantity: line.quantity,
+              unitPrice: reais(line.unitCents),
+              notes: note,
+              options: optionsText(line),
+              menuItemId: line.itemId,
+            })),
+            // Brinde da tag: vai para a cozinha como item, a R$ 0.
+            ...(vipGift
+              ? [{ tenantId, name: vipGift.name, quantity: 1, unitPrice: reais(0), notes: vipGift.tag === "VIP" ? "Brinde VIP" : "Brinde", menuItemId: vipGift.itemId }]
+              : []),
+          ],
         },
         events: {
           create: [
@@ -667,6 +694,13 @@ export class PublicOrderService {
       },
       select: { id: true },
     });
+
+    // Uso do cupom da aba Cupons: conta os usos, o valor descontado (com a entrega que virou grátis) e o "um por cliente".
+    if (benefit?.kind === "menu_coupon") {
+      await tx.menuCouponRedemption.create({
+        data: { tenantId, couponId: benefit.tag, orderId: order.id, contactId: contact.id, discountCents: applied.discountCents + (quote.feeCents - feeCents) },
+      });
+    }
 
     // PURCHASE só com o pagamento confirmado (F6/F7-04): na entrega, o servidor registra só o início do checkout.
     if (paid) await tx.payment.update({ where: { id: paid.paymentId }, data: { orderId: order.id } });

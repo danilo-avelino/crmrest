@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { track } from "@/lib/attribution";
 import { CartProvider } from "@/lib/public-cart";
+import { NoticesStrip } from "@/components/public-menu/notices-strip";
 import { highlightsOf, priceLabel, type PublicMenu, type PublicMenuItem, visibleCategories } from "@/lib/public-menu";
 import { cn } from "@/lib/utils";
 import { ChevronDownIcon } from "lucide-react";
@@ -13,7 +14,6 @@ import { LoginBenefitsCard } from "./login-benefits-card";
 import { ItemCard } from "./item-card";
 import { ItemSheet } from "./item-sheet";
 import { ConsentBanner, MetaPixel } from "./ads-consent";
-import { PromoShowcase } from "./promo-showcase";
 import { storeContactLink } from "@/lib/public-checkout";
 import { ContextFromChat } from "./context-from-chat";
 import { ReorderFromOrder } from "./reorder-from-order";
@@ -21,6 +21,7 @@ import { ReorderStrip } from "./reorder-strip";
 import { SearchPanel } from "./search-panel";
 import { Sheet } from "./sheet";
 import { StoreLogo } from "./store-hero";
+import { VipWelcome } from "./vip-welcome";
 
 const HIGHLIGHTS_ID = "destaques";
 const categoryDomId = (id: string) => `cat-${id}`;
@@ -122,10 +123,9 @@ export function MenuView({ slug, menu }: { slug: string; menu: PublicMenu }) {
 
   const sections = [...(highlights.length > 0 ? [{ id: HIGHLIGHTS_ID, label: "Destaques", dom: HIGHLIGHTS_ID }] : []), ...categories.map((c) => ({ id: c.id, label: c.name, dom: categoryDomId(c.id) }))];
   const activeLabel = sections.find((section) => section.id === active)?.label ?? "Lista de categorias";
-  const hasPromos = (menu.store.promoShowcase?.itemIds.length ?? 0) > 0;
-
   return (
     <CartProvider slug={slug}>
+      <VipWelcome slug={slug} />
       <div className="mx-auto mt-3 flex w-full max-w-6xl flex-col gap-3 px-4 lg:hidden">
         <LoginBenefitsCard slug={slug} />
         <DeliveryCard slug={slug} store={menu.store} />
@@ -160,6 +160,7 @@ export function MenuView({ slug, menu }: { slug: string; menu: PublicMenu }) {
       <div className="mx-auto w-full max-w-6xl px-4 pb-40 lg:flex lg:items-start lg:gap-8 lg:px-8 lg:pb-16">
         <div className="min-w-0 flex-1">
           <ReorderStrip slug={slug} />
+          {(menu.notices?.length ?? 0) > 0 && <NoticesStrip notices={menu.notices!} />}
           {highlights.length > 0 && (
             <section id={HIGHLIGHTS_ID} data-menu-section={HIGHLIGHTS_ID} className="scroll-mt-20 pt-4">
               <h2 className="m-0 mb-3 font-heading text-[22px] font-bold">Destaques</h2>
@@ -229,7 +230,7 @@ export function MenuView({ slug, menu }: { slug: string; menu: PublicMenu }) {
           </ul>
         </Sheet>
       )}
-      <BottomNav slug={slug} hasPromos={hasPromos} />
+      <BottomNav slug={slug} />
       {searching && (
         <Sheet title="Buscar no cardápio" full onClose={closeSearch}>
           <SearchPanel
@@ -244,7 +245,6 @@ export function MenuView({ slug, menu }: { slug: string; menu: PublicMenu }) {
         </Sheet>
       )}
       {selected && <ItemSheet slug={slug} item={selected} category={categories.find((c) => c.id === selected.categoryId)} onClose={closeItem} />}
-      <PromoShowcase slug={slug} store={menu.store} categories={categories} onPick={setSelected} />
       <ReorderFromOrder slug={slug} categories={categories} />
       <ContextFromChat slug={slug} categories={categories} />
       <MetaPixel pixelId={menu.store.metaPixelId} />

@@ -1,13 +1,6 @@
-"use client";
+import { redirect } from "next/navigation";
 
-import { TagBenefitsTab } from "@/components/settings/tag-benefits-tab";
-import { SettingsHeader } from "@/components/settings/settings-ui";
-
-export default function TagBenefitsPage() {
-  return (
-    <>
-      <SettingsHeader title="Vantagens por tag" description="Cupons para os clientes VIP, fiéis, novos e sumidos, e o presente para recuperar quem saiu chateado" />
-      <TagBenefitsTab />
-    </>
-  );
+/** A página passou para a faixa do Cardápio (26/11/2026): o endereço antigo continua valendo. */
+export default function Page() {
+  redirect("/cardapio/vantagens");
 }

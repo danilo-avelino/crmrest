@@ -33,7 +33,6 @@ const STORE = {
   paymentMethods: ["pix", "cash"],
   pixRecipientId: "re_vazamento1",
   scheduling: { enabled: false, minLeadMinutes: 30, slotMinutes: 30 },
-  promoShowcase: { itemIds: [], frequencyHours: 24 },
 };
 
 /**

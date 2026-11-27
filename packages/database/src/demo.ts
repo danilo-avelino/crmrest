@@ -2,7 +2,7 @@
 // dia de hoje movimentado. Tudo é recriado a cada execução, com as datas contadas a partir de agora: a demo sempre
 // parece atual. Nomes, telefones e endereços são inventados; os telefones ficam na faixa +55 11 90000-xxxx.
 // Quem usa: o script `pnpm demo:reset` (com a conexão de administrador) e o botão escondido da demo na API (sob a RLS).
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { blindIndex, encrypt } from "./crypto.js";
 import type { ChannelType, OrderStatus, Prisma } from "./generated/prisma/client.js";
 
@@ -160,7 +160,6 @@ function demoSettings(): Prisma.InputJsonObject {
       deliveryMaxMinutes: 55,
       paymentMethods: ["cash", "credit", "debit", "pix_on_delivery"],
       scheduling: { enabled: true, minLeadMinutes: 60, slotMinutes: 30 },
-      promoShowcase: { itemIds: [], frequencyHours: 24 },
       accentColor: "#B4341A",
       city: "São Paulo",
       phone: "(11) 90000-9000",
@@ -175,8 +174,10 @@ function demoSettings(): Prisma.InputJsonObject {
     },
     tagBenefits: {
       tags: {
+        // Formato antigo (um mínimo e uma frequência por tag): tagBenefitsOf converte na leitura.
         VIP: { enabled: true, freeDelivery: true, discountCents: 1000, minOrderCents: 6000, frequency: "MONTHLY" },
         Recorrente: { enabled: true, freeDelivery: true, discountCents: 0, minOrderCents: 8000, frequency: "EVERY_ORDER" },
+        "Em risco": { enabled: true, freeDelivery: true, discountCents: 1500, minOrderCents: 6000, frequency: "ONCE" },
         Novo: { enabled: true, freeDelivery: false, discountCents: 800, minOrderCents: 5000, frequency: "ONCE" },
         Sumido: { enabled: true, freeDelivery: false, discountCents: 1500, minOrderCents: 6000, frequency: "ONCE" },
       },
@@ -187,9 +188,13 @@ function demoSettings(): Prisma.InputJsonObject {
 
 // ---------- Limpeza ----------
 
-/** Apaga os dados do restaurante da demo (o restaurante, os usuários e os módulos ficam). Ordem: dos filhos aos pais. */
-export async function wipeDemoData(tx: Tx, tenantId: string): Promise<void> {
+/**
+ * Apaga os dados do restaurante da demo (o restaurante, os usuários e os módulos ficam). Ordem: dos filhos aos pais.
+ * Devolve as fotos dos itens do cardápio, por nome: quem envia uma foto pelo painel não a perde no reset (passar ao seed).
+ */
+export async function wipeDemoData(tx: Tx, tenantId: string): Promise<Record<string, string>> {
   const where = { where: { tenantId } };
+  const photos = await tx.menuItem.findMany({ where: { tenantId, photoUrl: { not: null } }, select: { name: true, photoUrl: true } });
   await tx.funnelEvent.deleteMany(where);
   await tx.payment.deleteMany(where);
   await tx.cartItem.deleteMany(where);
@@ -214,13 +219,18 @@ export async function wipeDemoData(tx: Tx, tenantId: string): Promise<void> {
   await tx.menuItemPairing.deleteMany(where);
   await tx.menuAvailability.deleteMany(where);
   await tx.menuItemOptionGroup.deleteMany(where);
+  await tx.menuCouponRedemption.deleteMany(where);
+  await tx.menuCoupon.deleteMany(where);
+  await tx.menuNotice.deleteMany(where);
   await tx.menuOption.deleteMany(where);
+  await tx.menuChoice.deleteMany(where);
   await tx.menuOptionGroup.deleteMany(where);
   await tx.menuItemSize.deleteMany(where);
   await tx.menuItem.deleteMany(where);
   await tx.menuCategory.deleteMany(where);
   await tx.menu.deleteMany(where);
   await tx.channel.deleteMany(where);
+  return Object.fromEntries(photos.map((item) => [item.name, item.photoUrl!]));
 }
 
 // ---------- Seed ----------
@@ -246,7 +256,7 @@ type Line = { name: string; quantity: number; unitCents: number; options?: strin
  * Recria os dados da demo no restaurante `tenantId`, com `now` como o "agora". O chamador apaga antes (wipeDemoData) e
  * roda tudo numa transação. Devolve o que foi criado.
  */
-export async function seedDemoData(tx: Tx, input: { tenantId: string; users: Users; key: Buffer; now?: Date }): Promise<DemoSummary> {
+export async function seedDemoData(tx: Tx, input: { tenantId: string; users: Users; key: Buffer; now?: Date; photos?: Record<string, string> }): Promise<DemoSummary> {
   const { tenantId, users, key } = input;
   const now = input.now ?? new Date();
   const rand = prng(20261123);
@@ -303,7 +313,7 @@ export async function seedDemoData(tx: Tx, input: { tenantId: string; users: Use
     ].map(([shortcut, content]) => ({ tenantId, shortcut: shortcut!, content: content! })),
   });
 
-  const menuIds = await seedMenu(tx, tenantId, now);
+  const menuIds = await seedMenu(tx, tenantId, now, input.photos ?? {});
 
   // ---------- Clientes ----------
   const contacts: ContactSeed[] = [];
@@ -1372,9 +1382,13 @@ export async function seedDemoData(tx: Tx, input: { tenantId: string; users: Use
     const firstOrder = list.reduce<Date | null>((min, o) => (!min || o.placedAt < min ? o.placedAt : min), null);
     const tags = new Set(contact.tags);
     if (vip.has(contact.id)) tags.add("VIP");
-    if (list.filter((o) => o.placedAt > brtMidnight(90)).length >= 3) tags.add("Recorrente");
-    if (firstOrder && firstOrder > brtMidnight(30) && list.length <= 2) tags.add("Novo");
-    if (lastOrder && lastOrder < brtMidnight(60)) tags.add("Sumido");
+    const recent = list.filter((o) => o.placedAt > brtMidnight(90)).length;
+    if (recent >= 6) tags.add("Recorrente");
+    // Já foi Recorrente: 6 pedidos ou mais nos 90 dias que terminam em algum pedido.
+    const wasRecurring = list.some((end) => list.filter((o) => o.placedAt <= end.placedAt && end.placedAt.getTime() - o.placedAt.getTime() <= 90 * 86_400_000).length >= 6);
+    if (wasRecurring && (recent < 6 || (lastOrder && lastOrder < brtMidnight(30)))) tags.add("Em risco");
+    if (firstOrder && firstOrder > brtMidnight(30) && list.length === 1) tags.add("Novo");
+    if (lastOrder && lastOrder < brtMidnight(30)) tags.add("Sumido");
     if (tags.has("Em recuperação") && lastOrder && contact.lastSeenAt && lastOrder >= contact.lastSeenAt) tags.delete("Em recuperação");
     contact.tags = [...tags];
     if (firstOrder && firstOrder < contact.firstSeenAt) contact.firstSeenAt = firstOrder;
@@ -1503,21 +1517,27 @@ function fakeCpf(phone: string): string {
 
 // ---------- Cardápio ----------
 
-async function seedMenu(tx: Tx, tenantId: string, now: Date): Promise<Map<string, string>> {
+async function seedMenu(tx: Tx, tenantId: string, now: Date, photos: Record<string, string>): Promise<Map<string, string>> {
   const ids = new Map<string, string>();
   const menu = await tx.menu.create({ data: { tenantId, name: "Cardápio Vila Brasa" }, select: { id: true } });
-  const group = (name: string, minSelect: number, maxSelect: number, options: [string, number, boolean?][]) =>
-    tx.menuOptionGroup.create({
+  // Cada opção nasce na biblioteca (MenuChoice) e entra no grupo com o preço do grupo.
+  const group = async (name: string, minSelect: number, maxSelect: number, options: [string, number, boolean?][]) => {
+    const choices = options.map(([option, , soldOut]) => ({ id: randomUUID(), tenantId, menuId: menu.id, name: option, inStock: !soldOut }));
+    await tx.menuChoice.createMany({ data: choices });
+    return tx.menuOptionGroup.create({
       data: {
         tenantId,
         menuId: menu.id,
         name,
         minSelect,
         maxSelect,
-        options: { create: options.map(([option, priceCents, soldOut], sortOrder) => ({ tenantId, name: option, priceCents, sortOrder, soldOut: soldOut ?? false })) },
+        options: {
+          create: options.map(([option, priceCents, soldOut], sortOrder) => ({ tenantId, choiceId: choices[sortOrder]!.id, name: option, priceCents, sortOrder, soldOut: soldOut ?? false })),
+        },
       },
       select: { id: true },
     });
+  };
   const borda = await group("Borda recheada", 0, 1, [["Catupiry", 1000], ["Cheddar", 1000], ["Chocolate", 1200], ["Doce de leite", 1200, true]]);
   const comboDrink = await group("Refrigerante do combo", 1, 1, [["Guaraná 2 L", 0], ["Coca-Cola 2 L", 200]]);
   const extras = await group("Adicionais", 0, 3, [["Bacon", 600], ["Azeitona extra", 300], ["Cebola caramelizada", 500]]);
@@ -1559,6 +1579,7 @@ async function seedMenu(tx: Tx, tenantId: string, now: Date): Promise<Map<string
         priceCents: entry.sizes ? null : entry.cents,
         sortOrder,
         servesPeople: entry.sizes ? 3 : null,
+        photoUrl: photos[entry.name] ?? null,
         ...details[entry.name],
         sizes: entry.sizes && { create: (["Broto", "Média", "Grande"] as const).map((name, i) => ({ tenantId, name, priceCents: entry.sizes![i]!, sortOrder: i })) },
         optionGroups: entry.category === "Pizzas salgadas"

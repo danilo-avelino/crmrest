@@ -10,6 +10,8 @@ export type PublicMenuStore = {
   coverUrl: string | null;
   /** Cor de destaque (hex) do restaurante. */
   accentColor: string;
+  /** Tema completo: a cor de destaque também tinge o fundo e as bordas (lib/menu-theme.ts). */
+  brandTheme: boolean;
   city: string | null;
   address: string | null;
   phone: string | null;
@@ -29,8 +31,6 @@ export type PublicMenuStore = {
   deliveryEta: { minMinutes: number; maxMinutes: number };
   paymentMethods: PublicPaymentMethod[];
   schedulingEnabled: boolean;
-  /** Vitrine de promoções (W3); ausente em API antiga. */
-  promoShowcase?: { itemIds: string[]; frequencyHours: number };
   /** Pixel da Meta (F7-03); null sem Pixel. Ausente em API antiga. */
   metaPixelId?: string | null;
 };
@@ -41,11 +41,14 @@ export type PublicMenuItem = {
   name: string;
   description: string | null;
   priceCents: number | null;
+  /** Preço cheio quando o item está em promoção (aparece riscado); null sem promoção. */
+  regularPriceCents?: number | null;
   photoUrl: string | null;
   soldOut: boolean;
   availableNow: boolean;
   allowsHalf: boolean;
-  sizes: { id: string; name: string; priceCents: number }[];
+  /** `allowsHalf`: o tamanho aceita meio a meio (ex.: broto não aceita); ausente: aceita. */
+  sizes: { id: string; name: string; priceCents: number; allowsHalf?: boolean }[];
   optionGroups: {
     id: string;
     name: string;
@@ -69,7 +72,10 @@ export type PublicMenuCategory = {
   items: PublicMenuItem[];
 };
 
-export type PublicMenu = { store: PublicMenuStore; categories: PublicMenuCategory[] };
+/** Aviso no topo do cardápio (aba Avisos, N5): só os que estão no ar agora. */
+export type PublicNotice = { id: string; title: string; body: string | null; photoUrl: string | null };
+
+export type PublicMenu = { store: PublicMenuStore; categories: PublicMenuCategory[]; notices?: PublicNotice[] };
 
 /** Segundos que a página fica em cache (ISR) e que a API deixa no Cache-Control. */
 export const MENU_REVALIDATE_SECONDS = 30;
@@ -165,17 +171,6 @@ export function highlightsOf(categories: PublicMenuCategory[], limit = 6): Publi
     }
   }
   return picked.slice(0, limit);
-}
-
-/** Itens da vitrine de promoções na ordem escolhida pela loja, só os que estão à venda agora (R4: nada esgotado). */
-export function showcaseItems(categories: PublicMenuCategory[], itemIds: string[]): PublicMenuItem[] {
-  const byId = new Map(categories.flatMap((category) => category.items).map((item) => [item.id, item]));
-  return itemIds.map((id) => byId.get(id)).filter((item): item is PublicMenuItem => Boolean(item && orderable(item)));
-}
-
-/** A vitrine aparece de novo? No máximo uma vez a cada `frequencyHours` (R4). */
-export function showcaseDue(lastShownAt: number | null, now: number, frequencyHours: number): boolean {
-  return lastShownAt === null || !Number.isFinite(lastShownAt) || now - lastShownAt >= frequencyHours * 3_600_000;
 }
 
 /** Categorias que têm item: uma categoria vazia não aparece nas abas nem na lista. */

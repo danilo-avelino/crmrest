@@ -108,7 +108,6 @@ describe("Configurações → Pedidos pela IA (F4-11)", () => {
       expect(first).toMatchObject({
         settings: { enabled: true, houseRules: "", suggestAddons: true, maxSuggestionsPerConversation: 2 },
         personality: { id: "formal", label: "Formal" },
-        defaultDailyTokens: 5000,
         rulesMax: 1000,
         aiConfigured: true,
         simulationDailyLimit: 30,
@@ -117,24 +116,23 @@ describe("Configurações → Pedidos pela IA (F4-11)", () => {
 
       const saved = (
         await put(fx.b.id, adminToken)
-          .send({ enabled: false, attendantName: "  Vila ", houseRules: "Sem meio a meio no broto.", suggestAddons: false, maxSuggestionsPerConversation: 3, dailyTokensPerConversation: 50_000 })
+          .send({ enabled: false, attendantName: "  Vila ", houseRules: "Sem meio a meio no broto.", suggestAddons: false, maxSuggestionsPerConversation: 3 })
           .expect(200)
       ).body;
-      expect(saved.settings).toEqual({ enabled: false, attendantName: "Vila", houseRules: "Sem meio a meio no broto.", suggestAddons: false, maxSuggestionsPerConversation: 3, dailyTokensPerConversation: 50_000 });
+      expect(saved.settings).toEqual({ enabled: false, attendantName: "Vila", houseRules: "Sem meio a meio no broto.", suggestAddons: false, maxSuggestionsPerConversation: 3, salesRules: [], usePairings: true });
       const row = await admin.tenant.findUniqueOrThrow({ where: { id: fx.b.id }, select: { settings: true } });
       expect(row.settings).toMatchObject({ personality: "formal", menuStore: { pickupEnabled: false }, menuAgent: { enabled: false, attendantName: "Vila" } });
       expect((await get(fx.b.id, adminToken).expect(200)).body.settings.enabled).toBe(false);
 
-      // Nome vazio e teto vazio voltam ao padrão (a chave some).
+      // Nome vazio volta ao padrão (a chave some).
       const cleared = (await put(fx.b.id, adminToken).send({ enabled: true, attendantName: "", houseRules: "", suggestAddons: true }).expect(200)).body;
-      expect(cleared.settings).toEqual({ enabled: true, houseRules: "", suggestAddons: true, maxSuggestionsPerConversation: 2 });
+      expect(cleared.settings).toEqual({ enabled: true, houseRules: "", suggestAddons: true, maxSuggestionsPerConversation: 2, salesRules: [], usePairings: true });
       const after = await admin.tenant.findUniqueOrThrow({ where: { id: fx.b.id }, select: { settings: true } });
-      expect((after.settings as { menuAgent: object }).menuAgent).toEqual({ enabled: true, houseRules: "", suggestAddons: true, maxSuggestionsPerConversation: 2 });
+      expect((after.settings as { menuAgent: object }).menuAgent).toEqual({ enabled: true, houseRules: "", suggestAddons: true, maxSuggestionsPerConversation: 2, salesRules: [], usePairings: true });
     });
 
     it("corpo inválido responde 400", async () => {
       await put(fx.b.id, adminToken).send({ houseRules: "x".repeat(1001) }).expect(400);
-      await put(fx.b.id, adminToken).send({ dailyTokensPerConversation: 100 }).expect(400);
       await put(fx.b.id, adminToken).send({ enabled: "sim" }).expect(400);
       await put(fx.b.id, adminToken).send({ maxSuggestionsPerConversation: 4 }).expect(400);
       await put(fx.b.id, adminToken).send({ attendantName: "x".repeat(31) }).expect(400);
@@ -173,18 +171,17 @@ describe("Configurações → Pedidos pela IA (F4-11)", () => {
       expect(rules).toContain("Você é o atendente virtual do restaurante Forno da Vila e anota pedidos");
       expect(rules).not.toContain("Regras da casa");
       expect(rules).not.toContain("Apresente-se por esse nome");
-      expect(rules).toContain("no máximo 2 sugestões de complemento por conversa");
+      expect(rules).toContain("chame ofertas_de_venda");
     });
 
     it("sugerir complementos desligado troca a instrução", () => {
       const rules = orderAgentRules("Forno da Vila", { menuAgent: { suggestAddons: false } });
       expect(rules).toContain("Não sugira complementos");
-      expect(rules).not.toContain("sugestões de complemento por conversa");
+      expect(rules).not.toContain("ofertas_de_venda");
     });
 
-    it("o limite de sugestões por conversa entra no prompt; 0 equivale a não sugerir", () => {
-      expect(orderAgentRules("Forno da Vila", { menuAgent: { maxSuggestionsPerConversation: 1 } })).toContain("no máximo 1 sugestão de complemento por conversa");
-      expect(orderAgentRules("Forno da Vila", { menuAgent: { maxSuggestionsPerConversation: 3 } })).toContain("no máximo 3 sugestões de complemento por conversa");
+    it("limite 0 equivale a não oferecer (o limite em si é contado pela ferramenta ofertas_de_venda)", () => {
+      expect(orderAgentRules("Forno da Vila", { menuAgent: { maxSuggestionsPerConversation: 1 } })).toContain("chame ofertas_de_venda");
       expect(orderAgentRules("Forno da Vila", { menuAgent: { maxSuggestionsPerConversation: 0 } })).toContain("Não sugira complementos");
     });
 
@@ -205,7 +202,7 @@ describe("Configurações → Pedidos pela IA (F4-11)", () => {
       await setSettings(fx.b.id, {});
     });
 
-    it("o teto por conversa do restaurante vale no lugar do padrão do ambiente", async () => {
+    it("o teto por conversa é sempre o do ambiente, mesmo com um valor antigo salvo no restaurante", async () => {
       const channel = await admin.channel.findFirstOrThrow({ where: { tenantId: fx.b.id, type: "WHATSAPP" } });
       const contact = await admin.contact.create({ data: { tenantId: fx.b.id, name: "Caio" } });
       const open = async () => {
@@ -218,19 +215,12 @@ describe("Configurações → Pedidos pela IA (F4-11)", () => {
       };
       const agent = app.get(OrderAgentService);
 
-      // Sem teto próprio: vale o do ambiente (5.000) e a LLM não é chamada.
-      await setSettings(fx.b.id, {});
+      // Um teto antigo salvo (10.000) é ignorado: vale o do ambiente (5.000) e a LLM não é chamada.
+      await setSettings(fx.b.id, { menuAgent: { dailyTokensPerConversation: 10_000 } });
       await agent.reply(fx.b.id, (await open()).id);
       expect(calls).toHaveLength(0);
       const message = await admin.message.findFirstOrThrow({ where: { tenantId: fx.b.id, content: { path: ["automation"], equals: "handoff" } } });
       expect((message.content as { text: string }).text).toBe(PERSONALITY_MESSAGES.cordial.menuAgentHandoff);
-
-      // Com teto próprio de 10.000: a conversa de 6.000 ainda atende.
-      await setSettings(fx.b.id, { menuAgent: { dailyTokensPerConversation: 10_000 } });
-      script = [text("Oi! O que vai ser hoje?")];
-      await agent.reply(fx.b.id, (await open()).id);
-      expect(calls).toHaveLength(1);
-      expect(calls[0].system[0].text).toContain("Nunca invente item"); // o prompt foi montado normalmente
       await setSettings(fx.b.id, {});
     });
   });

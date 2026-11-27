@@ -139,10 +139,14 @@ export class ReportsService {
       // Atendimentos sem resposta da equipe: não passam pela avaliação, só contam.
       const aiOnlyRows = aiModule ? await tx.aiOnlyAttendance.groupBy({ by: ["handedOff"], where: { tenantId: { in: aiTenantIds }, createdAt: { gte: from } }, _count: true }) : [];
       const aiOnlyCount = (handedOff: boolean) => aiOnlyRows.find((row) => row.handedOff === handedOff)?._count ?? 0;
-      // Respostas bloqueadas pela revisão da IA por má conduta.
+      // Má conduta: respostas bloqueadas pela revisão da IA e conversas resolvidas com o cliente sem resposta.
       const misconduct = aiModule
         ? await tx.message.findMany({
-            where: { tenantId: { in: aiTenantIds }, createdAt: { gte: from }, content: { path: ["aiReview"], equals: "blocked" } },
+            where: {
+              tenantId: { in: aiTenantIds },
+              createdAt: { gte: from },
+              OR: [{ content: { path: ["aiReview"], equals: "blocked" } }, { content: { path: ["event"], equals: "resolved_unanswered" } }],
+            },
             orderBy: { createdAt: "desc" },
             take: 50,
             select: { id: true, tenantId: true, conversationId: true, content: true, sentByUserId: true, createdAt: true, conversation: { select: { contact: { select: { name: true } } } } },
@@ -306,6 +310,7 @@ export class ReportsService {
               misconduct: misconduct.map((row) => {
                 const content = row.content as MessageContent;
                 return {
+                  kind: content.event === "resolved_unanswered" ? ("unanswered" as const) : ("blocked" as const),
                   messageId: row.id,
                   tenantId: row.tenantId,
                   conversationId: row.conversationId,

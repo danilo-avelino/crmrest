@@ -37,16 +37,31 @@ function duration(seconds: number): string {
   return `${Math.floor(minutes / 60)} h ${String(minutes % 60).padStart(2, "0")} min`;
 }
 
-/** Alerta de má conduta: a resposta que a revisão da IA bloqueou, quem escreveu e para quem. */
-export function misconductText(alert: { restaurant: string; agent: string | null; contact: string | null; original: string; reason: string; at: Date }): string {
+/**
+ * Alerta de má conduta: a resposta que a revisão da IA bloqueou, quem escreveu e para quem; ou (`unanswered`) a conversa
+ * que alguém resolveu com o cliente sem resposta, com a última mensagem dele.
+ */
+export function misconductText(alert: {
+  restaurant: string;
+  agent: string | null;
+  contact: string | null;
+  original: string;
+  reason: string;
+  at: Date;
+  unanswered?: boolean;
+}): string {
   const original = alert.original.length > 300 ? `${alert.original.slice(0, 300)}…` : alert.original;
+  const agent = alert.agent ?? "um atendente";
+  const contact = alert.contact ?? "sem nome";
   return [
     "🚨 *Alerta de má conduta · Dish Desk*",
     `🍽️ *${alert.restaurant}*`,
     "",
-    `A IA bloqueou uma resposta de *${alert.agent ?? "um atendente"}* ao cliente *${alert.contact ?? "sem nome"}*. A mensagem *não foi enviada*.`,
+    alert.unanswered
+      ? `*${agent}* resolveu a conversa do cliente *${contact}* sem responder a ele.`
+      : `A IA bloqueou uma resposta de *${agent}* ao cliente *${contact}*. A mensagem *não foi enviada*.`,
     "",
-    `📝 *Mensagem:* "${original}"`,
+    alert.unanswered ? `📝 *Última mensagem do cliente:* "${original}"` : `📝 *Mensagem:* "${original}"`,
     `❗ *Motivo:* ${alert.reason}`,
     `🕐 ${dayMonth(alert.at)} às ${clock(alert.at)}`,
     "",
@@ -111,7 +126,10 @@ export class AdminNotificationsService implements OnModuleInit {
     await this.queue.upsertJobScheduler("admin-weekly-report", { pattern: "0 9 * * 1", tz: "America/Sao_Paulo" }, { name: "admin-weekly-report" });
   }
 
-  /** Resposta bloqueada por má conduta (AiReviewService): avisa os números do administrador, se ele quiser. */
+  /**
+   * Má conduta (resposta bloqueada pelo AiReviewService ou conversa resolvida sem responder ao cliente, no
+   * ConversationsService): avisa os números do administrador, se ele quiser.
+   */
   async misconduct(tenantId: string, messageId: string): Promise<void> {
     const text = await this.db.withTenants({ tenantIds: [tenantId] }, async (tx) => {
       const message = await tx.message.findUnique({
@@ -136,6 +154,7 @@ export class AdminNotificationsService implements OnModuleInit {
         original: content.original ?? "",
         reason: content.misconduct ?? "",
         at: message.createdAt,
+        unanswered: content.event === "resolved_unanswered",
       });
     });
     if (text) await this.enqueue(tenantId, text);

@@ -9,7 +9,7 @@ import { ImageCropDialog } from "@/components/common/image-crop-dialog";
 import { type AiFieldKey, AiMark, AllergenChip, AllergenWarning, useAiFill } from "@/components/menu/ai-fields";
 import { AvailabilityEditor, type AvailabilityDraft } from "@/components/menu/availability-editor";
 import { DescribeButton, SuggestionBox, useDescribeAssist } from "@/components/menu/description-assist";
-import { BLOCK, ErrorNote, FIELD_LABEL, loadError, PageHeader, SELECT_CLASS, Skeleton, TEXTAREA_CLASS } from "@/components/menu/bits";
+import { BLOCK, ErrorNote, FIELD_LABEL, loadError, PageHeader, SELECT_CLASS, Skeleton, TEXTAREA_CLASS, Toggle } from "@/components/menu/bits";
 import { useMenu, useMenuActions } from "@/components/menu/use-menu";
 import { useSettingsList } from "@/components/settings/use-settings";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -49,7 +49,8 @@ type Draft = {
   description: string;
   priceText: string;
   allowsHalf: boolean;
-  sizes: { name: string; priceText: string }[];
+  /** `allowsHalf`: o tamanho aceita meio a meio (só conta com a categoria e o item ligados). */
+  sizes: { name: string; priceText: string; allowsHalf: boolean }[];
   groupIds: string[];
   availability: AvailabilityDraft;
   ingredients: string[];
@@ -68,7 +69,7 @@ function draftOf(item: MenuItem | undefined, categoryId: string): Draft {
     description: item?.description ?? "",
     priceText: centsText(item?.priceCents),
     allowsHalf: item?.allowsHalf ?? true,
-    sizes: (item?.sizes ?? []).map((size) => ({ name: size.name, priceText: centsText(size.priceCents) })),
+    sizes: (item?.sizes ?? []).map((size) => ({ name: size.name, priceText: centsText(size.priceCents), allowsHalf: size.allowsHalf ?? true })),
     groupIds: (item?.optionGroups ?? []).map((link) => link.groupId),
     availability: { restricted: (item?.availabilities.length ?? 0) > 0, ranges: slotsToRanges(item?.availabilities ?? []) },
     ingredients: item?.ingredients ?? [],
@@ -197,7 +198,7 @@ function EditorForm({ tree, item }: { tree: MenuTree; item: MenuItem | undefined
     const name = draft.name.trim();
     if (!name) return setError("Dê um nome ao item."), setTab("basico");
     if (ai.pending.length > 0) return setError("Confirme os alérgenos sugeridos pela IA antes de salvar: toque em cada um ou em Confirmar alérgenos."), setTab("ia");
-    const sizes = draft.sizes.map((size) => ({ name: size.name.trim(), priceCents: parseCents(size.priceText) }));
+    const sizes = draft.sizes.map((size) => ({ name: size.name.trim(), priceCents: parseCents(size.priceText), allowsHalf: size.allowsHalf }));
     if (sizes.some((size) => !size.name || size.priceCents === null)) return setError("Cada tamanho precisa de nome e preço."), setTab("tamanhos");
     if (new Set(sizes.map((size) => size.name.toLowerCase())).size !== sizes.length) return setError("Dois tamanhos têm o mesmo nome."), setTab("tamanhos");
     const priceCents = sizes.length > 0 ? null : parseCents(draft.priceText);
@@ -227,7 +228,7 @@ function EditorForm({ tree, item }: { tree: MenuTree; item: MenuItem | undefined
       if (!saved) return;
       const id = saved.data.id;
       const steps: [string, unknown][] = [
-        [`/items/${id}/sizes`, { sizes: sizes.map((size) => ({ name: size.name, priceCents: size.priceCents })) }],
+        [`/items/${id}/sizes`, { sizes: sizes.map((size) => ({ name: size.name, priceCents: size.priceCents, allowsHalf: size.allowsHalf })) }],
         [`/items/${id}/option-groups`, { groupIds: draft.groupIds }],
         [`/items/${id}/availability`, { slots: slots.slots }],
         [`/items/${id}/pairings`, { itemIds: draft.pairIds }],
@@ -328,7 +329,7 @@ function EditorForm({ tree, item }: { tree: MenuTree; item: MenuItem | undefined
               goSizes={() => setTab("tamanhos")}
             />
           )}
-          {tab === "tamanhos" && <SizesTab draft={draft} set={set} />}
+          {tab === "tamanhos" && <SizesTab draft={draft} set={set} halfOn={!!category?.allowsHalf && draft.allowsHalf} />}
           {tab === "complementos" && <GroupsTab tree={tree} draft={draft} set={set} itemId={item?.id} />}
           {tab === "disponibilidade" && <AvailabilityEditor value={draft.availability} onChange={(value) => set("availability", value)} store={store} />}
           {tab === "ia" && <AiTab draft={draft} set={set} progress={progress} ai={ai} items={allItems.filter((other) => other.id !== item?.id && other.active)} />}
@@ -572,13 +573,15 @@ function BasicTab({
   );
 }
 
-function SizesTab({ draft, set }: { draft: Draft; set: Setter }) {
+/** `halfOn`: a categoria e o item aceitam meio a meio; aí cada tamanho tem o seu switch (ex.: broto sem meio a meio). */
+function SizesTab({ draft, set, halfOn }: { draft: Draft; set: Setter; halfOn: boolean }) {
   const update = (index: number, patch: Partial<Draft["sizes"][number]>) =>
     set("sizes", draft.sizes.map((size, i) => (i === index ? { ...size, ...patch } : size)));
   return (
     <div className={cn(BLOCK, "flex flex-col gap-3 p-5")}>
       <p className="text-ink-2">
         Com tamanhos, o preço do item vem deles (ex.: broto, média, grande). Sem tamanhos, vale o preço da aba Básico.
+        {halfOn && " Desligue o meio a meio nos tamanhos que só saem inteiros (ex.: broto)."}
       </p>
       {draft.sizes.map((size, index) => (
         <div key={index} className="flex items-center gap-2">
@@ -587,12 +590,18 @@ function SizesTab({ draft, set }: { draft: Draft; set: Setter }) {
             <span className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-ink-3">R$</span>
             <Input aria-label={`Preço do tamanho ${index + 1}`} inputMode="decimal" placeholder="0,00" value={size.priceText} onChange={(event) => update(index, { priceText: event.target.value })} className="pl-9 tabular-nums" />
           </div>
+          {halfOn && (
+            <span className="flex shrink-0 items-center gap-2 text-[13px] text-ink-2">
+              <Toggle on={size.allowsHalf} label={`Meio a meio no tamanho ${size.name || index + 1}`} onToggle={() => update(index, { allowsHalf: !size.allowsHalf })} />
+              <span className="w-24">{size.allowsHalf ? "Meio a meio" : "Só inteira"}</span>
+            </span>
+          )}
           <Button variant="ghost" size="icon" aria-label={`Remover tamanho ${size.name || index + 1}`} onClick={() => set("sizes", draft.sizes.filter((_, i) => i !== index))}>
             <XIcon />
           </Button>
         </div>
       ))}
-      <Button variant="outline" className="self-start" onClick={() => set("sizes", [...draft.sizes, { name: "", priceText: "" }])} disabled={draft.sizes.length >= 20}>
+      <Button variant="outline" className="self-start" onClick={() => set("sizes", [...draft.sizes, { name: "", priceText: "", allowsHalf: true }])} disabled={draft.sizes.length >= 20}>
         <PlusIcon aria-hidden /> Tamanho
       </Button>
     </div>

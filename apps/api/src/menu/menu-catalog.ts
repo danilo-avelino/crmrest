@@ -40,6 +40,7 @@ export function loadMenuItems(tx: TenantTx, tenantId: string, menuId: string, it
       name: true,
       description: true,
       priceCents: true,
+      promoPriceCents: true,
       photoUrl: true,
       active: true,
       soldOut: true,
@@ -49,7 +50,7 @@ export function loadMenuItems(tx: TenantTx, tenantId: string, menuId: string, it
       servesPeople: true,
       tags: true,
       availabilities: SLOT,
-      sizes: { where: { active: true }, orderBy: { sortOrder: "asc" }, select: { id: true, name: true, priceCents: true, active: true } },
+      sizes: { where: { active: true }, orderBy: { sortOrder: "asc" }, select: { id: true, name: true, priceCents: true, active: true, allowsHalf: true } },
       optionGroups: {
         orderBy: { sortOrder: "asc" },
         select: {
@@ -70,6 +71,11 @@ export function loadMenuItems(tx: TenantTx, tenantId: string, menuId: string, it
       },
     },
   });
+}
+
+/** Preço que vale agora: o promocional, quando o item tem (só itens sem tamanhos). */
+export function effectivePrice(item: { priceCents: number | null; promoPriceCents: number | null }): number | null {
+  return item.priceCents != null && item.promoPriceCents != null && item.promoPriceCents < item.priceCents ? item.promoPriceCents : item.priceCents;
 }
 
 export function loadMenuCategories(tx: TenantTx, tenantId: string, menuId: string) {
@@ -95,7 +101,7 @@ export function pricingCatalogOf(categories: LoadedMenuCategory[], items: Loaded
           id: item.id,
           name: item.name,
           categoryId: item.categoryId,
-          priceCents: item.priceCents,
+          priceCents: effectivePrice(item),
           active: item.active && (categoryNow.get(item.categoryId) ?? false) && availableAt(item.availabilities, now),
           soldOut: item.soldOut,
           allowsHalf: item.allowsHalf,

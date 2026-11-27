@@ -26,8 +26,11 @@ test("cadastra categoria e item e marca como esgotado em 1 clique", async ({ pag
   await expect(page.getByText("Seu cardápio está vazio · 0 itens")).toBeVisible();
 
   // Categoria pelo caminho "Criar do zero".
-  await page.getByLabel("Nome da categoria").fill("Pizzas");
-  await page.getByRole("button", { name: "Criar", exact: true }).click();
+  await page.getByRole("button", { name: "Criar categoria" }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("Nome", { exact: true }).fill("Pizzas");
+  await dialog.getByRole("button", { name: "Criar categoria" }).click();
+  await expect(dialog).toBeHidden();
   await expect(page.getByRole("heading", { name: "Pizzas" })).toBeVisible();
 
   // Item novo: sem preço o editor recusa; com preço salva e volta para a lista.

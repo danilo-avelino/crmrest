@@ -39,6 +39,7 @@ import { ENV, type Env } from "../config/env.js";
 import { ConnectorsService } from "../connectors/connectors.service.js";
 import { contactSearch } from "../contacts/contact-search.js";
 import { DatabaseService } from "../core/database.service.js";
+import { AdminNotificationsService } from "../notifications/admin-notifications.service.js";
 import { type AiJob, type AutomationJob, type OutboundJob, QUEUES } from "../queues/queues.module.js";
 import { withOrderTenants } from "../orders/order-scope.js";
 import { RealtimeEmitter } from "../realtime/realtime.emitter.js";
@@ -46,6 +47,7 @@ import { isTenantAdmin, memberScope } from "../settings/tenant-admin.js";
 import { conversationListInclude, listEvaluations, toListItem, toMessageDto, toOrderDto, withoutRatingScores } from "./conversation.mapper.js";
 import { StorageService } from "../storage/storage.service.js";
 import { downloadMedia } from "./message-media.js";
+import { unansweredMessage } from "./unanswered.js";
 
 const PAGE_SIZE = 50;
 const MESSAGES_LIMIT = 200;
@@ -66,6 +68,7 @@ export class ConversationsService {
     @InjectQueue(QUEUES.ai) private readonly ai: Queue<AiJob>,
     private readonly connectors: ConnectorsService,
     private readonly llm: LlmClient,
+    private readonly adminNotifications: AdminNotificationsService,
     @Inject(ENV) private readonly env: Env,
     @Optional() private readonly storage?: StorageService,
   ) {
@@ -229,7 +232,8 @@ export class ConversationsService {
         ...toOrderDto(order),
         ...(order.tenantId !== conversation.tenantId && { restaurantName: order.tenant.name }),
       });
-      return { messages, orders: Object.fromEntries(orders.map((order) => [order.id, toCard(order)])), evaluations };
+      const unanswered = conversation.status !== "RESOLVED" && (await unansweredMessage(tx, conversation, this.env)) !== null;
+      return { messages, orders: Object.fromEntries(orders.map((order) => [order.id, toCard(order)])), evaluations, unanswered };
     });
   }
 
@@ -494,8 +498,9 @@ export class ConversationsService {
   }
 
   async update(auth: RequestAuth, conversationId: string, body: UpdateConversationRequest) {
-    const { conversation, resolved } = await this.db.withTenants(auth.scope, async (tx) => {
+    const { conversation, resolved, misconductId } = await this.db.withTenants(auth.scope, async (tx) => {
       const current = await this.requireConversation(tx, conversationId);
+      let misconductId: string | null = null;
       if (body.assignedUserId) {
         // Só pode receber a conversa quem é membro ativo do restaurante dela.
         const member = await tx.tenantMember.findUnique({
@@ -510,6 +515,29 @@ export class ConversationsService {
         // prévia da lista já sair com ele.
         const user = await tx.user.findUnique({ where: { id: auth.userId }, select: { name: true } });
         const name = firstName(user?.name ?? null);
+        // Cliente sem resposta: resolver é má conduta. Fica na conversa, em nome de quem resolveu, antes da marca de
+        // resolvida (que segue como prévia da lista).
+        const unanswered = await unansweredMessage(tx, current, this.env);
+        if (unanswered !== null) {
+          const alert = await tx.message.create({
+            data: {
+              tenantId: current.tenantId,
+              conversationId,
+              channelId: current.channelId,
+              direction: "INTERNAL",
+              type: "SYSTEM",
+              sentByUserId: auth.userId,
+              content: {
+                event: "resolved_unanswered",
+                text: `Má conduta: ${name ? `${name} resolveu` : "a equipe resolveu"} a conversa sem responder ao cliente`,
+                misconduct: "Resolveu a conversa sem responder ao cliente",
+                original: unanswered,
+              } satisfies MessageContent,
+            },
+            select: { id: true },
+          });
+          misconductId = alert.id;
+        }
         await systemEvent(tx, current, { event: "resolved", text: name ? `Conversa resolvida por ${name}` : "Conversa resolvida pela equipe" });
       }
       const updated = await tx.conversation.update({
@@ -531,8 +559,14 @@ export class ConversationsService {
         },
         include: conversationListInclude,
       });
-      return { conversation: updated, resolved };
+      return { conversation: updated, resolved, misconductId };
     });
+    // O alerta pelo WhatsApp do administrador não impede a resolução: uma falha fica só no log.
+    if (misconductId) {
+      await this.adminNotifications.misconduct(conversation.tenantId, misconductId).catch((error: unknown) => {
+        this.logger.warn(`Alerta de má conduta da conversa ${conversationId} não agendado: ${error instanceof Error ? error.message : String(error)}`);
+      });
+    }
     // Fim do atendimento: a pesquisa de satisfação decide no worker se pergunta a nota; o telefone que ficou de fora
     // (a equipe estava na conversa) é pedido agora; a IA avalia o atendimento.
     // A conversa só da equipe não teve atendimento: o cliente nem está nela.

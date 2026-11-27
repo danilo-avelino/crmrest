@@ -381,7 +381,7 @@ function itemsOf(order: NeemoOrder, tenantId: string) {
   return [
     ...order.ItemOrder.map((item) =>
       line(
-        item.name?.trim() || item.title?.trim() || "Item",
+        itemName(item.title, item.name),
         item.quantity,
         item.total,
         item.notes?.trim() || null,
@@ -391,6 +391,20 @@ function itemsOf(order: NeemoOrder, tenantId: string) {
     ...(order.PizzaOrders ?? []).map((pizza) => line(pizza.name?.trim() || pizza.title?.trim() || "Pizza", pizza.quantity, pizza.total, null)),
     ...(order.ComboOrders ?? []).map((combo) => line(combo.name?.trim() || combo.title?.trim() || "Combo", combo.quantity, combo.total, null)),
   ];
+}
+
+/**
+ * Nome do item: na Neemo, `title` é o produto e `name` é a variação escolhida ("Hot Ebi (4 unidades)" / "4 Unidades",
+ * "Refrigerantes (Lata)" / "Coca Cola"). A variação entra entre parênteses quando acrescenta algo: igual ao produto, já
+ * contida nele ou a genérica "Item", fica de fora. Sem `title`, vale a variação.
+ */
+export function itemName(title: string | null | undefined, variation: string | null | undefined): string {
+  const product = title?.replace(/\s+/g, " ").trim();
+  const option = variation?.replace(/\s+/g, " ").trim();
+  if (!product) return option || "Item";
+  const plain = (text: string) => text.toLowerCase().normalize("NFD").replace(/\p{M}/gu, "");
+  if (!option || plain(option) === "item" || plain(product).includes(plain(option))) return product;
+  return `${product} (${option})`;
 }
 
 /** Linha do tempo de um pedido lido pela primeira vez: quando foi feito e, se já passou disso, a etapa em que está. */

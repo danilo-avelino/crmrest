@@ -29,7 +29,6 @@ test.beforeAll(async () => {
         paymentMethods: ["pix", "cash"],
         pixRecipientId: "re_e2epix12345",
         scheduling: { enabled: false, minLeadMinutes: 30, slotMinutes: 30 },
-        promoShowcase: { itemIds: [], frequencyHours: 24 },
       },
     }),
   ]);

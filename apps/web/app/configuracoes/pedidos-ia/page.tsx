@@ -1,7 +1,6 @@
-"use client";
+import { redirect } from "next/navigation";
 
-import { MenuAgentTab } from "@/components/settings/menu-agent-tab";
-
-export default function MenuAgentPage() {
-  return <MenuAgentTab />;
+/** A página passou para a faixa do Cardápio (26/11/2026): o endereço antigo continua valendo. */
+export default function Page() {
+  redirect("/cardapio/pedidos-ia");
 }

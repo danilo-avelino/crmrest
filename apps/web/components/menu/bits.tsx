@@ -16,7 +16,7 @@ export function Toggle({ on, label, onToggle, disabled }: { on: boolean; label: 
       aria-label={label}
       disabled={disabled}
       onClick={onToggle}
-      className={cn("h-[18px] w-[30px] justify-start rounded-[9px] p-0.5 hover:bg-transparent", on ? "justify-end bg-ink hover:bg-ink" : "bg-[#C4BDB2] hover:bg-[#C4BDB2]")}
+      className={cn("h-[18px] w-[30px] justify-start rounded-[9px] p-0.5 hover:bg-transparent", on ? "justify-end bg-success hover:bg-success" : "bg-ink-3 hover:bg-ink-3")}
     >
       <span className="size-3.5 rounded-full bg-white" />
     </Button>
@@ -72,13 +72,14 @@ export function Skeleton({ className }: { className?: string }) {
   return <div className={cn("animate-pulse rounded-xl bg-rule-soft", className)} />;
 }
 
-/** Título de página do painel (Fraunces 28) com as ações à direita. */
-export function PageHeader({ crumb, title, children }: { crumb?: ReactNode; title: string; children?: ReactNode }) {
+/** Título de página do painel (Fraunces 28) com as ações à direita; `description` embaixo do título (abas novas). */
+export function PageHeader({ crumb, title, description, children }: { crumb?: ReactNode; title: string; description?: ReactNode; children?: ReactNode }) {
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
       <div className="mr-auto min-w-0">
         {crumb && <div className="text-xs text-ink-3">{crumb}</div>}
         <h1 className="truncate font-heading text-display font-bold tracking-[-0.5px]">{title}</h1>
+        {description && <p className="mt-0.5 text-[13px] text-ink-2">{description}</p>}
       </div>
       {children}
     </div>
@@ -98,4 +99,64 @@ export function loadError(error: unknown): { forbidden: boolean; text: string } 
     return { forbidden: true, text: "O Cardápio não está ligado neste restaurante, ou a sua conta não tem acesso a ele." };
   }
   return { forbidden: false, text: error instanceof ApiError ? error.message : "Não foi possível carregar o cardápio." };
+}
+
+/** Página das abas do Cardápio: a coluna à direita da faixa, com rolagem própria. */
+export function MenuPage({ children, className }: { children: ReactNode; className?: string }) {
+  return <main className={cn("flex min-w-0 flex-1 flex-col gap-4 overflow-y-auto px-7 pt-6 pb-10", className)}>{children}</main>;
+}
+
+/**
+ * Bloco do número principal (regra do design): o número em Fraunces, a linha de apoio e, dentro do bloco, o filtro que
+ * ele altera. `accent`: a segunda parte do número em outra cor ("· 2 pausadas").
+ */
+export function Headline({ value, accent, accentTone = "muted", sub, children }: { value: ReactNode; accent?: ReactNode; accentTone?: "muted" | "warning"; sub?: ReactNode; children?: ReactNode }) {
+  return (
+    <section className={cn(BLOCK, "flex flex-wrap items-center gap-x-6 gap-y-3 px-5 py-4")}>
+      <div className="mr-auto min-w-0">
+        <p className="font-heading text-[28px] leading-tight font-bold tracking-[-0.5px] tabular-nums">
+          {value}
+          {accent != null && <span className={accentTone === "warning" ? "text-warning" : "text-ink-3"}> · {accent}</span>}
+        </p>
+        {sub && <p className="text-[12px] text-ink-3">{sub}</p>}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+/** Filtro em pílula do bloco principal ("Todas 38"): o ativo em tinta. */
+export function FilterChip({ active, onClick, children }: { active: boolean; onClick: () => void; children: ReactNode }) {
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      onClick={onClick}
+      className={cn("h-8 rounded-md border px-3 text-[13px] tabular-nums", active ? "border-ink bg-ink font-semibold text-paper" : "border-rule bg-surface text-ink-2 hover:bg-paper")}
+    >
+      {children}
+    </button>
+  );
+}
+
+/** Selo de estado com a bolinha (Ativo, Disponível, No ar...). */
+export function StatusBadge({ tone, children }: { tone: "success" | "warning" | "muted" | "danger"; children: ReactNode }) {
+  const styles = {
+    success: "bg-success-lt text-success-ink",
+    warning: "bg-warning-lt text-warning-ink",
+    muted: "bg-surface-2 text-ink-2",
+    danger: "bg-tomate-lt text-tomate-ink",
+  }[tone];
+  const dot = { success: "bg-success", warning: "border border-warning", muted: "border border-ink-3", danger: "bg-tomate" }[tone];
+  return (
+    <span className={cn("inline-flex shrink-0 items-center gap-1.5 rounded-sm px-1.5 py-0.5 text-[11.5px] font-semibold", styles)}>
+      <span className={cn("size-1.5 rounded-full", dot)} aria-hidden />
+      {children}
+    </span>
+  );
+}
+
+/** Etiqueta de borda tracejada (grupos em que a opção está, categorias do cupom). */
+export function TagChip({ children }: { children: ReactNode }) {
+  return <span className="inline-flex items-center rounded-sm border border-dashed border-tag-line px-2 py-0.5 text-[12px] text-ink-2">{children}</span>;
 }

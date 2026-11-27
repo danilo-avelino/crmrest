@@ -177,12 +177,37 @@ export async function requestOtp(slug: string, phone: string): Promise<OtpReques
 /** Tentativas de cada código na API (OTP_MAX_ATTEMPTS). A API não diz quantas restam: a tela conta. */
 export const OTP_MAX_ATTEMPTS = 5;
 
+const justLoggedKey = (slug: string) => `dd-just-logged:${slug}`;
+
+/** Marca o login pelo código, para o cardápio mostrar a boas-vindas do VIP uma vez. */
+function markJustLoggedIn(slug: string): void {
+  try {
+    window.localStorage.setItem(justLoggedKey(slug), "1");
+  } catch {
+    // sem armazenamento: o cliente só não vê a boas-vindas
+  }
+}
+
+/** true uma vez depois do login pelo código (e apaga a marca). */
+export function takeJustLoggedIn(slug: string): boolean {
+  try {
+    const found = window.localStorage.getItem(justLoggedKey(slug)) === "1";
+    if (found) window.localStorage.removeItem(justLoggedKey(slug));
+    return found;
+  } catch {
+    return false;
+  }
+}
+
 export type OtpVerifyOutcome = { kind: "ok" } | { kind: "wrong" } | { kind: "error"; message: string };
 
 export async function verifyOtp(slug: string, input: { phone: string; code: string; marketingOptIn: boolean }): Promise<OtpVerifyOutcome> {
   try {
     const response = await post(`${base(slug)}/otp/verify`, { phone: toApiPhone(input.phone), code: input.code, marketingOptIn: input.marketingOptIn });
-    if (response.ok) return { kind: "ok" };
+    if (response.ok) {
+      markJustLoggedIn(slug);
+      return { kind: "ok" };
+    }
     if (response.status === 400) return { kind: "wrong" };
     return { kind: "error", message: (await messageOf(response, "Não conseguimos conferir o código.")).message };
   } catch {

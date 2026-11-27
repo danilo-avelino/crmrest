@@ -12,6 +12,7 @@ import {
   type AutomationState,
   automationMessage,
   callTeam,
+  flagAllergy,
   dispatch,
   type InboundEvent,
   isAcknowledgment,
@@ -53,6 +54,10 @@ export class IfoodAttendanceService {
     if (await this.survey.handleAnswer(event)) return;
     if (await this.observation(event, orderId)) return;
     if (await this.aiTakes(event, orderId)) return;
+    await this.db.withTenants({ tenantIds: [event.channel.tenantId] }, async (tx) => {
+      const conversation = await tx.conversation.findUniqueOrThrow({ where: { id: event.conversationId }, select: { id: true, tenantId: true, channelId: true } });
+      await flagAllergy(tx, conversation, event.text);
+    });
     // Sem a IA, quem atende o cliente é a equipe: a conversa vai para a aba Ativos.
     await leaveToTeam(this.db, event.channel.tenantId, event.conversationId);
     const { tenantId } = event.channel;

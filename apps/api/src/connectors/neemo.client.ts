@@ -47,7 +47,9 @@ export const NeemoOrder = z.looseObject({
   ItemOrder: z
     .array(
       z.looseObject({
+        /** A variação escolhida ("4 Unidades", "Coca Cola", às vezes só "Item"), não o produto. */
         name: Text,
+        /** O produto ("Hot Ebi (4 unidades)", "Refrigerantes (Lata)"). */
         title: Text,
         quantity: Money.default(1),
         total: Money.default(0),

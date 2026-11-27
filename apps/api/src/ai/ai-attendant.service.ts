@@ -116,10 +116,11 @@ ${REPLY_STYLE}
 Você tira dúvidas sobre o horário de funcionamento, os links para fazer pedido e o andamento do pedido do cliente, usando só os DADOS.
 
 Como ler a CONVERSA: "Restaurante (IA)" é você. "Restaurante (atendente)" e "Restaurante (loja)" são a equipe do restaurante. "Restaurante (automação)" são avisos automáticos (status do pedido, aviso de que o entregador chegou).
+O cliente costuma mandar várias mensagens seguidas ("Bom dia", e logo depois o que quer). Responda a tudo o que ele escreveu depois da última mensagem do Restaurante, não só à primeira: se uma delas é só o cumprimento, cumprimente e já responda ao pedido que veio nas outras.
 
 Regras obrigatórias:
 - Só afirme o que está nos DADOS. Nunca invente preço, cardápio, prazo, taxa, promoção, endereço ou política, nem a causa de um problema (ex.: "deve ser instabilidade no link").
-- Você não anota pedidos: para pedir, mande os links (se houver); sem links, passe para a equipe.
+- Você não anota pedidos: para pedir, mande os links (se houver); sem links, passe para a equipe. Pedido novo é só quando o cliente quer comprar outra refeição. Pedir algo para vir junto com o pedido que ele já fez (hashi, hashi com liga, talher, guardanapo, molho, shoyu, ketchup, maionese, sachê, gengibre, wasabi, gelo, canudo) é uma observação para a loja, não um pedido novo: passe para a equipe, sem mandar os links e sem dizer se a loja tem ou não o item.
 - Você não altera pedido e não passa recado ao entregador nem à cozinha: nunca diga "anotado", "vou avisar", "já registrei" ou outra frase que prometa isso. Quem faz é a equipe.
 - Não diga que fez algo que não está nesta resposta (registrar telefone, anotar, avisar alguém). Fale com o cliente, nunca dele na terceira pessoa ("o telefone do cliente").
 - Ao contar o que o cliente pediu, use as palavras dele, sem mudar o sentido: "não esquecer os acompanhamentos" não é "sem os acompanhamentos".
@@ -128,20 +129,21 @@ Regras obrigatórias:
 - Cumprimente só na sua primeira resposta do atendimento, como diz "Cumprimento" nos DADOS; depois, vá direto ao ponto.${ifoodCourierRule}
 
 Quando o cliente quiser saber do andamento de um pedido (se saiu, se chegou, onde está, atraso), siga estes passos:
-1. Há nos DADOS um pedido ainda não confirmado: mostre o número, os itens e o total e pergunte se é esse o pedido dele. Não diga o andamento antes de ele confirmar. Se, em vez de responder, ele já fala desse pedido como sendo dele (pede para ser avisado quando sair, pergunta quando chega, manda um recado para a entrega), isso confirma: order = "confirmed", e siga sem perguntar de novo.
-2. Ele confirmou (order = "confirmed") ou os DADOS dizem que o pedido é o deste chat: diga o andamento que está nos DADOS, sem perguntar se o pedido é dele e sem repetir os itens e o total.
+1. Há nos DADOS um pedido ainda não confirmado (achado pelo cadastro: o cliente não informou o número): mostre os itens e o total, numa frase, e pergunte se é esse o pedido dele. Não diga o andamento antes de ele confirmar. Se, em vez de responder, ele já fala desse pedido como sendo dele (pede para ser avisado quando sair, pergunta quando chega, manda um recado para a entrega), isso confirma: order = "confirmed", e siga sem perguntar de novo.
+2. Ele confirmou (order = "confirmed"), ele mesmo informou o número do pedido, ou os DADOS dizem que o pedido é o deste chat: diga o andamento que está nos DADOS logo, sem perguntar se o pedido é dele e sem repetir os itens e o total.
 3. Ele disse que não é (order = "denied") ou não há pedido nos DADOS: peça o número do pedido (e o telefone usado no pedido, se os DADOS disserem que o telefone não está no cadastro), sem passar para a equipe. Não diga que não achou o pedido nem fale em cadastro: só peça o número. Se ele diz que pediu pelo iFood (ou outro app) sem dar o número, peça o número que aparece no pedido dentro do app (no iFood, os 4 dígitos); não diga que não consegue ver pedidos de lá.
-4. Ele informou o número (e o telefone, se você pediu) e o pedido continua fora dos DADOS: passe para a equipe.
+4. Ele informou o número (e o telefone, se você pediu) e o pedido continua fora dos DADOS: passe para a equipe. Não diga que o pedido não existe, que não foi encontrado nem que não aparece no sistema: diga só que alguém da equipe vai ver o pedido com ele.
 Os passos valem só para o andamento. Problema, mudança ou cancelamento vão direto para a equipe, sem você pedir antes que ele confirme o pedido.
 
 Passe para a equipe (handoff = true) só quando o cliente:
 - pedir para falar com uma pessoa ou atendente, ou responder que sim quando você perguntar se ele quer;
 - contar um problema com o pedido (item errado ou faltando, qualidade, entrega) ou pedir cancelamento, reembolso ou troca;
-- pedir uma mudança no pedido (observação, item, endereço, trocar retirada por entrega) ou um recado para o entregador ou para a cozinha (buzinar, interfonar, deixar na portaria, esperar ele descer, uma referência para achar o endereço, como a cor da casa ou do portão);
+- pedir uma mudança no pedido (observação, item, endereço, trocar retirada por entrega), pedir um extra para vir junto ("traz 2 hashis com liga", "manda ketchup", "esqueci de pedir o molho"), ou um recado para o entregador ou para a cozinha (buzinar, interfonar, deixar na portaria, esperar ele descer, uma referência para achar o endereço, como a cor da casa ou do portão);
 - disser que está no local e não encontra o entregador, ou que ninguém apareceu, depois do aviso de que o entregador chegou;
 - continuar reclamando do atraso depois que você disse o andamento do pedido;
 - perguntar ou falar sobre pagamento (Pix, chave Pix, se o pagamento foi confirmado, comprovante, formas de pagamento, vale-refeição, maquininha, troco, cobrança): passe direto, sem perguntar se ele quer um atendente. Diga só que está chamando alguém da equipe para cuidar disso (ex.: "Vou chamar alguém da equipe para cuidar do seu pagamento."). Não diga se você vê ou não o pagamento, se tem ou não a informação, nem o que você consegue ou não consegue fazer;
 - perguntar sobre o restaurante algo que não está nos DADOS nem no cardápio (entrega, taxa, endereço, promoção);
+- falar de alergia, intolerância ou restrição de saúde ("sou alérgico a camarão", "tem castanha?", "não posso comer pimenta"), mesmo que seja só uma pergunta: passe sempre, e comece o reason com "ALERGIA:". Não diga se o prato tem ou não o ingrediente;
 - disser que não consegue abrir o link ou terminar o pedido por ele;
 - responder a uma pergunta que a equipe fez (a última mensagem do restaurante na CONVERSA é de atendente ou da loja e pergunta algo): a resposta é para a equipe. Diga só que a equipe já vai ver, sem dizer que não entendeu;${courierRule}
 - mandar imagem, vídeo ou documento: pode ser a foto de um problema ou um comprovante de pagamento, que só a equipe consegue ver. Diga só que alguém da equipe vai ver; não peça para ele descrever.
@@ -189,10 +191,19 @@ const ORDER_NUMBER = [
   /pedido\s+#?\s*(\d{1,6})(?=\s*$|\s*[?!.,;]|\s+(?:j[áa]|que|foi|est[áa]|t[áa]|ainda|n[ãa]o|saiu|chegou|vai|vem|e)(?![a-zà-ú]))/gi,
   // "Fiz um pedido no Ifood 3560" (14/11/2026: a IA pediu de novo o número que a cliente já tinha mandado).
   /pedido\s+(?:n[oa]|pel[oa])\s+(?:i-?food|app|aplicativo|site|whats(?:app)?|card[áa]pio\s+web)\s*#?\s*(\d{3,6})(?=\s*$|\s*[?!.,;]|\s+(?:j[áa]|que|e)(?![a-zà-ú]))/gi,
+  // "Eu pedi um arrumadinho no iFood número 0582" (23/11/2026: a IA disse que o pedido não aparecia, e ele estava lá,
+  // cancelado). Telefone não entra: tem mais de 6 dígitos.
+  /n[uú]mero\s*(?:é|e|:)?\s*#?\s*(\d{3,6})(?!\d)/gi,
 ];
 
 /** A resposta promete que alguém da equipe vem ("vou chamar alguém da equipe", "já vou passar para a equipe"). */
 const TEAM_PROMISE = /\b(?:vou|vamos)\s+(?:chamar|passar|acionar|encaminhar)\b/i;
+
+/** Números de pedido que o cliente escreveu na conversa, como ele escreveu (sem repetir). */
+function informedNumbers(history: { direction: string; content: unknown }[]): string[] {
+  const texts = history.filter((m) => m.direction === "INBOUND").map((m) => (m.content as MessageContent).text ?? "");
+  return [...new Set(texts.flatMap((text) => ORDER_NUMBER.flatMap((pattern) => [...text.matchAll(pattern)].map((match) => match[1]!))))];
+}
 
 /** Números de pedido que o cliente informou nas mensagens (com e sem os zeros à esquerda). */
 export function orderNumbersIn(texts: string[]): string[] {
@@ -240,6 +251,8 @@ export type OrderFacts = {
   confirmed: boolean;
   /** Achado pelo número que o cliente informou (não pelo cadastro). */
   byNumber: boolean;
+  /** O cliente escreveu o número deste pedido neste atendimento: vale como confirmado, sem perguntar. */
+  autoConfirmed?: boolean;
   /** O pedido do próprio chat (iFood): o cliente já está identificado por ele, sem confirmação. */
   chatOrder?: boolean;
   /** O motivo que a loja deu ao cancelar ("Pedido fora da área de entrega"). */
@@ -316,7 +329,7 @@ export function attendantOrderFacts(order: OrderFacts | null, noPhone: boolean):
   const phoneNote = order && noPhone ? "\nO telefone do cliente não está no cadastro." : "";
   if (order?.confirmed) return `${facts}${phoneNote}`;
   if (order) return `${facts}${phoneNote}\nSó fale deste pedido se o cliente falar de um pedido (atraso, andamento, problema): se ele não falou, não cite o pedido.`;
-  return `${facts} Se o cliente falar de um pedido (atraso, andamento), peça o número do pedido, sem dizer que não achou o pedido nem falar em cadastro: o pedido com o número que ele informar aparece aqui nos DADOS. Se ele já informou o número e o pedido continua fora dos DADOS, passe para a equipe (handoff = true), que vai conferir.`;
+  return `${facts} Se o cliente falar de um pedido (atraso, andamento), peça o número do pedido, sem dizer que não achou o pedido nem falar em cadastro: o pedido com o número que ele informar aparece aqui nos DADOS. Se ele já informou o número e o pedido continua fora dos DADOS, passe para a equipe (handoff = true), que vai conferir, sem dizer que o pedido não foi encontrado ou não existe.`;
 }
 
 /**
@@ -335,10 +348,13 @@ export function orderFactsOf(order: OrderFacts | null, noPhone: boolean): string
   return [
     order.chatOrder
       ? "Pedido do cliente (é o pedido deste chat do iFood: não pergunte se é dele):"
-      : order.confirmed
-        ? "Pedido do cliente (ele confirmou que é dele):"
-        : `Pedido que pode ser do cliente (${source}; ainda não confirmado por ele):`,
-    `#${order.displayCode ?? order.externalOrderId} (${ORDER_ORIGIN_LABEL[order.channelType]}), feito em ${BRASILIA_TIME.format(order.placedAt)}, ${ORDER_STATUS_TEXT[order.status]}.${order.status === "CANCELED" && order.cancellationReason ? ` Motivo do cancelamento, dado pela loja: ${order.cancellationReason}.` : ""}`,
+      : order.autoConfirmed
+        ? "Pedido do cliente (ele informou o número deste pedido; não pergunte se é dele):"
+        : order.confirmed
+          ? "Pedido do cliente (ele confirmou que é dele):"
+          : `Pedido que pode ser do cliente (${source}; ainda não confirmado por ele):`,
+    // O canal vai como canal: "(Neemo)" logo depois do número virou o nome do cliente ("Você é o Neemo?", 22 e 24/11/2026).
+    `#${order.displayCode ?? order.externalOrderId}, pedido pelo canal ${ORDER_ORIGIN_LABEL[order.channelType]}, feito em ${BRASILIA_TIME.format(order.placedAt)}, ${ORDER_STATUS_TEXT[order.status]}.${order.status === "CANCELED" && order.cancellationReason ? ` Motivo do cancelamento, dado pela loja: ${order.cancellationReason}.` : ""}`,
     `Itens: ${order.items.map((item) => `${item.quantity}x ${item.name}`).join("; ")}. Total: ${BRL.format(Number(order.total))}.`,
     ...(order.chatOrder
       ? [
@@ -392,15 +408,23 @@ export class AiAttendantService {
         },
       });
       if ((conversation.automationState as AutomationState).ai !== "on") return null;
-      const recent = (
+      const fetched = (
         await tx.message.findMany({
           where: { conversationId, direction: { in: ["INBOUND", "OUTBOUND"] }, createdAt: { gte: new Date(now.getTime() - HISTORY_MS) } },
           orderBy: { createdAt: "desc" },
           take: HISTORY_LIMIT,
         })
       ).reverse();
+      // A mensagem recebida leva a hora do WhatsApp, e a que chega atrasada fica antes da resposta que a IA acabou de mandar
+      // (23/11/2026: "Oi," e "Meu pedido foi confirmado?" no mesmo minuto; a IA respondeu ao "Oi" e a pergunta ficou sem
+      // resposta, como se já tivesse sido respondida). O id (UUIDv7) diz a ordem em que as mensagens entraram: a recebida
+      // depois da última mensagem do restaurante ainda espera resposta, e vai para o fim da CONVERSA.
+      const lastOut = fetched.filter((message) => message.direction === "OUTBOUND").reduce<string>((max, message) => (message.id > max ? message.id : max), "");
+      const unanswered = (message: (typeof fetched)[number]) => message.direction === "INBOUND" && message.id > lastOut;
+      const recent = [...fetched.filter((message) => !unanswered(message)), ...fetched.filter(unanswered)];
       const last = recent.at(-1);
       if (last?.direction !== "INBOUND") return null; // já respondida: por outro job, pela equipe ou por uma automação
+      const lastId = fetched.reduce<string>((max, message) => (message.id > max ? message.id : max), "");
       // No iFood o chat é de um pedido só: o da mensagem do cliente. A conversa da Inbox junta os chats de todos os pedidos
       // dele na loja, mas a IA lê só este, como o cliente o vê.
       const chat = conversation.channel.type === "IFOOD" ? ifoodChatOrderOf(last.externalMessageId) : null;
@@ -432,9 +456,24 @@ export class AiAttendantService {
         const takeout = isTakeout(found.raw);
         const waiting = !found.dispatchedAt && !["DELIVERED", "CANCELED"].includes(found.status);
         const skips = !takeout && waiting && (await skipsDispatch(orders, found.channelId, now));
-        return { ...found, confirmed: !!confirmed, byNumber: !linked, channelType: orderOriginOf(channel), update, chatOrder: false, takeout, skipsDispatch: skips };
+        // O cliente escreveu o número deste pedido: isso já o identifica, sem o "é esse o seu pedido?" (25/11/2026: a
+        // mensagem pronta do Cardápio Web traz nome, número e hora, e a IA ainda perguntava se era o pedido dele).
+        const plain = (code: string) => code.replace(/^0+(?=\d)/, "");
+        const code = plain(found.displayCode ?? found.externalOrderId);
+        const informed = !confirmed && informedNumbers(history).some((number) => plain(number) === code);
+        return {
+          ...found,
+          confirmed: !!confirmed || informed,
+          autoConfirmed: informed,
+          byNumber: !linked,
+          channelType: orderOriginOf(channel),
+          update,
+          chatOrder: false,
+          takeout,
+          skipsDispatch: skips,
+        };
       });
-      return { conversation, settings, history, lastId: last.id, last, order };
+      return { conversation, settings, history, lastId, last, order };
     });
     if (!context) return;
     // A mensagem pronta do Cardápio Web sai logo depois do pedido, e o pedido chega pela integração alguns segundos
@@ -508,10 +547,11 @@ export class AiAttendantService {
     }
 
     const done = await this.db.withTenants(scope, async (tx) => {
-      // Enquanto a LLM escrevia, o cliente mandou outra mensagem (o job dela responde) ou a equipe respondeu.
+      // Enquanto a LLM escrevia, o cliente mandou outra mensagem (o job dela responde) ou a equipe respondeu. Pela ordem de
+      // entrada (id), não pela hora: a mensagem atrasada do WhatsApp chega com uma hora anterior.
       const latest = await tx.message.findFirst({
         where: { conversationId, direction: { in: ["INBOUND", "OUTBOUND"] } },
-        orderBy: { createdAt: "desc" },
+        orderBy: { id: "desc" },
         select: { id: true },
       });
       const current = (await tx.conversation.findUniqueOrThrow({ where: { id: conversationId }, select: { automationState: true } }))
@@ -624,7 +664,20 @@ export class AiAttendantService {
         !deniedId &&
         !!answer &&
         (new RegExp(`(?<!\\d)${code}(?!\\d)`).test(answer.reply) || answer.reply.replace(/ /g, " ").includes(total));
-      const notify = confirmed ? await this.confirmOrder(tx, conversationId, confirmed, pending!.byNumber) : [];
+      const auto = context.order && "autoConfirmed" in context.order && context.order.autoConfirmed ? context.order : null;
+      const notify = confirmed
+        ? await this.confirmOrder(tx, conversationId, confirmed, pending!.byNumber)
+        : auto
+          ? await this.confirmOrder(tx, conversationId, auto.id, auto.byNumber)
+          : [];
+      // O cliente deu o número e o pedido não está no sistema: a IA não diz isso a ele; a equipe confere (25/11/2026).
+      const missing = needsTeam && !context.order ? informedNumbers(context.history) : [];
+      if (missing.length) {
+        await systemEvent(tx, conversation, {
+          event: "order_not_found",
+          text: `A IA não encontrou o pedido #${missing.at(-1)} que o cliente informou. Verifique no seu sistema.`,
+        });
+      }
       const reason = answer?.reason.trim().slice(0, 200) || undefined;
       // Parece entregador e o cadastro não tem a tag: a conversa abre com a pergunta à equipe, uma vez por atendimento.
       // No chat do iFood quem escreve é o cliente do pedido: "Tô chegando já" virou entregador e ganhou a tag (16/11/2026).
@@ -644,6 +697,7 @@ export class AiAttendantService {
         aiReopened: undefined,
         ...(startsWaiting && { aiWaiting: true, aiWaitingReason: reason }),
         ...(confirmed && { linkedOrder: { id: confirmed, at: now.toISOString() } }),
+        ...(!confirmed && auto && { linkedOrder: { id: auto.id, at: now.toISOString() } }),
         ...(deniedId && { aiDeniedOrderIds: [...(current.aiDeniedOrderIds ?? []), deniedId] }),
         ...(offers && pending && { aiOfferedOrderId: pending.id }),
         ...(asksCourier && { courierCheck: { reason: reason ?? "A IA acha que quem escreve é um entregador." } }),

@@ -1,13 +1,6 @@
-"use client";
+import { redirect } from "next/navigation";
 
-import { MenuStoreTab } from "@/components/settings/menu-store-tab";
-import { SettingsHeader } from "@/components/settings/settings-ui";
-
-export default function MenuStorePage() {
-  return (
-    <>
-      <SettingsHeader title="Cardápio e entrega" description="Endereço, entrega, mínimo, agendamento, marca e contato da página pública do cardápio" />
-      <MenuStoreTab />
-    </>
-  );
+/** A página passou para a faixa do Cardápio (26/11/2026): o endereço antigo continua valendo. */
+export default function Page() {
+  redirect("/cardapio/entrega");
 }

@@ -1,0 +1,3402 @@
+{
+  "label": "antes",
+  "model": "claude-haiku-5-5",
+  "judge": "claude-sonnet-5-5",
+  "runs": 3,
+  "spentUsd": 0.49431679999999983,
+  "stopped": false,
+  "results": [
+    {
+      "id": "barca-50-pecas",
+      "categoria": "info-fora-dos-dados",
+      "nota": "Barca não está nos DADOS: chama a equipe sem dizer se tem ou não. Links são opcionais.",
+      "runs": [
+        {
+          "run": 0,
+          "reply": {
+            "reply": "Consigo sim, mas quem monta o pedido é a loja pelo link. Pode fazer pelo Sushi Mar Azul: https://pedir.exemplo.com/sushimarazul. Lá estão o cardápio e os preços. Quer que eu chame um atendente para te ajudar com a barca?",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [
+            "handoff false, esperado true",
+            "frase proibida \"Consigo sim\""
+          ],
+          "costUsd": 0.0065543,
+          "ms": 1793,
+          "verdict": {
+            "correcao": 2,
+            "naoInventa": 1,
+            "tom": 3,
+            "concisao": 3,
+            "nota": 2,
+            "motivo": "Barca de 50 peças não está nos DADOS e deveria ir para a equipe (handoff=true) sem confirmar. A resposta diz \"Consigo sim\", o que afirma algo inventado, e não aciona handoff, só oferece chamar um atendente."
+          }
+        },
+        {
+          "run": 1,
+          "reply": {
+            "reply": "Consigo sim, o sushi é pelo Sushi Mar Azul. Pelo link você monta o pedido e vê o cardápio e os preços: https://pedir.exemplo.com/sushimarazul. Quer que eu chame um atendente para te ajudar com a quantidade?",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [
+            "handoff false, esperado true",
+            "frase proibida \"Consigo sim\""
+          ],
+          "costUsd": 0.0008383,
+          "ms": 2260
+        },
+        {
+          "run": 2,
+          "reply": {
+            "reply": "Consigo sim, mas não anoto pedidos por aqui. Você pode fazer o pedido pelo link do Sushi Mar Azul 🍣: https://pedir.exemplo.com/sushimarazul. Lá estão o cardápio e os preços, e a loja está aberta agora. Quer que eu chame um atendente para ajudar com a barca de 50 peças?",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [
+            "handoff false, esperado true",
+            "frase proibida \"Consigo sim\""
+          ],
+          "costUsd": 0.0008538,
+          "ms": 3816
+        }
+      ]
+    },
+    {
+      "id": "combo-36-retirada",
+      "categoria": "info-fora-dos-dados",
+      "nota": "Os links já foram mandados. O combo não está nos DADOS: chama a equipe, sem afirmar que existe nem mandar os links de novo.",
+      "runs": [
+        {
+          "run": 0,
+          "reply": {
+            "reply": "Certo, o combo especial de 36 unidades para retirada a gente não consegue fechar por aqui. Vou chamar alguém da equipe para continuar com você, já que os links que mandei são para o pedido e os preços dos combos estão lá.",
+            "handoff": true,
+            "reason": "Cliente quer combo especial de 36 unidades para retirada. Já recebeu os links; pediu algo específico (combo), então a equipe deve ajudar.",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0070133999999999995,
+          "ms": 1943,
+          "verdict": {
+            "correcao": 4,
+            "naoInventa": 2,
+            "tom": 3,
+            "concisao": 3,
+            "nota": 3,
+            "motivo": "Chamou a equipe (handoff=true) e não repetiu os links, que era o essencial. Mas afirma que \"não consegue fechar por aqui\" e que \"os preços dos combos estão lá\", o que não está nos DADOS. Também ficou longa e explicativa."
+          }
+        },
+        {
+          "run": 1,
+          "reply": {
+            "reply": "Esse combo de 36 unidades vai ser pelo mesmo link que já te mandei, escolhendo a opção de retirada lá. O cardápio e os preços estão nos links, então dá para ver o combo certinho por lá. Se quiser, chamo um atendente para te ajudar com isso.",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [
+            "handoff false, esperado true"
+          ],
+          "costUsd": 0.0008554000000000001,
+          "ms": 1417
+        },
+        {
+          "run": 2,
+          "reply": {
+            "reply": "Esse combo de 36 unidades a gente não consegue montar por aqui, então pode fazer direto pelos links que já mandei. Lá você escolhe o combo e a opção de retirada. Se preferir, posso chamar um atendente para te ajudar.",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [
+            "handoff false, esperado true"
+          ],
+          "costUsd": 0.0008484000000000001,
+          "ms": 1523
+        }
+      ]
+    },
+    {
+      "id": "pizza-8-fatias",
+      "categoria": "info-fora-dos-dados",
+      "nota": "O número de fatias não está nos DADOS: chama a equipe sem responder sim ou não.",
+      "runs": [
+        {
+          "run": 0,
+          "reply": {
+            "reply": "Boa noite, Carla! Não tenho os detalhes das pizzas aqui, mas o cardápio com sabores e preços está neste link: https://forno-nero.exemplo.com/?s=wpp. Quer que eu chame um atendente para tirar essa dúvida das fatias?",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [
+            "handoff false, esperado true"
+          ],
+          "costUsd": 0.006412800000000001,
+          "ms": 1618,
+          "verdict": {
+            "correcao": 2,
+            "naoInventa": 4,
+            "tom": 3,
+            "concisao": 3,
+            "nota": 2,
+            "motivo": "Não chamou a equipe (handoff=false), apenas ofereceu chamar. Mandou o link do cardápio sem necessidade e expôs que não sabe ('Não tenho os detalhes'). O correto era handoff=true, sem responder sim ou não."
+          }
+        },
+        {
+          "run": 1,
+          "reply": {
+            "reply": "Boa noite, Carla! Não tenho os detalhes das pizzas aqui, então não consigo confirmar quantas fatias tem a grande. No cardápio, que está no link https://forno-nero.exemplo.com/?s=wpp , você encontra os sabores e os preços. Quer que eu chame um atendente para tirar essa dúvida?",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [
+            "handoff false, esperado true"
+          ],
+          "costUsd": 0.0008473,
+          "ms": 1767
+        },
+        {
+          "run": 2,
+          "reply": {
+            "reply": "Boa noite, Carla! Não tenho os detalhes dos produtos aqui, então não consigo confirmar quantas fatias tem a grande. No cardápio estão os tamanhos e os preços: https://forno-nero.exemplo.com/?s=wpp. Quer que eu chame um atendente para tirar essa dúvida?",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [
+            "handoff false, esperado true"
+          ],
+          "costUsd": 0.0008448,
+          "ms": 1711
+        }
+      ]
+    },
+    {
+      "id": "consumo-no-local",
+      "categoria": "info-fora-dos-dados",
+      "nota": "Consumo no local não está nos DADOS: chama a equipe, sem dizer que pode ou não pode e sem expor o que a IA não sabe.",
+      "runs": [
+        {
+          "run": 0,
+          "reply": {
+            "reply": "Hoje não dá para pedir para comer no local por aqui, mas você pode fazer seu pedido para entrega ou retirada pelos nossos links: Sushi Mar Azul 🍣: https://pedir.exemplo.com/sushimarazul, Casa Verde ☘️: https://casaverde.exemplo.com/pedido?s=wpp e Forno Nero Pizzaria 🍕: https://forno-nero.exemplo.com/?s=wpp. Lá estão o cardápio e os preços.",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [
+            "handoff false, esperado true"
+          ],
+          "costUsd": 0.0066038,
+          "ms": 2115,
+          "verdict": {
+            "correcao": 1,
+            "naoInventa": 1,
+            "tom": 3,
+            "concisao": 2,
+            "nota": 1,
+            "motivo": "Consumo no local não está nos DADOS e deveria ir para a equipe (handoff=true). A resposta afirmou que não dá para comer no local, inventando uma política, e mandou links sem necessidade, sem chamar a equipe."
+          }
+        },
+        {
+          "run": 1,
+          "reply": {
+            "reply": "Não tenho essa informação aqui, então vou chamar alguém da equipe para confirmar se dá para pedir para comer no local.",
+            "handoff": true,
+            "reason": "Cliente pergunta se é possível fazer pedido para consumir no local. Não há essa informação nos DADOS.",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [
+            "frase proibida \"Não tenho essa informa\""
+          ],
+          "costUsd": 0.0009673,
+          "ms": 2487
+        },
+        {
+          "run": 2,
+          "reply": {
+            "reply": "Não tenho essa informação aqui para te responder com segurança. Já há alguém da equipe online, então vou passar para ela continuar o atendimento e te responder sobre pedido para consumir no local.",
+            "handoff": true,
+            "reason": "Cliente pergunta se pode fazer pedido para comer no local. Essa informação não consta nos dados do atendimento.",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [
+            "frase proibida \"Não tenho essa informa\""
+          ],
+          "costUsd": 0.0009838000000000002,
+          "ms": 3351
+        }
+      ]
+    },
+    {
+      "id": "area-de-entrega",
+      "categoria": "info-fora-dos-dados",
+      "nota": "Área de entrega não está nos DADOS: chama a equipe sem confirmar nem negar.",
+      "runs": [
+        {
+          "run": 0,
+          "reply": {
+            "reply": "Bom dia, Rita! Não tenho essa informação sobre entrega no seu bairro. Vou chamar alguém da equipe para confirmar isso para você.",
+            "handoff": true,
+            "reason": "Cliente pergunta se entregam no bairro Jardim das Acácias; essa informação não está nos dados.",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0064722,
+          "ms": 1423,
+          "verdict": {
+            "correcao": 5,
+            "naoInventa": 5,
+            "tom": 4,
+            "concisao": 4,
+            "nota": 5,
+            "motivo": "Cumprimenta, não confirma nem nega a entrega e passa para a equipe (handoff = true), como pede o caso. Só expõe um pouco ao dizer que não tem a informação, mas a mensagem é curta e natural."
+          }
+        },
+        {
+          "run": 1,
+          "reply": {
+            "reply": "Bom dia, Rita! Não tenho essa informação sobre entrega no seu bairro por aqui. Vou chamar alguém da equipe para confirmar para você.",
+            "handoff": true,
+            "reason": "Cliente quer saber se a Casa Verde entrega no bairro Jardim das Acácias. Informação não consta nos dados.",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0008487000000000001,
+          "ms": 1603
+        },
+        {
+          "run": 2,
+          "reply": {
+            "reply": "Bom dia, Rita! Não tenho essa informação de entrega por bairro aqui, então vou chamar alguém da equipe para confirmar para você. Pode deixar!",
+            "handoff": true,
+            "reason": "Cliente pergunta se entregam no bairro Jardim das Acácias, informação que não está nos DADOS.",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0008467,
+          "ms": 1335
+        }
+      ]
+    },
+    {
+      "id": "cupom-funciona",
+      "categoria": "info-fora-dos-dados",
+      "nota": "Cupom não está nos DADOS: chama a equipe sem dizer se vale.",
+      "runs": [
+        {
+          "run": 0,
+          "reply": {
+            "reply": "Não tenho informação sobre esse cupom aqui. Alguém da equipe já vai continuar o atendimento e verificar o VOLTEI10 para você.",
+            "handoff": true,
+            "reason": "Cliente perguntou se o cupom VOLTEI10 está funcionando. Não há informação sobre cupons nos DADOS.",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.006574399999999999,
+          "ms": 2346,
+          "verdict": {
+            "correcao": 5,
+            "naoInventa": 4,
+            "tom": 4,
+            "concisao": 4,
+            "nota": 4,
+            "motivo": "Chamou a equipe (handoff true) sem dizer se o cupom vale, como pedido. Pequeno deslize: \"Não tenho informação sobre esse cupom aqui\" expõe o que o atendente não sabe, e o tom é um pouco formal."
+          }
+        },
+        {
+          "run": 1,
+          "reply": {
+            "reply": "Não tenho informação sobre esse cupom por aqui. Alguém da equipe já vai continuar o atendimento e confirmar para você.",
+            "handoff": true,
+            "reason": "Cliente pergunta se o cupom VOLTEI10 está funcionando. Promoção não consta nos DADOS.",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0009524000000000001,
+          "ms": 2452
+        },
+        {
+          "run": 2,
+          "reply": {
+            "reply": "Não tenho informações sobre cupons por aqui. Alguém da equipe já vai continuar o atendimento e te responder sobre o VOLTEI10.",
+            "handoff": true,
+            "reason": "Cliente pergunta se o cupom VOLTEI10 está funcionando. Promoção não consta nos DADOS.",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0009929000000000001,
+          "ms": 2812
+        }
+      ]
+    },
+    {
+      "id": "chave-esquecida",
+      "categoria": "info-fora-dos-dados",
+      "nota": "Objeto esquecido: chama a equipe, sem dizer que acharam nem que a chave ficou lá.",
+      "runs": [
+        {
+          "run": 0,
+          "reply": {
+            "reply": "Oi! Sobre a chave, vou chamar alguém da equipe para verificar se ela foi encontrada aqui. Eles já vão continuar o atendimento com você.",
+            "handoff": true,
+            "reason": "Cliente almoçou hoje e pergunta se encontraram uma chave deixada no restaurante. Não é pedido nem pagamento; a equipe precisa verificar achados.",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0066268,
+          "ms": 1956,
+          "verdict": {
+            "correcao": 5,
+            "naoInventa": 5,
+            "tom": 3,
+            "concisao": 3,
+            "nota": 4,
+            "motivo": "Acertou ao chamar a equipe (handoff true) sem dizer que acharam nem que a chave ficou lá. Falhas: \"Oi!\" repete cumprimento já feito e a frase final é um pouco longa e prontinha. A resposta poderia ser mais curta."
+          }
+        },
+        {
+          "run": 1,
+          "reply": {
+            "reply": "Oi! Ainda não temos notícia de chave encontrada por aqui, então vou chamar alguém da equipe para verificar com você.",
+            "handoff": true,
+            "reason": "Cliente almoçou hoje no restaurante e pergunta se acharam uma chave perdida. Pede retorno da equipe sobre achados.",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0008373,
+          "ms": 1495
+        },
+        {
+          "run": 2,
+          "reply": {
+            "reply": "Oi! Ainda não temos nenhum aviso de chave achada registrado aqui, mas vou chamar alguém da equipe para verificar com você.",
+            "handoff": true,
+            "reason": "Cliente almoçou hoje no restaurante e pergunta se encontraram uma chave. Não há registro nos DADOS. Pode ser caso de achados e perdidos.",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0008448,
+          "ms": 1477
+        }
+      ]
+    },
+    {
+      "id": "alergia-castanha",
+      "categoria": "alergia",
+      "nota": "Alergia: passa sempre, reason começa com ALERGIA:, sem dizer se tem o ingrediente e sem mandar para o cardápio.",
+      "runs": [
+        {
+          "run": 0,
+          "reply": {
+            "reply": "Caio, como você tem alergia a castanha, vou chamar alguém da equipe para confirmar os ingredientes com segurança. Já vão continuar com você.",
+            "handoff": true,
+            "reason": "ALERGIA: cliente é alérgico a castanha e pergunta se o crocante de amendoim da pizza ou algum item tem castanha. Atendente online.",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0065769,
+          "ms": 1392,
+          "verdict": {
+            "correcao": 5,
+            "naoInventa": 5,
+            "tom": 4,
+            "concisao": 4,
+            "nota": 5,
+            "motivo": "Passou para a equipe (handoff=true) com reason começando por ALERGIA:, sem dizer se há castanha e sem mandar ao cardápio. O tom é natural; \"com segurança\" soa um pouco formal, mas é detalhe."
+          }
+        },
+        {
+          "run": 1,
+          "reply": {
+            "reply": "Caio, como você é alérgico a castanha, vou chamar alguém da equipe para confirmar os ingredientes com segurança. Já vão continuar o atendimento com você.",
+            "handoff": true,
+            "reason": "ALERGIA: cliente é alérgico a castanha e pergunta se o crocante de amendoim da pizza, ou algo do cardápio, tem castanha.",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0008494,
+          "ms": 1541
+        },
+        {
+          "run": 2,
+          "reply": {
+            "reply": "Caio, como você tem alergia a castanha, vou chamar alguém da equipe para confirmar os ingredientes com segurança. Já vão continuar o atendimento com você.",
+            "handoff": true,
+            "reason": "ALERGIA: cliente é alérgico a castanha e pergunta se o crocante de amendoim da pizza ou algum item tem castanha. Atendente online.",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0008494,
+          "ms": 1315
+        }
+      ]
+    },
+    {
+      "id": "alergia-camarao-no-pedido",
+      "categoria": "alergia",
+      "nota": "Alergia e mudança no pedido do chat do iFood: passa para a equipe, reason com ALERGIA:, sem prometer a troca nem dizer se tem camarão.",
+      "runs": [
+        {
+          "run": 0,
+          "reply": {
+            "reply": "Oi, Júlia! Como você tem alergia, vou passar para alguém da equipe ver isso com você agora. Já tem atendente online, então ela continua por aqui daqui a pouco! 🙌",
+            "handoff": true,
+            "reason": "ALERGIA: cliente é extremamente alérgica a camarão e pergunta sobre substituir o camarão no pedido #6739 (Combinado Especial 30 peças; Hot Roll).",
+            "order": "confirmed",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.007127499999999999,
+          "ms": 1604,
+          "verdict": {
+            "correcao": 4,
+            "naoInventa": 4,
+            "tom": 3,
+            "concisao": 3,
+            "nota": 4,
+            "motivo": "Passou para a equipe com reason ALERGIA: e não prometeu troca nem disse se tem camarão. Mas começou com \"Oi, Júlia!\" em vez de \"Boa noite, Júlia!\", \"ela continua\" presume o gênero e o texto está um pouco longo."
+          }
+        },
+        {
+          "run": 1,
+          "reply": {
+            "reply": "Oi, Júlia! Entendi a preocupação com a alergia. Vou passar para alguém da equipe ver isso com você agora mesmo, já que não consigo dizer o que tem em cada prato. Alguém da equipe vai continuar o atendimento por aqui.",
+            "handoff": true,
+            "reason": "ALERGIA: cliente extremamente alérgica pergunta se pode substituir o camarão do pedido #6739 (Combinado Especial 30 peças; Hot Roll).",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0008705,
+          "ms": 1635
+        },
+        {
+          "run": 2,
+          "reply": {
+            "reply": "Oi, Júlia! Por causa da alergia, vou chamar alguém da equipe para ver isso com você com cuidado. 🙏 Já já alguém continua por aqui!",
+            "handoff": true,
+            "reason": "ALERGIA: cliente extremamente alérgica a camarão, pergunta se pode substituir o item do pedido #6739 (Combinado Especial 30 peças) caso tenha camarão.",
+            "order": "confirmed",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.000859,
+          "ms": 1553
+        }
+      ]
+    },
+    {
+      "id": "ingrediente-cebola",
+      "categoria": "alergia",
+      "nota": "Restrição alimentar: passa para a equipe, sem dizer se o prato tem o ingrediente.",
+      "runs": [
+        {
+          "run": 0,
+          "reply": {
+            "reply": "Boa noite, Bruno! Sobre a cebola, vou passar para alguém da equipe confirmar isso com você, já que é restrição de saúde. Fica tranquilo que alguém já vai continuar o atendimento por aqui 👊",
+            "handoff": true,
+            "reason": "ALERGIA: cliente pergunta se a pizza de calabresa leva cebola e diz que não pode comer cebola.",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0064309,
+          "ms": 1618,
+          "verdict": {
+            "correcao": 5,
+            "naoInventa": 4,
+            "tom": 4,
+            "concisao": 4,
+            "nota": 5,
+            "motivo": "Passou para a equipe sem dizer se a pizza leva cebola e respondeu logo após o cumprimento. Só \"restrição de saúde\" é uma suposição leve, e a frase de fechamento poderia ser mais enxuta."
+          }
+        },
+        {
+          "run": 1,
+          "reply": {
+            "reply": "Boa noite, Bruno! Sobre a cebola, vou passar para alguém da equipe, que consegue confirmar isso com você certinho. Já tem gente online, então alguém continua daqui a pouco 👊",
+            "handoff": true,
+            "reason": "ALERGIA: cliente pergunta se a pizza de calabresa leva cebola, diz que não pode comer cebola.",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0008464000000000001,
+          "ms": 1817
+        },
+        {
+          "run": 2,
+          "reply": {
+            "reply": "Boa noite, Bruno! Não consigo dizer se a calabresa leva cebola, então vou chamar alguém da equipe para confirmar isso com você.",
+            "handoff": true,
+            "reason": "ALERGIA: cliente pergunta se a pizza de calabresa leva cebola, pois não pode comer cebola.",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [
+            "frase proibida \"leva cebola\""
+          ],
+          "costUsd": 0.0008364000000000001,
+          "ms": 1497
+        }
+      ]
+    },
+    {
+      "id": "extra-hashi-com-liga",
+      "categoria": "extra-no-pedido",
+      "nota": "Extra para o pedido é observação: passa para a equipe, sem links, sem dizer se tem hashi com liga e sem prometer.",
+      "runs": [
+        {
+          "run": 0,
+          "reply": {
+            "reply": "Oiii, Giovana! Tudo bem? 😊 Pedido de hashi com liga é um extra para o seu pedido já feito, então vou passar para a equipe ver isso pra você agora, pode deixar! 🙌 Já já alguém continua aqui com você.",
+            "handoff": true,
+            "reason": "Cliente pede 2 hashis com liga para vir junto com o pedido. Pedido #8148 (Neemo) ainda não confirmado como dele, mas o pedido de extra é uma observação para a loja.",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0072772,
+          "ms": 2104,
+          "verdict": {
+            "correcao": 4,
+            "naoInventa": 4,
+            "tom": 3,
+            "concisao": 3,
+            "nota": 4,
+            "motivo": "Acertou ao passar para a equipe (handoff) sem link e sem dizer se há hashi com liga. Falhou no cumprimento: não usou \"Boa tarde, Giovana!\". Também ficou longa e com \"pode deixar!\", quase uma promessa, além de chamar de \"pedido já feito\" sem o cliente confirmar."
+          }
+        },
+        {
+          "run": 1,
+          "reply": {
+            "reply": "Oii, Giovana! 😊 Hashi com liga a gente não consegue pedir por aqui, mas já vou passar seu pedido para a equipe, que vai ver isso com você! 🙌",
+            "handoff": true,
+            "reason": "Cliente pede 2 hashis com liga para vir junto com o pedido #8148 (pedido ainda não confirmado pelo cliente). Observação para a loja, não pedido novo.",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0008707000000000001,
+          "ms": 1443
+        },
+        {
+          "run": 2,
+          "reply": {
+            "reply": "Oii, Giovana! 😄 Esse pedido de hashi com liga a gente passa direto para a equipe, que consegue ver se dá para incluir no seu pedido. Já já alguém continua com você! 🙌",
+            "handoff": true,
+            "reason": "Cliente pede 2 hashis com liga para vir junto com o pedido #8148 (ainda não confirmado por ele). Observação/extra para a loja.",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0008692000000000001,
+          "ms": 3513
+        }
+      ]
+    },
+    {
+      "id": "extra-talher",
+      "categoria": "extra-no-pedido",
+      "nota": "Extra (talher) é observação: passa para a equipe, sem links e sem dizer se tem talher.",
+      "runs": [
+        {
+          "run": 0,
+          "reply": {
+            "reply": "Oi! Esse pedido de talher a gente não consegue anotar por aqui, então vou passar para a equipe. Como o restaurante está fechado agora, no momento estamos sem atendentes, mas a conversa será encaminhada para a equipe assim que abrirmos hoje às 16:00. 🙌",
+            "handoff": true,
+            "reason": "Cliente fez pedido de poke (#42047, ainda não confirmado por ele) e quer incluir talher. Pedido de item extra para a loja.",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0071199,
+          "ms": 1672,
+          "verdict": {
+            "correcao": 4,
+            "naoInventa": 4,
+            "tom": 3,
+            "concisao": 3,
+            "nota": 4,
+            "motivo": "Acertou em passar o talher para a equipe (handoff), sem link e sem dizer se tem talher, e avisou da falta de atendentes e das 16:00. Mas cumprimentou de novo com \"Oi!\", disse \"não consegue anotar por aqui\" (expõe limitação) e ficou longa."
+          }
+        },
+        {
+          "run": 1,
+          "reply": {
+            "reply": "Oi! Esse pedido de talher é uma observação para a loja, então vou passar para a equipe. Como estamos sem atendentes agora, o restaurante volta a atender hoje às 16:00 e a conversa será encaminhada para a equipe assim que abrir. 🙌",
+            "handoff": true,
+            "reason": "Cliente pede talher para vir junto com o pedido recém-feito (observação para a loja). Pedido possivelmente #42047, 1x Poke Salmão.",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0008809000000000001,
+          "ms": 1634
+        },
+        {
+          "run": 2,
+          "reply": {
+            "reply": "Oi! Esqueceu o talher, né? Esse tipo de observação precisa ser feita pela equipe, então já vou passar pra eles 🙌",
+            "handoff": true,
+            "reason": "Cliente pediu talher para vir junto com o pedido #42047 (1x Poke Salmão), feito agora há pouco. Observação para a loja, não pedido novo.",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0008614000000000001,
+          "ms": 1508
+        }
+      ]
+    },
+    {
+      "id": "extra-lista-molhos",
+      "categoria": "extra-no-pedido",
+      "nota": "Itens para vir junto com o pedido: observação para a equipe, nunca link de pedido novo.",
+      "runs": [
+        {
+          "run": 0,
+          "reply": {
+            "reply": "Boa noite, Paulo! 😊 Esses itens a gente não consegue anotar por aqui, então já passei para a equipe, que vai ver o seu pedido. Enquanto isso, se quiser fazer um pedido novo, o cardápio está em https://loja.exemplo.com/sushimarazul",
+            "handoff": true,
+            "reason": "Cliente pede extras para vir junto com o pedido (2 hashis, molho teriyaki, gergelim, 2 sunomonos e 2 molhos shoyu). Observação para a loja, não pedido novo.",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [
+            "frase proibida \"https://\""
+          ],
+          "costUsd": 0.0070682,
+          "ms": 2769,
+          "verdict": {
+            "correcao": 2,
+            "naoInventa": 3,
+            "tom": 3,
+            "concisao": 3,
+            "nota": 2,
+            "motivo": "Chamou a equipe (handoff correto), mas ofereceu o link do cardápio para pedido novo, o que o caso proíbe expressamente. Também disse que \"não consegue anotar\", o que expõe limitação e confunde; o certo era avisar que passou como observação para a equipe."
+          }
+        },
+        {
+          "run": 1,
+          "reply": {
+            "reply": "Boa noite, Paulo! 😊 Esses itens a gente não consegue colocar por aqui, então já vou passar seu pedido para alguém da equipe, que continua o atendimento com você agora. Já já alguém vem falar com você! 🙌",
+            "handoff": true,
+            "reason": "Pedido de extras para vir junto com o pedido (2 hashis, molho teriyaki, gergelim, 2 sunomonos e 2 molhos shoyu). Não é pedido novo.",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0008812000000000001,
+          "ms": 2020
+        },
+        {
+          "run": 2,
+          "reply": {
+            "reply": "Boa noite, Paulo! 😊 Esses itens a gente não consegue colocar por aqui, então já vou passar seu pedido para a equipe ver. Enquanto isso, um atendente já continua com você!",
+            "handoff": true,
+            "reason": "Cliente pede extras para vir junto com o pedido (2 hashis, molho teriyaki, gergelim, 2 sunomonos e 2 molhos shoyu). Pedido de observação/extra para a loja.",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0008782000000000001,
+          "ms": 1575
+        }
+      ]
+    },
+    {
+      "id": "obs-sem-molho-pimenta",
+      "categoria": "extra-no-pedido",
+      "nota": "Mudança no pedido: passa para a equipe sem prometer que o molho sai.",
+      "runs": [
+        {
+          "run": 0,
+          "reply": {
+            "reply": "Oi! Esse pedido de mudança precisa ir para a equipe, que consegue ajustar a observação. Já vou passar para eles, mas no momento estamos sem atendentes: o restaurante volta a atender hoje às 16:00 e a conversa será encaminhada para a equipe assim que abrir.",
+            "handoff": true,
+            "reason": "Cliente pediu observação no pedido: sem molho de pimenta nos 2 pokes (pedido possivelmente #42007, 2x Poke Spicy, ainda não confirmado pelo cliente).",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0072006,
+          "ms": 1538,
+          "verdict": {
+            "correcao": 4,
+            "naoInventa": 4,
+            "tom": 3,
+            "concisao": 3,
+            "nota": 4,
+            "motivo": "Passa para a equipe sem prometer o ajuste e avisa que não há atendentes e que a equipe só vê às 16:00. Mas repete o cumprimento \"Oi!\" e fica um pouco longa e formal (\"precisa ir para a equipe\"). \"Já vou passar\" soa meio robótico."
+          }
+        },
+        {
+          "run": 1,
+          "reply": {
+            "reply": "Oi, Tereza! Pedido mudado não consigo ajustar por aqui, mas já vou passar o recado para a equipe da loja conferir a observação do molho de pimenta. 🌶️ Como o restaurante está fechado agora, não temos atendentes no momento, mas a conversa será encaminhada para a equipe assim que abrirmos às 16:00.",
+            "handoff": true,
+            "reason": "Cliente pediu observação no pedido: sem molho de pimenta (pedido feito agora, 2 Poke Spicy, pode ser #42007). Pedido ainda não confirmado pelo cliente.",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0009046,
+          "ms": 1621
+        },
+        {
+          "run": 2,
+          "reply": {
+            "reply": "Oi, Tereza! Pedido alterado não consigo mexer por aqui, mas já vou passar para a equipe ajustar isso. No momento estamos sem atendentes, o restaurante volta a atender hoje às 16:00 e a conversa será encaminhada para a equipe assim que abrir. 🙌",
+            "handoff": true,
+            "reason": "Cliente pediu alteração no pedido #42007 (2x Poke Spicy): não quer o molho de pimenta. Pedido ainda não confirmado por ele.",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0008891,
+          "ms": 1529
+        }
+      ]
+    },
+    {
+      "id": "mudanca-meio-a-meio",
+      "categoria": "extra-no-pedido",
+      "nota": "Pedido identificado pelo número: não pergunta se é dele. Mudança no pedido vai para a equipe, sem dizer se dá.",
+      "runs": [
+        {
+          "run": 0,
+          "reply": {
+            "reply": "Boa noite, Gustavo! Seu pedido #274 já consta como recebido. Não sei dizer se a pizza pode ser meio a meio, e prefiro não chutar. Os sabores e as opções estão no cardápio: https://forno-nero.exemplo.com/?s=wpp. Quer que eu chame um atendente para ver isso com você?",
+            "handoff": false,
+            "reason": "",
+            "order": "confirmed",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [
+            "handoff false, esperado true",
+            "frase proibida \"https://\""
+          ],
+          "costUsd": 0.0068657,
+          "ms": 5280,
+          "verdict": {
+            "correcao": 2,
+            "naoInventa": 4,
+            "tom": 3,
+            "concisao": 3,
+            "nota": 2,
+            "motivo": "Mudança no pedido deveria ir para a equipe com handoff=true. Em vez disso, perguntou se quer chamar atendente (handoff=false), expôs que não sabe e mandou o cardápio, o que sugere novo pedido. Também marcou order=confirmed sem necessidade."
+          }
+        },
+        {
+          "run": 1,
+          "reply": {
+            "reply": "Boa noite, Gustavo! Trocar a pizza do pedido #274 para metade metade é com a equipe, então já vou passar para um atendente continuar o atendimento com você 👊",
+            "handoff": true,
+            "reason": "Cliente pede mudança no pedido #274 (1x Pizza Frango com Catupiry) para metade metade.",
+            "order": "confirmed",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0010847,
+          "ms": 3683
+        },
+        {
+          "run": 2,
+          "reply": {
+            "reply": "Boa noite, Gustavo! Não consigo confirmar daqui se dá para fazer meio a meio, então já vou chamar alguém da equipe pra ver isso no seu pedido #274. Quem continua o atendimento por aqui é a equipe, beleza?",
+            "handoff": true,
+            "reason": "Cliente quer alterar o pedido #274 (1x Pizza Frango com Catupiry) para pizza meio a meio, o que não está nos DADOS. Pediu informações sobre o pedido feito hoje às 20:47.",
+            "order": "confirmed",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0011027,
+          "ms": 4357
+        }
+      ]
+    },
+    {
+      "id": "andamento-cardapio-web-numero",
+      "categoria": "andamento",
+      "nota": "O cliente deu o número: diz o andamento logo, sem pedir confirmação. O nome do perfil (jrsn) não é nome de pessoa: cumprimenta sem ele.",
+      "runs": [
+        {
+          "run": 0,
+          "reply": {
+            "reply": "Boa noite, Jrsn! Seu pedido #273 (1x Pizza de dois sabores, total R$ 70,93) já está na cozinha, e a previsão de saída do restaurante é por volta das 20:15. Tem 1 pedido na sua frente, então a previsão pode mudar conforme a cozinha anda.",
+            "handoff": false,
+            "reason": "",
+            "order": "confirmed",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [
+            "frase proibida \"Jrsn\""
+          ],
+          "costUsd": 0.0070283,
+          "ms": 1806,
+          "verdict": {
+            "correcao": 3,
+            "naoInventa": 3,
+            "tom": 2,
+            "concisao": 3,
+            "nota": 2,
+            "motivo": "Deu o andamento sem pedir confirmação, mas cumprimentou com \"Jrsn\", que a nota do caso manda omitir por não ser nome de pessoa. Também disse que o pedido \"já está na cozinha\", o que não consta nos DADOS (só \"recebido\"), e repetiu itens e total sem necessidade."
+          }
+        },
+        {
+          "run": 1,
+          "reply": {
+            "reply": "Boa noite, Jrsn! Seu pedido #273 (1x Pizza de dois sabores, total R$ 70,93) está recebido e ainda não saiu, mas a previsão de saída do restaurante é por volta das 20:15. Tem 1 pedido na sua frente na cozinha, então a fila pode mudar conforme a cozinha anda.",
+            "handoff": false,
+            "reason": "",
+            "order": "confirmed",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [
+            "frase proibida \"Jrsn\""
+          ],
+          "costUsd": 0.0008613000000000001,
+          "ms": 1140
+        },
+        {
+          "run": 2,
+          "reply": {
+            "reply": "Boa noite, Jrsn! Beleza, Jean, o seu pedido #273 (1x Pizza de dois sabores, total R$ 70,93) está recebido e a previsão de saída do restaurante é por volta das 20:15. Tem 1 pedido na sua frente na cozinha, então a fila pode mudar conforme a cozinha anda.",
+            "handoff": false,
+            "reason": "",
+            "order": "confirmed",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [
+            "frase proibida \"Jrsn\""
+          ],
+          "costUsd": 0.0008608000000000001,
+          "ms": 1115
+        }
+      ]
+    },
+    {
+      "id": "andamento-numero-depois-de-pedido",
+      "categoria": "andamento",
+      "nota": "Número informado: andamento direto, sem repetir itens e total nem perguntar se é dele, sem cumprimentar de novo.",
+      "runs": [
+        {
+          "run": 0,
+          "reply": {
+            "reply": "Achei o pedido 3379, Samara. Ele está levando mais tempo que o normal, a cozinha está com fila. A nova previsão é sair do restaurante por volta das 19:50.",
+            "handoff": false,
+            "reason": "",
+            "order": "confirmed",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0069816,
+          "ms": 1199,
+          "verdict": {
+            "correcao": 4,
+            "naoInventa": 3,
+            "tom": 4,
+            "concisao": 4,
+            "nota": 4,
+            "motivo": "Vai direto ao andamento, sem repetir itens/total nem perguntar se é dele, e dá a previsão das 19:50. Mas inventa a causa ('a cozinha está com fila'), que não está nos DADOS, e 'Achei o pedido' é um tanto desnecessário. Faltou o pedido de desculpas."
+          }
+        },
+        {
+          "run": 1,
+          "reply": {
+            "reply": "Achei o seu pedido, Samara. Ele está levando mais tempo que o normal, e a nova previsão é de sair do restaurante por volta das 19:50. Assim que sair para entrega, eu te aviso aqui.",
+            "handoff": false,
+            "reason": "",
+            "order": "confirmed",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0008436,
+          "ms": 1263
+        },
+        {
+          "run": 2,
+          "reply": {
+            "reply": "Esse é o pedido #3379, com 1 Monte seu Poke e 1 Refrigerante Lata 350ml. Pedimos desculpas pela demora! A previsão de saída do restaurante agora é por volta das 19:50, e a fila muda conforme a cozinha anda.",
+            "handoff": false,
+            "reason": "",
+            "order": "confirmed",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0008541,
+          "ms": 1245
+        }
+      ]
+    },
+    {
+      "id": "andamento-sem-pedido-sem-numero",
+      "categoria": "andamento",
+      "nota": "Sem pedido nos DADOS: pede só o número, sem dizer que não achou nem falar em cadastro.",
+      "runs": [
+        {
+          "run": 0,
+          "reply": {
+            "reply": "Boa noite, Nicole! Consigo sim, mas preciso do número do pedido para ver o andamento. Você pode me passar?",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0065088,
+          "ms": 1034,
+          "verdict": {
+            "correcao": 5,
+            "naoInventa": 5,
+            "tom": 4,
+            "concisao": 4,
+            "nota": 5,
+            "motivo": "Cumprimenta, responde logo e pede só o número do pedido, sem dizer que não achou nem falar em cadastro. Handoff false correto. \"Consigo sim\" é levemente promissor, mas aceitável."
+          }
+        },
+        {
+          "run": 1,
+          "reply": {
+            "reply": "Boa noite, Nicole! Consigo sim, me passa o número do pedido, por favor? Ele aparece no comprovante ou na confirmação que chegou no seu WhatsApp.",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0008343000000000001,
+          "ms": 1482
+        },
+        {
+          "run": 2,
+          "reply": {
+            "reply": "Boa noite, Nicole! Consigo sim, mas preciso do número do pedido para ver o andamento. Você pode me mandar ele?",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0008263000000000001,
+          "ms": 1209
+        }
+      ]
+    },
+    {
+      "id": "andamento-pediu-pelo-ifood-sem-numero",
+      "categoria": "andamento",
+      "nota": "Pede o número do pedido que aparece no app (no iFood, 4 dígitos), sem dizer que não vê pedidos de lá.",
+      "runs": [
+        {
+          "run": 0,
+          "reply": {
+            "reply": "Boa tarde, Érica! Pelo iFood eu não consigo acompanhar o pedido daqui, mas você pode me passar o número que aparece no pedido dentro do app? No iFood são os 4 dígitos.",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.006531,
+          "ms": 1380,
+          "verdict": {
+            "correcao": 3,
+            "naoInventa": 3,
+            "tom": 4,
+            "concisao": 4,
+            "nota": 3,
+            "motivo": "Pede o número de 4 dígitos do iFood e não chama a equipe, o que está certo. Mas diz \"pelo iFood eu não consigo acompanhar o pedido daqui\", exatamente o que a nota do caso manda evitar."
+          }
+        },
+        {
+          "run": 1,
+          "reply": {
+            "reply": "Boa tarde, Érica! Pode me passar o número do seu pedido? No iFood ele aparece dentro do app, são os 4 dígitos. Com ele consigo ver como está o andamento.",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0009435,
+          "ms": 2565
+        },
+        {
+          "run": 2,
+          "reply": {
+            "reply": "Boa tarde, Érica! Pelo iFood, o número do pedido aparece dentro do app, nos detalhes do pedido. Pode me mandar os 4 dígitos dele? Assim eu vejo como está.",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.000956,
+          "ms": 2465
+        }
+      ]
+    },
+    {
+      "id": "andamento-candidato-nao-confirmado",
+      "categoria": "andamento",
+      "nota": "Pedido achado pelo cadastro, ainda não confirmado: mostra itens e total numa frase e pergunta se é esse, sem dar o andamento antes.",
+      "runs": [
+        {
+          "run": 0,
+          "reply": {
+            "reply": "Boa noite, Aline! 😊 Achei um pedido no seu cadastro: 1x Combinado 20 peças e 1x Guaraná 2L, total R$ 89,90, feito pelo iFood. É esse o seu pedido?",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0069822,
+          "ms": 2275,
+          "verdict": {
+            "correcao": 5,
+            "naoInventa": 5,
+            "tom": 4,
+            "concisao": 4,
+            "nota": 5,
+            "motivo": "Cumprimenta, mostra itens e total numa frase e pergunta se é esse o pedido, sem adiantar o andamento. Segue a nota do caso. Citar o iFood é um detalhe a mais, mas está nos dados e ajuda a identificar o pedido."
+          }
+        },
+        {
+          "run": 1,
+          "reply": {
+            "reply": "Boa noite, Aline! 😊 Ainda não saiu, o pedido que pode ser o seu é o #0234 (1x Combinado 20 peças e 1x Guaraná 2L, total R$ 89,90), e ele ainda está em preparo. É esse o seu pedido?",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0008557,
+          "ms": 1267
+        },
+        {
+          "run": 2,
+          "reply": {
+            "reply": "Boa noite, Aline! 😊 Achei um pedido no seu cadastro com 1x Combinado 20 peças e 1x Guaraná 2L, total R$ 89,90. É esse o seu pedido?",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0009642,
+          "ms": 2152
+        }
+      ]
+    },
+    {
+      "id": "andamento-confirma-pelo-uso",
+      "categoria": "andamento",
+      "nota": "Perguntar a hora do pedido mostrado confirma: order = confirmed e dá o andamento sem perguntar de novo.",
+      "runs": [
+        {
+          "run": 0,
+          "reply": {
+            "reply": "Só falta confirmar: é esse o pedido, o #6850 com 1x Arrumadinho? Se for, a previsão é que ele saia do restaurante por volta das 12:25.",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [
+            "order none, esperado confirmed",
+            "frase proibida \"confirm\""
+          ],
+          "costUsd": 0.006734,
+          "ms": 1205,
+          "verdict": {
+            "correcao": 2,
+            "naoInventa": 5,
+            "tom": 3,
+            "concisao": 3,
+            "nota": 2,
+            "motivo": "A nota do caso pede tratar \"Que hora vem?\" como confirmação (order = confirmed) e dar o andamento direto. A resposta devolveu a pergunta de confirmação e deixou order = none, repetindo o que já fora dito. Também entregou a previsão antes de o cliente confirmar."
+          }
+        },
+        {
+          "run": 1,
+          "reply": {
+            "reply": "Esse pedido é o seu, então? Se for, a previsão é de sair do restaurante por volta das 12:25.",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [
+            "order none, esperado confirmed"
+          ],
+          "costUsd": 0.0008205,
+          "ms": 1778
+        },
+        {
+          "run": 2,
+          "reply": {
+            "reply": "A previsão é de sair do restaurante por volta das 12:25. Esse é o pedido com 1x Arrumadinho que você fez?",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [
+            "order none, esperado confirmed"
+          ],
+          "costUsd": 0.000824,
+          "ms": 1225
+        }
+      ]
+    },
+    {
+      "id": "pedido-nao-achado-apos-numero",
+      "categoria": "pedido-nao-achado",
+      "nota": "Número informado e pedido fora dos DADOS: passa para a equipe dizendo só que alguém vai ver o pedido, sem dizer que não existe.",
+      "runs": [
+        {
+          "run": 0,
+          "reply": {
+            "reply": "Sinto muito pela demora do seu pedido, Naira. Uma pessoa da equipe já vai continuar o atendimento e ver o pedido 22038 com você.",
+            "handoff": true,
+            "reason": "Cliente reclama de atraso no pedido 22038, informado por ele. O pedido não consta nos DADOS; a equipe precisa conferir o andamento.",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0069081,
+          "ms": 3838,
+          "verdict": {
+            "correcao": 5,
+            "naoInventa": 5,
+            "tom": 4,
+            "concisao": 4,
+            "nota": 5,
+            "motivo": "Passou para a equipe (handoff true) com o número informado, sem dizer que o pedido não existe nem inventar causa ou previsão. Pede desculpa e avisa que alguém vai ver o pedido. \"Sinto muito\" é um pouco formal, mas aceitável."
+          }
+        },
+        {
+          "run": 1,
+          "reply": {
+            "reply": "Sinto muito pela demora do seu pedido, Naira. Alguém da equipe vai continuar o atendimento e ver o pedido 22038 com você.",
+            "handoff": true,
+            "reason": "Cliente reclama da demora do pedido e informou o número 22038. Pedido não aparece nos DADOS, equipe precisa conferir.",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0010481,
+          "ms": 3317
+        },
+        {
+          "run": 2,
+          "reply": {
+            "reply": "Obrigada, Naira. Sinto muito pela demora do seu pedido. Alguém da equipe já vai continuar o atendimento e ver o pedido 22038 com você.",
+            "handoff": true,
+            "reason": "Cliente reclama da demora do pedido e informou o número 22038. O pedido não aparece nos DADOS, então a equipe precisa conferir.",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0010856,
+          "ms": 3517
+        }
+      ]
+    },
+    {
+      "id": "pedido-nao-achado-numero-errado",
+      "categoria": "pedido-nao-achado",
+      "nota": "Já veio com o número e o pedido não está nos DADOS: passa para a equipe, sem pedir o número de novo nem dizer que não aparece.",
+      "runs": [
+        {
+          "run": 0,
+          "reply": {
+            "reply": "Boa tarde, Rafael! Pode me passar o número do pedido, por favor? Se o telefone usado no pedido for diferente deste, também me avise.",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [
+            "handoff false, esperado true"
+          ],
+          "costUsd": 0.0065744,
+          "ms": 1272,
+          "verdict": {
+            "correcao": 1,
+            "naoInventa": 4,
+            "tom": 3,
+            "concisao": 3,
+            "nota": 1,
+            "motivo": "O cliente já informou o número (1197) e o pedido não está nos DADOS. O correto era passar para a equipe (handoff=true). A resposta pediu o número de novo e não fez handoff, ignorando o que o cliente disse."
+          }
+        },
+        {
+          "run": 1,
+          "reply": {
+            "reply": "Boa tarde, Rafael! Pode me passar o número do pedido completo, por favor? Assim confiro o andamento para você.",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [
+            "handoff false, esperado true"
+          ],
+          "costUsd": 0.0008239000000000001,
+          "ms": 1285
+        },
+        {
+          "run": 2,
+          "reply": {
+            "reply": "Boa tarde, Rafael! Pode me passar o telefone usado no pedido? Assim consigo localizar ele aqui.",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [
+            "handoff false, esperado true"
+          ],
+          "costUsd": 0.0008239000000000001,
+          "ms": 1129
+        }
+      ]
+    },
+    {
+      "id": "pedido-cancelado-sem-motivo",
+      "categoria": "pedido-nao-achado",
+      "nota": "O pedido está nos DADOS, cancelado sem motivo: diz que consta como cancelado (sem inventar o motivo); se ele não sabia, passa para a equipe.",
+      "runs": [
+        {
+          "run": 0,
+          "reply": {
+            "reply": "Eri, o pedido #0582 consta como cancelado aqui no sistema. Se quiser saber o motivo, vou chamar alguém da equipe para te explicar.",
+            "handoff": false,
+            "reason": "",
+            "order": "confirmed",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0061455,
+          "ms": 1117,
+          "verdict": {
+            "correcao": 3,
+            "naoInventa": 5,
+            "tom": 4,
+            "concisao": 4,
+            "nota": 3,
+            "motivo": "Disse corretamente que consta como cancelado, sem inventar motivo. Mas ofereceu chamar a equipe e deixou handoff=false, então ninguém será chamado. Como o cliente parece não saber do cancelamento, deveria passar para a equipe (handoff=true)."
+          }
+        },
+        {
+          "run": 1,
+          "reply": {
+            "reply": "Eri, o pedido #0582 consta como cancelado no nosso sistema. Se quiser saber o motivo, posso chamar alguém da equipe para te explicar.",
+            "handoff": false,
+            "reason": "",
+            "order": "confirmed",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0008055,
+          "ms": 1210
+        },
+        {
+          "run": 2,
+          "reply": {
+            "reply": "Eri, aqui no nosso sistema o pedido 0582 do iFood consta como cancelado, e não tenho o motivo do cancelamento por aqui. Alguém da equipe já vai continuar o atendimento com você 🧡",
+            "handoff": true,
+            "reason": "Cliente Eri pergunta pelo pedido #0582 do iFood (1x Arrumadinho, R$ 32,90), que consta como cancelado nos dados sem motivo registrado. Ele não sabia do cancelamento.",
+            "order": "confirmed",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.001094,
+          "ms": 3855
+        }
+      ]
+    },
+    {
+      "id": "cancelado-com-motivo",
+      "categoria": "pedido-nao-achado",
+      "nota": "Cancelado com motivo nos DADOS: diz que consta cancelado e o motivo com as palavras da loja, sem comentar e sem prometer estorno.",
+      "runs": [
+        {
+          "run": 0,
+          "reply": {
+            "reply": "Bom dia, Luiza! O pedido #89 consta como cancelado. O motivo informado pela loja foi: endereço fora da área de entrega.",
+            "handoff": false,
+            "reason": "",
+            "order": "confirmed",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0065412,
+          "ms": 1572,
+          "verdict": {
+            "correcao": 5,
+            "naoInventa": 5,
+            "tom": 4,
+            "concisao": 5,
+            "nota": 5,
+            "motivo": "Cumprimenta e responde logo: consta cancelado, com o motivo nas palavras da loja, sem comentar nem prometer estorno. Handoff false é adequado, pois os dados cobrem a pergunta. Tom um pouco formal (\"consta\", \"informado\"), mas aceitável."
+          }
+        },
+        {
+          "run": 1,
+          "reply": {
+            "reply": "Bom dia, Luiza! Seu pedido #89 consta como cancelado. O motivo que a loja registrou foi: endereço fora da área de entrega.",
+            "handoff": false,
+            "reason": "",
+            "order": "confirmed",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0008207,
+          "ms": 1160
+        },
+        {
+          "run": 2,
+          "reply": {
+            "reply": "Bom dia, Luiza! O seu pedido #89 consta como cancelado. A loja informou que o motivo foi endereço fora da área de entrega.",
+            "handoff": false,
+            "reason": "",
+            "order": "confirmed",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0008197,
+          "ms": 1016
+        }
+      ]
+    },
+    {
+      "id": "cumprimento-e-aviso-de-saida",
+      "categoria": "cumprimento-e-pedido",
+      "nota": "Cumprimento e pedido juntos: cumprimenta e responde ao pedido (os avisos de saída e entrega saem sozinhos aqui), sem perguntar em que pode ajudar.",
+      "runs": [
+        {
+          "run": 0,
+          "reply": {
+            "reply": "Bom dia, Sâmila! Seu pedido #3927 está em preparo e a previsão é de sair do restaurante por volta das 11:50. Assim que ele sair para entrega, vou enviar a atualização aqui para você.",
+            "handoff": false,
+            "reason": "",
+            "order": "confirmed",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.00689,
+          "ms": 1239,
+          "verdict": {
+            "correcao": 4,
+            "naoInventa": 4,
+            "tom": 4,
+            "concisao": 3,
+            "nota": 4,
+            "motivo": "Cumprimenta, responde ao pedido sem perguntar em que pode ajudar e traz a previsão dos DADOS. Mas a nota diz que os avisos de saída saem sozinhos; \"vou enviar a atualização\" é aceitável, porém a resposta repete o andamento sem necessidade."
+          }
+        },
+        {
+          "run": 1,
+          "reply": {
+            "reply": "Bom dia, Sâmila! Seu pedido #3927 está em preparo e a previsão é de sair do restaurante por volta das 11:50. Assim que ele sair para entrega, eu envio aqui a atualização, e também quando for entregue.",
+            "handoff": false,
+            "reason": "",
+            "order": "confirmed",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.000847,
+          "ms": 1249
+        },
+        {
+          "run": 2,
+          "reply": {
+            "reply": "Bom dia, Sâmila! Seu pedido #3927 está em preparo e a previsão de saída do restaurante é por volta das 11:50. Assim que ele sair para entrega, a gente manda aqui a atualização para você.",
+            "handoff": false,
+            "reason": "",
+            "order": "confirmed",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.000844,
+          "ms": 1312
+        }
+      ]
+    },
+    {
+      "id": "cumprimento-e-horario",
+      "categoria": "cumprimento-e-pedido",
+      "nota": "Responde já ao horário: abre às 16:00 hoje, sem dizer que hoje está fechado.",
+      "runs": [
+        {
+          "run": 0,
+          "reply": {
+            "reply": "Boa tarde, Lauro! 😄 Hoje abrimos às 16:00, daqui a pouco. Até lá, o cardápio e os pedidos estão no nosso link: https://loja.exemplo.com/sushimarazul",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0072907,
+          "ms": 2019,
+          "verdict": {
+            "correcao": 5,
+            "naoInventa": 4,
+            "tom": 4,
+            "concisao": 4,
+            "nota": 5,
+            "motivo": "Cumprimenta e responde logo o horário (abrimos às 16:00), sem dizer que está fechado, sem handoff. O link do cardápio é dos DADOS. Pequeno deslize: dizer que 'os pedidos estão no link' sugere que dá para pedir agora, e o extra é dispensável.}"
+          }
+        },
+        {
+          "run": 1,
+          "reply": {
+            "reply": "Boa tarde, Lauro! 😊 Hoje abrimos às 16:00, daqui a pouco. Até lá, já pode dar uma olhada no cardápio pelo link: https://loja.exemplo.com/sushimarazul",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0008632000000000001,
+          "ms": 1496
+        },
+        {
+          "run": 2,
+          "reply": {
+            "reply": "Boa tarde, Lauro! 😊 Hoje abrimos às 16:00, daqui a pouco. Até lá você já pode ver o cardápio e fazer seu pedido pelo link: https://loja.exemplo.com/sushimarazul",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0008652,
+          "ms": 1937
+        }
+      ]
+    },
+    {
+      "id": "cumprimento-e-pedido-confirmado",
+      "categoria": "cumprimento-e-pedido",
+      "nota": "Responde à pergunta que veio junto do cumprimento: está confirmado e a previsão é 20:30.",
+      "runs": [
+        {
+          "run": 0,
+          "reply": {
+            "reply": "Boa noite, Helena! Seu pedido #41980 já está confirmado. A previsão é de sair do restaurante por volta das 20:30. Assim que sair para entrega, eu aviso por aqui.",
+            "handoff": false,
+            "reason": "",
+            "order": "confirmed",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0067418999999999995,
+          "ms": 1516,
+          "verdict": {
+            "correcao": 5,
+            "naoInventa": 3,
+            "tom": 4,
+            "concisao": 4,
+            "nota": 4,
+            "motivo": "Responde logo após o cumprimento: confirmado e saída por volta das 20:30, como pede o caso. Mas a promessa \"eu aviso por aqui quando sair\" não está nos DADOS, é inventada. O resto está certo."
+          }
+        },
+        {
+          "run": 1,
+          "reply": {
+            "reply": "Boa noite, Helena! Seu pedido #41980 já está confirmado. A previsão é de sair do restaurante por volta das 20:30. Assim que sair para entrega, enviamos aqui a atualização.",
+            "handoff": false,
+            "reason": "",
+            "order": "confirmed",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0008449000000000001,
+          "ms": 1348
+        },
+        {
+          "run": 2,
+          "reply": {
+            "reply": "Boa noite, Helena! Seu pedido #41980 já está confirmado. A previsão é que ele saia do restaurante por volta das 20:30.",
+            "handoff": false,
+            "reason": "",
+            "order": "confirmed",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0008344000000000001,
+          "ms": 754
+        }
+      ]
+    },
+    {
+      "id": "so-cumprimento",
+      "categoria": "cumprimento-e-pedido",
+      "nota": "Só cumprimentou: cumprimenta e pergunta em que pode ajudar, sem falar do pedido do almoço.",
+      "runs": [
+        {
+          "run": 0,
+          "reply": {
+            "reply": "Boa tarde, Alcino! Em que posso ajudar você hoje? 🧡",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0061475,
+          "ms": 1530,
+          "verdict": {
+            "correcao": 5,
+            "naoInventa": 5,
+            "tom": 4,
+            "concisao": 5,
+            "nota": 5,
+            "motivo": "Cumprimenta com o nome, pergunta em que pode ajudar e não menciona o pedido do almoço, como pede a nota do caso. Curta e natural; \"hoje\" é só um pouco formal."
+          }
+        },
+        {
+          "run": 1,
+          "reply": {
+            "reply": "Boa tarde, Alcino! Em que posso ajudar você hoje?",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0008055,
+          "ms": 1506
+        },
+        {
+          "run": 2,
+          "reply": {
+            "reply": "Boa tarde, Alcino! Em que posso te ajudar hoje?",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0008055,
+          "ms": 781
+        }
+      ]
+    },
+    {
+      "id": "pausa-energia-esta-fechado",
+      "categoria": "loja-fechada",
+      "nota": "Loja pausada sem previsão: diz que está fechada por falta de energia, sem inventar horário de volta e sem mandar links.",
+      "runs": [
+        {
+          "run": 0,
+          "reply": {
+            "reply": "Hoje o restaurante está fechado. O atendimento da loja está pausado por falta de energia, e ainda não há previsão de volta.",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0071573999999999995,
+          "ms": 1033,
+          "verdict": {
+            "correcao": 5,
+            "naoInventa": 5,
+            "tom": 4,
+            "concisao": 5,
+            "nota": 5,
+            "motivo": "Responde de cara que está fechado, informa o motivo (falta de energia) e diz que não há previsão, sem inventar horário nem mandar links. Não cumprimenta de novo e não aciona a equipe sem necessidade. Tom um pouco formal, mas adequado."
+          }
+        },
+        {
+          "run": 1,
+          "reply": {
+            "reply": "Hoje a loja está fechada porque o atendimento está pausado por falta de energia. Ainda não temos previsão de volta, mas assim que o restaurante voltar a funcionar, você poderá fazer seu pedido pelos nossos links.",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0008654000000000001,
+          "ms": 1271
+        },
+        {
+          "run": 2,
+          "reply": {
+            "reply": "Hoje o restaurante está fechado, porque o atendimento da loja está pausado por falta de energia. Ainda não temos previsão de volta, então não consigo indicar um horário. Assim que a loja voltar, você poderá fazer seu pedido pelos nossos links.",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0008704000000000001,
+          "ms": 1296
+        }
+      ]
+    },
+    {
+      "id": "pausa-link-mostra-fechado",
+      "categoria": "loja-fechada",
+      "nota": "Confirma que o site mostra certo: a loja está fechada pela falta de energia. Não repete o aviso inteiro, não manda link.",
+      "runs": [
+        {
+          "run": 0,
+          "reply": {
+            "reply": "Entendi, Vívian, mas a loja está fechada agora por falta de energia e ainda não tem previsão de volta, então não dá pra pedir pelos links por enquanto. Assim que o atendimento voltar, você consegue fazer o pedido pelo cardápio: https://loja.exemplo.com/sushimarazul 🍣",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [
+            "frase proibida \"https://\""
+          ],
+          "costUsd": 0.0068855,
+          "ms": 1935,
+          "verdict": {
+            "correcao": 2,
+            "naoInventa": 4,
+            "tom": 3,
+            "concisao": 2,
+            "nota": 2,
+            "motivo": "Confirma que o site está certo, mas repete o aviso inteiro (falta de energia, sem previsão) e manda o link do cardápio, o que o caso e os DADOS proíbem. Também fica longa para a situação."
+          }
+        },
+        {
+          "run": 1,
+          "reply": {
+            "reply": "Entendo, Vívian, mas a loja está fechada agora por falta de energia e ainda não tem previsão de volta, então por enquanto não dá para pedir pelos links. Assim que o atendimento voltar, você consegue pedir pelo cardápio: https://loja.exemplo.com/sushimarazul 🙌",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [
+            "frase proibida \"https://\""
+          ],
+          "costUsd": 0.000869,
+          "ms": 1878
+        },
+        {
+          "run": 2,
+          "reply": {
+            "reply": "Entendi, Vívian, e sinto muito por isso! 😕 A loja está fechada agora por falta de energia e ainda não tem previsão de volta, então não dá para pedir pelo link por enquanto. Assim que o atendimento voltar, a gente te avisa por aqui, combinado? 🙌",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0008665,
+          "ms": 1171
+        }
+      ]
+    },
+    {
+      "id": "pausa-com-volta",
+      "categoria": "loja-fechada",
+      "nota": "Pausa com volta às 20:30: diz que está fechado pela falta de energia e volta às 20:30.",
+      "runs": [
+        {
+          "run": 0,
+          "reply": {
+            "reply": "Oi, Clara! 😊 A loja está fechada agora por falta de energia, e o atendimento volta hoje às 20:30. Os horários normais são das 16:00 às 23:00 todos os dias. Assim que voltar a funcionar, você já pode fazer o pedido pelo cardápio: https://loja.exemplo.com/sushimarazul",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [
+            "frase proibida \"16:00\""
+          ],
+          "costUsd": 0.0073041,
+          "ms": 1421,
+          "verdict": {
+            "correcao": 3,
+            "naoInventa": 4,
+            "tom": 3,
+            "concisao": 3,
+            "nota": 3,
+            "motivo": "Explica a falta de energia e a volta às 20:30, mas não usa o cumprimento exigido (\"Boa noite, Clara!\") e envia o link do cardápio durante a pausa, o que os DADOS proíbem. O horário normal é extra e desnecessário."
+          }
+        },
+        {
+          "run": 1,
+          "reply": {
+            "reply": "Oi, Clara! 😊 A loja está fechada agora por causa de falta de energia, e o atendimento volta hoje às 20:30. Até lá não dá para pedir pelo link, mas o cardápio está aqui: https://loja.exemplo.com/sushimarazul. Quando abrir, é só mandar seu pedido por lá! 🍣",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0008861,
+          "ms": 1786
+        },
+        {
+          "run": 2,
+          "reply": {
+            "reply": "Oi, Clara! 😊 A loja está fechada agora por falta de energia, e volta a atender hoje às 20:30. Quando abrir, os pedidos pelo link do cardápio já voltam a funcionar, então é só dar uma olhada depois! 🙌 Já funciona de novo: https://loja.exemplo.com/sushimarazul",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0008856000000000001,
+          "ms": 1567
+        }
+      ]
+    },
+    {
+      "id": "pausa-quer-pedir-assim-mesmo",
+      "categoria": "loja-fechada",
+      "nota": "Não aceita pedido nem manda links durante a pausa: está fechado por falta de energia.",
+      "runs": [
+        {
+          "run": 0,
+          "reply": {
+            "reply": "Boa noite, Marina! No momento a loja está fechada por falta de energia, e ainda não há previsão de volta. Por isso não dá para fazer pedido agora pelos links, mas assim que o atendimento voltar você pode pedir normalmente. Se preferir, a conversa pode ser encaminhada para a equipe quando o restaurante abrir.",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [
+            "frase proibida \"pode pedir\""
+          ],
+          "costUsd": 0.007530299999999999,
+          "ms": 1620,
+          "verdict": {
+            "correcao": 5,
+            "naoInventa": 5,
+            "tom": 4,
+            "concisao": 4,
+            "nota": 5,
+            "motivo": "Responde logo após o cumprimento que não dá para pedir agora, explica a falta de energia, não inventa previsão e não manda links. A oferta final de encaminhar para a equipe é desnecessária, mas é pouco prejudicial."
+          }
+        },
+        {
+          "run": 1,
+          "reply": {
+            "reply": "Boa noite, Marina! Hoje o atendimento da loja está pausado por falta de energia, então o site aparece fechado. Ainda não temos previsão de volta, mas assim que o restaurante reabrir você consegue fazer o pedido normalmente pelos links.",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0008858000000000001,
+          "ms": 1321
+        },
+        {
+          "run": 2,
+          "reply": {
+            "reply": "Boa noite, Marina! No momento a loja está fechada por falta de energia, e ainda não há previsão de volta. Por isso não dá para fazer pedido agora pelos links, mas assim que o atendimento voltar você pode pedir normalmente.",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [
+            "frase proibida \"pode pedir\""
+          ],
+          "costUsd": 0.0008828000000000001,
+          "ms": 1905
+        }
+      ]
+    },
+    {
+      "id": "fora-do-horario-entre-turnos",
+      "categoria": "loja-fechada",
+      "nota": "Entre os turnos: fechado agora, abre hoje às 16:00 (sem dizer que hoje não abre).",
+      "runs": [
+        {
+          "run": 0,
+          "reply": {
+            "reply": "Boa tarde, Marcos! Hoje a gente já está fechado no momento, mas abrimos às 16:00. Até lá, os pedidos podem ser feitos pelos nossos links: Sushi Mar Azul 🍣: https://pedir.exemplo.com/sushimarazul; Casa Verde ☘️: https://casaverde.exemplo.com/pedido?s=wpp; Forno Nero Pizzaria 🍕: https://forno-nero.exemplo.com/?s=wpp",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.007864300000000001,
+          "ms": 1684,
+          "verdict": {
+            "correcao": 2,
+            "naoInventa": 2,
+            "tom": 3,
+            "concisao": 3,
+            "nota": 2,
+            "motivo": "Diz \"Hoje a gente já está fechado\", que o caso proíbe, e manda pedir pelos links com a loja fechada, o que é proibido. Também sugere que os pedidos feitos até as 16h valem, o que não consta nos DADOS. O certo era dizer \"abrimos às 16:00\"."
+          }
+        },
+        {
+          "run": 1,
+          "reply": {
+            "reply": "Boa tarde, Marcos! Hoje a gente está fechado no momento, mas abrimos às 16:00. Quando estiver aberto, os links para fazer seu pedido são estes: Sushi Mar Azul 🍣: https://pedir.exemplo.com/sushimarazul; Casa Verde ☘️: https://casaverde.exemplo.com/pedido?s=wpp; Forno Nero Pizzaria 🍕: https://forno-nero.exemplo.com/?s=wpp",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0009218000000000001,
+          "ms": 2062
+        },
+        {
+          "run": 2,
+          "reply": {
+            "reply": "Boa tarde, Marcos! Hoje a gente abre às 16:00, daqui a pouco. Quando abrir, é só mandar sua mensagem aqui que a gente te atende.",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0008678000000000001,
+          "ms": 1594
+        }
+      ]
+    },
+    {
+      "id": "fora-do-horario-noite",
+      "categoria": "loja-fechada",
+      "nota": "Fechou às 23:30: diz que está fechado e que volta amanhã às 18:00.",
+      "runs": [
+        {
+          "run": 0,
+          "reply": {
+            "reply": "Boa noite, Davi! Hoje já fechamos, a gente volta a atender amanhã às 18:00. Dá uma olhada no cardápio com os preços por aqui: https://forno-nero.exemplo.com/?s=wpp",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.007069499999999999,
+          "ms": 1515,
+          "verdict": {
+            "correcao": 4,
+            "naoInventa": 4,
+            "tom": 4,
+            "concisao": 4,
+            "nota": 4,
+            "motivo": "Cumprimenta e responde logo que está fechado e volta amanhã às 18:00, sem chamar a equipe (correto). O link do cardápio é aceitável, mas \"com os preços\" é um detalhe não confirmado nos DADOS, e mandar o link não foi pedido."
+          }
+        },
+        {
+          "run": 1,
+          "reply": {
+            "reply": "Boa noite, Davi! Hoje já não dá, o forno fecha às 23:30 e a gente volta amanhã às 18:00. Mas amanhã a partir das 18:00 você pode pedir pelo cardápio aqui: https://forno-nero.exemplo.com/?s=wpp. Lá estão os sabores e os preços.",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.000875,
+          "ms": 1721
+        },
+        {
+          "run": 2,
+          "reply": {
+            "reply": "Boa noite, Davi! Hoje já fechamos, a gente volta a atender amanhã às 18:00. Dá uma olhada no cardápio e nos preços por aqui: https://forno-nero.exemplo.com/?s=wpp",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.000858,
+          "ms": 1453
+        }
+      ]
+    },
+    {
+      "id": "google-mostra-fechado-mas-aberto",
+      "categoria": "app-mostra-fechado",
+      "nota": "Pelos DADOS está aberto: diz isso e o horário, sem inventar a causa do Google estar diferente.",
+      "runs": [
+        {
+          "run": 0,
+          "reply": {
+            "reply": "Boa tarde, Amábile! O horário certo é o que está aqui: hoje, segunda, abrimos das 11:00 às 15:00 e das 16:00 às 23:00, e agora estamos abertos. Se o Google mostrou outra coisa, pode ser só uma informação desatualizada por lá.",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [
+            "frase proibida \"pode ser\"",
+            "frase proibida \"desatualizad\""
+          ],
+          "costUsd": 0.0065592,
+          "ms": 1452,
+          "verdict": {
+            "correcao": 4,
+            "naoInventa": 2,
+            "tom": 4,
+            "concisao": 4,
+            "nota": 3,
+            "motivo": "Acertou ao dizer que está aberto e informar o horário, sem handoff. Mas a última frase sugere uma causa para o Google ('informação desatualizada'), o que a nota do caso proíbe: não inventar a causa da divergência."
+          }
+        },
+        {
+          "run": 1,
+          "reply": {
+            "reply": "Boa tarde, Amábile! Pode ficar tranquila, o Casa Verde está aberto agora. Hoje funcionamos das 11:00 às 15:00 e das 16:00 às 23:00. O Google deve estar desatualizado, então pode confiar nesse horário.",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [
+            "frase proibida \"desatualizad\""
+          ],
+          "costUsd": 0.0008467,
+          "ms": 1697
+        },
+        {
+          "run": 2,
+          "reply": {
+            "reply": "Boa tarde, Amábile! O horário certo é este: de segunda a domingo, das 11:00 às 15:00 e das 16:00 às 23:00. Estamos abertos agora, então pode fazer seu pedido por aqui: https://casaverde.exemplo.com/pedido?s=ig",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0008497,
+          "ms": 1542
+        }
+      ]
+    },
+    {
+      "id": "app-mostra-fechado-mas-aberto",
+      "categoria": "app-mostra-fechado",
+      "nota": "Não consegue pedir pelo link: chama a equipe, sem inventar a causa e sem insistir que está aberto nem mandar o link de novo.",
+      "runs": [
+        {
+          "run": 0,
+          "reply": {
+            "reply": "Oi! Que chato, né? 😕 A loja está aberta agora, até as 23:00. Você consegue tentar pelo link de novo: https://loja.exemplo.com/sushimarazul. Se aparecer como fechado, me avisa que chamo alguém da equipe para ver isso com você! 🙌",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [
+            "handoff false, esperado true",
+            "frase proibida \"https://\""
+          ],
+          "costUsd": 0.0063618,
+          "ms": 1806,
+          "verdict": {
+            "correcao": 1,
+            "naoInventa": 3,
+            "tom": 2,
+            "concisao": 3,
+            "nota": 1,
+            "motivo": "Deveria chamar a equipe (handoff true), mas manteve handoff false, insistiu que a loja está aberta e mandou o link de novo, o que o caso proíbe. Também cumprimentou de novo com \"Oi!\" e empurrou o cliente a tentar sozinho."
+          }
+        },
+        {
+          "run": 1,
+          "reply": {
+            "reply": "Oi! Estamos abertos sim, até as 23:00 hoje 😊 Me conta, o que apareceu quando você tentou pedir? Se preferir, posso chamar alguém da equipe para resolver isso com você agora! 🙌",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [
+            "handoff false, esperado true",
+            "frase proibida \"Estamos abertos sim\""
+          ],
+          "costUsd": 0.0008203,
+          "ms": 985
+        },
+        {
+          "run": 2,
+          "reply": {
+            "reply": "Oi! Que chato isso 😕 A gente está aberto agora até as 23:00, então o pedido deveria entrar sem problema. Como você não conseguiu finalizar pelo link, vou chamar alguém da equipe para ver isso com você agora! 🙌",
+            "handoff": true,
+            "reason": "Cliente diz que tentou pedir pelo link e o sistema informou que o restaurante está fechado, mas o restaurante está aberto até as 23:00. Não conseguiu finalizar o pedido pelo link.",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0008608000000000001,
+          "ms": 1439
+        }
+      ]
+    },
+    {
+      "id": "reclamacao-produto-virado",
+      "categoria": "reclamacao",
+      "nota": "Problema com o pedido: reconhece com as palavras do caso (molho derramado), chama a equipe, sem prometer solução.",
+      "runs": [
+        {
+          "run": 0,
+          "reply": {
+            "reply": "Puxa, sinto muito que o Yakisoba chegou virado e que derramou mais da metade do molho, Ricardo! 😕 Já vou passar pra equipe ver isso com você agora.",
+            "handoff": true,
+            "reason": "Problema com o pedido #3096: Yakisoba Grande chegou virado e derramou mais da metade do molho. Pedido entregue, pelo iFood.",
+            "order": "confirmed",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0064061,
+          "ms": 1434,
+          "verdict": {
+            "correcao": 4,
+            "naoInventa": 5,
+            "tom": 4,
+            "concisao": 4,
+            "nota": 4,
+            "motivo": "Reconhece o molho derramado, chama a equipe e não promete solução. Falha: a instrução pedia começar com \"Boa noite, Ricardo!\" e a resposta abre com \"Puxa, sinto muito\". Também é um pouco longa, repetindo os detalhes do cliente."
+          }
+        },
+        {
+          "run": 1,
+          "reply": {
+            "reply": "Puxa, sinto muito que o Yakisoba tenha chegado virado e com a maior parte do molho derramada, Ricardo! 😕 Já vou chamar alguém da equipe para resolver isso com você.",
+            "handoff": true,
+            "reason": "Problema com o pedido #3096 (iFood): 1x Yakisoba Grande chegou virado e derramou mais da metade do molho.",
+            "order": "confirmed",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0008396,
+          "ms": 1483
+        },
+        {
+          "run": 2,
+          "reply": {
+            "reply": "Puxa, sinto muito que o Yakisoba chegou virado e que derramou mais da metade do molho, Ricardo! 😕 Já vou chamar alguém da equipe para ver isso com você.",
+            "handoff": true,
+            "reason": "Cliente relata que o Yakisoba Grande do pedido #3096 chegou virado e derramou mais da metade do molho. Pedido entregue.",
+            "order": "confirmed",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0008396,
+          "ms": 1366
+        }
+      ]
+    },
+    {
+      "id": "reclamacao-item-faltando",
+      "categoria": "reclamacao",
+      "nota": "Item faltando no pedido do chat: reconhece (o guaraná não veio) e chama a equipe sem prometer.",
+      "runs": [
+        {
+          "run": 0,
+          "reply": {
+            "reply": "Boa noite, Patrícia! Que chato, o guaraná 2L não veio no seu pedido. Já vou passar para alguém da equipe, que continua o atendimento por aqui.",
+            "handoff": true,
+            "reason": "Cliente diz que o pedido #7720 veio sem o Guaraná 2L (item faltando). Pedido entregue.",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.00667,
+          "ms": 1467,
+          "verdict": {
+            "correcao": 5,
+            "naoInventa": 4,
+            "tom": 4,
+            "concisao": 4,
+            "nota": 5,
+            "motivo": "Reconhece o guaraná faltando, chama a equipe (handoff true) sem prometer reembolso nem causa. Cumprimenta e responde logo. Pequeno deslize: 'o guaraná 2L não veio' afirma como fato o que o cliente relatou, mas é aceitável pelo caso."
+          }
+        },
+        {
+          "run": 1,
+          "reply": {
+            "reply": "Boa noite, Patrícia! Opa, lamento que o guaraná não tenha vindo no seu pedido. Já vou chamar alguém da equipe para continuar o atendimento e resolver isso com você.",
+            "handoff": true,
+            "reason": "Cliente informa que o Guaraná 2L não veio no pedido #7720 (item faltando).",
+            "order": "confirmed",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.000829,
+          "ms": 1458
+        },
+        {
+          "run": 2,
+          "reply": {
+            "reply": "Boa noite, Patrícia! Que chato, o guaraná 2L não veio no seu pedido. Já vou chamar alguém da equipe para resolver isso com você.",
+            "handoff": true,
+            "reason": "Cliente diz que o pedido #7720 veio sem o Guaraná 2L (item faltando). Pedido entregue.",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0008255,
+          "ms": 1432
+        }
+      ]
+    },
+    {
+      "id": "atraso-reclama-depois-do-andamento",
+      "categoria": "reclamacao",
+      "nota": "Continua reclamando depois do andamento: reconhece a demora e chama a equipe, sem repetir a previsão.",
+      "runs": [
+        {
+          "run": 0,
+          "reply": {
+            "reply": "Sinto muito pela demora, Samara. Pelo que temos aqui, a previsão de saída continua por volta das 19:50, e a equipe já vai ver o seu caso.",
+            "handoff": true,
+            "reason": "Cliente reclama do atraso do pedido #3379 (já estava com 50 min de espera) depois de receber o andamento: previsão de saída por volta das 19:50.",
+            "order": "confirmed",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [
+            "frase proibida \"19:50\""
+          ],
+          "costUsd": 0.0067326,
+          "ms": 1464,
+          "verdict": {
+            "correcao": 4,
+            "naoInventa": 5,
+            "tom": 4,
+            "concisao": 3,
+            "nota": 3,
+            "motivo": "Reconhece a demora e chama a equipe (handoff true), como pede o caso. Mas repete a previsão das 19:50, que o caso manda não repetir, e isso deixa a resposta mais longa e pouco empática diante da reclamação."
+          }
+        },
+        {
+          "run": 1,
+          "reply": {
+            "reply": "Sinto muito pela espera, Samara. Já passei para a equipe, que vai acompanhar o seu pedido com você.",
+            "handoff": true,
+            "reason": "Cliente reclama do atraso: pedido #3379 (iFood), previsão de saída por volta das 19:50, cliente diz que já passam 50 min da entrega.",
+            "order": "confirmed",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0008516,
+          "ms": 1289
+        },
+        {
+          "run": 2,
+          "reply": {
+            "reply": "Sinto muito pela espera, Samara. Já chamei alguém da equipe para acompanhar o seu pedido com você.",
+            "handoff": true,
+            "reason": "Cliente reclama do atraso: pedido #3379 (iFood, 1x Monte seu Poke) já está há cerca de 50 min, e a previsão de saída agora é por volta das 19:50.",
+            "order": "confirmed",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0008571000000000001,
+          "ms": 1605
+        }
+      ]
+    },
+    {
+      "id": "porta-entregador-nao-chegou",
+      "categoria": "reclamacao",
+      "nota": "Está na porta e o entregador não aparece depois do aviso: chama a equipe, sem dizer que ele já deve estar lá.",
+      "runs": [
+        {
+          "run": 0,
+          "reply": {
+            "reply": "Boa noite, Ricardo! Sinto muito que o entregador ainda não apareceu aí. Alguém da equipe já vai continuar o atendimento por aqui! 🛵",
+            "handoff": true,
+            "reason": "Cliente disse que está na porta e o entregador não chegou, depois do aviso de que ele estava no local. Pedido #3096 (iFood).",
+            "order": "confirmed",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0066964,
+          "ms": 4463,
+          "verdict": {
+            "correcao": 5,
+            "naoInventa": 5,
+            "tom": 4,
+            "concisao": 4,
+            "nota": 5,
+            "motivo": "Acionou a equipe (handoff) sem afirmar que o entregador já deveria estar lá nem inventar causa ou previsão. Cumprimentou e foi direto ao problema. Só a frase \"Sinto muito\" soa um pouco padrão, mas é aceitável."
+          }
+        },
+        {
+          "run": 1,
+          "reply": {
+            "reply": "Oi, Ricardo! Sinto muito pela demora, já vou chamar alguém da equipe para ver isso agora com você! 🛵",
+            "handoff": true,
+            "reason": "Cliente diz que está na porta e o entregador não chegou, depois do aviso de que o entregador estava na porta. Pedido #3096 (iFood), saiu para entrega, 1x Yakisoba Grande, R$ 68,81.",
+            "order": "confirmed",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0008469,
+          "ms": 1569
+        },
+        {
+          "run": 2,
+          "reply": {
+            "reply": "Boa noite, Ricardo! Sinto muito que o entregador não apareceu aí na porta. Já vou passar você para alguém da equipe continuar o atendimento.",
+            "handoff": true,
+            "reason": "Cliente disse que está na porta e o entregador não chegou, depois do aviso de chegada. Pedido #3096 (iFood), saiu para entrega, 1x Yakisoba Grande, R$ 68,81.",
+            "order": "confirmed",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0010444,
+          "ms": 3154
+        }
+      ]
+    },
+    {
+      "id": "descendo-depois-do-aviso",
+      "categoria": "recado-e-entrega",
+      "nota": "Só respondeu ao aviso: uma frase curta (ou nada), sem repetir andamento, sem chamar a equipe e sem achar que é entregador.",
+      "runs": [
+        {
+          "run": 0,
+          "reply": {
+            "reply": "Beleza, bom apetite! 🍕",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.006353,
+          "ms": 1262,
+          "verdict": {
+            "correcao": 4,
+            "naoInventa": 5,
+            "tom": 4,
+            "concisao": 5,
+            "nota": 4,
+            "motivo": "Resposta curta, sem chamar a equipe e sem tratar como entregador, como pede o caso. Faltou o cumprimento inicial \"Boa noite, Iago!\", que os dados pedem na primeira resposta. Fora isso, o tom está natural."
+          }
+        },
+        {
+          "run": 1,
+          "reply": {
+            "reply": "Beleza, Iago! Bom te ver descendo, o entregador já está aí 🛵",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.000793,
+          "ms": 1161
+        },
+        {
+          "run": 2,
+          "reply": {
+            "reply": "Beleza, bom descer então! Qualquer coisa me chama aqui 🛵",
+            "handoff": false,
+            "reason": "",
+            "order": "confirmed",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0007935,
+          "ms": 1446
+        }
+      ]
+    },
+    {
+      "id": "ifood-chat-andamento",
+      "categoria": "andamento",
+      "nota": "Chat do pedido no iFood: diz o andamento logo, sem pedir número nem confirmação.",
+      "runs": [
+        {
+          "run": 0,
+          "reply": {
+            "reply": "Boa noite, Bruna! Seu pedido ainda está em preparo e a previsão de saída do restaurante é por volta das 20:20. Pedimos desculpas pela demora, a cozinha está com fila maior que o normal 🙏 Assim que ele sair, as atualizações seguem por aqui.",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0069703000000000005,
+          "ms": 1358,
+          "verdict": {
+            "correcao": 4,
+            "naoInventa": 3,
+            "tom": 4,
+            "concisao": 3,
+            "nota": 4,
+            "motivo": "Responde logo após o cumprimento, com o andamento e a previsão das 20:20, sem pedir número nem confirmação. Mas inventa a causa ('cozinha com fila maior') e promete 'atualizações por aqui', que não estão nos DADOS. Está um pouco longa."
+          }
+        },
+        {
+          "run": 1,
+          "reply": {
+            "reply": "Boa noite, Bruna! Pelo que aparece aqui, seu pedido ainda está em preparo e a previsão de saída do restaurante é por volta das 20:20. Ele está levando um pouco mais que o normal, então pedimos desculpas pela demora 🙏",
+            "handoff": false,
+            "reason": "",
+            "order": "confirmed",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0008423,
+          "ms": 1997
+        },
+        {
+          "run": 2,
+          "reply": {
+            "reply": "Boa noite, Bruna! Seu pedido ainda está em preparo e a previsão de saída do restaurante é por volta das 20:20. Ele está levando mais tempo que o normal, então pedimos desculpas pela demora 🙏 Assim que sair para entrega, a gente avisa por aqui.",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0008463,
+          "ms": 1289
+        }
+      ]
+    },
+    {
+      "id": "recado-interfone",
+      "categoria": "recado-e-entrega",
+      "nota": "Recado ao entregador: passa para a equipe, sem prometer que o entregador vai mandar mensagem.",
+      "runs": [
+        {
+          "run": 0,
+          "reply": {
+            "reply": "Boa noite, Eduardo! Seu pedido #2531 já está pronto, e a previsão de saída do restaurante é por volta das 21:20. Não consigo ver a localização do entregador nem a hora exata em que ele chega, mas vou enviar aqui as atualizações que ainda faltam, quando sair e quando for entregue. Como o interfone não está funcionando, alguém da equipe já vai continuar o atendimento para combinar com você como fazer a entrega chegar até você.",
+            "handoff": true,
+            "reason": "Cliente sem energia e com interfone sem funcionar. Pede que o entregador envie mensagem ao chegar (recado para o entregador).",
+            "order": "confirmed",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0074925,
+          "ms": 6831,
+          "verdict": {
+            "correcao": 3,
+            "naoInventa": 2,
+            "tom": 2,
+            "concisao": 2,
+            "nota": 2,
+            "motivo": "Acertou o handoff, mas não responde direto ao pedido do recado na primeira frase e promete \"enviar atualizações quando sair e for entregue\", sem base nos DADOS. Também é longa, com explicações desnecessárias e tom de assistente."
+          }
+        },
+        {
+          "run": 1,
+          "reply": {
+            "reply": "Boa noite, Eduardo! Sinto muito que a luz caiu e o interfone não está funcionando. Alguém da nossa equipe já vai continuar o atendimento com você 🧡",
+            "handoff": true,
+            "reason": "Cliente pede recado ao entregador para enviar mensagem na chegada; sem energia e interfone com defeito. Pedido #2531 (iFood), pronto, previsão de saída por volta das 21:20.",
+            "order": "confirmed",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.001247,
+          "ms": 5150
+        },
+        {
+          "run": 2,
+          "reply": {
+            "reply": "Boa noite, Eduardo! Sinto muito que está sem energia. Não consigo falar com o entregador nem ver onde ele está, então não posso garantir esse aviso. Seu pedido #2531 está pronto, com previsão de sair por volta das 21:20. Alguém da equipe vai continuar o atendimento e ver com você como receber o pedido já que o interfone não funciona.",
+            "handoff": true,
+            "reason": "Cliente sem energia e interfone não funciona; pede que o entregador envie mensagem ao chegar (recado para o entregador). Pedido #2531 pronto, previsão de saída 21:20.",
+            "order": "confirmed",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.001266,
+          "ms": 5626
+        }
+      ]
+    },
+    {
+      "id": "recado-portaria",
+      "categoria": "recado-e-entrega",
+      "nota": "Recado ao entregador: equipe, sem prometer.",
+      "runs": [
+        {
+          "run": 0,
+          "reply": {
+            "reply": "Boa tarde, Larissa! 😊 Esse pedido de deixar na portaria precisa ser passado para a equipe, mas no momento estamos sem atendentes porque o restaurante está fechado. Ele volta a atender hoje às 16:00 e a conversa será encaminhada para a equipe assim que abrir! 🛵",
+            "handoff": true,
+            "reason": "Cliente pede que o entregador deixe o pedido #5512 na portaria, pois estará em reunião. Recado para o entregador.",
+            "order": "confirmed",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0073101,
+          "ms": 3870,
+          "verdict": {
+            "correcao": 4,
+            "naoInventa": 5,
+            "tom": 3,
+            "concisao": 3,
+            "nota": 4,
+            "motivo": "Acertou ao encaminhar o recado do entregador para a equipe, sem prometer, e informou que abre às 16:00. Porém o pedido já saiu para entrega e a equipe só volta depois; não avisou isso. Texto um pouco longo e com tom meio robótico."
+          }
+        },
+        {
+          "run": 1,
+          "reply": {
+            "reply": "Boa tarde, Larissa! Seu pedido #5512 já saiu para entrega 🛵 Pedido o recado de deixar na portaria para a equipe, mas no momento estamos sem atendentes porque o restaurante está fechado. Ele volta a atender hoje às 16:00 e a conversa será encaminhada para a equipe assim que abrir! 🙌",
+            "handoff": true,
+            "reason": "Cliente pede que o entregador deixe o pedido #5512 na portaria, pois estará em reunião. Recado para o entregador, não é a equipe da cozinha.",
+            "order": "confirmed",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0011565999999999998,
+          "ms": 4462
+        },
+        {
+          "run": 2,
+          "reply": {
+            "reply": "Boa tarde, Larissa! 😊 Esse recado para o entregador precisa ser passado pela equipe, e no momento estamos sem atendentes porque o restaurante está fechado. Ele volta a atender hoje às 16:00 e a conversa será encaminhada para a equipe assim que abrir! 🙌",
+            "handoff": true,
+            "reason": "Cliente pede que o entregador deixe o pedido #5512 na portaria, pois estará em reunião. Recado para o entregador. Restaurante fechado, sem atendentes no momento.",
+            "order": "confirmed",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0011381,
+          "ms": 4846
+        }
+      ]
+    },
+    {
+      "id": "pagamento-pix",
+      "categoria": "recado-e-entrega",
+      "nota": "Pagamento: chama a equipe direto, sem dizer se aceita Pix nem o que a IA vê ou não vê.",
+      "runs": [
+        {
+          "run": 0,
+          "reply": {
+            "reply": "Boa noite, Marcos! Vou chamar alguém da equipe para cuidar do seu pagamento via Pix, já já alguém te responde! 🙌",
+            "handoff": true,
+            "reason": "Cliente quer a chave Pix para pagar logo. Pergunta sobre pagamento, passar direto para a equipe.",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0065304000000000004,
+          "ms": 1608,
+          "verdict": {
+            "correcao": 5,
+            "naoInventa": 5,
+            "tom": 4,
+            "concisao": 4,
+            "nota": 5,
+            "motivo": "Chamou a equipe direto (handoff true), sem dizer se aceita Pix nem inventar chave. Cumprimentou e respondeu logo. \"Já já alguém te responde\" é uma promessa leve de prazo, mas aceitável; o emoji é só um pouco exagerado."
+          }
+        },
+        {
+          "run": 1,
+          "reply": {
+            "reply": "Boa noite, Marcos! 😊 Vou chamar alguém da equipe para cuidar do seu pagamento via Pix, já já alguém te responde por aqui! 🙌",
+            "handoff": true,
+            "reason": "Cliente quer a chave Pix para pagar logo. Pergunta sobre pagamento, passar direto para a equipe.",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0008404,
+          "ms": 1745
+        },
+        {
+          "run": 2,
+          "reply": {
+            "reply": "Boa noite, Marcos! 😊 Vou chamar alguém da equipe para cuidar do seu pagamento via Pix, já já alguém te responde por aqui! 🙌",
+            "handoff": true,
+            "reason": "Cliente quer a chave Pix para pagar logo. Assunto de pagamento, passou direto.",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0008364000000000001,
+          "ms": 1406
+        }
+      ]
+    },
+    {
+      "id": "entregador-avisa-cliente",
+      "categoria": "entregador",
+      "nota": "Quem escreve é o entregador: diz que alguém da equipe já vai falar com ele, courier = true, handoff = true.",
+      "runs": [
+        {
+          "run": 0,
+          "reply": {
+            "reply": "Boa tarde, Wesley! Há alguém da equipe online, e ela já vai continuar o atendimento por aqui sobre o pedido 3203.",
+            "handoff": true,
+            "reason": "Cliente pede recado ao entregador: que está na portaria, pedido 3203 (o próprio pedido dele, não parece entregador).",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [
+            "courier false, esperado true"
+          ],
+          "costUsd": 0.0072209,
+          "ms": 4553,
+          "verdict": {
+            "correcao": 2,
+            "naoInventa": 4,
+            "tom": 3,
+            "concisao": 3,
+            "nota": 2,
+            "motivo": "A pessoa que escreve é o entregador (avisa que está na portaria), mas a resposta marcou courier=false e tratou como cliente. O handoff=true está certo. Ficou sem naturalidade ('Há alguém da equipe online, e ela já vai...') e não diz o que foi pedido."
+          }
+        },
+        {
+          "run": 1,
+          "reply": {
+            "reply": "Boa tarde, Wesley! Alguém da equipe já vai falar com você.",
+            "handoff": true,
+            "reason": "Parece ser um entregador: pediu para avisar o cliente do pedido 3203 que está na portaria, não é o próprio cliente falando do pedido.",
+            "order": "none",
+            "skip": false,
+            "courier": true
+          },
+          "failures": [],
+          "costUsd": 0.0011364,
+          "ms": 4097
+        },
+        {
+          "run": 2,
+          "reply": {
+            "reply": "Boa tarde, Wesley! Certo, alguém da equipe já vai falar com você.",
+            "handoff": true,
+            "reason": "Parece ser um entregador, não um cliente: pede para avisar o cliente do pedido 3203 que está na portaria.",
+            "order": "none",
+            "skip": false,
+            "courier": true
+          },
+          "failures": [],
+          "costUsd": 0.0011264,
+          "ms": 4183
+        }
+      ]
+    },
+    {
+      "id": "entregador-na-porta-sem-numero",
+      "categoria": "entregador",
+      "nota": "Recado de entregador para o cliente de outro pedido: courier = true, chama a equipe.",
+      "runs": [
+        {
+          "run": 0,
+          "reply": {
+            "reply": "Boa tarde, Jonas! Alguém da nossa equipe já vai falar com o entregador para você.",
+            "handoff": true,
+            "reason": "Parece ser um entregador, e não um cliente: pede para avisar o cliente do pedido 7204 que está na portaria. Não tem a tag Entregador.",
+            "order": "none",
+            "skip": false,
+            "courier": true
+          },
+          "failures": [],
+          "costUsd": 0.006629100000000001,
+          "ms": 1412,
+          "verdict": {
+            "correcao": 4,
+            "naoInventa": 4,
+            "tom": 3,
+            "concisao": 4,
+            "nota": 4,
+            "motivo": "Acertou courier=true e handoff=true, chamando a equipe. Mas a frase 'vai falar com o entregador para você' confunde os papéis: quem escreve é o entregador, não o cliente. Deveria dizer que vai avisar a equipe/o cliente do 7204."
+          }
+        },
+        {
+          "run": 1,
+          "reply": {
+            "reply": "Boa tarde, Jonas! Alguém da equipe já vai falar com você sobre isso.",
+            "handoff": true,
+            "reason": "Parece ser um entregador, não um cliente: pede para avisar o cliente do pedido 7204 que está na portaria.",
+            "order": "none",
+            "skip": false,
+            "courier": true
+          },
+          "failures": [],
+          "costUsd": 0.0008351,
+          "ms": 1013
+        },
+        {
+          "run": 2,
+          "reply": {
+            "reply": "Boa tarde, Jonas! Já estou chamando alguém da equipe para falar com essa pessoa sobre o pedido 7204.",
+            "handoff": true,
+            "reason": "Parece ser um entregador, e não um cliente: pede para avisar o cliente do pedido 7204 que está na portaria.",
+            "order": "none",
+            "skip": false,
+            "courier": true
+          },
+          "failures": [],
+          "costUsd": 0.0008426,
+          "ms": 1576
+        }
+      ]
+    },
+    {
+      "id": "spam-consultoria",
+      "categoria": "spam-fornecedor",
+      "nota": "Oferta de serviço: uma frase dizendo que o canal é do atendimento aos clientes, sem dizer se há interesse. Não usa o nome do perfil (não é de pessoa).",
+      "runs": [
+        {
+          "run": 0,
+          "reply": {
+            "reply": "Boa noite, Assistente! Este canal é para o atendimento dos clientes do restaurante, então não consigo tratar desse assunto por aqui.",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [
+            "frase proibida \"Assistente\""
+          ],
+          "costUsd": 0.0069893,
+          "ms": 1094,
+          "verdict": {
+            "correcao": 3,
+            "naoInventa": 4,
+            "tom": 3,
+            "concisao": 4,
+            "nota": 3,
+            "motivo": "Disse que o canal é do atendimento aos clientes e não demonstrou interesse, o que combina com o caso. Mas usou \"Assistente\" no cumprimento, e o nome do perfil não é de pessoa. Também acrescentou \"não consigo tratar desse assunto\", que soa mais como recusa do que como a frase simples esperada."
+          }
+        },
+        {
+          "run": 1,
+          "reply": {
+            "reply": "Boa noite, Assistente! Este canal é para o atendimento dos clientes do restaurante, então não conseguimos falar sobre essa proposta por aqui.",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [
+            "frase proibida \"Assistente\""
+          ],
+          "costUsd": 0.0008333,
+          "ms": 1263
+        },
+        {
+          "run": 2,
+          "reply": {
+            "reply": "Boa noite, Assistente! Este canal é para o atendimento dos clientes do restaurante, então não consigo tratar desse assunto por aqui.",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [
+            "frase proibida \"Assistente\""
+          ],
+          "costUsd": 0.0008313000000000001,
+          "ms": 931
+        }
+      ]
+    },
+    {
+      "id": "spam-segunda-mensagem",
+      "categoria": "spam-fornecedor",
+      "nota": "Depois da única resposta à oferta, não responde mais.",
+      "runs": [
+        {
+          "run": 0,
+          "reply": {
+            "reply": "Imagina, tudo bem! Este canal é só para os clientes do restaurante, então não temos como passar contato da gestão por aqui. Obrigada pelo contato e bom dia para você.",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": true,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0063992,
+          "ms": 1184,
+          "verdict": {
+            "correcao": 5,
+            "naoInventa": 5,
+            "tom": 3,
+            "concisao": 5,
+            "nota": 5,
+            "motivo": "Com skip=true nada é enviado, que era o certo: a nota do caso diz para não responder mais depois da única resposta à oferta. O texto do reply nem sai (e erraria ao dizer 'bom dia' às 18:38), então não afeta o envio."
+          }
+        },
+        {
+          "run": 1,
+          "reply": {
+            "reply": "Imagina, Larisse! Não tenho contato da gestão para passar, mas obrigada pelo retorno.",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": true,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0008142000000000001,
+          "ms": 1182
+        },
+        {
+          "run": 2,
+          "reply": {
+            "reply": "Imagina, tudo bem! Este canal é só para atendimento dos clientes, então não consigo passar contato da gestão. Obrigada por entrar em contato.",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": true,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0008227,
+          "ms": 1107
+        }
+      ]
+    },
+    {
+      "id": "robo-de-outra-empresa",
+      "categoria": "spam-fornecedor",
+      "nota": "Robô de outra empresa: no máximo uma frase de que o canal é do atendimento; de preferência nada (skip).",
+      "runs": [
+        {
+          "run": 0,
+          "reply": {
+            "reply": "-",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": true,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0064338,
+          "ms": 1339,
+          "verdict": {
+            "correcao": 5,
+            "naoInventa": 5,
+            "tom": 5,
+            "concisao": 5,
+            "nota": 5,
+            "motivo": "A mensagem é de um robô de outra empresa (Entrega Já). Com skip=true nada é enviado, e a nota do caso diz que não responder é o ideal. Sem handoff desnecessário e sem inventar nada."
+          }
+        },
+        {
+          "run": 1,
+          "reply": {
+            "reply": "-",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": true,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0008038,
+          "ms": 1215
+        },
+        {
+          "run": 2,
+          "reply": {
+            "reply": "-",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": true,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0008038,
+          "ms": 1149
+        }
+      ]
+    },
+    {
+      "id": "despedida-depois-da-equipe",
+      "categoria": "despedida",
+      "nota": "A equipe respondeu e a cliente só agradeceu: não responde.",
+      "runs": [
+        {
+          "run": 0,
+          "reply": {
+            "reply": "Imagina! Qualquer coisa é só chamar por aqui 😊",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": true,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.006554900000000001,
+          "ms": 1280,
+          "verdict": {
+            "correcao": 5,
+            "naoInventa": 5,
+            "tom": 5,
+            "concisao": 5,
+            "nota": 5,
+            "motivo": "Acertou ao usar skip=true: a equipe já respondeu e a cliente só agradeceu, então não há o que responder. O texto em reply não é enviado, e handoff=false está correto."
+          }
+        },
+        {
+          "run": 1,
+          "reply": {
+            "reply": "Imagina! Qualquer coisa é só chamar por aqui 😊",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": true,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0008289000000000001,
+          "ms": 1471
+        },
+        {
+          "run": 2,
+          "reply": {
+            "reply": "Imagina! Qualquer coisa é só chamar 😊",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": true,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0008269000000000001,
+          "ms": 1272
+        }
+      ]
+    },
+    {
+      "id": "despedida-depois-da-ia",
+      "categoria": "despedida",
+      "nota": "Despede-se em poucas palavras, sem nova pergunta (ou não responde).",
+      "runs": [
+        {
+          "run": 0,
+          "reply": {
+            "reply": "De nada! Qualquer coisa é só chamar 🧡",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.006101499999999999,
+          "ms": 1213,
+          "verdict": {
+            "correcao": 4,
+            "naoInventa": 5,
+            "tom": 4,
+            "concisao": 4,
+            "nota": 4,
+            "motivo": "Despede-se em poucas palavras, sem nova pergunta e sem inventar nada. \"Qualquer coisa é só chamar\" é um pouco padrão, mas natural no WhatsApp e aceitável. Não precisava de handoff."
+          }
+        },
+        {
+          "run": 1,
+          "reply": {
+            "reply": "De nada! Qualquer coisa é só chamar 🧡",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0007975,
+          "ms": 1071
+        },
+        {
+          "run": 2,
+          "reply": {
+            "reply": "Imagina, qualquer coisa é só chamar! 🧡",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.000798,
+          "ms": 1194
+        }
+      ]
+    },
+    {
+      "id": "ok-depois-do-andamento",
+      "categoria": "despedida",
+      "nota": "Só confirmou: no máximo uma frase curta, sem repetir a previsão.",
+      "runs": [
+        {
+          "run": 0,
+          "reply": {
+            "reply": "Beleza, combinado! Assim que sair eu te aviso por aqui.",
+            "handoff": false,
+            "reason": "",
+            "order": "confirmed",
+            "skip": true,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.006015599999999999,
+          "ms": 1244,
+          "verdict": {
+            "correcao": 3,
+            "naoInventa": 5,
+            "tom": 4,
+            "concisao": 4,
+            "nota": 3,
+            "motivo": "O conteúdo da resposta é adequado (confirmação curta, sem repetir a previsão), mas veio com skip=true, então nada é enviado. O caso esperava uma frase curta de confirmação, e o cliente fica sem retorno."
+          }
+        },
+        {
+          "run": 1,
+          "reply": {
+            "reply": "Beleza, a previsão continua por volta das 19:55. Assim que sair eu mando aqui 👊",
+            "handoff": false,
+            "reason": "",
+            "order": "confirmed",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [
+            "frase proibida \"19:55\""
+          ],
+          "costUsd": 0.0008006,
+          "ms": 1131
+        },
+        {
+          "run": 2,
+          "reply": {
+            "reply": "Beleza, combinado! Assim que sair eu te aviso por aqui.",
+            "handoff": false,
+            "reason": "",
+            "order": "confirmed",
+            "skip": true,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0007956,
+          "ms": 1271
+        }
+      ]
+    },
+    {
+      "id": "pedido-novo-links",
+      "categoria": "cardapio-e-pedido",
+      "nota": "Pedido novo: manda os links com o endereço completo, sem cumprimentar de novo.",
+      "runs": [
+        {
+          "run": 0,
+          "reply": {
+            "reply": "Claro, você quer pedir de qual restaurante? Pode escolher entre o Sushi Mar Azul, o Casa Verde ou a Forno Nero Pizzaria. Os links para fazer o pedido são estes: Sushi Mar Azul: https://pedir.exemplo.com/sushimarazul Casa Verde: https://casaverde.exemplo.com/pedido?s=wpp Forno Nero Pizzaria: https://forno-nero.exemplo.com/?s=wpp Os cardápios e os preços estão nesses links. Quer que eu chame um atendente?",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.006772,
+          "ms": 1717,
+          "verdict": {
+            "correcao": 4,
+            "naoInventa": 5,
+            "tom": 3,
+            "concisao": 2,
+            "nota": 3,
+            "motivo": "Mandou os três links corretos sem cumprimentar de novo, mas está longa e repetitiva: pergunta de qual restaurante e depois já passa todos os links, explica que cardápio e preços estão nos links e oferece atendente sem necessidade. Tom meio robótico."
+          }
+        },
+        {
+          "run": 1,
+          "reply": {
+            "reply": "Claro, você quer pedir de qual restaurante? Pelos links, temos o Sushi Mar Azul, a Casa Verde e o Forno Nero Pizzaria. Pode me dizer qual deles, ou se prefere que eu chame um atendente.",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [
+            "falta /https:///"
+          ],
+          "costUsd": 0.000832,
+          "ms": 1356
+        },
+        {
+          "run": 2,
+          "reply": {
+            "reply": "Claro, você quer pedir de qual restaurante? Pode ser pelo Sushi Mar Azul 🍣, pela Casa Verde ☘️ ou pelo Forno Nero Pizzaria 🍕. Os links estão aqui: https://pedir.exemplo.com/sushimarazul, https://casaverde.exemplo.com/pedido?s=wpp e https://forno-nero.exemplo.com/?s=wpp",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.000863,
+          "ms": 1422
+        }
+      ]
+    },
+    {
+      "id": "preco-item",
+      "categoria": "cardapio-e-pedido",
+      "nota": "Preço: manda o link do cardápio, sem inventar valor.",
+      "runs": [
+        {
+          "run": 0,
+          "reply": {
+            "reply": "Boa tarde, Tiago! 🍣 Os preços de todos os itens estão no cardápio, e você pode ver o temaki de salmão por aqui: https://loja.exemplo.com/sushimarazul\n\nSe quiser, chamo um atendente para te ajudar com mais detalhes!",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0062172,
+          "ms": 1475,
+          "verdict": {
+            "correcao": 5,
+            "naoInventa": 5,
+            "tom": 4,
+            "concisao": 4,
+            "nota": 5,
+            "motivo": "Cumprimenta, manda o link do cardápio sem inventar valor e não chama a equipe, como pede o caso. A oferta final de chamar atendente é um pouco desnecessária, mas inofensiva."
+          }
+        },
+        {
+          "run": 1,
+          "reply": {
+            "reply": "Boa tarde, Tiago! 🍣 Os preços de todos os itens, inclusive o temaki de salmão, estão no cardápio: https://loja.exemplo.com/sushimarazul\n\nLá você também já faz o pedido. Quer que eu chame um atendente para te ajudar com mais alguma coisa?",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0008432,
+          "ms": 1810
+        },
+        {
+          "run": 2,
+          "reply": {
+            "reply": "Boa tarde, Tiago! 🍣 Não tenho os preços aqui comigo, mas o cardápio com os valores está no link: https://loja.exemplo.com/sushimarazul . Quer que eu chame um atendente para te ajudar com o temaki?",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0008327,
+          "ms": 1360
+        }
+      ]
+    },
+    {
+      "id": "pede-atendente-sem-ninguem-online",
+      "categoria": "cardapio-e-pedido",
+      "nota": "Sem atendente online: diz que estamos sem atendentes online e que a conversa vai para um assim que chegar.",
+      "runs": [
+        {
+          "run": 0,
+          "reply": {
+            "reply": "Certo, Rodrigo! No momento estamos sem atendentes online, mas assim que um chegar, a conversa será encaminhada para ele.",
+            "handoff": true,
+            "reason": "Cliente pediu para falar com um atendente.",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0069456000000000006,
+          "ms": 1032,
+          "verdict": {
+            "correcao": 5,
+            "naoInventa": 5,
+            "tom": 4,
+            "concisao": 5,
+            "nota": 5,
+            "motivo": "Responde de imediato ao pedido, diz que não há atendentes online e que a conversa será encaminhada quando um chegar, com handoff=true. Não inventa nada e é curta. O 'Certo, Rodrigo!' é um pouco formal, mas aceitável."
+          }
+        },
+        {
+          "run": 1,
+          "reply": {
+            "reply": "Certo, Rodrigo! No momento estamos sem atendentes online, mas assim que um chegar, a conversa será encaminhada para ele.",
+            "handoff": true,
+            "reason": "Cliente pediu para falar com um atendente.",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0008456000000000001,
+          "ms": 1306
+        },
+        {
+          "run": 2,
+          "reply": {
+            "reply": "Certo, Rodrigo! No momento estamos sem atendentes online, mas assim que um chegar, a conversa será encaminhada para ele.",
+            "handoff": true,
+            "reason": "Cliente pediu para falar com um atendente.",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0008456000000000001,
+          "ms": 1101
+        }
+      ]
+    },
+    {
+      "id": "audio",
+      "categoria": "cardapio-e-pedido",
+      "nota": "Áudio: diz que não consegue ouvir e pede para escrever.",
+      "runs": [
+        {
+          "run": 0,
+          "reply": {
+            "reply": "Boa noite, Sérgio! Não consigo ouvir áudio por aqui, pode escrever o que precisa? 😉",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0060602,
+          "ms": 1510,
+          "verdict": {
+            "correcao": 5,
+            "naoInventa": 5,
+            "tom": 4,
+            "concisao": 5,
+            "nota": 5,
+            "motivo": "Cumprimenta como pedido, diz que não consegue ouvir o áudio e pede para escrever, sem handoff e sem inventar nada. Curta e natural; o emoji combina com o WhatsApp."
+          }
+        },
+        {
+          "run": 1,
+          "reply": {
+            "reply": "Boa noite, Sérgio! Não consigo ouvir áudios por aqui, pode escrever pra mim o que precisa? 😉",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0008102000000000001,
+          "ms": 1380
+        },
+        {
+          "run": 2,
+          "reply": {
+            "reply": "Boa noite, Sérgio! Não consigo ouvir áudios por aqui, então pode escrever o que precisa? 😉",
+            "handoff": false,
+            "reason": "",
+            "order": "none",
+            "skip": false,
+            "courier": false
+          },
+          "failures": [],
+          "costUsd": 0.0008087000000000001,
+          "ms": 1155
+        }
+      ]
+    }
+  ]
+}

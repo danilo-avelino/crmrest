@@ -1,5 +1,6 @@
 // Dados de demonstração inspirados no design (CRM Restaurantes.html). Recria tudo a cada execução.
 // Uso: pnpm db:seed — login: ana.silva@cantinadanonna.com.br / comanda123
+import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { hash } from "@node-rs/argon2";
 import {
@@ -353,17 +354,21 @@ async function main() {
 // sobremesas, com os campos da IA. Valores em centavos.
 async function seedMenu(tenantId: string) {
   const menu = await prisma.menu.create({ data: { tenantId, name: "Cardápio Forno da Vila" } });
-  const group = (name: string, minSelect: number, maxSelect: number, options: [string, number][]) =>
-    prisma.menuOptionGroup.create({
+  // Cada opção nasce na biblioteca (MenuChoice) e entra no grupo com o preço do grupo.
+  const group = async (name: string, minSelect: number, maxSelect: number, options: [string, number][]) => {
+    const choices = options.map(([option]) => ({ id: randomUUID(), tenantId, menuId: menu.id, name: option }));
+    await prisma.menuChoice.createMany({ data: choices });
+    return prisma.menuOptionGroup.create({
       data: {
         tenantId,
         menuId: menu.id,
         name,
         minSelect,
         maxSelect,
-        options: { create: options.map(([option, priceCents], sortOrder) => ({ tenantId, name: option, priceCents, sortOrder })) },
+        options: { create: options.map(([option, priceCents], sortOrder) => ({ tenantId, choiceId: choices[sortOrder]!.id, name: option, priceCents, sortOrder })) },
       },
     });
+  };
   const borda = await group("Borda recheada", 0, 1, [["Catupiry", 1000], ["Cheddar", 1000], ["Chocolate", 1200]]);
   const bebidaCombo = await group("Refrigerante do combo", 1, 1, [["Guaraná 2 L", 0], ["Coca-Cola 2 L", 0]]);
 

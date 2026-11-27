@@ -245,9 +245,10 @@ Todo contato que interage com o restaurante gera ou atualiza um **cadastro unifi
 
 **Tags automáticas:** as demais tags do cliente são do sistema, que as põe e tira sozinho. Regras iguais para todos os restaurantes, em `AUTO_TAG_RULES` ([packages/shared/src/contacts.ts](packages/shared/src/contacts.ts)); pedidos cancelados não contam:
 - **VIP:** está entre os 10% de clientes com mais pedidos do restaurante, com 2 pedidos ou mais. Nunca passa dos 10%: clientes empatados entram todos ou nenhum.
-- **Recorrente:** 3 pedidos ou mais nos últimos 90 dias.
-- **Novo:** primeiro pedido nos últimos 30 dias.
-- **Sumido:** já pediu, mas está há 60 dias ou mais sem pedir.
+- **Recorrente:** 6 pedidos ou mais nos últimos 90 dias.
+- **Em risco:** já foi Recorrente e deixou de ser, ou é Recorrente e está há 30 dias ou mais sem pedir (reconquistar o cliente). Sai quando volta a ser Recorrente com pedido recente.
+- **Novo:** 1 pedido só, feito nos últimos 30 dias (incentivar o segundo pedido).
+- **Sumido:** já pediu, mas está há 30 dias ou mais sem pedir.
 - **Insatisfeito:** nota 1 ou 2 na última avaliação.
 
 O recálculo roda de hora em hora para todos os restaurantes e na hora em que chega uma nota da pesquisa ou dois cadastros são unidos.

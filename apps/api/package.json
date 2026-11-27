@@ -12,6 +12,7 @@
     "test": "vitest run",
     "sim:agent": "vitest run --config vitest.sim.config.ts",
     "sim:menu-agent": "vitest run --config vitest.sim-menu.config.ts",
+    "eval:ai": "tsx eval/run-ai-eval.ts",
     "simulate:whatsapp": "node scripts/simulate-whatsapp.mjs",
     "simulate:ifood-chat": "node scripts/simulate-ifood-chat.mjs",
     "channel:add": "node scripts/channel-add.mjs",
@@ -60,6 +61,7 @@
     "pino-pretty": "^13.1.3",
     "socket.io-client": "^4.8.4",
     "supertest": "^7.3.1",
+    "tsx": "^4.23.15",
     "typescript": "~6.0.3",
     "vitest": "^5.0.3"
   }

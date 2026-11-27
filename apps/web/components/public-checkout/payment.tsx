@@ -1,6 +1,6 @@
 "use client";
 
-import { selectCoupon, useCouponPreview } from "@/lib/coupons";
+import { selectCoupon, setCouponCode, useCouponPreview } from "@/lib/coupons";
 import { browserSessionId, currentAttribution } from "@/lib/attribution";
 import { contextToken, saveContextToken } from "@/lib/menu-context";
 import Link from "next/link";
@@ -89,7 +89,7 @@ function PaymentFlow({ slug, store }: { slug: string; store: PublicMenuStore }) 
   const subtotalCents = cart.lines.reduce((sum, l) => sum + l.totalCents, 0);
   const baseFeeCents = state.mode === "DELIVERY" ? (state.quote?.feeCents ?? 0) : 0;
   // Cupom da tag escolhido na sacola (só com o código): prévia aqui; o servidor confere no pedido.
-  const preview = useCouponPreview(slug, subtotalCents, baseFeeCents);
+  const preview = useCouponPreview(slug, subtotalCents, baseFeeCents, cart.lines, state.mode);
   const totalCents = preview.totalCents;
 
   /** Pedido criado (na entrega ou Pix pago): guarda o acesso, limpa a sacola e abre o acompanhamento. */
@@ -100,6 +100,7 @@ function PaymentFlow({ slug, store }: { slug: string; store: PublicMenuStore }) 
     update({ payment: EMPTY_PAYMENT, notes: "", when: null });
     cart.clear();
     selectCoupon(slug, null);
+    setCouponCode(slug, null);
     router.push(`${menuHref}/pedido/${id}`);
   };
 
@@ -179,6 +180,7 @@ function PaymentFlow({ slug, store }: { slug: string; store: PublicMenuStore }) 
       ...orderRequestOf({ state, lines: cart.lines, payment: valid, notes, idempotencyKey: pendingOrderKey(slug) }),
       sessionId: browserSessionId(),
       couponId: preview.couponId,
+      couponCode: preview.couponCode,
       attribution: currentAttribution(slug),
       contextToken: contextToken(slug),
     };
@@ -589,7 +591,7 @@ function ReviewStep({
   const menuHref = `/c/${encodeURIComponent(slug)}`;
   const checkoutHref = `${menuHref}/checkout`;
   const base = reviewModel(state, lines, payment, store, new Date());
-  const preview = useCouponPreview(slug, base.subtotalCents, base.deliveryFeeCents);
+  const preview = useCouponPreview(slug, base.subtotalCents, base.deliveryFeeCents, lines, state.mode);
   const model = { ...base, deliveryFeeCents: preview.feeCents, totalCents: preview.totalCents };
   const changed = new Map(priceChanges.map((c) => [c.lineId, c]));
   const count = lines.reduce((sum, l) => sum + l.quantity, 0);
@@ -698,10 +700,18 @@ function ReviewStep({
             <span className="text-ink-2">Subtotal</span>
             <span>{money(model.subtotalCents)}</span>
           </div>
-          {preview.coupon && preview.discountCents > 0 && (
+          {preview.label && preview.discountCents > 0 && (
             <div className="flex justify-between text-success-ink">
-              <span>Cupom {preview.coupon.title}</span>
+              <span>Cupom {preview.label}</span>
               <span>− {money(preview.discountCents)}</span>
+            </div>
+          )}
+          {preview.vipGift && (
+            <div className="flex justify-between text-success-ink">
+              <span>
+                {preview.giftLabel}: {preview.vipGift}
+              </span>
+              <span>Grátis</span>
             </div>
           )}
           {state.mode === "DELIVERY" && (

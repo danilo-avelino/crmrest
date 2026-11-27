@@ -5,12 +5,12 @@ import Link from "next/link";
 import { useRef, useState } from "react";
 import { ImageCropDialog } from "@/components/common/image-crop-dialog";
 import { useAuth } from "@/components/auth/auth-provider";
+import { CategoryDialog } from "@/components/menu/category-dialog";
 import { IfoodImportRequestStatus } from "@/components/menu/ifood-import-request";
 import { MenuHeaderMenus } from "@/components/menu/menu-header-actions";
 import { AvailabilityPill, ErrorNote, loadError, PageHeader, Skeleton, Toggle, WarnNote } from "@/components/menu/bits";
 import { useMenu, useMenuActions } from "@/components/menu/use-menu";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { count } from "@/lib/format";
 import { CROP_PRESETS } from "@/lib/image-compress";
 import {
@@ -38,8 +38,8 @@ export function MenuList() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [order, setOrder] = useState<string[] | null>(null);
   const [dragId, setDragId] = useState<string | null>(null);
-  const [newCategory, setNewCategory] = useState<string | null>(null);
-  const [renaming, setRenaming] = useState<string | null>(null);
+  // Modal de categoria: "new" cria; um id edita aquela categoria.
+  const [editing, setEditing] = useState<"new" | string | null>(null);
 
   const tenantSlug = session?.tenants.find((tenant) => tenant.id === session.context?.tenants[0]?.id)?.slug;
   const publicHref = tenantSlug ? `/c/${tenantSlug}` : null;
@@ -96,6 +96,17 @@ export function MenuList() {
   const categories = sortByOrder(menu.data.categories, order);
   const counts = menuCounts(categories, clock);
   const selected = categories.find((category) => category.id === selectedId) ?? categories[0];
+  const dialog = editing && (
+    <CategoryDialog
+      category={editing === "new" ? null : (categories.find((category) => category.id === editing) ?? null)}
+      categories={categories}
+      onClose={() => setEditing(null)}
+      onCreated={(id) => {
+        setSelectedId(id);
+        setFilter("all");
+      }}
+    />
+  );
 
   if (categories.length === 0) {
     return (
@@ -112,7 +123,9 @@ export function MenuList() {
             <div className="flex flex-col gap-2 rounded-xl border border-rule p-4">
               <div className="text-sm font-semibold">Criar do zero</div>
               <p className="flex-1 text-ink-2">Cadastre item por item, com foto, tamanhos e complementos. Comece criando a primeira categoria.</p>
-              <NewCategoryForm onCreate={async (name) => void (await call("/categories", "POST", { name }))} initiallyOpen />
+              <Button className="self-start" onClick={() => setEditing("new")}>
+                <PlusIcon aria-hidden /> Criar categoria
+              </Button>
             </div>
             {[
               ["Importar planilha (CSV)", "Baixe o modelo, preencha e envie. Você revisa os erros antes de importar.", "Importar CSV"],
@@ -134,6 +147,7 @@ export function MenuList() {
             ))}
           </div>
         </section>
+        {dialog}
       </Page>
     );
   }
@@ -194,22 +208,10 @@ export function MenuList() {
         <section aria-label="Categorias" className="max-w-[280px] min-w-60 flex-1 rounded-xl border border-rule bg-surface p-2">
           <div className="flex items-center justify-between px-2 py-1.5">
             <h2 className="font-heading text-title font-semibold">Categorias</h2>
-            {newCategory === null && (
-              <Button variant="ghost" size="sm" onClick={() => setNewCategory("")} className="underline">
-                Nova
-              </Button>
-            )}
+            <Button variant="ghost" size="sm" onClick={() => setEditing("new")}>
+              <PlusIcon aria-hidden /> Nova
+            </Button>
           </div>
-          {newCategory !== null && (
-            <NewCategoryForm
-              onCreate={async (name) => {
-                const done = await call("/categories", "POST", { name });
-                if (done) setNewCategory(null);
-              }}
-              onCancel={() => setNewCategory(null)}
-              initiallyOpen
-            />
-          )}
           <ul className="flex flex-col gap-0.5">
             {categories.map((category) => (
               <li
@@ -221,7 +223,7 @@ export function MenuList() {
                 onDrop={() => reorder(category.id)}
                 data-testid="categoria"
                 className={cn(
-                  "flex h-10 items-center gap-2 rounded-lg px-2",
+                  "group flex h-10 items-center gap-2 rounded-lg px-2",
                   selected?.id === category.id && filter === "all" && "bg-surface-2",
                   !category.active && "opacity-60",
                   dragId === category.id && "opacity-40",
@@ -240,6 +242,16 @@ export function MenuList() {
                 >
                   {category.name}
                 </button>
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  aria-label={`Editar ${category.name}`}
+                  title="Editar categoria"
+                  onClick={() => setEditing(category.id)}
+                  className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+                >
+                  <PencilIcon />
+                </Button>
                 <span className="text-xs text-ink-3">{category.items.filter((item) => item.active).length}</span>
                 <Toggle
                   on={category.active}
@@ -261,34 +273,22 @@ export function MenuList() {
           {shown.map(({ category, items }) => (
             <section key={category.id} aria-label={category.name} className="rounded-xl border border-rule bg-surface">
               <div className="flex flex-wrap items-baseline gap-2 border-b border-rule-soft px-4 py-3">
-                {renaming === category.id ? (
-                  <RenameForm
-                    name={category.name}
-                    onSave={async (name) => {
-                      if (await call(`/categories/${category.id}`, "PATCH", { name })) setRenaming(null);
-                    }}
-                    onCancel={() => setRenaming(null)}
-                  />
-                ) : (
-                  <>
-                    <h2 className="font-heading text-title font-semibold">{category.name}</h2>
-                    <span className="mr-auto text-ink-3">{categorySummary(category)}</span>
-                    <Button variant="ghost" size="sm" onClick={() => setRenaming(category.id)}>
-                      Renomear
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={async () => {
-                        if (!window.confirm(`Excluir a categoria "${category.name}" e os itens dela? Isso não pode ser desfeito.`)) return;
-                        await call(`/categories/${category.id}`, "DELETE");
-                        setSelectedId(null);
-                      }}
-                    >
-                      Excluir
-                    </Button>
-                  </>
-                )}
+                <h2 className="font-heading text-title font-semibold">{category.name}</h2>
+                <span className="mr-auto text-ink-3">{categorySummary(category)}</span>
+                <Button variant="ghost" size="sm" onClick={() => setEditing(category.id)}>
+                  <PencilIcon aria-hidden /> Editar
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={async () => {
+                    if (!window.confirm(`Excluir a categoria "${category.name}" e os itens dela? Isso não pode ser desfeito.`)) return;
+                    await call(`/categories/${category.id}`, "DELETE");
+                    setSelectedId(null);
+                  }}
+                >
+                  Excluir
+                </Button>
               </div>
               {items.length === 0 && <div className="px-4 py-6 text-ink-2">Esta categoria ainda não tem itens.</div>}
               {items.map((item) => (
@@ -303,6 +303,7 @@ export function MenuList() {
           ))}
         </div>
       </div>
+      {dialog}
     </Page>
   );
 }
@@ -321,60 +322,6 @@ function sortByOrder(categories: MenuCategory[], order: string[] | null): MenuCa
   if (!order) return categories;
   const rank = new Map(order.map((id, index) => [id, index]));
   return [...categories].sort((a, b) => (rank.get(a.id) ?? 999) - (rank.get(b.id) ?? 999));
-}
-
-function NewCategoryForm({ onCreate, onCancel, initiallyOpen }: { onCreate: (name: string) => Promise<void>; onCancel?: () => void; initiallyOpen?: boolean }) {
-  const [name, setName] = useState("");
-  const [busy, setBusy] = useState(false);
-  if (!initiallyOpen) return null;
-  return (
-    <form
-      className="mb-2 flex gap-1.5 px-2"
-      onSubmit={async (event) => {
-        event.preventDefault();
-        if (!name.trim()) return;
-        setBusy(true);
-        await onCreate(name.trim());
-        setBusy(false);
-        setName("");
-      }}
-    >
-      <Input aria-label="Nome da categoria" placeholder="Nome da categoria" value={name} onChange={(event) => setName(event.target.value)} maxLength={120} />
-      <Button type="submit" loading={busy} disabled={!name.trim()}>
-        Criar
-      </Button>
-      {onCancel && (
-        <Button type="button" variant="ghost" onClick={onCancel}>
-          Cancelar
-        </Button>
-      )}
-    </form>
-  );
-}
-
-function RenameForm({ name: initial, onSave, onCancel }: { name: string; onSave: (name: string) => Promise<void>; onCancel: () => void }) {
-  const [name, setName] = useState(initial);
-  const [busy, setBusy] = useState(false);
-  return (
-    <form
-      className="flex flex-1 gap-1.5"
-      onSubmit={async (event) => {
-        event.preventDefault();
-        if (!name.trim()) return;
-        setBusy(true);
-        await onSave(name.trim());
-        setBusy(false);
-      }}
-    >
-      <Input aria-label="Novo nome da categoria" value={name} onChange={(event) => setName(event.target.value)} maxLength={120} className="max-w-xs" />
-      <Button type="submit" loading={busy}>
-        Salvar
-      </Button>
-      <Button type="button" variant="ghost" onClick={onCancel}>
-        Cancelar
-      </Button>
-    </form>
-  );
 }
 
 function ItemRow({ item, onCall }: { item: MenuItem; onCall: ReturnType<typeof useMenuActions>["call"] }) {

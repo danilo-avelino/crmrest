@@ -4,6 +4,7 @@ import {
   adminNotificationsOf,
   type BusinessHours,
   businessHoursOf,
+  closuresOf,
   type OrderForecastSettings,
   orderForecastOf,
   orderLinksOf,
@@ -15,6 +16,7 @@ import {
   reviewInviteOf,
   type TenantSettingsDto,
   type UpdateOrderLinksRequest,
+  type UpdateStoreClosuresRequest,
   type UpdatePersonalityRequest,
 } from "@dishdesk/shared";
 import { Injectable } from "@nestjs/common";
@@ -51,6 +53,12 @@ export class SettingsService {
 
   updateBusinessHours(auth: RequestAuth, tenantId: string, body: BusinessHours): Promise<TenantSettingsDto> {
     return this.merge(auth, tenantId, { businessHours: body });
+  }
+
+  /** Grava as pausas da loja; as que já terminaram saem da lista. */
+  updateClosures(auth: RequestAuth, tenantId: string, body: UpdateStoreClosuresRequest, now = new Date()): Promise<TenantSettingsDto> {
+    const closures = body.closures.filter((closure) => !closure.until || Date.parse(closure.until) > now.getTime());
+    return this.merge(auth, tenantId, { closures });
   }
 
   updateOrderForecast(auth: RequestAuth, tenantId: string, body: OrderForecastSettings): Promise<TenantSettingsDto> {
@@ -105,6 +113,12 @@ export class SettingsService {
   }
 }
 
+/** O horário da semana, sem as pausas da loja. */
+function weekHoursOf(settings: Prisma.JsonValue) {
+  const { closures: _, ...hours } = businessHoursOf(settings);
+  return hours;
+}
+
 function toDto(
   auth: RequestAuth,
   tenant: { id: string; name: string; settings: Prisma.JsonValue; channel: { name: string } | null },
@@ -115,10 +129,12 @@ function toDto(
     canEdit: isTenantAdmin(auth, tenant.id),
     personality: personalityOf(tenant.settings),
     orderLinks: orderLinksOf(tenant.settings),
-    businessHours: businessHoursOf(tenant.settings),
+    // As pausas vão à parte (closures): o formulário do horário não as reenvia.
+    businessHours: weekHoursOf(tenant.settings),
     orderForecast: orderForecastOf(tenant.settings),
     reviewInvite: reviewInviteOf(tenant.settings),
     adminNotifications: adminNotificationsOf(tenant.settings),
+    closures: closuresOf(tenant.settings),
     paused: pausedOf(tenant.settings),
     notificationChannel: tenant.channel?.name ?? null,
   };

@@ -1,5 +1,5 @@
 import { parseEncryptionKey } from "@dishdesk/database";
-import { automationMessagesOf, fillMessage, toE164 } from "@dishdesk/shared";
+import { automationMessagesOf, fillMessage, toE164, type VipGiftDto } from "@dishdesk/shared";
 import { BadRequestException, HttpException, HttpStatus, Inject, Injectable, Logger, type OnModuleDestroy, UnauthorizedException } from "@nestjs/common";
 import { Redis } from "ioredis";
 import { createHash, createHmac, hkdfSync, randomBytes, randomInt, timingSafeEqual } from "node:crypto";
@@ -9,7 +9,8 @@ import { ConnectorsService } from "../connectors/connectors.service.js";
 import { DatabaseService } from "../core/database.service.js";
 import { isDemoTenant } from "../demo/demo.js";
 import { linkedOrdersWhere } from "../orders/customer-history.js";
-import { customerCoupons } from "./benefits.js";
+import { customerCoupons, vipGiftFor } from "./benefits.js";
+import { candidateCoupons } from "./menu-coupons.js";
 import { PublicMenuService } from "./public-menu.service.js";
 
 export const OTP_TTL_MS = 10 * 60_000;
@@ -224,8 +225,47 @@ export class CustomerAuthService implements OnModuleDestroy {
       if (session.tenantId !== store.tenantId) throw new UnauthorizedException(NO_SESSION);
       const contact = await tx.contact.findFirst({ where: { id: session.contactId, tenantId: store.tenantId, deletedAt: null }, select: { id: true, name: true, tags: true } });
       if (!contact) throw new UnauthorizedException(NO_SESSION);
-      const coupons = await customerCoupons(tx, { tenantId: store.tenantId, contactId: contact.id, tags: contact.tags, settings: store.settings, now: new Date(), subtotalCents });
-      return { name: contact.name, coupons };
+      const input = { tenantId: store.tenantId, contactId: contact.id, tags: contact.tags, settings: store.settings, now: new Date() };
+      const coupons = await customerCoupons(tx, { ...input, subtotalCents });
+      const vip = await vipGiftFor(tx, input);
+      // Brinde do VIP: o nome do item e o mínimo; a sacola mostra a mensagem quando o subtotal alcança.
+      const vipGift: VipGiftDto | null = vip
+        ? { tag: vip.item.tag, name: vip.item.name, minOrderCents: vip.minOrderCents, perMonth: vip.perMonth, usedThisMonth: vip.usedThisMonth, available: vip.available, reason: vip.reason }
+        : null;
+      // `vip`: o cardápio mostra a janela de boas-vindas do VIP logo depois do login.
+      return { name: contact.name, coupons, vipGift, vip: contact.tags.includes("VIP") };
+    });
+  }
+
+  /**
+   * Prévia do cupom da aba Cupons na sacola (N4): o digitado (ou o melhor automático) para estas linhas. Só prévia: o
+   * checkout confere tudo de novo com os preços do servidor. Com a sessão do código, vale o "um uso por cliente".
+   */
+  async couponPreview(
+    slug: string,
+    token: string | undefined,
+    input: { code: string | null; lines: { itemId: string; totalCents: number }[]; mode: "DELIVERY" | "PICKUP" | null },
+  ) {
+    const session = await this.session(token);
+    return this.menu.withStore(slug, async (tx, store) => {
+      const verified = session?.tenantId === store.tenantId;
+      const ids = [...new Set(input.lines.map((l) => l.itemId))];
+      const items = await tx.menuItem.findMany({ where: { tenantId: store.tenantId, id: { in: ids } }, select: { id: true, categoryId: true } });
+      const category = new Map(items.map((i) => [i.id, i.categoryId]));
+      const lines = input.lines.filter((l) => category.has(l.itemId)).map((l) => ({ itemId: l.itemId, categoryId: category.get(l.itemId)!, totalCents: l.totalCents }));
+      const subtotalCents = lines.reduce((s, l) => s + l.totalCents, 0);
+      const found = await candidateCoupons(tx, {
+        tenantId: store.tenantId,
+        contactId: verified ? session!.contactId : null,
+        code: input.code,
+        ctx: { now: new Date(), lines, subtotalCents, mode: input.mode, paymentMethod: null, verified },
+      });
+      const view = (c: NonNullable<typeof found.typed>) => ({ id: c.id, label: c.code ?? c.name, code: c.code, discountCents: c.discountCents, freeDelivery: c.freeDelivery });
+      const automatic = found.automatic.filter((c) => !c.refusal && (c.discountCents > 0 || c.freeDelivery)).sort((a, b) => b.discountCents - a.discountCents)[0];
+      return {
+        typed: found.typedMissing ? { ok: false as const, message: "Cupom não encontrado. Confira o código." } : found.typed ? (found.typed.refusal ? { ok: false as const, message: found.typed.refusal } : { ok: true as const, coupon: view(found.typed) }) : null,
+        automatic: automatic ? view(automatic) : null,
+      };
     });
   }
 

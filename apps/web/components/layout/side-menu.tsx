@@ -9,10 +9,11 @@ import { cn } from "@/lib/utils";
 
 type Tenant = AuthContext["tenants"][number];
 
-export type SideMenuGroup = { group: string; items: { href: string; label: string; icon: LucideIcon }[] };
+/** `match`: outros endereços que também acendem o item (ex.: a ficha do item acende "Itens"). `badge`: selo tracejado à direita ("nova"). */
+export type SideMenuGroup = { group: string; items: { href: string; label: string; icon: LucideIcon; match?: string[]; badge?: string }[] };
 
 /**
- * Menu lateral em grupos (Configurações, Avaliações e Plataforma): o título da área, o restaurante e as páginas. No
+ * Menu lateral em grupos (Configurações, Cardápio, Avaliações e Plataforma): o título da área, o restaurante e as páginas. No
  * painel master, o seletor no topo escolhe o restaurante para todas as páginas. `root`: a primeira página, ativa só no
  * endereço exato. Sem restaurantes (Plataforma), mostra `subtitle` embaixo do título.
  */
@@ -59,9 +60,11 @@ export function SideMenu({
           <div key={group} className="mb-3">
             <p className="mb-1 px-5 pt-1 text-[10px] font-semibold tracking-[0.1em] text-ink-3 uppercase">{group}</p>
             <ul>
-              {items.map(({ href, label: item, icon: Icon }) => {
+              {items.map(({ href, label: item, icon: Icon, match = [], badge }) => {
                 // Prefixo só por segmento: "/configuracoes/pagamento" não acende em "/configuracoes/pagamentos-cardapio".
-                const active = href === root ? pathname === href : pathname === href || pathname.startsWith(`${href}/`);
+                const active =
+                  (href === root ? pathname === href : pathname === href || pathname.startsWith(`${href}/`)) ||
+                  match.some((m) => pathname === m || pathname.startsWith(`${m}/`));
                 return (
                   <li key={href}>
                     <Link
@@ -73,7 +76,8 @@ export function SideMenu({
                       )}
                     >
                       <Icon className={cn("size-4 shrink-0", active ? "text-tomate" : "text-ink-3")} aria-hidden />
-                      {item}
+                      <span className="min-w-0 flex-1 truncate">{item}</span>
+                      {badge && <span className="shrink-0 rounded-sm border border-dashed border-[#C4B8A0] px-1.5 text-[10px] leading-4 text-ink-3">{badge}</span>}
                     </Link>
                   </li>
                 );

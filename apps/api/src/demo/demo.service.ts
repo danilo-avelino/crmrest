@@ -80,8 +80,8 @@ export class DemoService implements OnModuleDestroy {
     const summary = await this.db.withTenants(
       { ...scope, userId: users.admin },
       async (tx) => {
-        await wipeDemoData(tx, tenantId);
-        return seedDemoData(tx, { tenantId, users, key: this.key });
+        const photos = await wipeDemoData(tx, tenantId);
+        return seedDemoData(tx, { tenantId, users, key: this.key, photos });
       },
       { timeout: RESET_TIMEOUT_MS },
     );

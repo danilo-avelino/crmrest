@@ -32,6 +32,7 @@ import { useNow } from "@/hooks/use-now";
 import { ApiError } from "@/lib/api";
 import { clock, count, currency, dayMonth, dayTime, responseTime } from "@/lib/format";
 import { MENU_ORIGIN_LABEL, menuBadges, parseMenuItemName } from "@/lib/menu-order";
+import { orderListStages, stageHint } from "@/lib/order-stages";
 import { cn } from "@/lib/utils";
 
 type Status = OrderListItem["status"];
@@ -383,6 +384,7 @@ export function OrderDetails({ order, withChat = true }: { order: OrderListItem;
       <div className="col-span-2">
         <CustomerHistoryLine history={order.history} />
       </div>
+      <OrderProgress order={order} />
       {order.menu && (
         <div className="col-span-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 rounded-[7px] border border-tomate-line bg-surface px-3.5 py-2.5 text-xs">
           <MenuBadges order={order} now={new Date()} />
@@ -441,6 +443,50 @@ export function OrderDetails({ order, withChat = true }: { order: OrderListItem;
       </div>
       {order.platform && <PlatformInfo info={order.platform} />}
       <OrderActions order={order} withChat={withChat} />
+    </div>
+  );
+}
+
+const TOTAL_LABEL = { delivered: "Total", canceled: "Até o cancelamento", running: "Até agora" } as const;
+
+/**
+ * Andamento do pedido: cada etapa com o nome e quanto durou (a atual, quanto já passou) e, separado no alto, o tempo total
+ * até a entrega, até o cancelamento ou até agora.
+ */
+function OrderProgress({ order }: { order: OrderListItem }) {
+  const now = useNow(30_000);
+  const { stages, totalMs, end } = orderListStages(order, now);
+  return (
+    <div className="col-span-2 rounded-[7px] border border-tomate-line bg-surface px-3.5 py-3 text-xs">
+      <div className="mb-2.5 flex items-baseline justify-between gap-3">
+        <span className="text-[11px] font-medium tracking-[0.05em] text-ink-3 uppercase">Andamento</span>
+        {totalMs !== null && (
+          <span className="tabular-nums">
+            <span className="text-ink-3">{TOTAL_LABEL[end]} </span>
+            <b className={cn("text-[13px] font-semibold", order.late && end === "running" && "text-tomate")}>{responseTime(totalMs / 1000)}</b>
+          </span>
+        )}
+      </div>
+      <ol className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${stages.length}, minmax(0, 1fr))` }}>
+        {stages.map((stage) => (
+          <li key={stage.key} className="flex min-w-0 flex-col gap-1">
+            <i
+              className={cn(
+                "h-1.5 rounded-[2px]",
+                stage.state === "done"
+                  ? end === "canceled" ? "bg-ink-3" : "bg-success"
+                  : stage.state === "current"
+                    ? order.late ? "bg-tomate" : "bg-ink"
+                    : end === "canceled"
+                      ? "bg-[repeating-linear-gradient(135deg,var(--color-rule)_0_3px,transparent_3px_6px)]"
+                      : "bg-surface-2 shadow-[inset_0_0_0_1px_var(--color-rule)]",
+              )}
+            />
+            <span className={cn("truncate font-medium", stage.state === "next" ? "text-ink-3" : "text-ink-2")}>{stage.label}</span>
+            <span className={cn("truncate tabular-nums", stage.state === "current" ? "text-ink-2" : "text-ink-3")}>{stageHint(stage)}</span>
+          </li>
+        ))}
+      </ol>
     </div>
   );
 }

@@ -3,12 +3,12 @@
 import type { MenuStoreSettings } from "@dishdesk/shared";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { CopyIcon, PlusIcon, XIcon } from "lucide-react";
-import { type ReactNode, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
 import { ImageCropDialog } from "@/components/common/image-crop-dialog";
 import { photoProblem } from "@/components/menu/use-menu";
 import { TabLoading, useSettingsTenant } from "@/components/settings/settings-shell";
-import { Card, CardBody, CardFooter, Eyebrow, TEXTAREA } from "@/components/settings/settings-ui";
+import { Card, CardBody, CardFooter, TEXTAREA } from "@/components/settings/settings-ui";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,7 +16,7 @@ import { useToast } from "@/components/ui/toast";
 import { usePendingAction } from "@/hooks/use-pending-action";
 import { ApiError } from "@/lib/api";
 import { CROP_PRESETS } from "@/lib/image-compress";
-import type { MenuTree } from "@/lib/menu";
+import { paletteFromImage } from "@/lib/menu-theme";
 import { formToPayload, publicMenuUrl, type StoreForm, type StoreResponse, storeToForm } from "@/lib/menu-store";
 
 /** Página "Cardápio e entrega" (C1): link público, endereço, entrega, agendamento, marca e contato. */
@@ -48,6 +48,28 @@ function MenuStoreForm({ tenantId, data }: { tenantId: string; data: StoreRespon
   const [failure, setFailure] = useState<string | null>(null);
   const set = <K extends keyof StoreForm>(key: K, value: StoreForm[K]) => setForm((current) => ({ ...current, [key]: value }));
   const link = publicMenuUrl(typeof window === "undefined" ? "" : window.location.origin, data.slug);
+  // Sugestões de cor tiradas da logo publicada. Logo recém-enviada: a 1ª cor e o tema completo já entram no formulário.
+  const [read, setRead] = useState<{ url: string; colors: string[] } | null>(null);
+  const palette = read && read.url === store.logoUrl ? read.colors : [];
+  const logoJustSent = useRef(false);
+  useEffect(() => {
+    const url = store.logoUrl;
+    if (!url) return;
+    let alive = true;
+    void paletteFromImage(url).then((colors) => {
+      if (!alive) return;
+      setRead({ url, colors });
+      if (logoJustSent.current && colors[0]) {
+        setForm((current) => ({ ...current, accentColor: colors[0]!, brandTheme: true }));
+        toast("Cores da logo aplicadas. Salve para publicar no cardápio.");
+      }
+      logoJustSent.current = false;
+    });
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- o toast muda a cada render; só a logo dispara a leitura.
+  }, [store.logoUrl]);
 
   const [copy] = usePendingAction(async () => {
     try {
@@ -92,6 +114,7 @@ function MenuStoreForm({ tenantId, data }: { tenantId: string; data: StoreRespon
         return setFailure(typeof payload?.message === "string" ? payload.message : `${file.name} não foi enviada: use JPG, PNG ou WEBP de até 1 MB.`);
       }
       const updated = (await response.json()) as StoreResponse;
+      if (kind === "logo") logoJustSent.current = true;
       setStore((current) => ({ ...current, logoUrl: updated.store.logoUrl, coverUrl: updated.store.coverUrl }));
       queryClient.setQueryData(["menu-store", tenantId], updated);
       toast(kind === "logo" ? "Logo atualizada" : "Capa atualizada");
@@ -152,25 +175,44 @@ function MenuStoreForm({ tenantId, data }: { tenantId: string; data: StoreRespon
         </CardBody>
       </Card>
 
-      <Card
-        title="Áreas de entrega"
-        aside={
-          <div className="inline-flex overflow-hidden rounded-lg border border-rule" role="group" aria-label="Como cobrar a entrega">
-            {(["BY_DISTRICT", "BY_RADIUS"] as const).map((mode) => (
-              <button
-                key={mode}
-                type="button"
-                aria-pressed={form.mode === mode}
-                onClick={() => set("mode", mode)}
-                className={form.mode === mode ? "h-8 bg-ink px-3 text-[12.5px] font-semibold text-paper" : "h-8 bg-surface px-3 text-[12.5px] text-ink-2"}
-              >
-                {mode === "BY_DISTRICT" ? "Por bairro" : "Por raio"}
-              </button>
-            ))}
-          </div>
-        }
-      >
+      <Card title="Áreas de entrega">
         <CardBody className="flex flex-col gap-3">
+          <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Como cobrar a entrega">
+            {(["BY_DISTRICT", "BY_RADIUS"] as const).map((mode) => {
+              const on = form.mode === mode;
+              return (
+                <button
+                  key={mode}
+                  type="button"
+                  role="radio"
+                  aria-checked={on}
+                  onClick={() => set("mode", mode)}
+                  className={`flex items-start gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors ${on ? "border-ink bg-surface-2" : "border-rule bg-surface hover:border-ink-3"}`}
+                >
+                  <span
+                    className={`mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border-2 ${on ? "border-ink" : "border-rule"}`}
+                    aria-hidden
+                  >
+                    {on && <span className="size-2 rounded-full bg-ink" />}
+                  </span>
+                  <span className="flex flex-col gap-0.5">
+                    <span className={`text-[13px] ${on ? "font-semibold text-ink" : "font-medium text-ink-2"}`}>{mode === "BY_DISTRICT" ? "Por bairro" : "Por raio"}</span>
+                    <span className="text-[12px] text-ink-3">
+                      {mode === "BY_DISTRICT"
+                        ? "Taxa por bairro, como o cliente escreve no endereço."
+                        : "Taxa até cada distância da loja, em linha reta. Vale a menor faixa que cobre o endereço."}
+                    </span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+          {form.mode === "BY_AREA" ? (
+            <p className="text-[13px] text-ink-2">
+              Esta loja ainda cobra por área desenhada, que saiu do Dish Desk. As áreas continuam valendo até você escolher bairro ou raio e salvar.
+            </p>
+          ) : (
+            <>
           <div className="grid grid-cols-[1fr_8rem_2.5rem] gap-x-3 border-b border-rule pb-1.5 text-[12px] text-ink-3">
             <span>{form.mode === "BY_DISTRICT" ? "Bairro" : "Até (km)"}</span>
             <span>Taxa</span>
@@ -231,6 +273,8 @@ function MenuStoreForm({ tenantId, data }: { tenantId: string; data: StoreRespon
               {form.mode === "BY_DISTRICT" ? "Bairro" : "Raio"}
             </button>
           </div>
+            </>
+          )}
           <div className="grid grid-cols-4 gap-3 border-t border-rule pt-3">
             <Field label="Pedido mínimo (R$)">
               <Input inputMode="decimal" value={form.minOrder} onChange={(e) => set("minOrder", e.target.value)} />
@@ -265,18 +309,9 @@ function MenuStoreForm({ tenantId, data }: { tenantId: string; data: StoreRespon
             <p className="m-0 text-[12px] text-ink-3">Com a loja fechada, o cliente agenda para depois que abrir.</p>
           </CardBody>
         </Card>
-
-        <Card title="Vitrine de promoções">
-          <CardBody className="flex flex-col gap-3">
-            <ShowcasePicker tenantId={tenantId} selected={form.showcaseItemIds} onChange={(ids) => set("showcaseItemIds", ids)} />
-            <Field label="Mostrar para o mesmo cliente no máximo 1 vez a cada (horas)">
-              <Input inputMode="numeric" className="max-w-32" value={form.showcaseHours} onChange={(e) => set("showcaseHours", e.target.value)} />
-            </Field>
-          </CardBody>
-        </Card>
       </div>
 
-      <Card title="Marca" description="Logo, capa e cor de destaque da página pública. Você escolhe o enquadramento e a imagem é comprimida para até 1 MB.">
+      <Card title="Marca" description="Logo, capa e cores da página pública. Ao enviar a logo, o cardápio já ganha a cor principal dela; troque por uma das outras cores ou escolha à mão.">
         <CardBody className="grid grid-cols-3 gap-4">
           <ImagePick label="Logo" preset="logo" url={store.logoUrl} onPick={(file) => upload("logo", file)} />
           <ImagePick label="Capa" preset="cover" url={store.coverUrl} onPick={(file) => upload("cover", file)} />
@@ -290,6 +325,32 @@ function MenuStoreForm({ tenantId, data }: { tenantId: string; data: StoreRespon
                 className="h-9 w-10 rounded-lg border border-input bg-surface p-1"
               />
               <Input value={form.accentColor} maxLength={7} onChange={(e) => set("accentColor", e.target.value)} />
+            </div>
+            {palette.length > 0 && (
+              <div className="flex flex-col gap-1.5 pt-1">
+                <span className="text-[12px] text-ink-3">Cores da sua logo</span>
+                <div className="flex gap-2">
+                  {palette.map((color) => {
+                    const active = form.accentColor.toUpperCase() === color && form.brandTheme;
+                    return (
+                      <button
+                        key={color}
+                        type="button"
+                        aria-pressed={active}
+                        aria-label={`Usar a cor ${color} no cardápio`}
+                        title={color}
+                        onClick={() => setForm((current) => ({ ...current, accentColor: color, brandTheme: true }))}
+                        className={`size-9 rounded-lg border-2 ${active ? "border-ink" : "border-transparent"}`}
+                        style={{ backgroundColor: color, boxShadow: "inset 0 0 0 2px rgba(255,255,255,.6)" }}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+            <div className="flex items-center justify-between gap-2 pt-1">
+              <span className="text-[12px] text-ink-3">Fundo e bordas na cor</span>
+              <StatePill on={form.brandTheme} label={["Ligado", "Desligado"]} onToggle={() => set("brandTheme", !form.brandTheme)} />
             </div>
           </Field>
         </CardBody>
@@ -315,6 +376,14 @@ function MenuStoreForm({ tenantId, data }: { tenantId: string; data: StoreRespon
       </Card>
     </form>
   );
+}
+
+/** Tamanho pedido para o arquivo, tirado do recorte (formato e largura final): "Quadrada, 512 × 512 px ou maior." */
+function imageSizeHint(preset: "logo" | "cover"): string {
+  const { aspect, maxWidth } = CROP_PRESETS[preset];
+  const size = `${maxWidth} × ${Math.round(maxWidth / aspect)} px`;
+  const shape = preset === "logo" ? "Quadrada" : `Retangular (${aspect}:1)`;
+  return `${shape}, ${size} ou maior. JPG, PNG ou WEBP.`;
 }
 
 /** Imagem atual e botão de troca; o envio acontece assim que o arquivo é escolhido. */
@@ -356,40 +425,8 @@ function ImagePick({ label, preset, url, onPick }: { label: string; preset: "log
       <Button type="button" variant="outline" size="sm" onClick={() => input.current?.click()}>
         {url ? "Trocar" : "Enviar"}
       </Button>
+      <p className="m-0 text-[12px] text-ink-3">{imageSizeHint(preset)}</p>
     </Field>
-  );
-}
-
-/** Itens da vitrine (W3): marque os itens, na ordem do cardápio. Até 50. */
-function ShowcasePicker({ tenantId, selected, onChange }: { tenantId: string; selected: string[]; onChange: (ids: string[]) => void }) {
-  const { request } = useAuth();
-  const menu = useQuery({ queryKey: ["menu", tenantId], queryFn: () => request<MenuTree>(`/menu/${tenantId}`) });
-  if (!menu.data) return <p className="text-ink-3">{menu.isError ? "Não foi possível carregar os itens do cardápio." : "Carregando os itens…"}</p>;
-  const categories = menu.data.categories.filter((category) => category.items.some((item) => item.active));
-  if (!categories.length) return <p className="text-ink-3">Cadastre itens no Cardápio para montar a vitrine.</p>;
-  const toggle = (id: string) => onChange(selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id].slice(0, 50));
-  return (
-    <div className="flex flex-col gap-2">
-      <p className="text-ink-2 tabular-nums">{selected.length === 0 ? "Nenhum item: a vitrine não aparece." : `${selected.length} ${selected.length === 1 ? "item" : "itens"} na vitrine.`}</p>
-      <div className="grid max-h-72 grid-cols-2 gap-x-4 gap-y-1 overflow-auto rounded-lg border border-rule p-3">
-        {categories.map((category) => (
-          <div key={category.id} className="col-span-2 grid grid-cols-2 gap-x-4 gap-y-1">
-            <Eyebrow className="col-span-2 mt-1">{category.name}</Eyebrow>
-            {category.items
-              .filter((item) => item.active)
-              .map((item) => (
-                <label key={item.id} className="flex items-center gap-2 text-[13px]">
-                  <input type="checkbox" className="size-4 accent-ink" checked={selected.includes(item.id)} onChange={() => toggle(item.id)} />
-                  <span className={item.soldOut ? "text-ink-3" : undefined}>
-                    {item.name}
-                    {item.soldOut && " (esgotado)"}
-                  </span>
-                </label>
-              ))}
-          </div>
-        ))}
-      </div>
-    </div>
   );
 }
 

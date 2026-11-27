@@ -75,15 +75,16 @@ describe("previsão de saída do pedido (E26)", () => {
     await admin.order.delete({ where: { id: pending.id } });
   });
 
-  it("no prazo: confirmação + o quantil 0,4 dos últimos pedidos que saíram, com a fila na frente", async () => {
+  it("no prazo: confirmação + o quantil 0,3 dos últimos pedidos que saíram, com a fila na frente", async () => {
     // Já saíram (confirmado → saída): 10, 12, 14, 16, 18, 30, 35 e 40 min, todos de R$ 30 (o valor deste fica no meio).
-    // A saída marcada mais de 2 h depois (esquecimento) fica de fora. Quantil 0,4: 14 + 0,8 × (16 − 14) = 15,6 min.
+    // A saída marcada mais de 2 h depois (esquecimento) fica de fora. Quantil 0,3: 14 + 0,1 × (16 − 14) = 14,2 min.
+    // Um pedido na frente não soma (só a partir do terceiro).
     for (const took of [10, 12, 14, 16, 18, 30, 35, 40, 150]) await order(160 + took, took);
     await order(8); // na cozinha, feito antes: fica na frente
     const current = await order(5);
     // A partir da confirmação gravada (placedAt + 1 min), não de outro Date.now(): o arredondamento de 5 em 5 minutos
     // daria outro horário se os dois instantes caíssem em lados opostos de uma virada.
-    const expected = new Date(current.placedAt.getTime() + MINUTE + 15.6 * MINUTE);
+    const expected = new Date(current.placedAt.getTime() + MINUTE + 14.2 * MINUTE);
     expect(await forecast(current.id)).toBe(
       [`⏱️ Previsão de saída do restaurante: por volta das ${clock(expected)}.`, "Há 1 pedido na sua frente na cozinha."].join("\n"),
     );
@@ -131,35 +132,79 @@ describe("previsão de saída do pedido (E26)", () => {
     expect(result?.ahead).toBe(2);
   });
 
-  it("atrasado: pede desculpas e usa só os pedidos que demoraram mais que ele", async () => {
-    // Já passou da mediana (17 min); mais demorados: 30, 35 e 40 → quantil 0,4 = 30 + 0,8 × 5 = 34 min.
-    const late = await order(20);
-    const text = await forecast(late.id);
-    expect(text).toMatch(/^Pedimos desculpas pela demora! 🙏/);
-    expect(text).toContain(`Nova previsão de saída do restaurante: por volta das ${clock(new Date(late.placedAt.getTime() + MINUTE + 34 * MINUTE))}.`);
+  it("base da própria integração (com 15 saídas ou mais) e fila cheia somando 1 min por pedido além dos 2 primeiros", async () => {
+    // Data longe de agora: os pedidos dos outros testes ficam fora da base e da fila.
+    const now = new Date("2026-02-10T23:00:00Z");
+    const neemo = await admin.channel.create({
+      data: { tenantId: fx.tenant.id, type: "NEEMO", name: "Neemo", externalId: `neemo-${Date.now()}`, credentials: Buffer.from("-"), status: "CONNECTED" },
+    });
+    const placed = async (channelId: string, minutesAgo: number, tookMinutes?: number) => {
+      sequence += 1;
+      const placedAt = new Date(now.getTime() - minutesAgo * MINUTE);
+      return admin.order.create({
+        data: {
+          tenantId: fx.tenant.id,
+          contactId,
+          channelId,
+          externalOrderId: `base-${sequence}-${Date.now()}`,
+          displayCode: String(3000 + sequence),
+          status: tookMinutes ? "DISPATCHED" : "PREPARING",
+          subtotal: "30.00",
+          deliveryFee: "0.00",
+          total: "30.00",
+          placedAt,
+          dispatchedAt: tookMinutes ? new Date(placedAt.getTime() + tookMinutes * MINUTE) : null,
+          raw: {},
+        },
+      });
+    };
+    // O Neemo leva 40 min, o iFood 15: a previsão do Neemo usa só os do Neemo.
+    for (let i = 0; i < 15; i += 1) await placed(neemo.id, 200 + i, 40);
+    for (let i = 0; i < 15; i += 1) await placed(fx.ifood.id, 200 + i, 15);
+    for (const ago of [7, 6, 5, 4, 3]) await placed(fx.ifood.id, ago); // 5 na frente: soma 3 min
+    const current = await placed(neemo.id, 2);
+    const db = app.get(DatabaseService);
+    const result = await db.withTenants({ tenantIds: [fx.tenant.id] }, (tx) => forecastOrder(tx, current.id, now));
+    expect(result).toMatchObject({ ahead: 5, late: false, probablyOut: false });
+    expect(result?.departAt.getTime()).toBe(current.placedAt.getTime() + 43 * MINUTE);
+  });
+
+  it("mais lento que a mediana: usa só os pedidos que demoraram mais que ele; desculpas só depois do tempo normal", async () => {
+    // Passou da mediana (17 min), mas não do tempo normal (4 em 5 saem em até 33 min): sem desculpas. Mais demorados
+    // que 25 min: 30, 35 e 40 → quantil 0,3 = 30 + 0,6 × 5 = 33 min.
+    const slow = await order(25);
+    expect(await forecast(slow.id)).toBe(
+      `⏱️ Previsão de saída do restaurante: por volta das ${clock(new Date(slow.placedAt.getTime() + MINUTE + 33 * MINUTE))}.`,
+    );
+    // Passou do tempo normal (34 min > 33): desculpas.
+    const late = await order(34);
+    expect(await forecast(late.id)).toMatch(/^Pedimos desculpas pela demora! 🙏/);
+    await admin.order.deleteMany({ where: { id: { in: [slow.id, late.id] } } });
   });
 
   it("com horário prometido pelo iFood: só pede desculpas se a previsão passar da promessa", async () => {
     const promise = (minutes: number) => ({ delivery: { deliveryDateTime: new Date(Date.now() + minutes * MINUTE).toISOString() } });
-    // Mais lento que o normal (20 min > 17), mas a saída prevista (+14 min) fica antes da entrega prometida (+30 min).
+    // Mais lento que a mediana (20 min > 17), e a saída prevista (+13 min) fica antes da entrega prometida (+30 min).
     const slow = await order(20);
     await admin.order.update({ where: { id: slow.id }, data: { raw: promise(30) } });
     expect(await forecast(slow.id)).toMatch(/^⏱️ Previsão de saída do restaurante: por volta das \d{2}:\d{2}\./);
 
-    // A saída prevista (+14 min) passa da entrega prometida (+5 min): desculpas.
+    // A saída prevista (+13 min) passa da entrega prometida (+5 min): desculpas, mesmo antes do tempo normal.
     const late = await order(20);
     await admin.order.update({ where: { id: late.id }, data: { raw: promise(5) } });
     expect(await forecast(late.id)).toMatch(/^Pedimos desculpas pela demora! 🙏/);
+    await admin.order.deleteMany({ where: { id: { in: [slow.id, late.id] } } });
   });
 
-  it("mais atrasado que quase todos (menos de 3 demoraram mais): agora + 5 min (nunca um horário que já passou)", async () => {
+  it("mais atrasado que quase todos (menos de 3 demoraram mais): agora + 3 min (nunca um horário que já passou)", async () => {
     const veryLate = await order(60);
     const text = await forecast(veryLate.id);
-    expect(text).toContain(`por volta das ${clock(new Date(Date.now() + 5 * MINUTE))}.`);
+    expect(text).toContain(`por volta das ${clock(new Date(Date.now() + 3 * MINUTE))}.`);
+    await admin.order.delete({ where: { id: veryLate.id } });
   });
 
   it("o Jev ajusta o quantil pelos itens e pela cozinha", async () => {
-    // "Bem mais demorado" (4): quantil 0,6 = 18 + 0,2 × (30 − 18) = 20,4 min.
+    // "Bem mais demorado" (4): quantil 0,5 = 16 + 0,5 × (18 − 16) = 17 min.
     jevPace = 4;
     try {
       const current = await order(5);
@@ -167,7 +212,7 @@ describe("previsão de saída do pedido (E26)", () => {
         where: { id: current.id },
         data: { items: { create: { tenantId: fx.tenant.id, name: "Rodízio para 4", quantity: 2, unitPrice: "15.00" } } },
       });
-      const expected = new Date(current.placedAt.getTime() + MINUTE + 20.4 * MINUTE);
+      const expected = new Date(current.placedAt.getTime() + MINUTE + 17 * MINUTE);
       expect(await forecast(current.id)).toContain(`por volta das ${clock(expected)}.`);
       const asked = jev.requests.at(-1)!.body as { state: { este_pedido: { itens: string[] } }; provider: unknown };
       expect(asked.state.este_pedido.itens).toEqual(["2x Rodízio para 4"]);
@@ -187,7 +232,7 @@ describe("previsão de saída do pedido (E26)", () => {
       return admin.order.update({ where: { id: created.id }, data: { channelId: cardapio.id, status } });
     };
     for (const ago of [300, 250, 200]) await onChannel(ago, "DELIVERED");
-    // Ainda no tempo normal (15,6 min): previsão de saída.
+    // Ainda no tempo normal (14,2 min): previsão de saída.
     expect(await forecast((await onChannel(5, "CONFIRMED")).id)).toMatch(/^⏱️ Previsão de saída do restaurante/);
     // Passou: em vez de empurrar a previsão, diz que o pedido já deve ter saído.
     expect(await forecast((await onChannel(25, "CONFIRMED")).id)).toBe(

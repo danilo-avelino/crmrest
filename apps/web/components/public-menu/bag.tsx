@@ -4,7 +4,7 @@ import { MinusIcon, PlusIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { ChevronRightIcon, TicketPercentIcon } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { couponEffect, couponSummary, selectCoupon, useCoupons, useSelectedCoupon } from "@/lib/coupons";
+import { couponSummary, selectCoupon, setCouponCode, useCodePreview, useCouponCode, useCouponPreview, useCoupons, useSelectedCoupon } from "@/lib/coupons";
 import { Button } from "@/components/ui/button";
 import {
   type BagStore,
@@ -157,10 +157,9 @@ function BagPanel({
   const subtotal = subtotalOf(lines);
   const remaining = freeDeliveryRemaining(subtotal, store.freeDeliveryFromCents);
   const suggestions = suggestionsOf(categories, highlights, lines, remaining);
-  const couponId = useSelectedCoupon(slug);
-  const coupons = useCoupons(slug, subtotal);
-  const coupon = coupons?.coupons.find((c) => c.id === couponId && c.available) ?? null;
-  const effect = couponEffect(coupon, subtotal);
+  // A melhor vantagem (cupom da tag, código digitado ou automático); a taxa só entra com o endereço, no checkout.
+  const preview = useCouponPreview(slug, subtotal, 0, lines, null);
+  const effect = { discountCents: preview.discountCents, freeDelivery: preview.freeDelivery };
 
   if (lines.length === 0) {
     return (
@@ -199,13 +198,19 @@ function BagPanel({
         ))}
       </ul>
 
+      {preview.vipGift && (
+        <div role="status" className="border-t border-rule bg-success-lt px-4 py-3 text-success-ink">
+          <span className="font-semibold">{preview.giftTitle}</span> Adicionamos {preview.vipGift} ao seu carrinho gratuitamente.
+        </div>
+      )}
+
       {suggestions.length > 0 && (
         <section className="border-t border-rule px-4 py-3" aria-label="Peça também">
           <h3 className="m-0 mb-2 text-[12px] font-semibold text-ink-2">Peça também</h3>
           <div className="-mr-4 flex gap-2 overflow-x-auto pr-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {suggestions.map(({ item, completes }) => (
               <button key={item.id} type="button" onClick={() => onSuggest(item)} className="flex w-30 shrink-0 flex-col gap-1 text-left">
-                <span className="block h-20 w-full overflow-hidden rounded-lg bg-[#E9E3D9]">
+                <span className="block aspect-[4/3] w-full overflow-hidden rounded-lg bg-[#E9E3D9]">
                   {item.photoUrl && (
                     // eslint-disable-next-line @next/next/no-img-element -- ver ItemCard.
                     <img src={item.photoUrl} alt="" loading="lazy" decoding="async" className="size-full object-cover" />
@@ -221,10 +226,12 @@ function BagPanel({
       )}
 
       <Coupon slug={slug} subtotal={subtotal} />
+      <CouponCode slug={slug} lines={lines} />
 
       <dl className="m-0 flex flex-col gap-1 border-t border-rule px-4 py-3 tabular-nums">
         <Row label="Subtotal" value={money(subtotal)} />
-        {coupon && effect.discountCents > 0 && <Row label={`Cupom ${coupon.title}`} value={`− ${money(effect.discountCents)}`} />}
+        {preview.label && effect.discountCents > 0 && <Row label={`Cupom ${preview.label}`} value={`− ${money(effect.discountCents)}`} />}
+        {preview.vipGift && <Row label={`${preview.giftLabel}: ${preview.vipGift}`} value="Grátis" />}
         <Row label="Entrega" value={effect.freeDelivery ? "Grátis" : deliveryLine(store, subtotal)} />
         <Row label="Total" value={money(subtotal - effect.discountCents)} strong />
         {deliveryLine(store, subtotal) !== "Grátis" && <p className="m-0 text-[12px] text-ink-3">A entrega entra no total quando você informar o endereço.</p>}
@@ -252,6 +259,63 @@ function BagPanel({
           </Button>
         )}
       </div>
+    </div>
+  );
+}
+
+/** "Tem um cupom?": o código dos cupons da aba Cupons. O servidor confere de novo no pedido. */
+function CouponCode({ slug, lines }: { slug: string; lines: CartLine[] }) {
+  const code = useCouponCode(slug);
+  const preview = useCodePreview(slug, lines, null);
+  const [text, setText] = useState("");
+  const [open, setOpen] = useState(false);
+  const typed = preview?.typed;
+  return (
+    <div className="flex flex-col gap-1.5 border-t border-rule px-4 py-3">
+      {preview?.automatic && !typed?.ok && (
+        <p className="m-0 text-[13px] text-success">
+          <span className="font-semibold">{preview.automatic.label}</span> · {couponSummary(preview.automatic, money)} entra sozinho no pedido
+        </p>
+      )}
+      {code ? (
+        <div className={cn("flex items-center gap-2 rounded-lg border px-3 py-2", typed?.ok ? "border-dashed border-success bg-success/5" : "border-dashed border-rule")}>
+          <span className="flex-1 text-[13px]">
+            <span className="font-semibold">{code}</span>
+            {typed?.ok && <> aplicado · {couponSummary(typed.coupon, money)}</>}
+            {typed && !typed.ok && <span className="block text-[12px] text-warning">{typed.message}</span>}
+          </span>
+          <button type="button" onClick={() => setCouponCode(slug, null)} className="h-9 rounded-md border border-rule bg-surface px-3 text-[13px] font-semibold">
+            Remover
+          </button>
+        </div>
+      ) : open ? (
+        <form
+          className="flex gap-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const clean = text.trim().toUpperCase().replace(/\s+/g, "");
+            if (clean) setCouponCode(slug, clean);
+            setText("");
+          }}
+        >
+          <input
+            aria-label="Código do cupom"
+            autoCapitalize="characters"
+            value={text}
+            maxLength={30}
+            onChange={(e) => setText(e.target.value)}
+            placeholder="Código do cupom"
+            className="h-9 min-w-0 flex-1 rounded-md border border-rule bg-surface px-3 text-[14px] uppercase outline-none focus:border-ink"
+          />
+          <button type="submit" className="h-9 rounded-md bg-ink px-3 text-[13px] font-semibold text-paper">
+            Aplicar
+          </button>
+        </form>
+      ) : (
+        <button type="button" onClick={() => setOpen(true)} className="flex items-center gap-2 text-left text-[13px] font-medium">
+          <TicketPercentIcon className="size-4 text-(--menu-accent)" aria-hidden /> Tem um cupom?
+        </button>
+      )}
     </div>
   );
 }

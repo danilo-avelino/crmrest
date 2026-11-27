@@ -16,6 +16,7 @@ import { CurrentAuth, type RequestAuth } from "../auth/auth.decorators.js";
 import { ZodPipe } from "../common/zod.pipe.js";
 import {
   AvailabilityRequest,
+  BulkItemsRequest,
   CategoryPatch,
   CategoryRequest,
   ItemPatch,
@@ -114,6 +115,12 @@ export class MenuController {
   @Post("items")
   createItem(@uuid("tenantId") tenantId: string, @Body(new ZodPipe(ItemRequest)) body: ItemRequest, @CurrentAuth() auth: RequestAuth) {
     return this.menu.createItem(auth, tenantId, body);
+  }
+
+  /** Edição em planilha (N2). */
+  @Patch("items")
+  bulkUpdateItems(@uuid("tenantId") tenantId: string, @Body(new ZodPipe(BulkItemsRequest)) body: BulkItemsRequest, @CurrentAuth() auth: RequestAuth) {
+    return this.menu.bulkUpdateItems(auth, tenantId, body);
   }
 
   @Patch("items/:id")

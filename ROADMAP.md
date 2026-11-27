@@ -575,8 +575,22 @@ Ainda não há board no [Dish Desk Design.html](Dish%20Desk%20Design.html) para 
 - A definir: o desconto máximo que a IA pode sugerir; se a IA pode oferecer na conversa, por conta própria, um cupom já aprovado (ex.: para quem reclamou).
 - Fora do escopo: cupom no iFood e no Cardápio Web, que são sistemas de terceiros.
 
+#### E48 — IA vendedora: oferta de bebida e sobremesa no pedido · **M** · depende de: E41, E42, E43 · **⬜ A fazer**
+Pedido do usuário em 25/11/2026. **Foco quando voltarmos a trabalhar no cardápio.**
+- Como restaurante, quero que a IA aja como vendedora: quando o cliente põe só a comida, ela pergunta se ele quer uma **bebida** e, depois, uma **sobremesa**, antes de fechar o pedido.
+- Vale nos dois caminhos: no **pedido pelo link** (cardápio público, antes de ir para o checkout) e no **pedido pelo WhatsApp** (o agente pergunta antes do resumo).
+- Como admin, quero configurar isso no cardápio: ligar ou desligar, quais etapas entram e em que ordem (ex.: bebida, depois sobremesa), qual categoria ou quais itens cada etapa oferece e o texto da pergunta.
+- Não pergunta de novo o que o cliente já pôs no carrinho (já tem bebida: pula a bebida) nem insiste depois de um "não". Item pausado ou esgotado nunca é oferecido.
+- O texto que o agente manda segue a personalidade (CLAUDE.md §10): entra em `AutomationMessages`, um por personalidade.
+- Medir: quantas ofertas foram feitas, aceitas e a receita a mais (funil do cardápio, F7).
+- Já existe e deve ser aproveitado: no site, o "Peça também" da sacola (bebida e sobremesa pela categoria, F3-06); no agente, `suggestAddons` e `maxSuggestionsPerConversation` em Configurações → Pedidos pela IA (F4-11), hoje só uma instrução no prompt, sem etapas nem contagem.
+- A definir: se a etapa de sobremesa aparece mesmo quando o cliente recusou a bebida; se dá para oferecer em combo com desconto (liga com os cupons, E44); se vale também para outros complementos (ex.: borda, porção extra).
+- Tarefas: F2-17, F3-15 e F4-12 em [docs/cardapio-ia/TAREFAS.md](docs/cardapio-ia/TAREFAS.md).
+
 ### Ordem sugerida (Fase 5)
 `E41 Cardápio → E42 IA com o cardápio → E43 Pedido pelo WhatsApp com Pix → E44 Cupons`
+
+E48 (IA vendedora) é a próxima a fazer quando o trabalho no cardápio voltar.
 
 Depois do E44, a Fase 3 segue com as automações (E45) e a receita atribuída (E46).
 
