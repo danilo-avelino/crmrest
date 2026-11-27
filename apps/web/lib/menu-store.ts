@@ -122,11 +122,17 @@ export function formToPayload(form: StoreForm, base: MenuStoreSettings): { ok: t
     delivery = { mode: "BY_RADIUS", radii };
   }
 
+  const fields = { street: form.street, number: form.number, district: form.district, city: form.city, state: form.state.toUpperCase(), zip: form.zip };
+  const old = base.address;
+  const moved = (Object.keys(fields) as (keyof typeof fields)[]).some((k) => fields[k].trim() !== (k === "city" ? base.city || old.city : old[k]).trim());
+  // Endereço novo: o ponto antigo da loja sai, e a aba Áreas de entrega acha o novo pelo CEP e pelo endereço.
+  const address = moved ? { ...old, ...fields, lat: undefined, lng: undefined } : { ...old, ...fields };
+
   return {
     ok: true,
     body: {
       ...base,
-      address: { ...base.address, street: form.street, number: form.number, district: form.district, city: form.city, state: form.state.toUpperCase(), zip: form.zip },
+      address,
       pickupEnabled: form.pickupEnabled,
       prepMinutes: prep as number,
       delivery,

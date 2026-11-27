@@ -51,6 +51,86 @@ function cheaperOverlap(area: DeliveryArea, areas: DeliveryArea[], store: LatLng
   );
 }
 
+/** De onde veio o ponto da loja, do mais preciso ao menos. */
+type GeoSource = "number" | "street" | "cep" | "district" | "city";
+type Geo = { at: LatLng; source: GeoSource };
+const GEO_TEXT: Record<GeoSource, string> = {
+  number: "pelo endereço com número",
+  street: "pela rua (sem achar o número)",
+  cep: "pelo CEP",
+  district: "pelo bairro: confira o pino",
+  city: "só pela cidade: confira o pino",
+};
+
+/** Busca no Nominatim (OpenStreetMap, o mesmo do mapa): o primeiro resultado e o place_rank (30 = casa, 26 = rua). */
+async function nominatim(params: Record<string, string>): Promise<{ at: LatLng; rank: number } | null> {
+  const query = new URLSearchParams({ ...params, format: "jsonv2", limit: "1", countrycodes: "br" });
+  try {
+    const res = await fetch(`https://nominatim.openstreetmap.org/search?${query}`, { headers: { Accept: "application/json" } });
+    if (!res.ok) return null;
+    const [hit] = (await res.json()) as { lat: string; lon: string; place_rank: number }[];
+    return hit ? { at: { lat: Number(hit.lat), lng: Number(hit.lon) }, rank: hit.place_rank } : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Lat/lng da loja pelo CEP e pelo endereço cadastrados, ficando com o mais preciso: número > rua > CEP > bairro > cidade.
+ * O CEP também completa rua, bairro e cidade que faltem no cadastro. null: nada achado.
+ */
+async function geocodeStore(saved: MenuStoreSettings["address"], storeCity: string): Promise<Geo | null> {
+  const address = { ...saved, city: storeCity || saved.city };
+  const zip = address.zip.replace(/\D/g, "");
+  // O CEP diz a rua certa (a coordenada que ele traz às vezes é só o centro da cidade, por isso não é usada).
+  let cepStreet = "";
+  if (zip.length === 8) {
+    try {
+      const res = await fetch(`https://brasilapi.com.br/api/cep/v2/${zip}`);
+      if (res.ok) {
+        const cep = (await res.json()) as { street?: string; neighborhood?: string; city?: string; state?: string };
+        cepStreet = cep.street ?? "";
+        address.district ||= cep.neighborhood ?? "";
+        address.city ||= cep.city ?? "";
+        address.state ||= cep.state ?? "";
+      }
+    } catch {
+      // sem o CEP, segue pelo endereço
+    }
+  }
+  const place = { city: address.city, state: address.state, country: "Brasil" };
+  const streets = [...new Set([address.street.trim(), cepStreet.trim()].filter(Boolean))];
+  let road: { at: LatLng; rank: number; fromCep: boolean } | null = null;
+  for (const street of address.city ? streets : []) {
+    const fromCep = street !== address.street.trim();
+    if (address.number.trim()) {
+      const exact = await nominatim({ ...place, street: `${address.number.trim()} ${street}` });
+      if (exact && exact.rank >= 28) return { at: exact.at, source: "number" };
+      if (!road && exact && exact.rank >= 26) road = { ...exact, fromCep };
+    }
+    if (!road) {
+      const hit = await nominatim({ ...place, street });
+      if (hit && hit.rank >= 26) road = { ...hit, fromCep };
+    }
+  }
+  if (road) return { at: road.at, source: road.fromCep ? "cep" : "street" };
+  if (zip.length === 8) {
+    const byZip = await nominatim({ postalcode: `${zip.slice(0, 5)}-${zip.slice(5)}`, country: "Brasil" });
+    if (byZip && byZip.rank >= 21) return { at: byZip.at, source: "cep" };
+  }
+  if (address.district && address.city) {
+    const district = await nominatim({ q: `${address.district}, ${address.city}, ${address.state}` });
+    if (district) return { at: district.at, source: "district" };
+  }
+  if (address.city) {
+    const city = await nominatim(place);
+    if (city) return { at: city.at, source: "city" };
+  }
+  return null;
+}
+
+const NO_LOCATION = "Não achamos a loja no mapa pelo CEP nem pelo endereço. Confira o CEP e o endereço em Configurações → Cardápio e entrega: as distâncias são medidas a partir da loja.";
+
 const newId = () => Math.random().toString(36).slice(2, 10);
 const kmText = (km: number) => (Number.isInteger(km) ? String(km) : km.toFixed(1).replace(".", ","));
 
@@ -78,6 +158,8 @@ export function AreasPage() {
   const [editing, setEditing] = useState<string | null>(null);
   const [drawing, setDrawing] = useState<Drawing>(null);
   const [problem, setProblem] = useState<string | null>(null);
+  const [geoDone, setGeoDone] = useState(false);
+  const [geoSource, setGeoSource] = useState<GeoSource | null>(null);
   const loaded = useRef(false);
 
   useEffect(() => {
@@ -90,8 +172,18 @@ export function AreasPage() {
       districts: s.delivery.mode === "BY_DISTRICT" ? s.delivery.districts.map((d) => ({ district: d.district, fee: centsText(d.feeCents) })) : [],
       radii: s.delivery.mode === "BY_RADIUS" ? s.delivery.radii.map((r) => ({ maxKm: kmText(r.maxKm), fee: centsText(r.feeCents) })) : [],
     });
-    setLocation(s.address.lat != null && s.address.lng != null ? { lat: s.address.lat, lng: s.address.lng } : null);
+    const saved = s.address.lat != null && s.address.lng != null ? { lat: s.address.lat, lng: s.address.lng } : null;
+    setLocation(saved);
     setPickup(s.pickupEnabled);
+    if (saved) return;
+    // Loja sem localização: acha pelo CEP e pelo endereço cadastrados; o gestor confere o pino e salva.
+    void geocodeStore(s.address, s.city ?? "").then((geo) => {
+      setGeoDone(true);
+      if (!geo) return;
+      setLocation((current) => current ?? geo.at);
+      setGeoSource(geo.source);
+      setDirty(true);
+    });
   }, [store.data]);
 
   const touch = () => setDirty(true);
@@ -106,7 +198,7 @@ export function AreasPage() {
     const base = store.data.store;
     let delivery: MenuStoreSettings["delivery"];
     if (mode === "BY_AREA") {
-      if (areas.some((a) => a.shape.type === "circle") && !location) return setProblem("Marque a loja no mapa: os círculos são medidos a partir dela.");
+      if (areas.some((a) => a.shape.type === "circle") && !location) return setProblem(NO_LOCATION);
       delivery = { mode, areas };
     } else if (mode === "BY_DISTRICT") {
       const districts = [];
@@ -124,7 +216,7 @@ export function AreasPage() {
         if (!(maxKm > 0 && maxKm <= 200) || fee === null) return setProblem("Cada raio precisa de km (até 200) e taxa em R$.");
         radii.push({ maxKm, feeCents: fee });
       }
-      if (radii.length && !location) return setProblem("Marque a loja no mapa: o raio é medido a partir dela.");
+      if (radii.length && !location) return setProblem(NO_LOCATION);
       delivery = { mode, radii };
     }
     // Logo, capa e recebedor do Pix não vão no corpo (mudam por outras rotas).
@@ -177,6 +269,8 @@ export function AreasPage() {
   }
 
 
+  const savedAddress = store.data.store.address;
+  const locating = !location && !geoDone && (savedAddress.lat == null || savedAddress.lng == null);
   const count = mode === "BY_AREA" ? areas.length : mode === "BY_DISTRICT" ? rows.districts.length : rows.radii.length;
   return (
     <MenuPage>
@@ -188,6 +282,8 @@ export function AreasPage() {
           areas={areas}
           radii={rows.radii}
           location={location}
+          locating={locating}
+          geoSource={geoSource}
           storeName={storeName}
           drawing={drawing}
           setDrawing={setDrawing}
@@ -206,12 +302,13 @@ export function AreasPage() {
         <aside className={cn(BLOCK, "flex w-[320px] shrink-0 flex-col")} aria-label="Áreas">
           <div className="flex flex-col gap-3 border-b border-rule px-4 py-4">
             <p className="font-heading text-[24px] font-bold">{plural(count, mode === "BY_DISTRICT" ? "bairro" : mode === "BY_RADIUS" ? "raio" : "área", mode === "BY_DISTRICT" ? "bairros" : mode === "BY_RADIUS" ? "raios" : "áreas")}</p>
-            <div className="flex overflow-hidden rounded-lg border border-rule" role="group" aria-label="Como cobrar a entrega">
+            <div className="flex overflow-hidden rounded-lg border border-rule" role="radiogroup" aria-label="Como cobrar a entrega">
               {(["BY_DISTRICT", "BY_RADIUS", "BY_AREA"] as const).map((m) => (
                 <button
                   key={m}
                   type="button"
-                  aria-pressed={mode === m}
+                  role="radio"
+                  aria-checked={mode === m}
                   onClick={() => {
                     setMode(m);
                     setDrawing(null);
@@ -228,7 +325,8 @@ export function AreasPage() {
                 ? "Desenhe círculos e polígonos no mapa. Onde duas áreas se cruzam, vale a de menor taxa."
                 : mode === "BY_RADIUS"
                   ? "Taxa até cada distância da loja, em linha reta. Vale a menor faixa que cobre o endereço."
-                  : "Taxa por bairro, como o cliente escreve no endereço."}
+                  : "Taxa por bairro, como o cliente escreve no endereço."}{" "}
+              Só vale a forma escolhida: ao salvar, as outras deixam de valer.
             </p>
           </div>
           {mode === "BY_AREA" ? (
@@ -443,6 +541,8 @@ function AreasMap({
   areas,
   radii,
   location,
+  locating,
+  geoSource,
   storeName,
   drawing,
   setDrawing,
@@ -455,6 +555,8 @@ function AreasMap({
   areas: DeliveryArea[];
   radii: Rows["radii"];
   location: LatLng | null;
+  locating: boolean;
+  geoSource: GeoSource | null;
   storeName: string;
   drawing: Drawing;
   setDrawing: (d: Drawing) => void;
@@ -486,7 +588,7 @@ function AreasMap({
       m.on("click", (e: Leaflet.LeafletMouseEvent) => {
         const at = { lat: e.latlng.lat, lng: e.latlng.lng };
         const { drawing: d, location: store, areas: list } = state.current;
-        if (d?.type === "store" || (!store && !d)) {
+        if (d?.type === "store") {
           state.current.onLocation(at);
           state.current.setDrawing(null);
         } else if (d?.type === "circle" && store) {
@@ -572,13 +674,32 @@ function AreasMap({
     }
   }, [ready, mode, areas, radii, location, drawing, selected, storeName, onLocation, onSelect]);
 
+  // Ao trocar a forma de cobrar, enquadra o que vale para ela (os círculos do raio ou as áreas desenhadas).
+  useEffect(() => {
+    const leaflet = L.current;
+    if (!ready || !leaflet || !location) return;
+    const shapes = (layer.current?.getLayers() ?? []).filter((l): l is Leaflet.Circle | Leaflet.Polygon => l instanceof leaflet.Circle || l instanceof leaflet.Polygon);
+    if (mode === "BY_DISTRICT" || shapes.length === 0) {
+      map.current?.setView(location, 14);
+      return;
+    }
+    const bounds = leaflet.latLngBounds([location, location]);
+    shapes.forEach((s) => bounds.extend(s.getBounds()));
+    map.current?.fitBounds(bounds, { padding: [40, 40], maxZoom: 15 });
+    // Só na troca de forma: editar uma faixa não mexe no enquadramento.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, mode]);
+
   const hint = useMemo(() => {
-    if (!location) return "Clique no mapa onde fica a loja. Os círculos e o raio são medidos a partir dela.";
+    if (locating) return "Procurando a loja no mapa pelo CEP e pelo endereço…";
+    if (!location) return NO_LOCATION;
+    if (mode === "BY_RADIUS" && !radii.some((r) => Number(r.maxKm.replace(",", ".")) > 0)) return "Adicione um raio ao lado: o círculo aparece aqui, a partir da loja.";
+    if (geoSource && !drawing) return `Loja achada ${GEO_TEXT[geoSource]}. Salve para usar este ponto (dá para arrastar o pino).`;
     if (drawing?.type === "circle") return "Clique no mapa até onde o círculo vai: a distância da loja até o clique vira o raio.";
     if (drawing?.type === "polygon") return drawing.points.length < 3 ? "Clique nos cantos da área no mapa." : "Clique no primeiro ponto para fechar a área.";
     if (drawing?.type === "store") return "Clique no novo lugar da loja.";
     return null;
-  }, [location, drawing]);
+  }, [locating, location, mode, radii, geoSource, drawing]);
 
   return (
     <div className={cn(BLOCK, "relative min-w-0 flex-1 overflow-hidden")} style={{ height: 640 }}>
