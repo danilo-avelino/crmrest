@@ -198,6 +198,12 @@ function BagPanel({
         ))}
       </ul>
 
+      {preview.vipGift && (
+        <div role="status" className="border-t border-rule bg-success-lt px-4 py-3 text-success-ink">
+          <span className="font-semibold">Você é VIP!</span> Adicionamos {preview.vipGift} ao seu carrinho gratuitamente.
+        </div>
+      )}
+
       {suggestions.length > 0 && (
         <section className="border-t border-rule px-4 py-3" aria-label="Peça também">
           <h3 className="m-0 mb-2 text-[12px] font-semibold text-ink-2">Peça também</h3>
@@ -225,6 +231,7 @@ function BagPanel({
       <dl className="m-0 flex flex-col gap-1 border-t border-rule px-4 py-3 tabular-nums">
         <Row label="Subtotal" value={money(subtotal)} />
         {preview.label && effect.discountCents > 0 && <Row label={`Cupom ${preview.label}`} value={`− ${money(effect.discountCents)}`} />}
+        {preview.vipGift && <Row label={`Brinde VIP: ${preview.vipGift}`} value="Grátis" />}
         <Row label="Entrega" value={effect.freeDelivery ? "Grátis" : deliveryLine(store, subtotal)} />
         <Row label="Total" value={money(subtotal - effect.discountCents)} strong />
         {deliveryLine(store, subtotal) !== "Grátis" && <p className="m-0 text-[12px] text-ink-3">A entrega entra no total quando você informar o endereço.</p>}

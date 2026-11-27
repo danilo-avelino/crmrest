@@ -706,6 +706,12 @@ function ReviewStep({
               <span>− {money(preview.discountCents)}</span>
             </div>
           )}
+          {preview.vipGift && (
+            <div className="flex justify-between text-success-ink">
+              <span>Brinde VIP: {preview.vipGift}</span>
+              <span>Grátis</span>
+            </div>
+          )}
           {state.mode === "DELIVERY" && (
             <div className="flex justify-between">
               <span className="text-ink-2">Entrega</span>

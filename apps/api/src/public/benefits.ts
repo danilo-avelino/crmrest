@@ -179,4 +179,41 @@ export function applyBenefit(benefit: AppliedBenefit | null, subtotalCents: numb
   return { discountCents: Math.min(benefit.discountCents, subtotalCents), deliveryFeeCents: benefit.freeDelivery ? 0 : deliveryFeeCents };
 }
 
+/** Brinde do VIP gravado no pedido (`raw.vipGift`, com `given: true` para contar o limite do mês); o item vai na lista do pedido a R$ 0. */
+export type AppliedVipGift = { itemId: string; name: string };
+
+/**
+ * Brinde do VIP para este cliente, sem olhar o subtotal: null quando está desligado, o cliente não é VIP, o item saiu
+ * do cardápio (ou esgotou) ou não entrou com o código do WhatsApp. `available: false` quando já usou o limite do mês.
+ */
+export async function vipGiftFor(
+  tx: TenantTx,
+  input: { tenantId: string; contactId: string; tags: string[]; settings: unknown; now: Date },
+): Promise<{ item: AppliedVipGift; minOrderCents: number; perMonth: number | null; usedThisMonth: number; available: boolean; reason: string | null } | null> {
+  const config = tagBenefitsOf(input.settings);
+  const gift = config.vipGift;
+  if (!config.tags.VIP.enabled || !gift.enabled || !gift.itemId || !input.tags.includes("VIP")) return null;
+  const item = await tx.menuItem.findFirst({
+    where: { id: gift.itemId, tenantId: input.tenantId, active: true, soldOut: false, category: { active: true } },
+    select: { id: true, name: true },
+  });
+  if (!item) return null;
+  let reason: string | null = null;
+  let used = 0;
+  if (gift.perMonth != null) {
+    used = await tx.order.count({
+      where: {
+        tenantId: input.tenantId,
+        contactId: input.contactId,
+        source: "MENU",
+        status: { not: "CANCELED" },
+        raw: { path: ["vipGift", "given"], equals: true },
+        placedAt: { gte: monthStartBrt(input.now) },
+      },
+    });
+    if (used >= gift.perMonth) reason = gift.perMonth === 1 ? "Você já ganhou o brinde este mês." : `Você já ganhou o brinde ${gift.perMonth} vezes este mês.`;
+  }
+  return { item: { itemId: item.id, name: item.name }, minOrderCents: gift.minOrderCents, perMonth: gift.perMonth, usedThisMonth: used, available: reason === null, reason };
+}
+
 export type { BenefitTag };

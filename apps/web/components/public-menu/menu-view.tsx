@@ -22,6 +22,7 @@ import { ReorderStrip } from "./reorder-strip";
 import { SearchPanel } from "./search-panel";
 import { Sheet } from "./sheet";
 import { StoreLogo } from "./store-hero";
+import { VipWelcome } from "./vip-welcome";
 
 const HIGHLIGHTS_ID = "destaques";
 const categoryDomId = (id: string) => `cat-${id}`;
@@ -127,6 +128,7 @@ export function MenuView({ slug, menu }: { slug: string; menu: PublicMenu }) {
 
   return (
     <CartProvider slug={slug}>
+      <VipWelcome slug={slug} />
       <div className="mx-auto mt-3 flex w-full max-w-6xl flex-col gap-3 px-4 lg:hidden">
         <LoginBenefitsCard slug={slug} />
         <DeliveryCard slug={slug} store={menu.store} />

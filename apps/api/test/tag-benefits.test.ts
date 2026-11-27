@@ -126,6 +126,28 @@ describe("Vantagens por tag no cardápio", () => {
     expect((await admin.order.findUniqueOrThrow({ where: { id: second.body.id } })).raw).not.toHaveProperty("benefit");
   });
 
+  it("brinde do VIP: entra a R$ 0 com o pedido mínimo, soma com o cupom e respeita o limite do mês", async () => {
+    const auth = { Authorization: `Bearer ${adminToken}` };
+    const vipGift = { enabled: true, itemId: pizza, minOrderCents: 4000, perMonth: 2 };
+    await request(app.getHttpServer()).put(`/api/menu/${fx.b.id}/tag-benefits`).set(auth).send({ ...BENEFITS, vipGift }).expect(200);
+    const { cookie } = await customer(["VIP"]);
+    const coupons = await request(app.getHttpServer()).get(url("/me/coupons")).set("Cookie", cookie).expect(200);
+    expect(coupons.body).toMatchObject({ vip: true, vipGift: { name: "Calabresa", minOrderCents: 4000, perMonth: 2, usedThisMonth: 0, available: true, reason: null } });
+
+    const first = await post("/orders", order({ couponId: "VIP" }), cookie).expect(200);
+    const saved = await admin.order.findUniqueOrThrow({ where: { id: first.body.id }, include: { items: true } });
+    expect(Number(saved.total)).toBe(40); // o cupom VIP continua valendo junto
+    expect(saved.items.find((i) => i.notes === "Brinde VIP")).toMatchObject({ name: "Calabresa", menuItemId: pizza });
+    expect(Number(saved.items.find((i) => i.notes === "Brinde VIP")!.unitPrice)).toBe(0);
+
+    await post("/orders", order(), cookie).expect(200);
+    const third = await post("/orders", order(), cookie).expect(200);
+    expect((await admin.order.findUniqueOrThrow({ where: { id: third.body.id }, include: { items: true } })).items).toHaveLength(1);
+    const after = await request(app.getHttpServer()).get(url("/me/coupons")).set("Cookie", cookie).expect(200);
+    expect(after.body.vipGift).toMatchObject({ usedThisMonth: 2, available: false, reason: "Você já ganhou o brinde 2 vezes este mês." });
+    await request(app.getHttpServer()).put(`/api/menu/${fx.b.id}/tag-benefits`).set(auth).send(BENEFITS).expect(200);
+  });
+
   it("visitante sem código não usa cupom", async () => {
     const res = await post("/orders", order({ couponId: "VIP", customer: { name: "Visitante", phone: phone() } })).expect(422);
     expect(res.body.code).toBe("COUPON_INVALID");

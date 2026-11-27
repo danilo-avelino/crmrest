@@ -24,7 +24,7 @@ import { FunnelService } from "../funnel/funnel.service.js";
 import { DatabaseService } from "../core/database.service.js";
 import { assertNotDemo, withoutDemo } from "../demo/demo.js";
 import { PagarmePixProvider, type PixProvider } from "../payments/pix.js";
-import { applyBenefit, resolveBenefit } from "./benefits.js";
+import { applyBenefit, resolveBenefit, vipGiftFor } from "./benefits.js";
 import { rememberAddress } from "../inbound/orders.js";
 import { quoteDelivery, scheduleSlots } from "../menu/delivery.js";
 import { loadMenuCategories, loadMenuItems, pricingCatalogOf } from "../menu/menu-catalog.js";
@@ -575,6 +575,17 @@ export class PublicOrderService {
     if (input.couponId && couponRefused) fail("COUPON_INVALID", couponRefused);
     if (input.couponCode?.trim() && codeRefused) fail("COUPON_INVALID", codeRefused);
     const applied = applyBenefit(benefit, subtotalCents, quote.feeCents);
+    // 4c. Brinde do VIP: soma com o cupom; só com o código do WhatsApp, o pedido mínimo e o limite do mês.
+    const vip = contact.verified
+      ? await vipGiftFor(tx, {
+          tenantId,
+          contactId: contact.id,
+          tags: (await tx.contact.findFirst({ where: { id: contact.id, tenantId }, select: { tags: true } }))?.tags ?? [],
+          settings: store.settings,
+          now,
+        })
+      : null;
+    const vipGift = vip?.available && subtotalCents >= vip.minOrderCents ? vip.item : null;
     const feeCents = applied.deliveryFeeCents;
     const totalCents = subtotalCents - applied.discountCents + feeCents;
 
@@ -648,6 +659,7 @@ export class PublicOrderService {
           ...(quote.mode === "DELIVERY" && quote.areaId ? { deliveryAreaId: quote.areaId } : {}),
           payment: { method, changeForCents },
           ...(benefit ? { benefit: { ...benefit, discountCents: applied.discountCents } } : {}),
+          ...(vipGift ? { vipGift: { ...vipGift, given: true } } : {}),
           // As escolhas de cada linha, para o "Pedir de novo" (W15/W16).
           lines: input.lines.map((l) => ({ itemId: l.itemId, sizeId: l.sizeId ?? null, optionIds: l.optionIds ?? [], halves: l.halves ?? [], quantity: l.quantity, note: l.note?.trim() || null })),
           customerName: contact.name,
@@ -656,15 +668,19 @@ export class PublicOrderService {
           accessTokenHash: createHash("sha256").update(this.tokenOf(tenantId, input.idempotencyKey)).digest("hex"),
         } satisfies Prisma.InputJsonObject,
         items: {
-          create: priced.map(({ line, note }) => ({
-            tenantId,
-            name: nameOf(line),
-            quantity: line.quantity,
-            unitPrice: reais(line.unitCents),
-            notes: note,
-            options: optionsText(line),
-            menuItemId: line.itemId,
-          })),
+          create: [
+            ...priced.map(({ line, note }) => ({
+              tenantId,
+              name: nameOf(line),
+              quantity: line.quantity,
+              unitPrice: reais(line.unitCents),
+              notes: note,
+              options: optionsText(line),
+              menuItemId: line.itemId,
+            })),
+            // Brinde do VIP: vai para a cozinha como item, a R$ 0.
+            ...(vipGift ? [{ tenantId, name: vipGift.name, quantity: 1, unitPrice: reais(0), notes: "Brinde VIP", menuItemId: vipGift.itemId }] : []),
+          ],
         },
         events: {
           create: [

@@ -49,9 +49,26 @@ export const RecoveryBenefit = z.object({
 });
 export type RecoveryBenefit = z.infer<typeof RecoveryBenefit>;
 
+/**
+ * Brinde do VIP (26/11/2026): um item do cardápio que entra sozinho no carrinho do cliente VIP (entrou com o código do
+ * WhatsApp) quando o pedido alcança o mínimo, a R$ 0. Não disputa com o cupom: soma com ele.
+ */
+export const VipGift = z.object({
+  enabled: z.boolean(),
+  itemId: z.string().min(1).max(64).nullable(),
+  minOrderCents: cents,
+  /** Quantos pedidos com brinde por mês (mês de Brasília); null = sem limite. */
+  perMonth: z.number().int().min(1).max(31).nullable(),
+});
+export type VipGift = z.infer<typeof VipGift>;
+
+export const DEFAULT_VIP_GIFT: VipGift = { enabled: false, itemId: null, minOrderCents: 0, perMonth: 1 };
+
 export const TagBenefitsSettings = z.object({
   tags: z.object(Object.fromEntries(BENEFIT_TAGS.map((tag) => [tag, TagBenefit])) as Record<BenefitTag, typeof TagBenefit>),
   recovery: RecoveryBenefit,
+  // Ausente nas configurações salvas antes de 26/11/2026.
+  vipGift: VipGift.default(DEFAULT_VIP_GIFT),
 });
 export type TagBenefitsSettings = z.infer<typeof TagBenefitsSettings>;
 
@@ -59,6 +76,7 @@ const off: TagBenefit = { enabled: false, freeDelivery: false, discountCents: 0,
 export const DEFAULT_TAG_BENEFITS: TagBenefitsSettings = {
   tags: { VIP: { ...off, freeDelivery: true, discountCents: 1000 }, Recorrente: off, Novo: off, Sumido: off },
   recovery: { enabled: false, discountCents: 1500, freeDelivery: false, minOrderCents: 0, sendMessage: true },
+  vipGift: DEFAULT_VIP_GIFT,
 };
 
 /** Configuração salva em `settings.tagBenefits`; inválida ou ausente volta ao padrão (tudo desligado, exemplo do VIP). */
@@ -76,6 +94,20 @@ export type CustomerCouponDto = {
   discountCents: number;
   minOrderCents: number;
   frequency: BenefitFrequency;
+  available: boolean;
+  reason: string | null;
+};
+
+/**
+ * Brinde do VIP como o cliente vê. `available: false` quando já usou o limite do mês (traz o motivo); o pedido mínimo
+ * a tela confere com o subtotal da sacola.
+ */
+export type VipGiftDto = {
+  name: string;
+  minOrderCents: number;
+  /** Brindes por mês (null = sem limite) e quantos o cliente já ganhou neste mês. */
+  perMonth: number | null;
+  usedThisMonth: number;
   available: boolean;
   reason: string | null;
 };

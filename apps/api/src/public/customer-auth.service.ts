@@ -1,5 +1,5 @@
 import { parseEncryptionKey } from "@dishdesk/database";
-import { automationMessagesOf, fillMessage, toE164 } from "@dishdesk/shared";
+import { automationMessagesOf, fillMessage, toE164, type VipGiftDto } from "@dishdesk/shared";
 import { BadRequestException, HttpException, HttpStatus, Inject, Injectable, Logger, type OnModuleDestroy, UnauthorizedException } from "@nestjs/common";
 import { Redis } from "ioredis";
 import { createHash, createHmac, hkdfSync, randomBytes, randomInt, timingSafeEqual } from "node:crypto";
@@ -9,7 +9,7 @@ import { ConnectorsService } from "../connectors/connectors.service.js";
 import { DatabaseService } from "../core/database.service.js";
 import { isDemoTenant } from "../demo/demo.js";
 import { linkedOrdersWhere } from "../orders/customer-history.js";
-import { customerCoupons } from "./benefits.js";
+import { customerCoupons, vipGiftFor } from "./benefits.js";
 import { candidateCoupons } from "./menu-coupons.js";
 import { PublicMenuService } from "./public-menu.service.js";
 
@@ -225,8 +225,15 @@ export class CustomerAuthService implements OnModuleDestroy {
       if (session.tenantId !== store.tenantId) throw new UnauthorizedException(NO_SESSION);
       const contact = await tx.contact.findFirst({ where: { id: session.contactId, tenantId: store.tenantId, deletedAt: null }, select: { id: true, name: true, tags: true } });
       if (!contact) throw new UnauthorizedException(NO_SESSION);
-      const coupons = await customerCoupons(tx, { tenantId: store.tenantId, contactId: contact.id, tags: contact.tags, settings: store.settings, now: new Date(), subtotalCents });
-      return { name: contact.name, coupons };
+      const input = { tenantId: store.tenantId, contactId: contact.id, tags: contact.tags, settings: store.settings, now: new Date() };
+      const coupons = await customerCoupons(tx, { ...input, subtotalCents });
+      const vip = await vipGiftFor(tx, input);
+      // Brinde do VIP: o nome do item e o mínimo; a sacola mostra a mensagem quando o subtotal alcança.
+      const vipGift: VipGiftDto | null = vip
+        ? { name: vip.item.name, minOrderCents: vip.minOrderCents, perMonth: vip.perMonth, usedThisMonth: vip.usedThisMonth, available: vip.available, reason: vip.reason }
+        : null;
+      // `vip`: o cardápio mostra a janela de boas-vindas do VIP logo depois do login.
+      return { name: contact.name, coupons, vipGift, vip: contact.tags.includes("VIP") };
     });
   }
 
