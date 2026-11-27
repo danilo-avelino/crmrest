@@ -120,6 +120,18 @@ describe("PricingService (F2-04)", () => {
     expect(codes(priceLine(categoriaSemMeio, sel(["frango"])))).toEqual(["HALF_NOT_ALLOWED"]);
   });
 
+  it("meio a meio por tamanho: tamanho desligado recusa, nos dois sabores; inteira no mesmo tamanho vale", () => {
+    const semMeioNaMedia = (id: string, grande: number) =>
+      pizza(id, grande, { sizes: [{ ...size(`${id}-m`, "Média", grande - 1000), allowsHalf: false }, size(`${id}-g`, "Grande", grande)] });
+    const cat = catalog("MAX", [semMeioNaMedia("broto1", 4000), semMeioNaMedia("broto2", 4500)]);
+    const media = priceLine(cat, { itemId: "broto1", sizeId: "broto1-m", halves: ["calabresa"], optionIds: ["alho"], quantity: 1 });
+    expect(media.ok ? [] : media.errors.map((e) => [e.code, e.message])).toEqual([["HALF_NOT_ALLOWED", "O tamanho Média não aceita meio a meio."]]);
+    // A outra metade com o tamanho desligado também recusa.
+    expect(codes(priceLine(cat, { itemId: "calabresa", sizeId: "calabresa-m", halves: ["broto2"], optionIds: ["alho"], quantity: 1 }))).toEqual(["HALF_NOT_ALLOWED"]);
+    expect(codes(priceLine(cat, { itemId: "broto1", sizeId: "broto1-m", optionIds: ["alho"], quantity: 1 }))).toEqual([]);
+    expect(codes(priceLine(cat, { itemId: "broto1", sizeId: "broto1-g", halves: ["broto2"], optionIds: ["alho"], quantity: 1 }))).toEqual([]);
+  });
+
   it("sacola: subtotal, taxa e total; taxa pode depender do subtotal", () => {
     const sels = [
       { itemId: "calabresa", sizeId: "calabresa-g", optionIds: ["alho"], quantity: 1 },

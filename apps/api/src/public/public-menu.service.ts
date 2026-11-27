@@ -153,7 +153,7 @@ function publicItem(item: LoadedItem, categoryAllowsHalf: boolean, categoryNow: 
     soldOut: item.soldOut,
     availableNow: categoryNow && availableAt(item.availabilities, now),
     allowsHalf: categoryAllowsHalf && item.allowsHalf,
-    sizes: item.sizes.map(({ id, name, priceCents }) => ({ id, name, priceCents })),
+    sizes: item.sizes.map(({ id, name, priceCents, allowsHalf }) => ({ id, name, priceCents, allowsHalf })),
     optionGroups: item.optionGroups.map(({ group }) => ({
       id: group.id,
       name: group.name,

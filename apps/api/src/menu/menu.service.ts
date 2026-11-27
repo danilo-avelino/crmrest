@@ -23,7 +23,7 @@ type Body<T extends z.ZodType> = z.output<T>;
 
 const SLOT = { weekday: true, startMinute: true, endMinute: true } as const;
 const ITEM_INCLUDE = {
-  sizes: { orderBy: { sortOrder: "asc" }, select: { id: true, name: true, priceCents: true, sortOrder: true, active: true } },
+  sizes: { orderBy: { sortOrder: "asc" }, select: { id: true, name: true, priceCents: true, sortOrder: true, active: true, allowsHalf: true } },
   optionGroups: { orderBy: { sortOrder: "asc" }, select: { groupId: true, sortOrder: true } },
   availabilities: { select: SLOT },
   pairsWith: { select: { pairedItemId: true } },

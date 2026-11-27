@@ -47,7 +47,8 @@ export type PublicMenuItem = {
   soldOut: boolean;
   availableNow: boolean;
   allowsHalf: boolean;
-  sizes: { id: string; name: string; priceCents: number }[];
+  /** `allowsHalf`: o tamanho aceita meio a meio (ex.: broto não aceita); ausente: aceita. */
+  sizes: { id: string; name: string; priceCents: number; allowsHalf?: boolean }[];
   optionGroups: {
     id: string;
     name: string;

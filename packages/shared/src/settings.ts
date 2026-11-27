@@ -252,6 +252,14 @@ export const DeliveryArea = z.object({
 });
 export type DeliveryArea = z.infer<typeof DeliveryArea>;
 
+/** Zona sem entrega (polígono desenhado no mapa): endereço dentro dela não recebe pedido, em qualquer forma de cobrar. */
+export const BlockedZone = z.object({
+  id: z.string().min(1).max(40),
+  name: text(60).min(1),
+  points: z.array(LatLng).min(3).max(100),
+});
+export type BlockedZone = z.infer<typeof BlockedZone>;
+
 /**
  * Configurações da loja do cardápio digital (em `tenant.settings.menuStore`). O horário de funcionamento é o
  * `businessHours`, não se repete aqui. Dinheiro sempre em centavos inteiros.
@@ -279,6 +287,8 @@ export const MenuStoreSettings = z.object({
     z.object({ mode: z.literal("BY_RADIUS"), radii: z.array(z.object({ maxKm: z.number().positive().max(200), feeCents: Cents })).max(50) }),
     z.object({ mode: z.literal("BY_AREA"), areas: z.array(DeliveryArea).max(50) }),
   ]),
+  /** Zonas sem entrega: valem por cima de bairro, raio e área (o endereço precisa ter lat/lng). */
+  blockedZones: z.array(BlockedZone).max(50).optional(),
   minOrderCents: Cents,
   /** Pedido com subtotal a partir deste valor não paga frete (vazio: nunca). */
   freeDeliveryFromCents: Cents.optional(),

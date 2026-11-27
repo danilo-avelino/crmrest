@@ -5,7 +5,7 @@ import { ClockIcon, PencilIcon, PlusIcon, Trash2Icon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
 import { BLOCK, ErrorNote, FilterChip, Headline, loadError, MenuPage, PageHeader, StatusBadge, TEXTAREA_CLASS, Toggle } from "@/components/menu/bits";
-import { PHOTO_TYPES, useMenuActions, useTenantId } from "@/components/menu/use-menu";
+import { PHOTO_TYPES, photoProblem, useMenuActions, useTenantId } from "@/components/menu/use-menu";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -244,6 +244,9 @@ function NoticeDialog({ notice, onClose }: { notice: Notice | null; onClose: () 
   const [end, setEnd] = useState(toHHMM(notice?.endMinute ?? null) || "20:00");
   const [endsOn, setEndsOn] = useState(notice?.endsOn ?? "");
   const [problem, setProblem] = useState<string | null>(null);
+  /** Imagem escolhida antes de o aviso existir: vai junto logo depois de criá-lo. */
+  const [pending, setPending] = useState<{ file: File; url: string } | null>(null);
+  useEffect(() => () => { if (pending) URL.revokeObjectURL(pending.url); }, [pending]);
 
   const save = async () => {
     setProblem(null);
@@ -254,6 +257,12 @@ function NoticeDialog({ notice, onClose }: { notice: Notice | null; onClose: () 
     const payload = { title: title.trim(), body: body.trim() || null, weekdays, startMinute: s, endMinute: e, endsOn: endsOn || null };
     const done = saved ? await call<Notice>(`/notices/${saved.id}`, "PUT", payload) : await call<Notice>("/notices", "POST", payload);
     if (!done) return;
+    if (!saved && pending) {
+      const withPhoto = await uploadTo<Notice>(`/notices/${done.data.id}/photo`, pending.file);
+      if (!withPhoto) return setSaved(done.data);
+      toast("Aviso criado.");
+      return onClose();
+    }
     toast(saved ? "Aviso salvo." : "Aviso criado. Agora envie a imagem.");
     if (saved) onClose();
     else setSaved(done.data);
@@ -275,13 +284,13 @@ function NoticeDialog({ notice, onClose }: { notice: Notice | null; onClose: () 
           <div className="flex items-center gap-3">
             <div className="flex h-16 w-24 items-center justify-center overflow-hidden rounded-lg bg-surface-2 text-[11px] text-ink-3">
               {/* eslint-disable-next-line @next/next/no-img-element -- imagem do restaurante vinda do armazenamento */}
-              {saved?.photoUrl ? <img src={saved.photoUrl} alt="" className="size-full object-cover" /> : "Imagem"}
+              {saved?.photoUrl || pending ? <img src={saved?.photoUrl ?? pending!.url} alt="" className="size-full object-cover" /> : "Imagem"}
             </div>
             <div className="flex flex-col gap-1">
-              <Button size="sm" variant="outline" disabled={!saved} onClick={() => fileRef.current?.click()}>
-                {saved?.photoUrl ? "Trocar imagem" : "Enviar imagem"}
+              <Button size="sm" variant="outline" onClick={() => fileRef.current?.click()}>
+                {saved?.photoUrl || pending ? "Trocar imagem" : "Enviar imagem"}
               </Button>
-              <span className="text-[12px] text-ink-3">{saved ? "JPG, PNG ou WEBP, até 1 MB" : "Salve o aviso para enviar a imagem."}</span>
+              <span className="text-[12px] text-ink-3">{pending && !saved ? "A imagem vai junto ao salvar." : "JPG, PNG ou WEBP, até 1 MB"}</span>
               <input
                 ref={fileRef}
                 type="file"
@@ -290,7 +299,13 @@ function NoticeDialog({ notice, onClose }: { notice: Notice | null; onClose: () 
                 onChange={async (e) => {
                   const file = e.target.files?.[0];
                   e.target.value = "";
-                  if (!file || !saved) return;
+                  if (!file) return;
+                  if (!saved) {
+                    const bad = photoProblem(file);
+                    setProblem(bad);
+                    if (!bad) setPending({ file, url: URL.createObjectURL(file) });
+                    return;
+                  }
                   const done = await uploadTo<Notice>(`/notices/${saved.id}/photo`, file);
                   if (done) {
                     setSaved(done);

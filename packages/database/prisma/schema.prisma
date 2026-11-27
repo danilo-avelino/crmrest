@@ -962,6 +962,7 @@ model MenuItemSize {
   priceCents Int     @map("price_cents")
   sortOrder  Int     @default(0) @map("sort_order")
   active     Boolean @default(true)
+  allowsHalf Boolean @default(true) @map("allows_half") // o tamanho aceita meio a meio (vale com a categoria e o item ligados)
 
   tenant    Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   item      MenuItem   @relation(fields: [itemId], references: [id], onDelete: Cascade)

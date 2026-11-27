@@ -1,12 +1,14 @@
 "use client";
 
-import { ImageIcon, PauseIcon, PlusIcon, StarIcon, CheckIcon } from "lucide-react";
+import { CameraIcon, ImageIcon, Loader2Icon, PauseIcon, PlusIcon, StarIcon, CheckIcon } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ImageCropDialog } from "@/components/common/image-crop-dialog";
 import { BLOCK, ErrorNote, FilterChip, Headline, loadError, MenuPage, PageHeader, SELECT_CLASS } from "@/components/menu/bits";
 import { useMenu, useMenuActions } from "@/components/menu/use-menu";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
+import { CROP_PRESETS } from "@/lib/image-compress";
 import { centsText, type MenuCategory, type MenuItem, money, parseCents, priceLabel } from "@/lib/menu";
 import { plural } from "@/lib/menu-backstage";
 import { cn } from "@/lib/utils";
@@ -32,8 +34,13 @@ const hasSizes = (item: MenuItem) => item.sizes.length > 0;
 /** N2: preço, custo, status e destaque de vários itens de uma vez, salvos juntos (tudo ou nada). */
 export function SheetPage() {
   const menu = useMenu();
-  const { call, error } = useMenuActions();
+  const { call, uploadPhoto, error } = useMenuActions();
   const toast = useToast();
+  // Foto: escolhe o arquivo, enquadra e sobe na hora (não entra no rascunho da planilha).
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [photoFor, setPhotoFor] = useState<Row | null>(null);
+  const [cropping, setCropping] = useState<File | null>(null);
+  const [uploading, setUploading] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [categoryFilter, setCategoryFilter] = useState("");
@@ -250,10 +257,32 @@ export function SheetPage() {
                     />
                   </td>
                   <td>
-                    <div className={cn("flex size-9 items-center justify-center overflow-hidden rounded-md bg-surface-2", !row.photoUrl && "border border-dashed border-rule")}>
+                    <button
+                      type="button"
+                      title={row.photoUrl ? "Trocar foto" : "Enviar foto"}
+                      aria-label={`${row.photoUrl ? "Trocar foto" : "Enviar foto"} de ${row.name}`}
+                      disabled={uploading !== null}
+                      onClick={() => {
+                        setPhotoFor(row);
+                        fileRef.current?.click();
+                      }}
+                      className={cn(
+                        "group relative flex size-9 items-center justify-center overflow-hidden rounded-md bg-surface-2 hover:ring-2 hover:ring-ink/20 disabled:cursor-wait",
+                        !row.photoUrl && "border border-dashed border-rule",
+                      )}
+                    >
                       {/* eslint-disable-next-line @next/next/no-img-element -- foto do restaurante vinda do armazenamento */}
-                      {row.photoUrl ? <img src={row.photoUrl} alt="" className="size-full object-cover" /> : <ImageIcon className="size-3.5 text-ink-3" aria-label="Sem foto" />}
-                    </div>
+                      {row.photoUrl ? <img src={row.photoUrl} alt="" className="size-full object-cover" /> : <ImageIcon className="size-3.5 text-ink-3 group-hover:hidden" aria-hidden />}
+                      {uploading === row.id ? (
+                        <span className="absolute inset-0 flex items-center justify-center bg-ink/50" aria-label="Carregando…">
+                          <Loader2Icon className="size-4 animate-spin text-paper" aria-hidden />
+                        </span>
+                      ) : (
+                        <span className={cn("absolute inset-0 hidden items-center justify-center group-hover:flex", row.photoUrl && "bg-ink/50")}>
+                          <CameraIcon className={cn("size-3.5", row.photoUrl ? "text-paper" : "text-ink-2")} aria-hidden />
+                        </span>
+                      )}
+                    </button>
                   </td>
                   <td>
                     <Link href={`/cardapio/item/${row.id}`} className="font-semibold hover:underline">
@@ -311,9 +340,38 @@ export function SheetPage() {
         <span className="flex items-center gap-1.5">
           <span className="size-3 rounded-sm border border-warning bg-warning-lt" aria-hidden /> Célula alterada, ainda não salva · o valor anterior fica embaixo
         </span>
+        <span>Clique na foto para trocar: ela é salva na hora.</span>
         {changes > 0 && <span>Sair da página descarta {changes === 1 ? "a alteração" : `as ${changes} alterações`}.</span>}
         <span className="ml-auto">Item com mais de um tamanho: o preço muda na edição do item.</span>
       </div>
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        hidden
+        aria-label="Escolher foto"
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          event.target.value = "";
+          if (file) setCropping(file);
+        }}
+      />
+      <ImageCropDialog
+        file={cropping}
+        aspect={CROP_PRESETS.photo.aspect}
+        maxWidth={CROP_PRESETS.photo.maxWidth}
+        title={photoFor ? `Enquadrar a foto · ${photoFor.name}` : "Enquadrar a foto"}
+        onCancel={() => setCropping(null)}
+        onConfirm={async (cropped) => {
+          const row = photoFor;
+          setCropping(null);
+          if (!row) return;
+          setUploading(row.id);
+          const done = await uploadPhoto(row.id, cropped);
+          setUploading(null);
+          if (done) toast(`Foto de ${row.name} salva.`);
+        }}
+      />
     </MenuPage>
   );
 }

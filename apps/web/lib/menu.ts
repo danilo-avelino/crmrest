@@ -1,7 +1,7 @@
 // Cardápio no painel (F2-08): tipos da resposta de `GET /menu/:tenantId` e as regras de tela que não dependem do React.
 
 export type Slot = { weekday: number; startMinute: number; endMinute: number };
-export type MenuSize = { id: string; name: string; priceCents: number; sortOrder: number; active: boolean };
+export type MenuSize = { id: string; name: string; priceCents: number; sortOrder: number; active: boolean; allowsHalf?: boolean };
 export type MenuItem = {
   id: string;
   categoryId: string;

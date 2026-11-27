@@ -136,7 +136,14 @@ export function readTools(deps: MenuAgentDeps, subtotalOf: SubtotalOf) {
             maximo: group.maxSelect,
             opcoes: group.options.map((o) => ({ complementoId: o.id, nome: o.name, preco: money(o.priceCents), ...(o.soldOut ? { esgotado: true } : {}) })),
           })),
-          meioAMeio: halfOk ? { permitido: true, regra: HALF_RULE_TEXT[category.halfPricing] } : { permitido: false },
+          meioAMeio: halfOk
+            ? {
+                permitido: true,
+                regra: HALF_RULE_TEXT[category.halfPricing],
+                // Tamanhos que não aceitam meio a meio (ex.: broto): nesses, só sabor inteiro.
+                ...(item.sizes.some((s) => !s.allowsHalf) ? { tamanhosSemMeioAMeio: item.sizes.filter((s) => !s.allowsHalf).map((s) => s.name) } : {}),
+              }
+            : { permitido: false },
           ...(pairs.length ? { combinaCom: pairs.map((p) => ({ itemId: p.id, nome: p.name })) } : {}),
           // Instrução do restaurante para a IA (não é do cliente): seguir, sem repetir ao cliente palavra por palavra.
           ...(extra?.aiNotes ? { notaDoRestaurante: extra.aiNotes } : {}),

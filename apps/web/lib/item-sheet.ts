@@ -188,9 +188,20 @@ export function flavorPrice(flavor: PublicMenuItem, sizeName: string | null): nu
   return flavor.sizes.find((s) => sameName(s.name, sizeName))?.priceCents ?? null;
 }
 
-/** Se o sabor pode ser a 2ª metade agora (à venda e com o tamanho escolhido). */
+/**
+ * O tamanho escolhido aceita meio a meio? Sem tamanho escolhido: se algum tamanho do item aceita (item sem tamanhos
+ * aceita sempre).
+ */
+export function sizeAllowsHalf(item: PublicMenuItem, sizeId: string | null): boolean {
+  if (item.sizes.length === 0) return true;
+  if (!sizeId) return item.sizes.some((s) => s.allowsHalf !== false);
+  return item.sizes.find((s) => s.id === sizeId)?.allowsHalf !== false;
+}
+
+/** Se o sabor pode ser a 2ª metade agora (à venda e com o tamanho escolhido, que precisa aceitar meio a meio). */
 export function flavorPickable(flavor: PublicMenuItem, sizeName: string | null): boolean {
-  return orderable(flavor) && flavorPrice(flavor, sizeName) != null;
+  if (!orderable(flavor) || flavorPrice(flavor, sizeName) == null) return false;
+  return !sizeName || flavor.sizes.length === 0 || flavor.sizes.find((s) => sameName(s.name, sizeName))?.allowsHalf !== false;
 }
 
 // ---------- Botão ----------

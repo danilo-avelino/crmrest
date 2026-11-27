@@ -68,7 +68,7 @@ describe("Cardápio público (F0-04, F3-01)", () => {
     const items = res.body.categories[0].items;
     expect(items.map((i: { name: string }) => i.name)).toEqual(["Calabresa", "Refri"]);
     expect(items[1]).toMatchObject({ soldOut: true, availableNow: true });
-    expect(items[0].sizes).toEqual([{ id: expect.any(String), name: "Grande", priceCents: 5000 }]);
+    expect(items[0].sizes).toEqual([{ id: expect.any(String), name: "Grande", priceCents: 5000, allowsHalf: true }]);
     const text = JSON.stringify(res.body);
     for (const internal of ["SEGREDO-IA", "aiNotes", "synonyms", "tenantId", fx.a.id]) expect(text).not.toContain(internal);
 

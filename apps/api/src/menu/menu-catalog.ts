@@ -50,7 +50,7 @@ export function loadMenuItems(tx: TenantTx, tenantId: string, menuId: string, it
       servesPeople: true,
       tags: true,
       availabilities: SLOT,
-      sizes: { where: { active: true }, orderBy: { sortOrder: "asc" }, select: { id: true, name: true, priceCents: true, active: true } },
+      sizes: { where: { active: true }, orderBy: { sortOrder: "asc" }, select: { id: true, name: true, priceCents: true, active: true, allowsHalf: true } },
       optionGroups: {
         orderBy: { sortOrder: "asc" },
         select: {

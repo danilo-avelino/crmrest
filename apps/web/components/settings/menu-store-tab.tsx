@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import type { MenuStoreSettings } from "@dishdesk/shared";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { CopyIcon, PlusIcon, XIcon } from "lucide-react";
@@ -176,31 +175,41 @@ function MenuStoreForm({ tenantId, data }: { tenantId: string; data: StoreRespon
         </CardBody>
       </Card>
 
-      <Card
-        title="Áreas de entrega"
-        aside={
-          <div className="inline-flex overflow-hidden rounded-lg border border-rule" role="group" aria-label="Como cobrar a entrega">
-            {(["BY_DISTRICT", "BY_RADIUS", "BY_AREA"] as const).map((mode) => (
-              <button
-                key={mode}
-                type="button"
-                aria-pressed={form.mode === mode}
-                onClick={() => set("mode", mode)}
-                className={form.mode === mode ? "h-8 bg-ink px-3 text-[12.5px] font-semibold text-paper" : "h-8 bg-surface px-3 text-[12.5px] text-ink-2"}
-              >
-                {mode === "BY_DISTRICT" ? "Por bairro" : mode === "BY_RADIUS" ? "Por raio" : "Por área desenhada"}
-              </button>
-            ))}
-          </div>
-        }
-      >
+      <Card title="Áreas de entrega">
         <CardBody className="flex flex-col gap-3">
+          <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Como cobrar a entrega">
+            {(["BY_DISTRICT", "BY_RADIUS"] as const).map((mode) => {
+              const on = form.mode === mode;
+              return (
+                <button
+                  key={mode}
+                  type="button"
+                  role="radio"
+                  aria-checked={on}
+                  onClick={() => set("mode", mode)}
+                  className={`flex items-start gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors ${on ? "border-ink bg-surface-2" : "border-rule bg-surface hover:border-ink-3"}`}
+                >
+                  <span
+                    className={`mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border-2 ${on ? "border-ink" : "border-rule"}`}
+                    aria-hidden
+                  >
+                    {on && <span className="size-2 rounded-full bg-ink" />}
+                  </span>
+                  <span className="flex flex-col gap-0.5">
+                    <span className={`text-[13px] ${on ? "font-semibold text-ink" : "font-medium text-ink-2"}`}>{mode === "BY_DISTRICT" ? "Por bairro" : "Por raio"}</span>
+                    <span className="text-[12px] text-ink-3">
+                      {mode === "BY_DISTRICT"
+                        ? "Taxa por bairro, como o cliente escreve no endereço."
+                        : "Taxa até cada distância da loja, em linha reta. Vale a menor faixa que cobre o endereço."}
+                    </span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
           {form.mode === "BY_AREA" ? (
             <p className="text-[13px] text-ink-2">
-              As áreas são desenhadas no mapa, com taxa e prazo de cada uma.{" "}
-              <Link href="/cardapio/areas" className="font-medium text-ink underline">
-                Editar em Áreas de entrega
-              </Link>
+              Esta loja ainda cobra por área desenhada, que saiu do Dish Desk. As áreas continuam valendo até você escolher bairro ou raio e salvar.
             </p>
           ) : (
             <>

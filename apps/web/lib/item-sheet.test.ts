@@ -9,6 +9,7 @@ import {
   groupHint,
   groupKind,
   halfCandidates,
+  sizeAllowsHalf,
   halfRuleText,
   type ItemSelection,
   missingChoice,
@@ -189,6 +190,15 @@ describe("meio a meio", () => {
     expect(flavorPrice(item(), null)).toBe(3490);
     expect(flavorPickable(diavola, "Broto")).toBe(false);
     expect(flavorPickable(atum, "Grande")).toBe(false);
+  });
+  it("meio a meio por tamanho: o tamanho desligado esconde a escolha e o sabor nesse tamanho não pode ser metade", () => {
+    const semBroto = item({ sizes: [{ id: "broto", name: "Broto", priceCents: 3490, allowsHalf: false }, { id: "grande", name: "Grande", priceCents: 5690 }] });
+    expect(sizeAllowsHalf(semBroto, "broto")).toBe(false);
+    expect(sizeAllowsHalf(semBroto, "grande")).toBe(true);
+    expect(sizeAllowsHalf(semBroto, null)).toBe(true);
+    expect(sizeAllowsHalf(item({ sizes: [{ id: "b", name: "Broto", priceCents: 1, allowsHalf: false }] }), null)).toBe(false);
+    expect(flavorPickable(semBroto, "Broto")).toBe(false);
+    expect(flavorPickable(semBroto, "Grande")).toBe(true);
   });
   it("regra escrita no modal (R7)", () => {
     expect(halfRuleText("SUM")).toBe("O preço é a soma das duas metades.");

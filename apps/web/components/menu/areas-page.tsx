@@ -1,10 +1,10 @@
 "use client";
 
-import type { DeliveryArea, MenuStoreSettings } from "@dishdesk/shared";
+import type { BlockedZone, MenuStoreSettings } from "@dishdesk/shared";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type * as Leaflet from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { CircleIcon, HexagonIcon, PencilIcon, PlusIcon, Trash2Icon, XIcon } from "lucide-react";
+import { BanIcon, PlusIcon, Trash2Icon, XIcon } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
@@ -14,42 +14,24 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
 import { ApiError } from "@/lib/api";
-import { centsText, money, parseCents } from "@/lib/menu";
+import { centsText, parseCents } from "@/lib/menu";
 import { plural } from "@/lib/menu-backstage";
 import type { StoreResponse } from "@/lib/menu-store";
 import { cn } from "@/lib/utils";
 
-type Mode = MenuStoreSettings["delivery"]["mode"];
+/** A cobrança por área desenhada saiu da tela: a loja que ainda a usa abre em "Por raio" com um aviso. */
+type Mode = "BY_DISTRICT" | "BY_RADIUS";
 type LatLng = { lat: number; lng: number };
 /** Faixas por bairro e por raio, editadas aqui em texto (como a tela Cardápio e entrega). */
 type Rows = { districts: { district: string; fee: string }[]; radii: { maxKm: string; fee: string }[] };
-type Drawing = { type: "circle" } | { type: "polygon"; points: LatLng[] } | { type: "store" } | null;
+/** O polígono desenhado é sempre uma zona sem entrega. */
+type Drawing = { type: "polygon"; points: LatLng[] } | { type: "store" } | null;
 
+/** Cor das zonas sem entrega no mapa (tomate). */
+const BLOCK_COLOR = "#C4341A";
 const AREA_COLORS = ["#2D7D46", "#B45309", "#1A1814", "#C4341A", "#7C3AED", "#2563EB"];
 /** Centro do Brasil, quando a loja ainda não tem localização. */
 const BRAZIL: LatLng = { lat: -15.78, lng: -47.93 };
-
-function haversineKm(a: LatLng, b: LatLng): number {
-  const rad = (d: number) => (d * Math.PI) / 180;
-  const h = Math.sin(rad(b.lat - a.lat) / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(rad(b.lng - a.lng) / 2) ** 2;
-  return 2 * 6371 * Math.asin(Math.min(1, Math.sqrt(h)));
-}
-
-/** Parte do polígono dentro de um círculo mais barato: aviso na área ("lá vale a taxa menor"). */
-function cheaperOverlap(area: DeliveryArea, areas: DeliveryArea[], store: LatLng | null): DeliveryArea | null {
-  if (area.shape.type !== "polygon" || !store) return null;
-  const points = area.shape.points;
-  return (
-    areas.find((other) => {
-      if (other.id === area.id || other.shape.type !== "circle" || other.feeCents >= area.feeCents) return false;
-      const { minKm, maxKm } = other.shape;
-      return points.some((p) => {
-        const d = haversineKm(store, p);
-        return d >= minKm && d <= maxKm;
-      });
-    }) ?? null
-  );
-}
 
 /** De onde veio o ponto da loja, do mais preciso ao menos. */
 type GeoSource = "number" | "street" | "cep" | "district" | "city";
@@ -134,7 +116,7 @@ const NO_LOCATION = "Não achamos a loja no mapa pelo CEP nem pelo endereço. Co
 const newId = () => Math.random().toString(36).slice(2, 10);
 const kmText = (km: number) => (Number.isInteger(km) ? String(km) : km.toFixed(1).replace(".", ","));
 
-/** N6: onde o cardápio entrega, com taxa e prazo de cada área (bairro, raio ou áreas desenhadas no mapa). */
+/** N6: onde o cardápio entrega, com a taxa por bairro ou por raio e as zonas sem entrega desenhadas no mapa. */
 export function AreasPage() {
   const { request, session } = useAuth();
   const tenantId = useTenantId();
@@ -142,20 +124,15 @@ export function AreasPage() {
   const queryClient = useQueryClient();
   const toast = useToast();
   const store = useQuery({ queryKey: ["menu-store", tenantId], queryFn: () => request<StoreResponse>(`/menu/${tenantId}/store`), enabled: Boolean(tenantId), retry: false });
-  const stats = useQuery({
-    queryKey: ["menu-area-stats", tenantId],
-    queryFn: () => request<Record<string, number>>(`/menu/${tenantId}/delivery-areas/stats`),
-    enabled: Boolean(tenantId),
-    retry: false,
-  });
 
-  const [mode, setMode] = useState<Mode>("BY_AREA");
-  const [areas, setAreas] = useState<DeliveryArea[]>([]);
+  const [mode, setMode] = useState<Mode>("BY_RADIUS");
+  /** A loja ainda cobra por área desenhada: vale até salvar por bairro ou raio. */
+  const [legacyAreas, setLegacyAreas] = useState(false);
+  const [blocked, setBlocked] = useState<BlockedZone[]>([]);
   const [rows, setRows] = useState<Rows>({ districts: [], radii: [] });
   const [location, setLocation] = useState<LatLng | null>(null);
   const [pickup, setPickup] = useState(true);
   const [dirty, setDirty] = useState(false);
-  const [editing, setEditing] = useState<string | null>(null);
   const [drawing, setDrawing] = useState<Drawing>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [geoDone, setGeoDone] = useState(false);
@@ -166,8 +143,9 @@ export function AreasPage() {
     if (!store.data || loaded.current) return;
     loaded.current = true;
     const s = store.data.store;
-    setMode(s.delivery.mode);
-    setAreas(s.delivery.mode === "BY_AREA" ? s.delivery.areas : []);
+    setMode(s.delivery.mode === "BY_AREA" ? "BY_RADIUS" : s.delivery.mode);
+    setLegacyAreas(s.delivery.mode === "BY_AREA");
+    setBlocked(s.blockedZones ?? []);
     setRows({
       districts: s.delivery.mode === "BY_DISTRICT" ? s.delivery.districts.map((d) => ({ district: d.district, fee: centsText(d.feeCents) })) : [],
       radii: s.delivery.mode === "BY_RADIUS" ? s.delivery.radii.map((r) => ({ maxKm: kmText(r.maxKm), fee: centsText(r.feeCents) })) : [],
@@ -187,20 +165,13 @@ export function AreasPage() {
   }, [store.data]);
 
   const touch = () => setDirty(true);
-  const update = (id: string, patch: Partial<DeliveryArea>) => {
-    setAreas((list) => list.map((a) => (a.id === id ? { ...a, ...patch } : a)));
-    touch();
-  };
 
   async function save() {
     setProblem(null);
     if (!store.data) return;
     const base = store.data.store;
     let delivery: MenuStoreSettings["delivery"];
-    if (mode === "BY_AREA") {
-      if (areas.some((a) => a.shape.type === "circle") && !location) return setProblem(NO_LOCATION);
-      delivery = { mode, areas };
-    } else if (mode === "BY_DISTRICT") {
+    if (mode === "BY_DISTRICT") {
       const districts = [];
       for (const r of rows.districts) {
         const fee = parseCents(r.fee);
@@ -226,9 +197,10 @@ export function AreasPage() {
     delete rest.pixRecipientId;
     const address = { ...base.address, ...(location ? { lat: location.lat, lng: location.lng } : {}) };
     try {
-      const updated = await request<StoreResponse>(`/menu/${tenantId}/store`, { method: "PUT", body: { ...rest, address, pickupEnabled: pickup, delivery } });
+      const updated = await request<StoreResponse>(`/menu/${tenantId}/store`, { method: "PUT", body: { ...rest, address, pickupEnabled: pickup, delivery, blockedZones: blocked } });
       queryClient.setQueryData(["menu-store", tenantId], updated);
       setDirty(false);
+      setLegacyAreas(false);
       toast("Áreas de entrega salvas.");
     } catch (error) {
       setProblem(error instanceof ApiError ? error.message : "Não foi possível salvar. Tente de novo.");
@@ -271,15 +243,16 @@ export function AreasPage() {
 
   const savedAddress = store.data.store.address;
   const locating = !location && !geoDone && (savedAddress.lat == null || savedAddress.lng == null);
-  const count = mode === "BY_AREA" ? areas.length : mode === "BY_DISTRICT" ? rows.districts.length : rows.radii.length;
+  const count = mode === "BY_DISTRICT" ? rows.districts.length : rows.radii.length;
   return (
     <MenuPage>
       {header}
       {problem && <ErrorNote>{problem}</ErrorNote>}
+      {legacyAreas && <WarnNote>Esta loja ainda cobra por área desenhada, que saiu do Dish Desk. As áreas continuam valendo até você escolher bairro ou raio e salvar.</WarnNote>}
       <div className="flex items-start gap-4">
         <AreasMap
           mode={mode}
-          areas={areas}
+          blocked={blocked}
           radii={rows.radii}
           location={location}
           locating={locating}
@@ -287,23 +260,21 @@ export function AreasPage() {
           storeName={storeName}
           drawing={drawing}
           setDrawing={setDrawing}
-          selected={editing}
-          onSelect={setEditing}
           onLocation={(at) => {
             setLocation(at);
             touch();
           }}
-          onCreate={(area) => {
-            setAreas((list) => [...list, area]);
-            setEditing(area.id);
+          onCreateBlock={(points) => {
+            setBlocked((list) => [...list, { id: newId(), name: `Zona sem entrega ${list.length + 1}`, points }]);
             touch();
           }}
         />
         <aside className={cn(BLOCK, "flex w-[320px] shrink-0 flex-col")} aria-label="Áreas">
           <div className="flex flex-col gap-3 border-b border-rule px-4 py-4">
-            <p className="font-heading text-[24px] font-bold">{plural(count, mode === "BY_DISTRICT" ? "bairro" : mode === "BY_RADIUS" ? "raio" : "área", mode === "BY_DISTRICT" ? "bairros" : mode === "BY_RADIUS" ? "raios" : "áreas")}</p>
-            <div className="flex overflow-hidden rounded-lg border border-rule" role="radiogroup" aria-label="Como cobrar a entrega">
-              {(["BY_DISTRICT", "BY_RADIUS", "BY_AREA"] as const).map((m) => (
+            <p className="font-heading text-[24px] font-bold">{plural(count, mode === "BY_DISTRICT" ? "bairro" : "raio", mode === "BY_DISTRICT" ? "bairros" : "raios")}</p>
+            <p className="text-[13px] font-semibold">Como cobrar a entrega</p>
+            <div className="flex flex-col gap-2" role="radiogroup" aria-label="Como cobrar a entrega">
+              {(["BY_DISTRICT", "BY_RADIUS"] as const).map((m) => (
                 <button
                   key={m}
                   type="button"
@@ -314,53 +285,69 @@ export function AreasPage() {
                     setDrawing(null);
                     touch();
                   }}
-                  className={cn("h-8 flex-auto px-2 text-[12px] whitespace-nowrap", mode === m ? "bg-ink font-semibold text-paper" : "bg-surface text-ink-2")}
+                  className={cn(
+                    "flex items-start gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors",
+                    mode === m ? "border-ink bg-surface-2" : "border-rule bg-surface hover:border-ink-3",
+                  )}
                 >
-                  {m === "BY_DISTRICT" ? "Por bairro" : m === "BY_RADIUS" ? "Por raio" : "Por área desenhada"}
+                  <span
+                    className={cn("mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full border-2", mode === m ? "border-ink" : "border-rule")}
+                    aria-hidden
+                  >
+                    {mode === m && <span className="size-2 rounded-full bg-ink" />}
+                  </span>
+                  <span className="flex flex-col gap-0.5">
+                    <span className={cn("text-[13px]", mode === m ? "font-semibold text-ink" : "font-medium text-ink-2")}>
+                      {m === "BY_DISTRICT" ? "Por bairro" : "Por raio"}
+                    </span>
+                    <span className="text-[12px] text-ink-3">
+                      {m === "BY_DISTRICT"
+                        ? "Taxa por bairro, como o cliente escreve no endereço."
+                        : "Taxa até cada distância da loja, em linha reta. Vale a menor faixa que cobre o endereço."}
+                    </span>
+                  </span>
                 </button>
               ))}
             </div>
-            <p className="text-[12.5px] text-ink-2">
-              {mode === "BY_AREA"
-                ? "Desenhe círculos e polígonos no mapa. Onde duas áreas se cruzam, vale a de menor taxa."
-                : mode === "BY_RADIUS"
-                  ? "Taxa até cada distância da loja, em linha reta. Vale a menor faixa que cobre o endereço."
-                  : "Taxa por bairro, como o cliente escreve no endereço."}{" "}
-              Só vale a forma escolhida: ao salvar, as outras deixam de valer.
-            </p>
+            <p className="text-[12px] text-ink-3">Só vale a forma escolhida: ao salvar, a outra deixa de valer.</p>
           </div>
-          {mode === "BY_AREA" ? (
-            <ul className="flex flex-col">
-              {areas.length === 0 && <li className="px-4 py-6 text-center text-[12.5px] text-ink-3">Nenhuma área ainda. Use &ldquo;Desenhar círculo&rdquo; ou &ldquo;Desenhar polígono&rdquo; no mapa.</li>}
-              {areas.map((area, i) => (
-                <AreaRow
-                  key={area.id}
-                  area={area}
-                  color={AREA_COLORS[i % AREA_COLORS.length]!}
-                  orders={stats.data?.[area.id] ?? 0}
-                  defaultEta={`${store.data.store.deliveryMinMinutes}–${store.data.store.deliveryMaxMinutes} min`}
-                  overlap={cheaperOverlap(area, areas, location)}
-                  editing={editing === area.id}
-                  onEdit={() => setEditing(editing === area.id ? null : area.id)}
-                  onChange={(patch) => update(area.id, patch)}
-                  onRemove={() => {
-                    setAreas((list) => list.filter((a) => a.id !== area.id));
+          <SimpleRows
+            mode={mode}
+            rows={rows}
+            onChange={(next) => {
+              setRows(next);
+              touch();
+            }}
+          />
+          <div className="flex flex-col gap-2 border-t border-rule px-4 py-3">
+            <p className="text-[13px] font-semibold">Zonas sem entrega</p>
+            <p className="text-[12.5px] text-ink-2">Endereço dentro delas não recebe pedido, mesmo dentro de uma área. Use &ldquo;Zona sem entrega&rdquo; no mapa.</p>
+            {blocked.map((zone) => (
+              <div key={zone.id} className="flex items-center gap-2">
+                <span className="size-4 shrink-0 rounded-[3px] border-2 border-dashed border-tomate" aria-hidden />
+                <Input
+                  aria-label="Nome da zona sem entrega"
+                  value={zone.name}
+                  maxLength={60}
+                  onChange={(e) => {
+                    setBlocked((list) => list.map((z) => (z.id === zone.id ? { ...z, name: e.target.value } : z)));
                     touch();
                   }}
-                  onRedraw={() => setDrawing({ type: "polygon", points: [] })}
                 />
-              ))}
-            </ul>
-          ) : (
-            <SimpleRows
-              mode={mode}
-              rows={rows}
-              onChange={(next) => {
-                setRows(next);
-                touch();
-              }}
-            />
-          )}
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={`Excluir ${zone.name}`}
+                  onClick={() => {
+                    setBlocked((list) => list.filter((z) => z.id !== zone.id));
+                    touch();
+                  }}
+                >
+                  <Trash2Icon aria-hidden />
+                </Button>
+              </div>
+            ))}
+          </div>
           <div className="mt-auto flex flex-col gap-1.5 border-t border-rule px-4 py-3">
             <p className="text-[13px] font-semibold">Fora das áreas</p>
             <p className="text-[12.5px] text-ink-2">O cliente vê &ldquo;Não entregamos neste endereço&rdquo;.</p>
@@ -379,106 +366,6 @@ export function AreasPage() {
         </aside>
       </div>
     </MenuPage>
-  );
-}
-
-function AreaRow({
-  area,
-  color,
-  orders,
-  defaultEta,
-  overlap,
-  editing,
-  onEdit,
-  onChange,
-  onRemove,
-  onRedraw,
-}: {
-  area: DeliveryArea;
-  color: string;
-  orders: number;
-  defaultEta: string;
-  overlap: DeliveryArea | null;
-  editing: boolean;
-  onEdit: () => void;
-  onChange: (patch: Partial<DeliveryArea>) => void;
-  onRemove: () => void;
-  onRedraw: () => void;
-}) {
-  const circle = area.shape.type === "circle" ? area.shape : null;
-  const ownEta = area.etaMinMinutes != null && area.etaMaxMinutes != null;
-  const eta = ownEta ? `${area.etaMinMinutes}–${area.etaMaxMinutes} min` : defaultEta;
-  const num = (text: string) => (text.trim() === "" ? undefined : Number(text.replace(",", ".")));
-  return (
-    <li className="flex flex-col gap-2 border-b border-rule px-4 py-3">
-      <div className="flex items-start gap-2.5">
-        <span className={cn("mt-0.5 size-4 shrink-0 border-2", circle ? "rounded-full" : "rounded-[3px]", circle && circle.minKm > 0 && "border-dashed")} style={{ borderColor: color }} aria-hidden />
-        <div className="min-w-0 flex-1">
-          <p className="font-semibold">{area.name}</p>
-          <p className="text-[12px] text-ink-3">{circle ? "Círculo a partir da loja" : `Área desenhada · ${plural(area.shape.type === "polygon" ? area.shape.points.length : 0, "ponto", "pontos")}`}</p>
-        </div>
-        <Button variant="ghost" size="icon-sm" aria-label={`Editar ${area.name}`} aria-expanded={editing} onClick={onEdit}>
-          {editing ? <XIcon aria-hidden /> : <PencilIcon aria-hidden />}
-        </Button>
-      </div>
-      <dl className="grid grid-cols-3 gap-2 pl-6 text-[12px]">
-        <div>
-          <dt className="text-ink-3">Taxa</dt>
-          <dd className="text-[13px] font-semibold tabular-nums">{area.feeCents === 0 ? "Grátis" : money(area.feeCents)}</dd>
-        </div>
-        <div>
-          <dt className="text-ink-3">Prazo</dt>
-          <dd className="text-[13px] font-semibold whitespace-nowrap" title={ownEta ? undefined : "Prazo padrão da loja"}>
-            {eta}
-            {!ownEta && <span className="block text-[11px] font-normal text-ink-3">padrão da loja</span>}
-          </dd>
-        </div>
-        <div>
-          <dt className="text-ink-3">30 dias</dt>
-          <dd className="text-[13px] font-semibold tabular-nums">{orders}</dd>
-        </div>
-      </dl>
-      {overlap && (
-        <WarnNote action={<Button size="xs" variant="ghost" className="underline" onClick={onRedraw}>Ajustar contorno</Button>}>
-          Parte desta área está dentro de &ldquo;{overlap.name}&rdquo;. Lá vale a taxa menor, {money(overlap.feeCents)}.
-        </WarnNote>
-      )}
-      {editing && (
-        <div className="grid grid-cols-2 gap-2 rounded-lg bg-surface-2 p-3">
-          <label className="col-span-2 flex flex-col gap-1 text-[12px]">
-            Nome
-            <Input value={area.name} maxLength={60} onChange={(e) => onChange({ name: e.target.value })} />
-          </label>
-          <label className="flex flex-col gap-1 text-[12px]">
-            Taxa (R$)
-            <Input inputMode="decimal" defaultValue={centsText(area.feeCents)} onBlur={(e) => onChange({ feeCents: parseCents(e.target.value) ?? 0 })} />
-          </label>
-          {circle && (
-            <span className="flex items-end gap-1.5 text-[12px]">
-              <label className="flex flex-col gap-1">
-                De (km)
-                <Input inputMode="decimal" defaultValue={kmText(circle.minKm)} onBlur={(e) => onChange({ shape: { ...circle, minKm: Math.max(0, num(e.target.value) ?? 0) } })} />
-              </label>
-              <label className="flex flex-col gap-1">
-                Até (km)
-                <Input inputMode="decimal" defaultValue={kmText(circle.maxKm)} onBlur={(e) => onChange({ shape: { ...circle, maxKm: Math.max(0.1, num(e.target.value) ?? circle.maxKm) } })} />
-              </label>
-            </span>
-          )}
-          <label className="flex flex-col gap-1 text-[12px]">
-            Prazo de (min)
-            <Input inputMode="numeric" defaultValue={area.etaMinMinutes ?? ""} onBlur={(e) => onChange({ etaMinMinutes: num(e.target.value) })} />
-          </label>
-          <label className="flex flex-col gap-1 text-[12px]">
-            até (min)
-            <Input inputMode="numeric" defaultValue={area.etaMaxMinutes ?? ""} onBlur={(e) => onChange({ etaMaxMinutes: num(e.target.value) })} />
-          </label>
-          <Button variant="ghost" size="sm" className="col-span-2 justify-self-start text-tomate" onClick={onRemove}>
-            <Trash2Icon aria-hidden /> Excluir área
-          </Button>
-        </div>
-      )}
-    </li>
   );
 }
 
@@ -535,10 +422,10 @@ function SimpleRows({ mode, rows, onChange }: { mode: Mode; rows: Rows; onChange
   );
 }
 
-/** O mapa (Leaflet + OpenStreetMap): a loja, as áreas e o desenho de círculo e polígono. */
+/** O mapa (Leaflet + OpenStreetMap): a loja, os raios e o desenho das zonas sem entrega. */
 function AreasMap({
   mode,
-  areas,
+  blocked,
   radii,
   location,
   locating,
@@ -546,13 +433,11 @@ function AreasMap({
   storeName,
   drawing,
   setDrawing,
-  selected,
-  onSelect,
   onLocation,
-  onCreate,
+  onCreateBlock,
 }: {
   mode: Mode;
-  areas: DeliveryArea[];
+  blocked: BlockedZone[];
   radii: Rows["radii"];
   location: LatLng | null;
   locating: boolean;
@@ -560,10 +445,8 @@ function AreasMap({
   storeName: string;
   drawing: Drawing;
   setDrawing: (d: Drawing) => void;
-  selected: string | null;
-  onSelect: (id: string) => void;
   onLocation: (at: LatLng) => void;
-  onCreate: (area: DeliveryArea) => void;
+  onCreateBlock: (points: LatLng[]) => void;
 }) {
   const box = useRef<HTMLDivElement>(null);
   const map = useRef<Leaflet.Map | null>(null);
@@ -571,9 +454,9 @@ function AreasMap({
   const L = useRef<typeof Leaflet | null>(null);
   const [ready, setReady] = useState(false);
   // O clique no mapa lê o estado atual por estas refs (o listener nasce uma vez).
-  const state = useRef({ drawing, location, areas, onLocation, onCreate, setDrawing });
+  const state = useRef({ drawing, onLocation, onCreateBlock, setDrawing });
   useEffect(() => {
-    state.current = { drawing, location, areas, onLocation, onCreate, setDrawing };
+    state.current = { drawing, onLocation, onCreateBlock, setDrawing };
   });
 
   useEffect(() => {
@@ -587,23 +470,18 @@ function AreasMap({
       layer.current = leaflet.layerGroup().addTo(m);
       m.on("click", (e: Leaflet.LeafletMouseEvent) => {
         const at = { lat: e.latlng.lat, lng: e.latlng.lng };
-        const { drawing: d, location: store, areas: list } = state.current;
+        const { drawing: d } = state.current;
         if (d?.type === "store") {
           state.current.onLocation(at);
-          state.current.setDrawing(null);
-        } else if (d?.type === "circle" && store) {
-          const km = Math.max(0.5, Math.round(haversineKm(store, at) * 10) / 10);
-          const inner = Math.max(0, ...list.flatMap((a) => (a.shape.type === "circle" && a.shape.maxKm < km ? [a.shape.maxKm] : [])));
-          state.current.onCreate({ id: newId(), name: inner ? `${kmText(inner)} a ${kmText(km)} km` : `Até ${kmText(km)} km`, shape: { type: "circle", minKm: inner, maxKm: km }, feeCents: 0 });
           state.current.setDrawing(null);
         } else if (d?.type === "polygon") {
           const first = d.points[0];
           // Fechar clicando perto do primeiro ponto (até 12 px).
           if (first && d.points.length >= 3 && m.latLngToContainerPoint(first).distanceTo(e.containerPoint) < 12) {
-            state.current.onCreate({ id: newId(), name: "Nova área", shape: { type: "polygon", points: d.points }, feeCents: 0 });
+            state.current.onCreateBlock(d.points);
             state.current.setDrawing(null);
           } else {
-            state.current.setDrawing({ type: "polygon", points: [...d.points, at] });
+            state.current.setDrawing({ ...d, points: [...d.points, at] });
           }
         }
       });
@@ -633,31 +511,22 @@ function AreasMap({
     const group = layer.current;
     if (!ready || !leaflet || !group) return;
     group.clearLayers();
-    if (mode === "BY_AREA") {
-      areas.forEach((area, i) => {
-        const color = AREA_COLORS[i % AREA_COLORS.length]!;
-        const style = { color, weight: selected === area.id ? 3 : 2, fillOpacity: 0.12, dashArray: area.shape.type === "circle" && area.shape.minKm > 0 ? "6 6" : undefined };
-        let shape: Leaflet.Layer | null = null;
-        if (area.shape.type === "circle" && location) shape = leaflet.circle(location, { ...style, radius: area.shape.maxKm * 1000 });
-        if (area.shape.type === "polygon") shape = leaflet.polygon(area.shape.points, style);
-        if (!shape) return;
-        shape.on("click", (e: Leaflet.LeafletMouseEvent) => {
-          if (state.current.drawing) return;
-          leaflet.DomEvent.stopPropagation(e);
-          onSelect(area.id);
-        });
-        shape.bindTooltip(`${area.name} · ${area.feeCents ? money(area.feeCents) : "Grátis"}`, { permanent: true, direction: "center", className: "dd-area-label" });
-        group.addLayer(shape);
-      });
-    } else if (mode === "BY_RADIUS" && location) {
+    if (mode === "BY_RADIUS" && location) {
       radii.forEach((r, i) => {
         const km = Number(r.maxKm.replace(",", "."));
         if (km > 0) group.addLayer(leaflet.circle(location, { color: AREA_COLORS[i % AREA_COLORS.length], weight: 2, fillOpacity: 0.08, radius: km * 1000 }).bindTooltip(`até ${r.maxKm} km`));
       });
     }
+    blocked.forEach((zone) => {
+      group.addLayer(
+        leaflet
+          .polygon(zone.points, { color: BLOCK_COLOR, weight: 2, dashArray: "6 4", fillColor: BLOCK_COLOR, fillOpacity: 0.28 })
+          .bindTooltip(`${zone.name} · sem entrega`, { permanent: true, direction: "center", className: "dd-area-label" }),
+      );
+    });
     if (drawing?.type === "polygon" && drawing.points.length) {
-      group.addLayer(leaflet.polyline(drawing.points, { color: "#1A1814", weight: 2, dashArray: "4 4" }));
-      drawing.points.forEach((p, i) => group.addLayer(leaflet.circleMarker(p, { radius: i === 0 ? 7 : 5, color: "#1A1814", fillColor: "#fff", fillOpacity: 1, weight: 2 })));
+      group.addLayer(leaflet.polyline(drawing.points, { color: BLOCK_COLOR, weight: 2, dashArray: "4 4" }));
+      drawing.points.forEach((p, i) => group.addLayer(leaflet.circleMarker(p, { radius: i === 0 ? 7 : 5, color: BLOCK_COLOR, fillColor: "#fff", fillOpacity: 1, weight: 2 })));
     }
     if (location) {
       const marker = leaflet.marker(location, {
@@ -672,7 +541,7 @@ function AreasMap({
       marker.bindTooltip(storeName, { permanent: true, direction: "bottom", offset: [0, 18], className: "dd-store-label" });
       group.addLayer(marker);
     }
-  }, [ready, mode, areas, radii, location, drawing, selected, storeName, onLocation, onSelect]);
+  }, [ready, mode, blocked, radii, location, drawing, storeName, onLocation]);
 
   // Ao trocar a forma de cobrar, enquadra o que vale para ela (os círculos do raio ou as áreas desenhadas).
   useEffect(() => {
@@ -695,8 +564,7 @@ function AreasMap({
     if (!location) return NO_LOCATION;
     if (mode === "BY_RADIUS" && !radii.some((r) => Number(r.maxKm.replace(",", ".")) > 0)) return "Adicione um raio ao lado: o círculo aparece aqui, a partir da loja.";
     if (geoSource && !drawing) return `Loja achada ${GEO_TEXT[geoSource]}. Salve para usar este ponto (dá para arrastar o pino).`;
-    if (drawing?.type === "circle") return "Clique no mapa até onde o círculo vai: a distância da loja até o clique vira o raio.";
-    if (drawing?.type === "polygon") return drawing.points.length < 3 ? "Clique nos cantos da área no mapa." : "Clique no primeiro ponto para fechar a área.";
+    if (drawing?.type === "polygon") return drawing.points.length < 3 ? "Clique nos cantos da zona sem entrega no mapa." : "Clique no primeiro ponto para fechar a zona: ali não haverá entrega.";
     if (drawing?.type === "store") return "Clique no novo lugar da loja.";
     return null;
   }, [locating, location, mode, radii, geoSource, drawing]);
@@ -705,15 +573,15 @@ function AreasMap({
     <div className={cn(BLOCK, "relative min-w-0 flex-1 overflow-hidden")} style={{ height: 640 }}>
       <div ref={box} className="size-full" aria-label="Mapa das áreas de entrega" />
       <div className="absolute top-3 left-3 z-[500] flex flex-wrap gap-2">
-        {mode === "BY_AREA" && location && (
-          <>
-            <Button size="sm" variant={drawing?.type === "circle" ? "default" : "outline"} className="bg-surface shadow-sm" onClick={() => setDrawing(drawing?.type === "circle" ? null : { type: "circle" })}>
-              <CircleIcon aria-hidden /> Desenhar círculo
-            </Button>
-            <Button size="sm" variant={drawing?.type === "polygon" ? "default" : "outline"} className="bg-surface shadow-sm" onClick={() => setDrawing(drawing?.type === "polygon" ? null : { type: "polygon", points: [] })}>
-              <HexagonIcon aria-hidden /> Desenhar polígono
-            </Button>
-          </>
+        {location && (
+          <Button
+            size="sm"
+            variant={drawing?.type === "polygon" ? "default" : "outline"}
+            className="bg-surface shadow-sm"
+            onClick={() => setDrawing(drawing?.type === "polygon" ? null : { type: "polygon", points: [] })}
+          >
+            <BanIcon aria-hidden /> Zona sem entrega
+          </Button>
         )}
         {location && (
           <Button size="sm" variant="outline" className="bg-surface shadow-sm" onClick={() => setDrawing({ type: "store" })}>

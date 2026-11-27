@@ -60,6 +60,10 @@ function areaFee(
   store: MenuStoreSettings,
   address: DeliveryAddress,
 ): { ok: true; feeCents: number; distanceKm?: number; areaId?: string; eta?: { minMinutes: number; maxMinutes: number } } | Extract<DeliveryQuote, { ok: false }> {
+  if (address.lat != null && address.lng != null) {
+    const point = { lat: address.lat, lng: address.lng };
+    if (store.blockedZones?.some((z) => insidePolygon(point, z.points))) return { ok: false, code: "OUT_OF_AREA", message: "Não entregamos neste endereço." };
+  }
   if (store.delivery.mode === "BY_DISTRICT") {
     if (!address.district?.trim()) return { ok: false, code: "ADDRESS_REQUIRED", message: "Informe o bairro." };
     const wanted = normalizeDistrict(address.district);

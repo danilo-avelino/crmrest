@@ -66,7 +66,7 @@ export const SoldOutRequest = z.object({ soldOut: z.boolean() });
 
 export const SizesRequest = z.object({
   sizes: z
-    .array(z.object({ name, priceCents: cents, active: z.boolean().optional() }))
+    .array(z.object({ name, priceCents: cents, active: z.boolean().optional(), allowsHalf: z.boolean().optional() }))
     .max(20)
     .refine((sizes) => new Set(sizes.map((size) => size.name.toLowerCase())).size === sizes.length, "Tamanhos com o mesmo nome."),
 });

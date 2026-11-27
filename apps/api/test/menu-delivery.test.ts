@@ -70,6 +70,18 @@ describe("DeliveryService: taxa e área (F2-06)", () => {
     });
   });
 
+  it("zona sem entrega recusa o endereço dentro dela, mesmo dentro do raio", () => {
+    // Quadrado em volta de (-23.56, -46.63), dentro do raio de 2 km.
+    const zone = { id: "z1", name: "Zona sem entrega", points: [{ lat: -23.555, lng: -46.635 }, { lat: -23.555, lng: -46.625 }, { lat: -23.565, lng: -46.625 }, { lat: -23.565, lng: -46.635 }] };
+    const blocked = { ...radius, blockedZones: [zone] };
+    expect(quoteDelivery(blocked, { mode: "DELIVERY", subtotalCents: 5000, address: { lat: -23.56, lng: -46.63 } })).toMatchObject({ ok: false, code: "OUT_OF_AREA" });
+    expect(quoteDelivery(blocked, { mode: "DELIVERY", subtotalCents: 5000, address: { lat: -23.58, lng: -46.63 } })).toMatchObject({ ok: true, feeCents: 1000 });
+    // Por bairro, vale quando o endereço tem lat/lng.
+    const byDistrict = store({ blockedZones: [zone] });
+    expect(quoteDelivery(byDistrict, { mode: "DELIVERY", subtotalCents: 5000, address: { district: "Centro", lat: -23.56, lng: -46.63 } })).toMatchObject({ ok: false, code: "OUT_OF_AREA" });
+    expect(quoteDelivery(byDistrict, { mode: "DELIVERY", subtotalCents: 5000, address: { district: "Centro" } })).toMatchObject({ ok: true });
+  });
+
   it("faixa de taxas antes do endereço", () => {
     expect(feeRangeOf(store())).toEqual({ minCents: 500, maxCents: 800 });
     expect(feeRangeOf(radius)).toEqual({ minCents: 500, maxCents: 1000 });
