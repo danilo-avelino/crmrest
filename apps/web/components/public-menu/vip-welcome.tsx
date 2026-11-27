@@ -75,7 +75,7 @@ export function VipWelcome({ slug }: { slug: string }) {
             {part.frequency === "EVERY_ORDER" ? (
               <p className="m-0 text-[12.5px] text-ink-2">Vale em todo pedido.</p>
             ) : (
-              <Uses total={1} used={part.available ? 0 : 1} icon={TicketPercentIcon} label="cupons" />
+              <Uses total={part.allowed ?? 1} used={Math.min(part.used, part.allowed ?? 1)} icon={TicketPercentIcon} label="cupons" />
             )}
             {part.frequency === "ONCE" && <p className="m-0 text-[12px] text-ink-3">Vale uma vez só.</p>}
           </section>

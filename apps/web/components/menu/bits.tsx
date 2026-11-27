@@ -16,7 +16,7 @@ export function Toggle({ on, label, onToggle, disabled }: { on: boolean; label: 
       aria-label={label}
       disabled={disabled}
       onClick={onToggle}
-      className={cn("h-[18px] w-[30px] justify-start rounded-[9px] p-0.5 hover:bg-transparent", on ? "justify-end bg-ink hover:bg-ink" : "bg-[#C4BDB2] hover:bg-[#C4BDB2]")}
+      className={cn("h-[18px] w-[30px] justify-start rounded-[9px] p-0.5 hover:bg-transparent", on ? "justify-end bg-success hover:bg-success" : "bg-ink-3 hover:bg-ink-3")}
     >
       <span className="size-3.5 rounded-full bg-white" />
     </Button>

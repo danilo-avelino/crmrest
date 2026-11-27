@@ -3,6 +3,8 @@
 import {
   AUTO_TAG_INFO,
   BENEFIT_FREQUENCIES,
+  BENEFIT_PER_MONTH_MAX,
+  BENEFIT_PER_MONTH_MIN,
   BENEFIT_FREQUENCY_LABEL,
   BENEFIT_TAGS,
   BENEFIT_TITLE,
@@ -88,9 +90,22 @@ export function TagBenefitsTab() {
 }
 
 const check = "size-4 accent-ink";
-const select = "h-9 rounded-lg border border-rule bg-surface px-2";
+// Títulos das tags e das vantagens: só o checkbox liga e desliga (clicar no resto da linha não mexe em nada).
+// min-w-0 e flex-1: o seletor encolhe com a caixa em vez de vazar para fora dela.
+const select = "h-9 min-w-0 flex-1 rounded-lg border border-rule bg-surface px-2";
 /** Caixa de cada vantagem: marcada, borda ink; desmarcada, borda rule. */
-const box = (on: boolean) => `flex flex-col gap-2 rounded-lg border px-3 py-2.5 text-[13px] ${on ? "border-ink bg-surface" : "border-rule bg-paper"}`;
+const box = (on: boolean) => `flex min-w-0 flex-col gap-2 rounded-lg border px-3 py-2.5 text-[13px] ${on ? "border-ink bg-surface" : "border-rule bg-paper"}`;
+const clampPerMonth = (value: string) => Math.min(BENEFIT_PER_MONTH_MAX, Math.max(BENEFIT_PER_MONTH_MIN, Number(value) || BENEFIT_PER_MONTH_MIN));
+
+/** "N vezes por mês": aparece quando a vantagem vale em X pedidos por mês. */
+function PerMonthInput({ value, onChange }: { value: number; onChange: (value: number) => void }) {
+  return (
+    <label className="flex items-center gap-2 text-[13px]">
+      <Input type="number" min={BENEFIT_PER_MONTH_MIN} max={BENEFIT_PER_MONTH_MAX} className="w-20 tabular-nums" value={value} onChange={(e) => onChange(clampPerMonth(e.target.value))} />
+      vezes por mês
+    </label>
+  );
+}
 
 function BenefitsForm({ tenantId, data }: { tenantId: string; data: TagBenefitsSettings }) {
   const { request } = useAuth();
@@ -149,68 +164,71 @@ function BenefitsForm({ tenantId, data }: { tenantId: string; data: TagBenefitsS
         <CardBody className="flex flex-col divide-y divide-rule-soft">
           {BENEFIT_TAGS.map((tag) => {
             const rule = form.tags[tag];
-            const frequency = (value: BenefitFrequency, onChange: (value: BenefitFrequency) => void) => (
-              <label className="flex items-center gap-2 text-[13px]">
-                Usar
-                <select className={select} value={value} onChange={(e) => onChange(e.target.value as BenefitFrequency)}>
-                  {BENEFIT_FREQUENCIES.map((f) => (
-                    <option key={f} value={f}>
-                      {BENEFIT_FREQUENCY_LABEL[f]}
-                    </option>
-                  ))}
-                </select>
-              </label>
+            const frequency = (perk: "freeDelivery" | "discount") => (
+              <>
+                <label className="flex min-w-0 items-center gap-2 text-[13px]">
+                  Usar
+                  <select className={select} value={rule[perk].frequency} onChange={(e) => setPerk(tag, perk, { frequency: e.target.value as BenefitFrequency })}>
+                    {BENEFIT_FREQUENCIES.map((f) => (
+                      <option key={f} value={f}>
+                        {BENEFIT_FREQUENCY_LABEL[f]}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {rule[perk].frequency === "MONTHLY_TIMES" && <PerMonthInput value={rule[perk].perMonth} onChange={(value) => setPerk(tag, perk, { perMonth: value })} />}
+              </>
             );
             return (
               <div key={tag} className="flex flex-col gap-2.5 py-3.5 first:pt-0 last:pb-0">
-                <label className="flex items-center gap-2.5">
-                  <input type="checkbox" className={check} checked={rule.enabled} onChange={(e) => setTag(tag, { enabled: e.target.checked })} />
+                <div className="flex items-center gap-2.5">
+                  <input type="checkbox" aria-label={`Vantagens da tag ${tag}`} className={check} checked={rule.enabled} onChange={(e) => setTag(tag, { enabled: e.target.checked })} />
                   <span className="font-semibold">{tag}</span>
                   <span className="text-[12px] text-ink-3">· o cliente vê “{BENEFIT_TITLE[tag]}”</span>
-                </label>
+                </div>
                 <p className="m-0 text-[12px] text-ink-3">{AUTO_TAG_INFO[tag]}</p>
                 {rule.enabled && (
                   <div className="grid grid-cols-1 gap-2.5 lg:grid-cols-3">
                     <div className={box(rule.freeDelivery.enabled)}>
-                      <label className="flex items-center gap-2 font-medium">
-                        <input type="checkbox" className={check} checked={rule.freeDelivery.enabled} onChange={(e) => setPerk(tag, "freeDelivery", { enabled: e.target.checked })} />
+                      <div className="flex items-center gap-2 font-medium">
+                        <input type="checkbox" aria-label={`Entrega grátis da tag ${tag}`} className={check} checked={rule.freeDelivery.enabled} onChange={(e) => setPerk(tag, "freeDelivery", { enabled: e.target.checked })} />
                         Entrega grátis
-                      </label>
+                      </div>
                       <span className="text-[12px] text-ink-3">A taxa de entrega sai do pedido.</span>
                       {rule.freeDelivery.enabled && (
                         <>
                           <label className="flex items-center gap-2 text-[13px]">Pedido mínimo R$ {moneyInput(`${tag}.freeDeliveryMin`, "sem mínimo")}</label>
-                          {frequency(rule.freeDelivery.frequency, (value) => setPerk(tag, "freeDelivery", { frequency: value }))}
+                          {frequency("freeDelivery")}
                         </>
                       )}
                     </div>
 
                     <div className={box(rule.discount.enabled)}>
-                      <label className="flex items-center gap-2 font-medium">
-                        <input type="checkbox" className={check} checked={rule.discount.enabled} onChange={(e) => setPerk(tag, "discount", { enabled: e.target.checked })} />
+                      <div className="flex items-center gap-2 font-medium">
+                        <input type="checkbox" aria-label={`Cupom de desconto da tag ${tag}`} className={check} checked={rule.discount.enabled} onChange={(e) => setPerk(tag, "discount", { enabled: e.target.checked })} />
                         Cupom de desconto
-                      </label>
+                      </div>
                       <span className="text-[12px] text-ink-3">Valor em R$ que sai do pedido.</span>
                       {rule.discount.enabled && (
                         <>
                           <label className="flex items-center gap-2 text-[13px]">Desconto R$ {moneyInput(`${tag}.discount`, "0,00")}</label>
                           <label className="flex items-center gap-2 text-[13px]">Pedido mínimo R$ {moneyInput(`${tag}.discountMin`, "sem mínimo")}</label>
-                          {frequency(rule.discount.frequency, (value) => setPerk(tag, "discount", { frequency: value }))}
+                          {frequency("discount")}
                         </>
                       )}
                     </div>
 
                     <div className={box(rule.gift.enabled)}>
-                      <label className="flex items-center gap-2 font-medium">
-                        <input type="checkbox" className={check} checked={rule.gift.enabled} onChange={(e) => setPerk(tag, "gift", { enabled: e.target.checked })} />
+                      <div className="flex items-center gap-2 font-medium">
+                        <input type="checkbox" aria-label={`Brinde do cardápio da tag ${tag}`} className={check} checked={rule.gift.enabled} onChange={(e) => setPerk(tag, "gift", { enabled: e.target.checked })} />
                         Brinde do cardápio
-                      </label>
+                      </div>
                       <span className="text-[12px] text-ink-3">Entra sozinho no carrinho, de graça. Soma com o cupom; um brinde por pedido.</span>
                       {rule.gift.enabled && (
                         <>
-                          <label className="flex items-center gap-2 text-[13px]">
+                          <label className="flex min-w-0 items-center gap-2 text-[13px]">
                             Item
-                            <select className={`${select} min-w-0 flex-1`} value={rule.gift.itemId ?? ""} onChange={(e) => setPerk(tag, "gift", { itemId: e.target.value || null })}>
+                            <select className={select} value={rule.gift.itemId ?? ""} onChange={(e) => setPerk(tag, "gift", { itemId: e.target.value || null })}>
                               <option value="">Escolha o item</option>
                               {menu.data?.categories.map((category) => (
                                 <optgroup key={category.id} label={category.name}>
@@ -227,7 +245,7 @@ function BenefitsForm({ tenantId, data }: { tenantId: string; data: TagBenefitsS
                             </select>
                           </label>
                           <label className="flex items-center gap-2 text-[13px]">Pedido mínimo R$ {moneyInput(`${tag}.giftMin`, "sem mínimo")}</label>
-                          <label className="flex items-center gap-2 text-[13px]">
+                          <label className="flex min-w-0 items-center gap-2 text-[13px]">
                             Limite
                             <select
                               className={select}
@@ -236,22 +254,10 @@ function BenefitsForm({ tenantId, data }: { tenantId: string; data: TagBenefitsS
                             >
                               <option value="none">Sem limite</option>
                               <option value="once">Uma vez por mês</option>
-                              <option value="many">Algumas vezes por mês</option>
+                              <option value="many">Em X pedidos por mês</option>
                             </select>
                           </label>
-                          {rule.gift.perMonth != null && rule.gift.perMonth > 1 && (
-                            <label className="flex items-center gap-2 text-[13px]">
-                              <Input
-                                type="number"
-                                min={2}
-                                max={31}
-                                className="w-20 tabular-nums"
-                                value={rule.gift.perMonth}
-                                onChange={(e) => setPerk(tag, "gift", { perMonth: Math.min(31, Math.max(2, Number(e.target.value) || 2)) })}
-                              />
-                              vezes por mês
-                            </label>
-                          )}
+                          {rule.gift.perMonth != null && rule.gift.perMonth > 1 && <PerMonthInput value={rule.gift.perMonth} onChange={(value) => setPerk(tag, "gift", { perMonth: value })} />}
                         </>
                       )}
                     </div>

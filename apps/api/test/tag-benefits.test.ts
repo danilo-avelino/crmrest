@@ -120,8 +120,8 @@ describe("Vantagens por tag no cardápio", () => {
     const saved = await request(app.getHttpServer()).get(`/api/menu/${fx.b.id}/tag-benefits`).set({ Authorization: `Bearer ${adminToken}` }).expect(200);
     expect(saved.body.tags.VIP).toEqual({
       enabled: true,
-      freeDelivery: { enabled: true, minOrderCents: 3000, frequency: "MONTHLY" },
-      discount: { enabled: true, cents: 1000, minOrderCents: 3000, frequency: "MONTHLY" },
+      freeDelivery: { enabled: true, minOrderCents: 3000, frequency: "MONTHLY", perMonth: 2 },
+      discount: { enabled: true, cents: 1000, minOrderCents: 3000, frequency: "MONTHLY", perMonth: 2 },
       gift: { enabled: true, itemId: "item-1", minOrderCents: 4000, perMonth: 2 },
     });
     expect(saved.body.tags["Em risco"]).toMatchObject({ enabled: false });
@@ -151,6 +151,20 @@ describe("Vantagens por tag no cardápio", () => {
     const big = await post("/orders", order({ couponId: "Novo", lines: [{ lineId: "l1", itemId: pizza, sizeId: size, quantity: 2 }] }), cookie).expect(200);
     const bigSaved = await admin.order.findUniqueOrThrow({ where: { id: big.body.id } });
     expect([Number(bigSaved.deliveryFee), Number(bigSaved.total)]).toEqual([7, 100 - 8 + 7]);
+    await request(app.getHttpServer()).put(`/api/menu/${fx.b.id}/tag-benefits`).set(auth).send(BENEFITS).expect(200);
+  });
+
+  it("em X pedidos por mês: o cupom vale X vezes no mês e mostra quantas já foram usadas", async () => {
+    const auth = { Authorization: `Bearer ${adminToken}` };
+    const novo = tagRule({ discount: { enabled: true, cents: 500, minOrderCents: 0, frequency: "MONTHLY_TIMES", perMonth: 2 } });
+    await request(app.getHttpServer()).put(`/api/menu/${fx.b.id}/tag-benefits`).set(auth).send(withTag("Novo", novo)).expect(200);
+    const { cookie } = await customer(["Novo"]);
+    await post("/orders", order({ couponId: "Novo" }), cookie).expect(200);
+    const after = await request(app.getHttpServer()).get(url("/me/coupons")).set("Cookie", cookie).expect(200);
+    expect(after.body.coupons[0].parts[0]).toMatchObject({ frequency: "MONTHLY_TIMES", allowed: 2, used: 1, available: true });
+    await post("/orders", order({ couponId: "Novo" }), cookie).expect(200);
+    const third = await post("/orders", order({ couponId: "Novo" }), cookie).expect(422);
+    expect(third.body).toMatchObject({ code: "COUPON_INVALID", message: "Já usado 2 vezes este mês. Volta no mês que vem." });
     await request(app.getHttpServer()).put(`/api/menu/${fx.b.id}/tag-benefits`).set(auth).send(BENEFITS).expect(200);
   });
 

@@ -72,19 +72,23 @@ export async function customerCoupons(
     const parts: CouponPartDto[] = [];
     // Cada parte com o seu mínimo e a sua frequência (26/11/2026).
     const perks = [
-      rule.freeDelivery.enabled ? { kind: "freeDelivery" as const, cents: 0, minOrderCents: rule.freeDelivery.minOrderCents, frequency: rule.freeDelivery.frequency } : null,
+      rule.freeDelivery.enabled ? { kind: "freeDelivery" as const, cents: 0, minOrderCents: rule.freeDelivery.minOrderCents, frequency: rule.freeDelivery.frequency, perMonth: rule.freeDelivery.perMonth } : null,
       rule.discount.enabled && rule.discount.cents > 0
-        ? { kind: "discount" as const, cents: rule.discount.cents, minOrderCents: rule.discount.minOrderCents, frequency: rule.discount.frequency }
+        ? { kind: "discount" as const, cents: rule.discount.cents, minOrderCents: rule.discount.minOrderCents, frequency: rule.discount.frequency, perMonth: rule.discount.perMonth }
         : null,
     ];
     for (const perk of perks) {
       if (!perk) continue;
-      let reason: string | null = null;
+      const { perMonth, ...part } = perk;
+      // Em X pedidos por mês: X usos no mês de Brasília; uma vez por mês e uma vez só: 1.
+      const allowed = perk.frequency === "EVERY_ORDER" ? null : perk.frequency === "MONTHLY_TIMES" ? perMonth : 1;
       const since = perk.frequency === "ONCE" ? null : monthStartBrt(input.now);
-      if (perk.frequency !== "EVERY_ORDER" && (await partUsedSince(tx, input, tag, perk.kind, since)))
-        reason = perk.frequency === "ONCE" ? "Você já usou este cupom." : "Já usado este mês. Volta no mês que vem.";
+      const used = allowed == null ? 0 : await partUsesSince(tx, input, tag, perk.kind, since);
+      let reason: string | null = null;
+      if (allowed != null && used >= allowed)
+        reason = perk.frequency === "ONCE" ? "Você já usou este cupom." : perk.frequency === "MONTHLY_TIMES" ? `Já usado ${allowed} vezes este mês. Volta no mês que vem.` : "Já usado este mês. Volta no mês que vem.";
       else if (input.subtotalCents != null && input.subtotalCents < perk.minOrderCents) reason = `Vale a partir de ${formatCents(perk.minOrderCents)}.`;
-      parts.push({ ...perk, available: reason === null, reason });
+      parts.push({ ...part, allowed, used, available: reason === null, reason });
     }
     if (parts.length === 0) continue;
     const valid = parts.filter((p) => p.available);
@@ -101,9 +105,9 @@ export async function customerCoupons(
   return coupons;
 }
 
-/** A parte do cupom da tag já foi usada desde `since` (null = alguma vez)? O pedido grava em `raw.benefit` o que valeu. */
-async function partUsedSince(tx: TenantTx, input: { tenantId: string; contactId: string }, tag: string, kind: CouponPartDto["kind"], since: Date | null): Promise<boolean> {
-  const found = await tx.order.findFirst({
+/** Quantas vezes a parte do cupom da tag foi usada desde `since` (null = sempre). O pedido grava em `raw.benefit` o que valeu. */
+async function partUsesSince(tx: TenantTx, input: { tenantId: string; contactId: string }, tag: string, kind: CouponPartDto["kind"], since: Date | null): Promise<number> {
+  return tx.order.count({
     where: {
       tenantId: input.tenantId,
       contactId: input.contactId,
@@ -116,9 +120,7 @@ async function partUsedSince(tx: TenantTx, input: { tenantId: string; contactId:
       ],
       ...(since ? { placedAt: { gte: since } } : {}),
     },
-    select: { id: true },
   });
-  return Boolean(found);
 }
 
 /**

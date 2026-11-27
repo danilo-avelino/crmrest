@@ -21,20 +21,26 @@ export const BENEFIT_TITLE: Record<BenefitTag, string> = {
   Sumido: "Que saudade!",
 };
 
-export const BENEFIT_FREQUENCIES = ["EVERY_ORDER", "MONTHLY", "ONCE"] as const;
+/** `MONTHLY_TIMES`: em X pedidos por mês (o X é o `perMonth` da vantagem, de 2 a 31). */
+export const BENEFIT_FREQUENCIES = ["EVERY_ORDER", "MONTHLY", "MONTHLY_TIMES", "ONCE"] as const;
 export type BenefitFrequency = (typeof BENEFIT_FREQUENCIES)[number];
 export const BENEFIT_FREQUENCY_LABEL: Record<BenefitFrequency, string> = {
   EVERY_ORDER: "Em todo pedido",
   MONTHLY: "Uma vez por mês",
+  MONTHLY_TIMES: "Em X pedidos por mês",
   ONCE: "Uma vez só",
 };
 
 const cents = z.number().int().min(0).max(100_000);
+export const BENEFIT_PER_MONTH_MIN = 2;
+export const BENEFIT_PER_MONTH_MAX = 31;
+/** Pedidos por mês com a vantagem quando a frequência é `MONTHLY_TIMES` (ausente nas configurações antigas: 2). */
+const perMonth = z.number().int().min(BENEFIT_PER_MONTH_MIN).max(BENEFIT_PER_MONTH_MAX).default(BENEFIT_PER_MONTH_MIN);
 
 /** Entrega grátis da tag: pedido mínimo e frequência próprios (26/11/2026). */
-export const FreeDeliveryPerk = z.object({ enabled: z.boolean(), minOrderCents: cents, frequency: z.enum(BENEFIT_FREQUENCIES) });
+export const FreeDeliveryPerk = z.object({ enabled: z.boolean(), minOrderCents: cents, frequency: z.enum(BENEFIT_FREQUENCIES), perMonth });
 /** Cupom de desconto em R$ da tag: pedido mínimo e frequência próprios (26/11/2026). */
-export const DiscountPerk = z.object({ enabled: z.boolean(), cents, minOrderCents: cents, frequency: z.enum(BENEFIT_FREQUENCIES) });
+export const DiscountPerk = z.object({ enabled: z.boolean(), cents, minOrderCents: cents, frequency: z.enum(BENEFIT_FREQUENCIES), perMonth });
 
 export const RecoveryBenefit = z.object({
   enabled: z.boolean(),
@@ -67,8 +73,8 @@ export type TagBenefit = z.infer<typeof TagBenefit>;
 
 const off: TagBenefit = {
   enabled: false,
-  freeDelivery: { enabled: false, minOrderCents: 0, frequency: "MONTHLY" },
-  discount: { enabled: false, cents: 0, minOrderCents: 0, frequency: "MONTHLY" },
+  freeDelivery: { enabled: false, minOrderCents: 0, frequency: "MONTHLY", perMonth: 2 },
+  discount: { enabled: false, cents: 0, minOrderCents: 0, frequency: "MONTHLY", perMonth: 2 },
   gift: DEFAULT_VIP_GIFT,
 };
 
@@ -136,6 +142,9 @@ export type CouponPartDto = {
   cents: number;
   minOrderCents: number;
   frequency: BenefitFrequency;
+  /** Usos permitidos no período (1 em "uma vez por mês" e "uma vez só"; null em todo pedido) e quantos o cliente já fez. */
+  allowed: number | null;
+  used: number;
   available: boolean;
   reason: string | null;
 };
