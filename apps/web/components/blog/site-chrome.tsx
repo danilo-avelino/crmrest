@@ -1,8 +1,10 @@
+import Link from "next/link";
 import type { ReactNode } from "react";
 
 /**
  * Topo e rodapé do blog, iguais aos do site institucional (public/index.html).
- * Links com <a>: as outras páginas do site são HTML estático, e a carga completa conta a visita no track.js.
+ * Links com <a> para as páginas em HTML estático do site, que só abrem com carga completa.
+ * Links fixos para /blog usam <Link>, como pede o lint do Next.
  */
 
 const WHATSAPP = "https://wa.me/5586999731647?text=Ol%C3%A1!%20Quero%20conhecer%20o%20Dish%20Desk.";
@@ -72,9 +74,9 @@ export function BlogFooter() {
     <footer className="bg-[#1A1814] text-[#A2968A]">
       <div className="mx-auto flex max-w-[1200px] flex-wrap gap-5 px-6 py-6 text-[13px]">
         <span>Dish Desk</span>
-        <a href="/blog" className="text-[#CFC6BB]">
+        <Link href="/blog" className="text-[#CFC6BB]">
           Blog
-        </a>
+        </Link>
         <a href="/privacidade" className="text-[#CFC6BB]">
           Privacidade
         </a>

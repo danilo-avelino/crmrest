@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Markdown } from "@/components/blog/markdown";
 import { BlogCta, JsonLd } from "@/components/blog/site-chrome";
@@ -101,9 +102,9 @@ export default async function BlogPostPage({ params }: PageProps<"/blog/[slug]">
       <header className="bg-[#1A1814] text-[#F7F4EF]">
         <div className="mx-auto max-w-[760px] px-6 pt-12 pb-12">
           <nav aria-label="Você está em" className="text-[13px] text-[#A2968A]">
-            <a href="/blog" className="text-[#CFC6BB] no-underline hover:text-tomate">
+            <Link href="/blog" className="text-[#CFC6BB] no-underline hover:text-tomate">
               Blog
-            </a>
+            </Link>
             <span aria-hidden> / </span>
             <span>{post.topic}</span>
           </nav>
