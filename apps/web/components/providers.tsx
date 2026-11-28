@@ -11,9 +11,9 @@ import { watchSystemTheme } from "@/lib/theme";
 export function Providers({ children }: { children: ReactNode }) {
   const [queryClient] = useState(() => new QueryClient({ defaultOptions: { queries: { staleTime: 30_000 } } }));
   useEffect(() => watchSystemTheme(), []);
-  // Cardápio público (/c/...): sem login do painel, sem busca de sessão e sem o widget do iFood.
+  // Cardápio público (/c/...) e blog do site: sem login do painel, sem busca de sessão e sem o widget do iFood.
   const pathname = usePathname();
-  if (pathname?.startsWith("/c/")) return <>{children}</>;
+  if (pathname?.startsWith("/c/") || pathname === "/blog" || pathname?.startsWith("/blog/")) return <>{children}</>;
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
