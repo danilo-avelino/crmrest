@@ -26,12 +26,7 @@ details .chev{transition:transform .25s ease}
 details[open] .chev{transform:rotate(45deg)}
 details[open]{background:#FFFFFF}
 
-/* planos do topo: rolagem (--hp) e ponteiro (--mx, --my) */
-.pl-back{transform:translate3d(calc(var(--mx,0) * -10px), calc(var(--hp,0) * -50px + var(--my,0) * -8px),0)}
-.pl-mid{transform:translate3d(calc(var(--mx,0) * -18px), calc(var(--hp,0) * -120px + var(--my,0) * -12px),0)}
-.pl-front{transform:translate3d(calc(var(--mx,0) * -30px), calc(var(--hp,0) * -230px + var(--my,0) * -20px),0)}
-.pl-plate{transform:translate3d(calc(var(--mx,0) * -6px), calc(var(--hp,0) * -20px),0) scale(calc(1 + var(--hp,0) * .12))}
-.pl-back,.pl-mid,.pl-front,.pl-plate{transition:transform .25s ease-out;will-change:transform}
+/* texto do topo: sobe e some com a rolagem (--hp) */
 .hero-copy{transform:translateY(calc(var(--hp,0) * 60px));opacity:calc(1 - var(--hp,0) * 1.2)}
 
 /* linha de progresso de "como funciona" (--cp) */
@@ -42,14 +37,10 @@ details[open]{background:#FFFFFF}
 .js .rv.d1{transition-delay:.08s}.js .rv.d2{transition-delay:.16s}.js .rv.d3{transition-delay:.24s}
 .js .rv.in{opacity:1;transform:none}
 
-@keyframes pop{from{opacity:0;transform:translateY(8px) scale(.98)}to{opacity:1;transform:none}}
-@keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-10px)}}
 @keyframes spin{to{transform:rotate(360deg)}}
 @keyframes marq{to{transform:translateX(-50%)}}
 @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(45,125,70,.55)}70%{box-shadow:0 0 0 10px rgba(45,125,70,0)}100%{box-shadow:0 0 0 0 rgba(45,125,70,0)}}
 @keyframes pulseT{0%{box-shadow:0 0 0 0 rgba(196,52,26,.5)}70%{box-shadow:0 0 0 10px rgba(196,52,26,0)}100%{box-shadow:0 0 0 0 rgba(196,52,26,0)}}
-@keyframes typing{0%,100%{opacity:.25;transform:translateY(0)}50%{opacity:1;transform:translateY(-3px)}}
-@keyframes typeShow{0%,8%{opacity:0}12%,85%{opacity:1}92%,100%{opacity:0}}
 @keyframes strike{0%,15%{transform:scaleX(0)}35%,100%{transform:scaleX(1)}}
 @keyframes rewrite{0%,38%{opacity:0;transform:translateY(8px)}48%,92%{opacity:1;transform:none}100%{opacity:0}}
 @keyframes caret{0%,49%{opacity:1}50%,100%{opacity:0}}
@@ -65,10 +56,6 @@ details[open]{background:#FFFFFF}
 @keyframes crGo{0%,42%{left:-20px;opacity:0}44%{opacity:1}53%{opacity:1}55%,100%{left:calc(100% + 10px);opacity:0}}
 
 @media (prefers-reduced-motion:no-preference){
-  .b1{animation:pop .5s ease .4s both}.b2{animation:pop .5s ease 1.6s both}.b3{animation:pop .5s ease 2.6s both}.b4{animation:pop .5s ease 3.9s both}
-  .ty1{animation:typeShow 1.2s ease .6s both}.ty2{animation:typeShow 1.2s ease 2.9s both}
-  .ty1 i,.ty2 i{animation:typing .9s ease-in-out infinite}.ty1 i:nth-child(2),.ty2 i:nth-child(2){animation-delay:.15s}.ty1 i:nth-child(3),.ty2 i:nth-child(3){animation-delay:.3s}
-  .bob{animation:bob 6s ease-in-out infinite}.bob2{animation:bob 7.5s ease-in-out -2s infinite}.bob3{animation:bob 5s ease-in-out -1s infinite}
   .spin{animation:spin 60s linear infinite}
   .marq{animation:marq 28s linear infinite}
   .live{animation:pulse 2s ease-out infinite}.liveT{animation:pulseT 2s ease-out infinite}
@@ -80,14 +67,42 @@ details[open]{background:#FFFFFF}
   .cr5{animation:cr5 14s ease infinite}.cr6{animation:cr6 14s ease infinite}.cr7{animation:cr7 14s ease infinite}.cr-dot{animation:crGo 14s ease-in-out infinite}
 }
 @media (max-width:720px){.cr-bridge{flex:1 1 100% !important}}
-@media (prefers-reduced-motion:reduce){.ty1,.ty2{display:none}}
 @media (min-width:960px){.stick{position:sticky;top:110px}}
-@media (max-width:720px){.hide-sm{display:none !important}.hero-stage{height:600px !important}}
+@media (max-width:720px){.hide-sm{display:none !important}}
 @media (max-width:1100px){.hide-md{display:none !important}}
 /* barra fixa no celular: aparece depois do topo, com o teste grátis e o WhatsApp */
 .mbar{display:none}
 @media (max-width:720px){.mbar{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:40;gap:10px;padding:10px 16px calc(10px + env(safe-area-inset-bottom));background:rgba(26,24,20,.96);border-top:1px solid #2E2A25;transform:translateY(110%);visibility:hidden;transition:transform .25s ease,visibility .25s}.mbar.on{transform:none;visibility:visible}[data-lp]{padding-bottom:72px}}
 @media (prefers-reduced-motion:reduce){.mbar{transition:none}}
+/* fluxo do topo: canais em anel ligados ao Dish Desk */
+.fx-stage{position:relative;width:100%;max-width:600px;margin:0 auto;aspect-ratio:1/1.02}
+.fx-stage canvas{position:absolute;inset:0;width:100%;height:100%}
+.fx-ch{position:absolute;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:7px;font-size:11.5px;font-weight:500;color:#CFC6BB;white-space:nowrap;z-index:2}
+.fx-icw{position:relative;display:block;padding:3px;border-radius:13px;background:#24211C;box-shadow:0 0 0 1px rgba(247,244,239,.16),0 12px 26px -12px rgba(0,0,0,.85)}
+.fx-ic{width:38px;height:38px;border-radius:10px;display:block;object-fit:cover}
+.fx-ch .fx-rate{position:absolute;top:-7px;right:-10px;min-width:20px;height:18px;padding:0 5px;border-radius:9px;background:#F7F4EF;color:#1A1814;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;font-variant-numeric:tabular-nums}
+.fx-team{flex-direction:row;gap:8px;padding:8px 14px;border-radius:999px;background:#B02E17;color:#FFFFFF;font-size:12.5px}
+.fx-team .fx-rate{position:static;min-width:0;height:auto;padding:0;background:none;color:#FFD9D0;font-weight:500;font-size:10.5px}
+.fx-desk{position:absolute;left:50%;top:50%;width:236px;transform:translate(-50%,-50%);border-radius:16px;background:#F7F4EF;color:#1A1814;z-index:3;overflow:hidden;box-shadow:0 0 0 1px rgba(247,244,239,.2),0 0 60px rgba(196,52,26,.35),0 40px 80px -30px rgba(0,0,0,.9)}
+.fx-desk-h{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid #DDD8D0;font-family:Fraunces,Georgia,serif;font-weight:600;font-size:15px}
+.fx-m{display:flex;width:22px;height:22px;border-radius:5px;background:#1A1814;align-items:center;justify-content:center}
+.fx-on{margin-left:auto;font-family:Inter,system-ui,sans-serif;font-size:10.5px;font-weight:600;color:#1D5C33;display:flex;align-items:center;gap:5px}
+.fx-big{padding:12px 12px 4px}
+.fx-big strong{display:block;font-family:Fraunces,Georgia,serif;font-weight:600;font-size:40px;line-height:1;letter-spacing:-.02em;font-variant-numeric:lining-nums tabular-nums}
+.fx-big span{font-size:11px;color:#4A4540}
+.fx-bar{display:flex;height:6px;margin:10px 12px 0;border-radius:3px;overflow:hidden;background:#F0EDE8}
+.fx-bar i{display:block;height:100%;transition:width .4s cubic-bezier(.23,1,.32,1)}
+.fx-f{display:grid;grid-template-columns:1fr 1fr;margin-top:10px;border-top:1px solid #DDD8D0;font-size:10.5px;line-height:1.35;color:#4A4540}
+.fx-f div{padding:8px 12px;border-left:1px solid #DDD8D0}
+.fx-f div:first-child{border-left:0}
+.fx-f strong{display:block;font-family:Fraunces,Georgia,serif;font-weight:600;font-size:17px;line-height:1.1;color:#1A1814;font-variant-numeric:lining-nums tabular-nums}
+.fx-save strong{color:#1D5C33 !important}
+.fx-basis{margin:10px auto 0;max-width:52ch;text-align:center;font-size:11.5px;line-height:1.5;color:#A2968A}
+.fx-cap{position:absolute;left:0;top:0;z-index:4;max-width:200px;padding:6px 10px;border-radius:10px;font-size:11.5px;line-height:1.35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none;will-change:transform,opacity;box-shadow:0 10px 24px -10px rgba(0,0,0,.85)}
+.fx-cap.q{background:#FFFFFF;color:#1A1814;border-radius:10px 10px 10px 3px}
+.fx-cap.a{background:#1A1814;color:#F7F4EF;box-shadow:0 0 0 1px rgba(111,203,142,.6),0 10px 24px -10px rgba(0,0,0,.85)}
+.fx-cap.t{background:#1A1814;color:#F7F4EF;box-shadow:0 0 0 1px rgba(240,122,98,.8),0 10px 24px -10px rgba(0,0,0,.85)}
+@media (max-width:560px){.fx-desk{width:156px}.fx-desk-h{font-size:13px;gap:6px;padding:8px 10px}.fx-on{display:none}.fx-big{padding:8px 10px 2px}.fx-big strong{font-size:26px}.fx-f strong{font-size:14px}.fx-f div{padding:6px 8px}.fx-ch:not(.fx-team) .fx-nm{display:none}.fx-ch .fx-rate{display:none}.fx-team{font-size:11px;padding:6px 10px}.fx-ic{width:28px;height:28px;border-radius:8px}.fx-cap{max-width:120px;font-size:10.5px}}
 </style>
 </head>
 <body>
@@ -133,56 +148,30 @@ details[open]{background:#FFFFFF}
       <p style="margin: 14px 0 0; font-size: 13px; color: #8C857D">Não pede cartão.</p>
     </div>
 
-    <div class="hero-stage" style="flex: 1 1 520px; min-width: 0; position: relative; height: 600px">
-      <!-- prato: disco tomate com borda girando -->
-      <div class="pl-plate" aria-hidden="true" style="position: absolute; top: 50%; left: 50%; width: 520px; height: 520px; margin: -260px 0 0 -250px">
-        <div style="position: absolute; inset: 0; border-radius: 50%; background: #B02E17"></div>
-        <div style="position: absolute; inset: 34px; border-radius: 50%; border: 1px solid rgba(247,244,239,.35)"></div>
-        <svg class="spin" viewBox="0 0 520 520" width="520" height="520" aria-hidden="true" style="position: absolute; inset: 0"><circle cx="260" cy="260" r="246" fill="none" stroke="#F7F4EF" stroke-opacity=".5" stroke-width="1.5" stroke-dasharray="2 10"></circle></svg>
-      </div>
-
-      <!-- fundo: comanda -->
-      <div class="pl-back" aria-hidden="true" style="position: absolute; top: 0; right: -8px; z-index: 1">
-        <div class="bob2" style="width: 250px; background: #F0EDE8; border-radius: 8px; padding: 20px; transform: rotate(4deg); box-shadow: 0 24px 50px -24px rgba(0,0,0,.6)">
-          <div style="display: flex; justify-content: space-between; font-size: 12px; color: #4A4540"><span style="display: flex; align-items: center; gap: 6px"><span style="width: 7px; height: 7px; border-radius: 50%; background: #EA1D2C"></span>iFood</span><span class="tab">18:52</span></div>
-          <p class="tab" style="margin: 10px 0 2px; font-family: Fraunces, Georgia, serif; font-weight: 600; font-size: 24px; color: #1A1814">#4853</p>
-          <p style="margin: 0; font-size: 13px; color: #4A4540">1× Lasanha Bolonhesa G<br>sem cebola</p>
-          <p style="margin: 4px 0 0; font-size: 13px; color: #4A4540">1× Refrigerante lata</p>
-          <div style="border-top: 1px dashed #C4B8A0; margin: 14px 0 10px"></div>
-          <div class="tab" style="display: flex; justify-content: space-between; font-size: 12px; color: #4A4540"><span>Saída prevista</span><strong>19:50</strong></div>
-          <div style="margin-top: 10px; display: inline-block; font-size: 11px; font-weight: 600; background: #FEF9EC; color: #7A5008; padding: 3px 8px; border-radius: 4px">Em preparo</div>
-        </div>
-      </div>
-
-      <!-- meio: conversa -->
-      <div class="pl-mid" style="position: absolute; top: 90px; left: 0; width: min(410px, 94%); z-index: 2">
-        <div class="bob" style="background: #FFFFFF; color: #1A1814; border-radius: 14px; box-shadow: 0 40px 80px -30px rgba(0,0,0,.7); overflow: hidden">
-          <div style="display: flex; align-items: center; gap: 10px; padding: 14px 16px; border-bottom: 1px solid #DDD8D0">
-            <span style="width: 36px; height: 36px; border-radius: 50%; background: #F0EDE8; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; color: #4A4540">MO</span>
-            <div style="flex: 1"><p style="margin: 0; font-weight: 600; font-size: 14px">Maria Oliveira</p><p style="margin: 0; font-size: 12px; color: #4A4540; display: flex; align-items: center; gap: 5px"><span style="width: 6px; height: 6px; border-radius: 50%; background: #25D366"></span>WhatsApp · sexta, 19:41</p></div>
-            <span style="font-size: 11px; font-weight: 600; background: #FDECEA; color: #C4341A; padding: 3px 8px; border-radius: 4px">Aberta</span>
-          </div>
-          <div style="padding: 18px 16px 22px; background: #F7F4EF; display: flex; flex-direction: column; gap: 10px; min-height: 300px">
-            <div class="b1" style="align-self: flex-start; max-width: 80%; background: #FFFFFF; border: 1px solid #DDD8D0; border-radius: 12px 12px 12px 2px; padding: 9px 12px; font-size: 13px">Boa noite! Meu pedido está perto de sair?</div>
-            <div class="ty1" aria-hidden="true" style="align-self: flex-end; display: flex; gap: 4px; background: #1A1814; border-radius: 12px; padding: 10px 12px; height: 0; overflow: visible; margin-bottom: -10px"><i style="width: 6px; height: 6px; border-radius: 50%; background: #F7F4EF; display: block"></i><i style="width: 6px; height: 6px; border-radius: 50%; background: #F7F4EF; display: block"></i><i style="width: 6px; height: 6px; border-radius: 50%; background: #F7F4EF; display: block"></i></div>
-            <div class="b2" style="align-self: flex-end; max-width: 84%; background: #1A1814; color: #F7F4EF; border-radius: 12px 12px 2px 12px; padding: 9px 12px; font-size: 13px">Boa noite, Maria! Me diz o número do seu pedido para que eu verifique.</div>
-            <div class="b3" style="align-self: flex-start; max-width: 60%; background: #FFFFFF; border: 1px solid #DDD8D0; border-radius: 12px 12px 12px 2px; padding: 9px 12px; font-size: 13px">É o 4853</div>
-            <div class="ty2" aria-hidden="true" style="align-self: flex-end; display: flex; gap: 4px; background: #1A1814; border-radius: 12px; padding: 10px 12px; height: 0; overflow: visible; margin-bottom: -10px"><i style="width: 6px; height: 6px; border-radius: 50%; background: #F7F4EF; display: block"></i><i style="width: 6px; height: 6px; border-radius: 50%; background: #F7F4EF; display: block"></i><i style="width: 6px; height: 6px; border-radius: 50%; background: #F7F4EF; display: block"></i></div>
-            <div class="b4" style="align-self: flex-end; max-width: 84%; background: #1A1814; color: #F7F4EF; border-radius: 12px 12px 2px 12px; padding: 9px 12px; font-size: 13px">Achei seu pedido #4853: ele está em preparo, com saída prevista para as 19:50. Assim que sair para entrega, eu te aviso por aqui.</div>
-            <p class="b4" style="align-self: flex-end; margin: -4px 2px 0; font-size: 11px; color: #4A4540">Escrita pela IA · com os dados do pedido</p>
+    <!-- Fluxo omnichannel: os canais e os entregadores em anel; as mensagens correm até o Dish Desk e voltam respondidas ou descem para a equipe -->
+    <div class="fx" style="flex: 1 1 520px; min-width: 0">
+      <div class="fx-stage" data-fx role="img" aria-label="Mensagens de WhatsApp, Instagram, iFood, Cardápio Web, 99Food, Keeta e dos entregadores correm até o Dish Desk; 45% voltam respondidas pela IA e as outras vão para a equipe.">
+        <canvas data-fx-cv aria-hidden="true"></canvas>
+        <div aria-hidden="true">
+          <div class="fx-ch" data-fx-ch data-a="270"><span class="fx-icw"><img class="fx-ic" src="/canais/whatsapp.webp" alt=""><span class="fx-rate" data-fx-rate></span></span><span class="fx-nm">WhatsApp</span></div>
+          <div class="fx-ch" data-fx-ch data-a="234"><span class="fx-icw"><img class="fx-ic" src="/canais/instagram.webp" alt=""><span class="fx-rate" data-fx-rate></span></span><span class="fx-nm">Instagram</span></div>
+          <div class="fx-ch" data-fx-ch data-a="198"><span class="fx-icw"><img class="fx-ic" src="/canais/cardapio-web.webp" alt=""><span class="fx-rate" data-fx-rate></span></span><span class="fx-nm">Cardápio Web</span></div>
+          <div class="fx-ch" data-fx-ch data-a="162"><span class="fx-icw"><svg class="fx-ic" viewBox="0 0 24 24" data-fx-moto></svg><span class="fx-rate" data-fx-rate></span></span><span class="fx-nm">Entregador Rafa</span></div>
+          <div class="fx-ch" data-fx-ch data-a="126"><span class="fx-icw"><svg class="fx-ic" viewBox="0 0 24 24" data-fx-moto></svg><span class="fx-rate" data-fx-rate></span></span><span class="fx-nm">Entregadora Bia</span></div>
+          <div class="fx-ch" data-fx-ch data-a="306"><span class="fx-icw"><img class="fx-ic" src="/canais/ifood.webp" alt=""><span class="fx-rate" data-fx-rate></span></span><span class="fx-nm">iFood</span></div>
+          <div class="fx-ch" data-fx-ch data-a="342"><span class="fx-icw"><img class="fx-ic" src="/canais/99food.webp" alt=""><span class="fx-rate" data-fx-rate></span></span><span class="fx-nm">99Food</span></div>
+          <div class="fx-ch" data-fx-ch data-a="18"><span class="fx-icw"><img class="fx-ic" src="/canais/keeta.webp" alt=""><span class="fx-rate" data-fx-rate></span></span><span class="fx-nm">Keeta</span></div>
+          <div class="fx-ch" data-fx-ch data-a="54"><span class="fx-icw"><svg class="fx-ic" viewBox="0 0 24 24" data-fx-moto></svg><span class="fx-rate" data-fx-rate></span></span><span class="fx-nm">Entregador João</span></div>
+          <div class="fx-ch fx-team" data-fx-team data-a="90">Sua equipe<span class="fx-rate" data-fx-team-n>0 conversas</span></div>
+          <div class="fx-desk" data-fx-desk>
+            <div class="fx-desk-h"><span class="fx-m"><svg width="13" height="13" viewBox="0 0 16 16" fill="none"><rect x="3" y="4" width="10" height="1.5" rx=".75" fill="#F7F4EF"></rect><rect x="3" y="7.25" width="7" height="1.5" rx=".75" fill="#F7F4EF"></rect><rect x="3" y="10.5" width="4.5" height="1.5" rx=".75" fill="#C4341A"></rect></svg></span>Dish Desk<span class="fx-on"><span style="width: 6px; height: 6px; border-radius: 50%; background: #2D7D46"></span>ao vivo</span></div>
+            <div class="fx-big"><strong class="tab" data-fx-total>0</strong><span>mensagens nesta sexta</span></div>
+            <div class="fx-bar"><i data-fx-bar-ai style="width: 0; background: #2D7D46"></i><i data-fx-bar-t style="width: 0; background: #C4341A"></i></div>
+            <div class="fx-f"><div><strong data-fx-ai>0%</strong>resolvidas pela IA</div><div class="fx-save"><strong>≈ 3,4 h</strong>economizadas por dia</div></div>
           </div>
         </div>
       </div>
-
-      <!-- frente: sinais -->
-      <div class="pl-front" aria-hidden="true" style="position: absolute; bottom: 10px; right: 0; z-index: 3">
-        <div class="bob3" style="display: flex; flex-direction: column; gap: 10px; align-items: flex-end">
-          <div style="background: #FFFFFF; color: #1A1814; border-radius: 8px; padding: 11px 15px; font-size: 13px; font-weight: 500; box-shadow: 0 22px 40px -18px rgba(0,0,0,.6); display: flex; gap: 10px; align-items: center">
-            <span class="live" style="width: 8px; height: 8px; border-radius: 50%; background: #2D7D46"></span>Resolvida sem ninguém digitar
-          </div>
-          <div style="background: #F7F4EF; color: #1A1814; border-radius: 8px; padding: 11px 15px; font-size: 13px; font-weight: 500; box-shadow: 0 22px 40px -18px rgba(0,0,0,.6)">Sua equipe segue focada no que importa</div>
-        </div>
-      </div>
+      <p class="fx-basis">Estimativa para um restaurante com 150 conversas por dia: 45% resolvidas pela IA, a 3 minutos de atendente cada, dão cerca de 3,4 horas livres para a equipe.</p>
     </div>
   </div>
 </section>
@@ -670,16 +659,155 @@ details[open]{background:#FFFFFF}
       }
     };
     self.onScroll = function () { if (!self.raf) self.raf = requestAnimationFrame(tick); };
-    self.onMove = function (ev) {
-      if (!hero) return;
-      var r = hero.getBoundingClientRect();
-      hero.style.setProperty('--mx', (((ev.clientX - r.left) / r.width) - 0.5).toFixed(3));
-      hero.style.setProperty('--my', (((ev.clientY - r.top) / r.height) - 0.5).toFixed(3));
-    };
     document.addEventListener('scroll', self.onScroll, { passive: true, capture: true });
     window.addEventListener('resize', self.onScroll);
-    if (hero) hero.addEventListener('pointermove', self.onMove);
     tick();
+})();
+</script>
+<script>
+// Fluxo do topo: as mensagens de cada canal correm como pontos de luz até o Dish Desk.
+// As que a IA resolve voltam em verde; as outras descem para a equipe (meta de 45% pela IA).
+(function () {
+  var stage = document.querySelector('[data-fx]');
+  if (!stage) return;
+  var MOTO = '<rect width="24" height="24" rx="7" fill="#F7F4EF"/><rect x="3.6" y="7.6" width="5.6" height="4.6" rx="1" fill="#C4341A"/><g fill="none" stroke="#1A1814" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="16.6" r="2.3"/><circle cx="17.4" cy="16.6" r="2.3"/><path d="M9.3 16.6h5.2l2-4.6h-2.8"/><path d="M7 16.6l2.2-4.4h4.3l1.6-3.4"/><circle cx="15.6" cy="6.4" r="1.3"/></g>';
+  [].forEach.call(stage.querySelectorAll('[data-fx-moto]'), function (s) { s.innerHTML = MOTO; });
+  var cv = stage.querySelector('[data-fx-cv]'), ctx = cv.getContext('2d');
+  var desk = stage.querySelector('[data-fx-desk]'), teamEl = stage.querySelector('[data-fx-team]');
+  var chEls = [].slice.call(stage.querySelectorAll('[data-fx-ch]'));
+  // Ordem: WhatsApp, Instagram, Cardápio Web, Rafa, Bia, iFood, 99Food, Keeta, João.
+  var W = [1, 0.55, 0.4, 0.25, 0.25, 0.85, 0.35, 0.3, 0.25];
+  var WSUM = W.reduce(function (a, b) { return a + b; }, 0);
+  var AI_SHARE = 0.45;
+  var Q = [
+    [0, 'Meu pedido está perto de sair?', 'Seu pedido #4853 sai às 19:50.'],
+    [5, 'Quanto tempo falta?', 'Sai em 8 minutos.'],
+    [3, 'Cheguei no endereço do 4851.', 'Avisei a cliente que você chegou.'],
+    [1, 'Vocês abrem no domingo?', 'Abrimos sim! Das 18h às 23h.'],
+    [6, 'Esqueceram o refrigerante.', '', 1],
+    [8, 'Deixei o 4853 na portaria.', 'Avisei a cliente no chat do iFood.'],
+    [2, 'Qual o link para pedir?', 'Aqui está o link do cardápio.'],
+    [7, 'Quero cancelar meu pedido.', '', 1],
+    [4, 'Cliente não atende o interfone.', '', 1],
+    [0, 'Tem calabresa família?', 'Tem! Família por R$ 69.']
+  ];
+  var reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var cables = [], toTeam = null, orbit = null, parts = [], dpr = 1, w = 0, h = 0, R = 41;
+  var total = 0, ai = 0, team = 0, rates = W.map(function () { return 0; });
+
+  var rel = function (el) { var r = el.getBoundingClientRect(), s = stage.getBoundingClientRect(); return { x: r.left - s.left + r.width / 2, y: r.top - s.top + r.height / 2, w: r.width, h: r.height }; };
+  var place = function (el) {
+    var ang = +el.getAttribute('data-a') * Math.PI / 180;
+    el.style.left = (50 + R * Math.cos(ang)) + '%'; el.style.top = (50 + R * Math.sin(ang)) + '%';
+  };
+  // Cabo do canal até a borda do Dish Desk, com a mesma leve curva para todos.
+  var cable = function (c, d, gap) {
+    var dx = d.x - c.x, dy = d.y - c.y, len = Math.hypot(dx, dy), ux = dx / len, uy = dy / len;
+    var t = Math.min((d.w / 2 + 6) / Math.abs(ux || 1e-6), (d.h / 2 + 6) / Math.abs(uy || 1e-6));
+    var ex = d.x - ux * t, ey = d.y - uy * t, sx = c.x + ux * gap, sy = c.y + uy * gap;
+    var L = Math.hypot(ex - sx, ey - sy), nx = -uy, ny = ux, sw = L * 0.22;
+    return [sx, sy, sx + ux * L * 0.4 + nx * sw, sy + uy * L * 0.4 + ny * sw, ex - ux * L * 0.35 + nx * sw * 0.35, ey - uy * L * 0.35 + ny * sw * 0.35, ex, ey];
+  };
+  var layout = function () {
+    dpr = Math.min(2, window.devicePixelRatio || 1);
+    w = stage.clientWidth; h = stage.clientHeight;
+    cv.width = w * dpr; cv.height = h * dpr; ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    R = w < 560 ? 45 : 41;
+    chEls.forEach(place); place(teamEl);
+    var d = rel(desk);
+    orbit = [d.x, d.y, w * R / 100, h * R / 100];
+    cables = chEls.map(function (el) { var c = rel(el.querySelector('.fx-icw')); return cable(c, d, c.w / 2 + 4); });
+    var t = rel(teamEl), tc = cable(t, d, t.h / 2 + 4);
+    toTeam = [tc[6], tc[7], tc[4], tc[5], tc[2], tc[3], tc[0], tc[1]];
+  };
+  var bez = function (c, t) {
+    var u = 1 - t;
+    return [u * u * u * c[0] + 3 * u * u * t * c[2] + 3 * u * t * t * c[4] + t * t * t * c[6], u * u * u * c[1] + 3 * u * u * t * c[3] + 3 * u * t * t * c[5] + t * t * t * c[7]];
+  };
+  var ease = function (t) { return t < .5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; };
+  var spawn = function (ch, kind, featured) {
+    parts.push({ ch: ch, kind: kind, t: 0, dur: (kind === 'q' ? 1.9 : 1.6) + Math.random() * 0.5, lane: (Math.random() - .5) * 10, wob: Math.random() * 6.28, f: featured || null });
+  };
+  var update = function () {
+    stage.querySelector('[data-fx-total]').textContent = total;
+    stage.querySelector('[data-fx-ai]').textContent = (total ? Math.round(ai / total * 100) : 0) + '%';
+    stage.querySelector('[data-fx-bar-ai]').style.width = (total ? ai / total * 100 : 0) + '%';
+    stage.querySelector('[data-fx-bar-t]').style.width = (total ? team / total * 100 : 0) + '%';
+    stage.querySelector('[data-fx-team-n]').textContent = team + (team === 1 ? ' conversa' : ' conversas');
+    chEls.forEach(function (el, i) { el.querySelector('[data-fx-rate]').textContent = rates[i]; });
+  };
+  var arrive = function (p) {
+    if (p.kind === 'q') {
+      total++; rates[p.ch]++;
+      var isTeam = p.f ? !!p.f.team : ai / total >= AI_SHARE;
+      if (isTeam) { team++; spawn(p.ch, 't', p.f); } else { ai++; spawn(p.ch, 'a', p.f); }
+      if (p.f) { p.f.el.className = 'fx-cap ' + (isTeam ? 't' : 'a'); p.f.el.textContent = isTeam ? 'Passada para a equipe' : p.f.a; }
+      update();
+    } else if (p.f) { p.f.el.remove(); }
+  };
+  var pos = function (p) {
+    var e = ease(Math.min(1, p.t));
+    if (p.kind === 't') return bez(toTeam, e);
+    var tt = p.kind === 'q' ? e : 1 - e, pt = bez(cables[p.ch], tt);
+    return [pt[0], pt[1] + p.lane + (p.kind === 'q' ? 0 : 7) + Math.sin(p.wob + tt * 9) * 1.5];
+  };
+  var curve = function (c) { ctx.beginPath(); ctx.moveTo(c[0], c[1]); ctx.bezierCurveTo(c[2], c[3], c[4], c[5], c[6], c[7]); ctx.stroke(); };
+  var draw = function () {
+    ctx.clearRect(0, 0, w, h);
+    ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(247,244,239,.07)'; ctx.setLineDash([2, 6]);
+    ctx.beginPath(); ctx.ellipse(orbit[0], orbit[1], orbit[2], orbit[3], 0, 0, 6.283); ctx.stroke(); ctx.setLineDash([]);
+    ctx.lineWidth = 1.2; ctx.strokeStyle = 'rgba(247,244,239,.18)'; cables.forEach(curve);
+    ctx.strokeStyle = 'rgba(196,52,26,.45)'; ctx.setLineDash([3, 5]); curve(toTeam); ctx.setLineDash([]);
+    ctx.globalCompositeOperation = 'lighter';
+    parts.forEach(function (p) {
+      var col = p.kind === 'q' ? (p.f ? '255,255,255' : '247,244,239') : p.kind === 'a' ? '111,203,142' : '240,122,98';
+      for (var k = 5; k >= 0; k--) {
+        var save = p.t; p.t = Math.max(0, p.t - k * 0.018);
+        var q = pos(p); p.t = save;
+        var a = (1 - k / 6) * (p.f ? 1 : 0.75) * Math.min(1, p.t * 6) * (p.t > .92 ? (1 - p.t) / .08 : 1);
+        ctx.fillStyle = 'rgba(' + col + ',' + a.toFixed(3) + ')';
+        ctx.beginPath(); ctx.arc(q[0], q[1], (p.f ? 4.2 : 2.7) * (1 - k * 0.1), 0, 6.283); ctx.fill();
+      }
+    });
+    ctx.globalCompositeOperation = 'source-over';
+  };
+  var pick = function () { var r = Math.random() * WSUM, i = 0; while (r > W[i] && i < W.length - 1) { r -= W[i]; i++; } return i; };
+  var last = 0, acc = 0, nextFeat = 0.6, qi = 0, running = false, visible = true;
+  var frame = function (now) {
+    if (!visible || document.hidden) { running = false; last = 0; return; }
+    var dt = last ? Math.min(0.05, (now - last) / 1000) : 0; last = now;
+    acc += dt * 5;   // cerca de 5 mensagens por segundo, repartidas pelo peso de cada canal
+    while (acc > 1) { acc--; spawn(pick(), 'q'); }
+    nextFeat -= dt;
+    if (nextFeat <= 0) {
+      nextFeat = 2.6;
+      var m = Q[qi++ % Q.length], el = document.createElement('div');
+      el.className = 'fx-cap q'; el.textContent = m[1]; stage.appendChild(el);
+      spawn(m[0], 'q', { el: el, a: m[2], team: !!m[3] });
+    }
+    parts.forEach(function (p) { p.t += dt / p.dur; if (p.t >= 1 && !p.done) { p.done = true; arrive(p); } });
+    parts = parts.filter(function (p) { return !p.done; });
+    parts.forEach(function (p) {
+      if (!p.f) return;
+      var q = pos(p), el = p.f.el;
+      el.style.transform = 'translate(' + (q[0] - el.offsetWidth / 2).toFixed(1) + 'px,' + (q[1] - el.offsetHeight - 10).toFixed(1) + 'px)';
+      el.style.opacity = (Math.min(1, p.t * 6) * (p.t > .9 ? (1 - p.t) / .1 : 1)).toFixed(3);
+    });
+    draw();
+    requestAnimationFrame(frame);
+  };
+  var still = function () {
+    // Com "reduzir movimento": os cabos com alguns pontos parados e os números de uma noite.
+    total = 60; ai = 27; team = 33; rates = [16, 8, 5, 3, 3, 13, 5, 4, 3]; update();
+    parts = [];
+    for (var i = 0; i < 22; i++) parts.push({ ch: i % 9, kind: i % 3 ? 'q' : 'a', t: (i * 0.137) % 0.9 + 0.05, lane: 0, wob: 0 });
+    draw();
+  };
+  layout();
+  window.addEventListener('resize', function () { layout(); if (reduce) still(); });
+  if (reduce || !('IntersectionObserver' in window)) { still(); return; }
+  new IntersectionObserver(function (e) { visible = e[0].isIntersecting; if (visible && !running) { running = true; requestAnimationFrame(frame); } }).observe(stage);
+  document.addEventListener('visibilitychange', function () { if (!document.hidden && visible && !running) { running = true; requestAnimationFrame(frame); } });
 })();
 </script>
 <script src="/assets/track.js" defer></script>
