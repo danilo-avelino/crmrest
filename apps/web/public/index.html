@@ -167,11 +167,11 @@ details[open]{background:#FFFFFF}
             <div class="fx-desk-h"><span class="fx-m"><svg width="13" height="13" viewBox="0 0 16 16" fill="none"><rect x="3" y="4" width="10" height="1.5" rx=".75" fill="#F7F4EF"></rect><rect x="3" y="7.25" width="7" height="1.5" rx=".75" fill="#F7F4EF"></rect><rect x="3" y="10.5" width="4.5" height="1.5" rx=".75" fill="#C4341A"></rect></svg></span>Dish Desk<span class="fx-on"><span style="width: 6px; height: 6px; border-radius: 50%; background: #2D7D46"></span>ao vivo</span></div>
             <div class="fx-big"><strong class="tab" data-fx-total>0</strong><span>mensagens nesta sexta</span></div>
             <div class="fx-bar"><i data-fx-bar-ai style="width: 0; background: #2D7D46"></i><i data-fx-bar-t style="width: 0; background: #C4341A"></i></div>
-            <div class="fx-f"><div><strong data-fx-ai>0%</strong>resolvidas pela IA</div><div class="fx-save"><strong>≈ 3,4 h</strong>economizadas por dia</div></div>
+            <div class="fx-f"><div><strong data-fx-ai>0%</strong>resolvidas pela IA</div><div class="fx-save"><strong>3,4 h</strong>economizadas num dia de pico</div></div>
           </div>
         </div>
       </div>
-      <p class="fx-basis">Estimativa para um restaurante com 150 conversas por dia: 45% resolvidas pela IA, a 3 minutos de atendente cada, dão cerca de 3,4 horas livres para a equipe.</p>
+      <p class="fx-basis">Estimativa para um dia de pico com 150 conversas: 45% resolvidas pela IA, a 3 minutos de atendente cada, dão cerca de 3,4 horas livres para a equipe.</p>
     </div>
   </div>
 </section>
@@ -678,7 +678,7 @@ details[open]{background:#FFFFFF}
   // Ordem: WhatsApp, Instagram, Cardápio Web, Rafa, Bia, iFood, 99Food, Keeta, João.
   var W = [1, 0.55, 0.4, 0.25, 0.25, 0.85, 0.35, 0.3, 0.25];
   var WSUM = W.reduce(function (a, b) { return a + b; }, 0);
-  var AI_SHARE = 0.45;
+  var AI_SHARE = 0.45, MAX = 300;
   var Q = [
     [0, 'Meu pedido está perto de sair?', 'Seu pedido #4853 sai às 19:50.'],
     [5, 'Quanto tempo falta?', 'Sai em 8 minutos.'],
@@ -738,11 +738,13 @@ details[open]{background:#FFFFFF}
   };
   var arrive = function (p) {
     if (p.kind === 'q') {
-      total++; rates[p.ch]++;
-      var isTeam = p.f ? !!p.f.team : ai / total >= AI_SHARE;
-      if (isTeam) { team++; spawn(p.ch, 't', p.f); } else { ai++; spawn(p.ch, 'a', p.f); }
+      // Os números param em MAX mensagens e ficam estáveis; o fluxo continua correndo.
+      var counting = total < MAX;
+      if (counting) { total++; rates[p.ch]++; }
+      var isTeam = p.f ? !!p.f.team : counting ? ai / total >= AI_SHARE : Math.random() >= AI_SHARE;
+      if (isTeam) { if (counting) team++; spawn(p.ch, 't', p.f); } else { if (counting) ai++; spawn(p.ch, 'a', p.f); }
       if (p.f) { p.f.el.className = 'fx-cap ' + (isTeam ? 't' : 'a'); p.f.el.textContent = isTeam ? 'Passada para a equipe' : p.f.a; }
-      update();
+      if (counting) update();
     } else if (p.f) { p.f.el.remove(); }
   };
   var pos = function (p) {
