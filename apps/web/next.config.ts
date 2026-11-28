@@ -7,6 +7,10 @@ const nextConfig: NextConfig = {
   outputFileTracingRoot: path.join(import.meta.dirname, "../.."),
   // Sem o balão "N" das ferramentas de desenvolvimento: ele cobria o avatar do menu lateral. Erros continuam na sobreposição.
   devIndicators: false,
+  // As telas em public/demo/states só aparecem dentro da demo: fora do Google, para não virarem páginas soltas e repetidas.
+  async headers() {
+    return [{ source: "/demo/states/:path*", headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }] }];
+  },
   // A API fica atrás de /api na mesma origem: o cookie de sessão funciona sem CORS.
   async rewrites() {
     return [
