@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import robots from "@/app/robots";
 import sitemap from "@/app/sitemap";
@@ -8,7 +8,8 @@ import { PRIVATE_PATHS, SITE_PAGES, SITE_URL } from "./site";
 /** HTML estático de cada página do site institucional (servido pelos rewrites do next.config). */
 function staticHtml(path: string): string {
   const file = path === "/" ? "index.html" : `${path.slice(1)}/index.html`;
-  return readFileSync(fileURLToPath(new URL(`../public/${file}`, import.meta.url)), "utf8");
+  // O Vite troca `new URL(..., import.meta.url)` por um endereço de asset; o vitest roda na pasta apps/web.
+  return readFileSync(join(process.cwd(), "public", file), "utf8");
 }
 
 describe("SEO do site institucional", () => {
