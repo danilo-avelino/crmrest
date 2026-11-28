@@ -14,7 +14,10 @@ export function createPrismaClient(connectionString: string): PrismaClient {
   return new PrismaClient({
     // Conexão ociosa fica 1 min no pool (o padrão do pg é 10 s): cada conexão nova autentica de novo no pooler do
     // Supabase, e é nessa autenticação que ele às vezes responde 08P01 (EAUTHPROTOCOL).
-    adapter: new PrismaPg({ connectionString, idleTimeoutMillis: 60_000 }),
+    // No máximo 6 conexões por processo (o padrão do pg é 10). O Session pooler do Supabase aceita 15 clientes por
+    // role; num deploy da Railway o container novo sobe antes do antigo sair, e 2 × 10 passava do limite
+    // (EMAXCONNSESSION em 23/11 e 26/11, minutos depois de um push na main). 2 × 6 = 12 deixa folga.
+    adapter: new PrismaPg({ connectionString, idleTimeoutMillis: 60_000, max: 6 }),
     // Padrão do Prisma: 2 s de espera por uma conexão livre e 5 s de transação. Com o banco do Supabase a alguns ms por
     // consulta, transações de muitas consultas passavam dos 5 s por pouco, e num pico a espera de 2 s não bastava.
     transactionOptions: { maxWait: 10_000, timeout: 10_000 },

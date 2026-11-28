@@ -73,7 +73,7 @@ A configuração fica no painel (Settings de cada serviço), sem comando de buil
 
 ### Banco
 
-- **Supabase** (`us-east-1`), sempre pelo **Session pooler** (porta 5432, IPv4): `DATABASE_URL=postgresql://comanda_app.<ref>:<senha>@<host do pooler>:5432/postgres` e `DATABASE_ADMIN_URL` com `postgres.<ref>`. A Data API fica desligada (Project Settings → Data API). Migrations novas nascem no Postgres local (`pnpm db:migrate`) e chegam ao Supabase só por `migrate deploy`: o `migrate dev` no Supabase pode propor apagar o banco.
+- **Supabase** (`us-east-1`), sempre pelo **Session pooler** (porta 5432, IPv4): `DATABASE_URL=postgresql://comanda_app.<ref>:<senha>@<host do pooler>:5432/postgres` e `DATABASE_ADMIN_URL` com `postgres.<ref>`. A Data API fica desligada (Project Settings → Data API). O Session pooler aceita 15 clientes por role, e cada processo da API abre no máximo 6 conexões ([packages/database/src/index.ts](packages/database/src/index.ts)), para caberem dois containers durante um deploy. Migrations novas nascem no Postgres local (`pnpm db:migrate`) e chegam ao Supabase só por `migrate deploy`: o `migrate dev` no Supabase pode propor apagar o banco.
 - **Role da aplicação:** `DATABASE_URL` usa um login sem superusuário e sem `BYPASSRLS`, membro de `app_user`. A API recusa subir com uma role que ignore a RLS. Crie-o como em [01-app-roles.sql](infra/docker/postgres/init/01-app-roles.sql), com senha forte (no Supabase, pelo SQL Editor, depois das migrations, que criam `app_user`).
 - **Migrations:** antes de cada deploy, rode `dishdesk-migrate` com `DATABASE_ADMIN_URL`, o dono das tabelas. Só esse job e as CLIs abaixo usam essa URL.
 - **Backup:** Postgres gerenciado com backup diário e PITR (critério de aceite do MVP).
