@@ -14,6 +14,7 @@ import {
   postUrl,
   readingMinutes,
 } from "@/lib/blog/posts";
+import { OG_IMAGE } from "@/lib/site";
 
 // Só os artigos do repositório: qualquer outro endereço em /blog/ é 404.
 export const dynamicParams = false;
@@ -43,6 +44,7 @@ export async function generateMetadata({ params }: PageProps<"/blog/[slug]">): P
       description: post.description,
       publishedTime: post.publishedAt,
       modifiedTime: post.updatedAt ?? post.publishedAt,
+      images: [OG_IMAGE],
     },
     robots: ready ? { index: true, follow: true } : { index: false, follow: true },
   };

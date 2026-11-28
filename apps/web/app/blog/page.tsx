@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { BlogCta, JsonLd } from "@/components/blog/site-chrome";
 import { BLOG_NAME, SITE_URL, allPosts, formatPostDate, pendingPlaceholders, readingMinutes } from "@/lib/blog/posts";
+import { OG_IMAGE } from "@/lib/site";
 
 const DESCRIPTION =
   "Operação de delivery para donos de restaurante: atendimento nos apps e no WhatsApp, avaliações do iFood, tempo de despacho, cliente próprio e embalagem.";
@@ -16,6 +17,7 @@ export const metadata: Metadata = {
     url: `${SITE_URL}/blog`,
     title: BLOG_NAME,
     description: DESCRIPTION,
+    images: [OG_IMAGE],
   },
   robots: { index: true, follow: true },
 };

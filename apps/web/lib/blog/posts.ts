@@ -3,9 +3,10 @@ import { contestarAvaliacaoPost } from "@/content/blog/contestar-avaliacao-ifood
 import { pilarPost } from "@/content/blog/operacao-de-delivery";
 import { PLACEHOLDER_RE, parseMarkdown, plainText } from "./markdown";
 import type { BlogPost } from "./types";
+import { SITE_URL } from "@/lib/site";
 
 /** Domínio do site institucional e do painel. */
-export const SITE_URL = "https://www.dishdesk.com.br";
+export { SITE_URL };
 
 export const BLOG_NAME = "Blog do Dish Desk";
 
